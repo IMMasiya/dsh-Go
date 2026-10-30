@@ -32,6 +32,7 @@ class NotifyPlugin :
 
     private lateinit var appContext: Context
     private lateinit var notifier: ChatNotifier
+    private lateinit var live: LiveUpdater
     private lateinit var methods: MethodChannel
     private lateinit var events: EventChannel
     private lateinit var actions: EventChannel
@@ -46,6 +47,7 @@ class NotifyPlugin :
         notifier = ChatNotifier(appContext)
         // A new process: nothing runs yet, so a live activity an earlier one left goes.
         LiveActivity.refresh(appContext)
+        live = LiveUpdater(appContext)
         methods = MethodChannel(binding.binaryMessenger, "dsh/notify").also { it.setMethodCallHandler(this) }
         events = EventChannel(binding.binaryMessenger, "dsh/notify/taps").also { it.setStreamHandler(this) }
         actions = EventChannel(binding.binaryMessenger, "dsh/notify/actions").also {
@@ -98,6 +100,30 @@ class NotifyPlugin :
     override fun onMethodCall(call: MethodCall, result: MethodChannel.Result) {
         when (call.method) {
             "status" -> result.success(notifier.status())
+            "liveStart" -> {
+                val sessionId = call.argument<String>("sessionId")
+                if (sessionId.isNullOrEmpty()) {
+                    return result.error("bad_args", "sessionId is required", null)
+                }
+                live.start(
+                    sessionId = sessionId,
+                    title = call.argument<String>("title") ?: AppStrings.APP_NAME,
+                    text = call.argument<String>("text") ?: "",
+                )
+                result.success(mapOf("promoted" to live.canPromote()))
+            }
+            "liveUpdate" -> {
+                live.update(
+                    sessionId = call.argument<String>("sessionId"),
+                    percent = call.argument<Int>("percent"),
+                    text = call.argument<String>("text"),
+                )
+                result.success(null)
+            }
+            "liveStop" -> {
+                live.stop()
+                result.success(null)
+            }
             "show" -> {
                 val group = call.argument<String>("group")
                 val key = call.argument<String>("key")

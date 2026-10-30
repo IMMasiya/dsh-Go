@@ -22,6 +22,7 @@ import 'dart:convert';
 import 'package:dsh_client/dsh_client.dart';
 
 import '../l10n/l10n.dart';
+import 'live_update.dart';
 import '../state/hosts_state.dart';
 import '../ui/chat/media/media_format.dart' show chatTitleShown;
 import '../ui/chat/secret_mask.dart';
@@ -556,8 +557,16 @@ class HostAlertTracker {
         _running[sessionId] = running;
         if (running || was != false) _statusRevision[sessionId] = ++_revision;
         if (running) _pendingIdle.remove(sessionId);
+        // 回合开始：让安卓原生灵动岛显示这条任务（不可用时原生侧自己降级）。
+        if (running && was != true) {
+          unawaited(LiveUpdates.start(
+            sessionId: sessionId,
+            title: alertTitle(_sessions[sessionId]?.title),
+          ));
+        }
         if (!running && was != false) {
           _pendingIdle.add(sessionId);
+          unawaited(LiveUpdates.stop(sessionId: sessionId));
           unawaited(_onIdle(sessionId));
         }
       case SessionAddedEvent(:final summary):
