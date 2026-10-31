@@ -48,9 +48,20 @@ class LiveUpdater(private val app: Context) {
     fun update(sessionId: String?, percent: Int?, text: String?) {
         if (this.sessionId == null) return
         if (sessionId != null && sessionId != this.sessionId) return
-        if (percent != null) this.percent = percent.coerceIn(0, 100)
-        if (!text.isNullOrEmpty()) this.text = text
-        if (this.percent != null) post()
+        var changed = false
+        if (percent != null) {
+            val next = percent.coerceIn(0, 100)
+            if (next != this.percent) {
+                this.percent = next
+                changed = true
+            }
+        }
+        if (!text.isNullOrEmpty() && text != this.text) {
+            this.text = text
+            changed = true
+        }
+        // 文案变了也要重发：只动进度条不动状态行，看不出回合在干什么。
+        if (changed) post()
     }
 
     /** 回合结束：立刻撤回，不在岛上留失败态。 */

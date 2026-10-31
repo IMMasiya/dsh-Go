@@ -461,6 +461,14 @@ class ChatAlertsController extends Notifier<ChatAlert?> {
     final tracker = HostAlertTracker(
       host: host,
       source: ref.read(alertSourceFactoryProvider)(connection),
+      watchSession: (sessionId) => connection.client.watch(
+        sessionId,
+        options: const WatchOptions(
+          assistantStream: false,
+          includeHostEvents: false,
+          includeConnectionEvents: false,
+        ),
+      ),
       onAlert: _onAlert,
       onWithdraw: _onWithdraw,
       onSessionGone: _onSessionGone,

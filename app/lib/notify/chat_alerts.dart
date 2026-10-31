@@ -22,6 +22,7 @@ import 'dart:convert';
 import 'package:dsh_client/dsh_client.dart';
 
 import '../l10n/l10n.dart';
+import 'live_progress.dart';
 import 'live_update.dart';
 import '../state/hosts_state.dart';
 import '../ui/chat/media/media_format.dart' show chatTitleShown;
@@ -429,6 +430,7 @@ class HostAlertTracker {
     this.onRequestEpochChanged,
     this.announceDelay = const Duration(milliseconds: 800),
     this.reconcileDelay = const Duration(seconds: 3),
+    this.watchSession,
   });
 
   final HostRef host;
@@ -455,6 +457,13 @@ class HostAlertTracker {
   /// After a reconnect the Host redelivers what is still pending; requests not
   /// redelivered within this window were settled while we were away.
   final Duration reconcileDelay;
+
+  /// Opens one running session's log so the live-update island can show where
+  /// the turn is; null when the connection cannot watch (or in tests).
+  final Stream<DshEvent> Function(String sessionId)? watchSession;
+
+  /// Island progress per running session (see [LiveTurnProgress]).
+  final Map<String, LiveTurnProgress> _liveProgress = {};
 
   StreamSubscription<HostEvent>? _sub;
   Timer? _reconcile;
@@ -519,6 +528,10 @@ class HostAlertTracker {
   Future<void> dispose() async {
     _disposed = true;
     _reconcile?.cancel();
+    for (final live in _liveProgress.values) {
+      live.finish();
+    }
+    _liveProgress.clear();
     await _sub?.cancel();
   }
 
@@ -557,16 +570,11 @@ class HostAlertTracker {
         _running[sessionId] = running;
         if (running || was != false) _statusRevision[sessionId] = ++_revision;
         if (running) _pendingIdle.remove(sessionId);
-        // 回合开始：让安卓原生灵动岛显示这条任务（不可用时原生侧自己降级）。
-        if (running && was != true) {
-          unawaited(LiveUpdates.start(
-            sessionId: sessionId,
-            title: alertTitle(_sessions[sessionId]?.title),
-          ));
-        }
+        // 回合开始 / 结束：安卓原生灵动岛（不可用时原生侧自己降级）。
+        if (running && was != true) _liveBegin(sessionId);
         if (!running && was != false) {
           _pendingIdle.add(sessionId);
-          unawaited(LiveUpdates.stop(sessionId: sessionId));
+          _liveEnd(sessionId);
           unawaited(_onIdle(sessionId));
         }
       case SessionAddedEvent(:final summary):
@@ -586,6 +594,32 @@ class HostAlertTracker {
         onSessionGone(host, sessionId);
       default:
         break;
+    }
+  }
+
+  /// 灵动岛：回合开始时起一条实时更新。拿得到日志就跟着显示进度（第几步、
+  /// 在干什么、todo 完成度），拿不到就只是一条常驻通知。
+  void _liveBegin(String sessionId) {
+    _liveEnd(sessionId);
+    final title = alertTitle(_sessions[sessionId]?.title);
+    final watch = watchSession;
+    if (watch == null) {
+      unawaited(LiveUpdates.start(sessionId: sessionId, title: title));
+      return;
+    }
+    _liveProgress[sessionId] = LiveTurnProgress(
+      sessionId: sessionId,
+      title: title,
+      events: watch(sessionId),
+    );
+  }
+
+  void _liveEnd(String sessionId) {
+    final live = _liveProgress.remove(sessionId);
+    if (live != null) {
+      live.finish();
+    } else {
+      unawaited(LiveUpdates.stop(sessionId: sessionId));
     }
   }
 
