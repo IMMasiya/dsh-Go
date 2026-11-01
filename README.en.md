@@ -169,13 +169,13 @@
 DSH Go combines a chat interface, an on-device runtime and remote connections. It is a third-party project built on [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness). The DSH engine runs on your phone; model requests are still handled by the model provider you configure.
 
 - **On-device runtime:** install Ubuntu, Node.js and DSH from the app without Root or a separate Termux installation.
-- **Remote connections:** use DSH on a computer or server through SSH or DSH Remote.
+- **Remote connections:** use DSH on a computer or server through SSH or [DSHarness Remote](https://github.com/liguobao/ds-harness-remote).
 - **Chat and tools:** switch models, send images, use voice input, and respond to tool approvals and questions. Chat and web interfaces are available.
 - **Plugin interfaces:** use native tool cards, forms and panels from plugins adapted for DSH Go. This repository includes an SDK, guides and examples.
 - **Phone control:** after you enable the required permissions, let the local engine read the screen, tap and type. You can stop it at any time.
 - **Sharing and appearance:** share, export and replay conversations, and customize themes, icons and pets.
 
-Capabilities depend on the host and connection. DSH Remote currently accepts image attachments only, does not open the web interface inside the app, limits plugin management to enabling or disabling plugins, and does not support DS Bot or conversation-log export. See [Engine and remote hosts](docs/guide/en/03-engine-hosts.md).
+Capabilities depend on the host and connection. DSHarness Remote currently accepts image attachments only, does not open the web interface inside the app, limits plugin management to enabling or disabling plugins, and does not support DS Bot or conversation-log export. See [Engine and remote hosts](docs/guide/en/03-engine-hosts.md).
 
 ## Install
 
