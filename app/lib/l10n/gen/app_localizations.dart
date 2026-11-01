@@ -16253,8 +16253,14 @@ abstract class L10n {
   /// No description provided for @phoneDndRootConnected.
   ///
   /// In zh, this message translates to:
-  /// **'root 已连接。断开后要回到这里再选一次，DSH Go 不会自己重新申请。'**
+  /// **'root 已连接。断开后要回到这里再选一次；打开上面的「保持 root 通道」，DSH Go 才会自己再去申请。'**
   String get phoneDndRootConnected;
+
+  /// No description provided for @phoneDndRootConnectedKept.
+  ///
+  /// In zh, this message translates to:
+  /// **'root 已连接。断开后 DSH Go 会自己向 root 管理器再次申请。'**
+  String get phoneDndRootConnectedKept;
 
   /// No description provided for @phoneDndRootRetry.
   ///
@@ -18139,6 +18145,72 @@ abstract class L10n {
   /// In zh, this message translates to:
   /// **'root 管理器（Magisk、KernelSU 或 APatch）会弹窗问你。允许后，DSH Go 以 root 运行自己的后台服务；只有打开「保持 root 通道」，断开或重启后才会自己再去申请。'**
   String get phonePrivilegedRootRiskBody;
+
+  /// No description provided for @phoneKeepTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'{mode, select, shizuku{保持 Shizuku 通道} sui{保持 Sui 通道} root{保持 root 通道} adb{保持自连 ADB 通道} other{保持这个通道}}'**
+  String phoneKeepTitle(String mode);
+
+  /// No description provided for @phoneKeepRootDescription.
+  ///
+  /// In zh, this message translates to:
+  /// **'断开、重开 App 或重启手机后，DSH Go 会自己再向 root 管理器申请；给不给仍由管理器决定。'**
+  String get phoneKeepRootDescription;
+
+  /// No description provided for @phoneKeepSharedDescription.
+  ///
+  /// In zh, this message translates to:
+  /// **'断开、重开 App 或重启手机后，DSH Go 用已有的授权自己连回去，不会替你申请授权。'**
+  String get phoneKeepSharedDescription;
+
+  /// No description provided for @phoneKeepAdbDescription.
+  ///
+  /// In zh, this message translates to:
+  /// **'断开、重开 App 或重启手机后，DSH Go 用已有的配对在 Wi‑Fi 下自己连回去；有「自动恢复无障碍」的权限时，还会试着打开一次无线调试。'**
+  String get phoneKeepAdbDescription;
+
+  /// No description provided for @phoneKeepRestoring.
+  ///
+  /// In zh, this message translates to:
+  /// **'正在重新连接'**
+  String get phoneKeepRestoring;
+
+  /// No description provided for @phoneKeepWaiting.
+  ///
+  /// In zh, this message translates to:
+  /// **'等通道可用后再连'**
+  String get phoneKeepWaiting;
+
+  /// No description provided for @phoneKeepWaitingService.
+  ///
+  /// In zh, this message translates to:
+  /// **'等所选服务运行后再连'**
+  String get phoneKeepWaitingService;
+
+  /// No description provided for @phoneKeepWaitingPermission.
+  ///
+  /// In zh, this message translates to:
+  /// **'还没有授权；授权后会自己连上'**
+  String get phoneKeepWaitingPermission;
+
+  /// No description provided for @phoneKeepWaitingNetwork.
+  ///
+  /// In zh, this message translates to:
+  /// **'等连上 Wi‑Fi 后再连'**
+  String get phoneKeepWaitingNetwork;
+
+  /// No description provided for @phoneKeepNotPaired.
+  ///
+  /// In zh, this message translates to:
+  /// **'还没有配对，请先完成无线调试配对'**
+  String get phoneKeepNotPaired;
+
+  /// No description provided for @phoneKeepFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'没连上；下次打开 App 或开始操控时再试'**
+  String get phoneKeepFailed;
 
   /// No description provided for @phoneModeTitle.
   ///

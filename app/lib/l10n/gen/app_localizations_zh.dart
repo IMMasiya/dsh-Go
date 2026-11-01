@@ -8814,7 +8814,10 @@ class L10nZh extends L10n {
   String get phoneDndRootWaiting => '正在等待 root 授权，请在 root 管理器的弹窗里选择。';
 
   @override
-  String get phoneDndRootConnected => 'root 已连接。断开后要回到这里再选一次，DSH Go 不会自己重新申请。';
+  String get phoneDndRootConnected => 'root 已连接。断开后要回到这里再选一次；打开上面的「保持 root 通道」，DSH Go 才会自己再去申请。';
+
+  @override
+  String get phoneDndRootConnectedKept => 'root 已连接。断开后 DSH Go 会自己向 root 管理器再次申请。';
 
   @override
   String get phoneDndRootRetry => '重新申请 root 授权';
@@ -9832,6 +9835,48 @@ class L10nZh extends L10n {
   @override
   String get phonePrivilegedRootRiskBody =>
       'root 管理器（Magisk、KernelSU 或 APatch）会弹窗问你。允许后，DSH Go 以 root 运行自己的后台服务；只有打开「保持 root 通道」，断开或重启后才会自己再去申请。';
+
+  @override
+  String phoneKeepTitle(String mode) {
+    String _temp0 = intl.Intl.selectLogic(mode, {
+      'shizuku': '保持 Shizuku 通道',
+      'sui': '保持 Sui 通道',
+      'root': '保持 root 通道',
+      'adb': '保持自连 ADB 通道',
+      'other': '保持这个通道',
+    });
+    return '$_temp0';
+  }
+
+  @override
+  String get phoneKeepRootDescription => '断开、重开 App 或重启手机后，DSH Go 会自己再向 root 管理器申请；给不给仍由管理器决定。';
+
+  @override
+  String get phoneKeepSharedDescription => '断开、重开 App 或重启手机后，DSH Go 用已有的授权自己连回去，不会替你申请授权。';
+
+  @override
+  String get phoneKeepAdbDescription => '断开、重开 App 或重启手机后，DSH Go 用已有的配对在 Wi‑Fi 下自己连回去；有「自动恢复无障碍」的权限时，还会试着打开一次无线调试。';
+
+  @override
+  String get phoneKeepRestoring => '正在重新连接';
+
+  @override
+  String get phoneKeepWaiting => '等通道可用后再连';
+
+  @override
+  String get phoneKeepWaitingService => '等所选服务运行后再连';
+
+  @override
+  String get phoneKeepWaitingPermission => '还没有授权；授权后会自己连上';
+
+  @override
+  String get phoneKeepWaitingNetwork => '等连上 Wi‑Fi 后再连';
+
+  @override
+  String get phoneKeepNotPaired => '还没有配对，请先完成无线调试配对';
+
+  @override
+  String get phoneKeepFailed => '没连上；下次打开 App 或开始操控时再试';
 
   @override
   String get phoneModeTitle => '选择确认方式';

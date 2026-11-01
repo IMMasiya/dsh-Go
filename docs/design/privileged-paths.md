@@ -130,7 +130,7 @@ root/ADB入口先准备Looper再创建ActivityThread systemContext，之后进�
 
 ## 8. 本机 UI 与 a11y 接入清单
 
-本波不修改`phone/a11y/`、`phone/PhoneControl.kt`、`app/lib/ui/chat/`，页面布局由本机实施。建议按以下顺序接入，不要求重做组件：
+本波不修改`phone/a11y/`、`phone/PhoneControl.kt`、`app/lib/ui/chat/`。页面按以下顺序接入，没有重做组件（保持开关见[特权通道保持](privileged-keep.md)第 7 节）：
 
 1. 通道控件读取supportedModes与effectiveMode；名称区分Sui/Root；旧三值页面继续使用旧enum，不在原exhaustive switch塞入未知值。新块不存在时只显示三种旧能力。
 2. 建议以文字提示展示recommendedMode；点击才调用setPrivilegedMode。程序化刷新、构建或状态同步触发的回调不得发选择或准备动作；用户主动点选控件产生的onChanged可以调用选择方法。

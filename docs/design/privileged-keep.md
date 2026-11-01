@@ -100,7 +100,7 @@ Job 只是保持恢复的观察者。onStopJob 不取消可能已被前台或任
 
 ## 7. 本机页面接入与真机验收
 
-本补丁不改页面布局。给当前实际通道增加保持开关；root 使用 phoneKeepRootTitle/Description，ADB 使用 phoneKeepAdbDescription，让用户先理解其恢复授权。开关初值来自 native keep；build、refresh、状态事件不得写设置。waiting 原因使用 phone_keep_zh/en.arb 的对应键，没有特定键的固定原因可落到已有通道原因或通用等待/失败提示。
+不打扰模式页（`dnd_mode_page.dart`）在「正在使用：X」卡里、紧接其下加一行「保持 X 通道」开关，只对正在使用的通道显示；旧原生（无 privileged 块）不显示。开关值只来自 native keep.enabled，只有点开关才调用 setBackgroundKeep；build、refresh、状态事件都不写设置。关闭或已连接时，开关下写这条通道的保持含义（root：DSH Go 会自己再向 root 管理器申请，管理器决定；Shizuku/Sui：只用已有授权；ADB：只用已有配对，有 WSS 时试一次打开无线调试），文字不截断。开启且未连接时改写进度：restoring、waiting（按 serviceUnavailable/providerChanged、permissionRequired、networkUnavailable、notPaired 分别说明，其余为通用等待）、failed。保存失败显示原生返回的原因。root 已连接时，root 面板的说明按是否保持分两种；「使用条件」里「重启后重新激活」一条在保持开启时不显示。截图见 `test/phone/dnd_mode_golden_test.dart` 的 dnd_keep_*。
 
 | 场景 | 必须观察的结果 |
 | --- | --- |
