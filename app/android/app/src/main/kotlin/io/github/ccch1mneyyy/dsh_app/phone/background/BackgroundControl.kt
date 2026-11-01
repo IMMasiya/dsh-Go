@@ -378,13 +378,17 @@ class BackgroundControl private constructor(context: Context) {
     /** Main-thread intent boundary. The returned ticket is persisted on the short control queue. */
     internal fun changeKeep(selected: String, enabled: Boolean): Pair<PrivilegedKeepState.Ticket?, String?> {
         val failure = when {
-            selected != mode || selected !in PrivilegedKeepState.MODES -> "selectionChanged"
             enabled && !androidOk() -> "unsupportedAndroid"
             enabled && !PhoneControl.switchedOn(app) -> "phoneDisabled"
             else -> null
         }
         if (failure != null) return null to failure
-        val ticket = synchronized(keepGuard) { keep.configure(if (enabled) selected else "off") }
+        // Checked under the guard keep.select takes: an off or a switch queued just before this tap
+        // either lands first (selectionChanged) or resets this consent, never leaves the old mode kept.
+        val ticket = synchronized(keepGuard) {
+            if (selected != mode || selected !in PrivilegedKeepState.MODES) null
+            else keep.configure(if (enabled) selected else "off")
+        } ?: return null to "selectionChanged"
         cancelUnwantedPending()
         if (!enabled) { updateKeepListeners(); PrivilegedKeepJob.cancel(app) }
         notifyChanged()
