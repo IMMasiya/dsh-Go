@@ -60,10 +60,9 @@
     { "tag": "v2", "new_sqlite_classes": ["StatsSalt"] }
   ],
   // Download clicks, update checks, the app's usage reports (src/stats.ts,
-  // src/usage.ts). Analytics Engine isn't enabled on the account yet, so
-  // provision.sh deploys without them unless --analytics (or DSH_ANALYTICS=1):
-  // until then nothing is counted and /api/usage/v1 is 404. wrangler dev has
-  // them locally. docs/design/share-links.md §15.
+  // src/usage.ts). provision.sh deploys them unless --no-analytics (or
+  // DSH_ANALYTICS=0), for an account without Analytics Engine: then nothing
+  // is counted and /api/usage/v1 is 404. docs/design/share-links.md §15.
   "analytics_engine_datasets": [
     { "binding": "DOWNLOADS", "dataset": "dshgo_downloads" },
     { "binding": "CHECKS", "dataset": "dshgo_checks" },
