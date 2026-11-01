@@ -3233,6 +3233,15 @@ class L10nZh extends L10n {
   String get chatUnsent => '未发送';
 
   @override
+  String get chatFailedSubmission => '未送达 · 已保留';
+
+  @override
+  String get chatEditFailedSubmission => '编辑后重发';
+
+  @override
+  String get chatErrReasoningEffortUnsupported => '当前模型不支持此推理档位，请调整档位或换模型';
+
+  @override
   String get chatSteerNextStep => '插话 · 下一步生效';
 
   @override
