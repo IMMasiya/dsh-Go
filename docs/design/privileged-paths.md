@@ -97,7 +97,7 @@ App策略上限是启动30秒、单次协议操作30秒。授予权限复用已�
 | rootCancelled | root启动已取消 | 保持当前用户选择结果 |
 | rootDisconnected | root通道已断开 | 保持开启时等待恢复事件，否则再次主动选择/准备 |
 | rootGrantFailed | 未能授予自动恢复所需权限 | 检查管理器授权，再主动授予并核验实际权限 |
-| Android<14或显示/输入gate失败 | Android版本要求 / 此系统不支持 / 输入注入被拒绝 | 不假装ready，不改用主屏完成后台操作 |
+| Android<14或显示/输入gate失败 | Android版本要求 / 此系统不支持 / 未能确认后台屏输入结果 | 不假装ready，不改用主屏完成后台操作 |
 | 已排队动作过期 | 通道选择已取消 | 忽略旧结果，刷新当前状态 |
 
 页面采用现有中英文词条与组件。原生根错误在values/values-zh的i18n_strings.xml，新增页面词条在phone_background_{zh,en}.arb；本文不要求页面直出未经约束的su原文。
