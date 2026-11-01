@@ -59,6 +59,7 @@ class BackgroundControl private constructor(context: Context) {
     // Cached probe results (null = not probed this session).
     @Volatile private var trustedDisplayOk: Boolean? = null
     @Volatile private var injectOk: Boolean? = null
+    @Volatile private var injectError: String? = null
 
     private fun notifyChanged() = runCatching { onStatusChanged() }
 
@@ -117,7 +118,11 @@ class BackgroundControl private constructor(context: Context) {
 
     private fun gateReason(): String? = when {
         trustedDisplayOk == false -> UNSUPPORTED
-        injectOk == false -> AppStrings.get(app, R.string.background_injection_denied)
+        injectOk == false -> AppStrings.get(app, when (injectError) {
+            "inputApiUnavailable" -> R.string.background_input_api_unavailable
+            "systemOperationDenied" -> R.string.background_input_permission_denied
+            else -> R.string.background_injection_denied
+        })
         else -> null
     }
 
@@ -155,6 +160,7 @@ class BackgroundControl private constructor(context: Context) {
             disconnectAll { selected == "off" || it == leaving }
             trustedDisplayOk = null
             injectOk = null
+            injectError = null
         }
         synchronized(keepGuard) { keep.select(selected); rootSelected = selected == "root" }
         val cleared = synchronized(preferenceGuard) {
@@ -364,12 +370,9 @@ class BackgroundControl private constructor(context: Context) {
         val ok = response.getBoolean(Proto.OK)
         trustedDisplayOk = ok
         injectOk = if (response.containsKey(Proto.INJECT_OK)) response.getBoolean(Proto.INJECT_OK) else null
+        injectError = if (injectOk == false) response.getString(Proto.INJECT_ERROR) else null
         notifyChanged()
-        return when {
-            !ok -> UNSUPPORTED
-            injectOk == false -> AppStrings.get(app, R.string.background_injection_denied)
-            else -> null
-        }
+        return gateReason()
     }
 
 
