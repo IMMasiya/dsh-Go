@@ -41,7 +41,7 @@ GitHub Pages
 
 - `https://go.dshtui.com/market/index.json`（= `https://dl.dshtui.com/market/index.json`）：**格式 1**，必须通过 DSH 0.2.1 官方校验器（`dsh-plugin-market-index`）。DSH 网页版、dsh-TUI 也能直接添加这个地址。每个插件**只列锁定的那一个版本**。
 - `https://go.dshtui.com/market/dsh-go.json`（= `https://dl.dshtui.com/market/dsh-go.json`）：格式 1 装不下的东西，App 用。
-- 两个文件在 CDN 上各自缓存，目录变化后的 5 分钟内可能拿到新旧不配套的一对；App 校验不过就当这次没取到（用本地缓存或换下一个地址）。
+- 两个文件在 CDN 上各自缓存，目录变化后的 5 分钟内可能拿到新旧不配套的一对：App 照常显示（版本对不上的 sidecar 条目不用），但不存下来，下次再取（§6）。
 
 ```jsonc
 // dsh-go.json
@@ -123,6 +123,7 @@ scripts/build.mjs                         生成 index.json + dsh-go.json
 ## 6. App 侧
 
 - 市场页三个分区：官方 / 适配 DSH Go / 全部。前两个来自官方索引，第三个是 dshfind。
+- 读官方索引（1.0.9 起，`app/lib/state/plugins_state.dart` `fetchOfficialMarket`）：先 `https://dl.dshtui.com/market/`，不行再 `https://go.dshtui.com/market/`。最近一份读得通、且每个插件都有锁定版本的 listing 的目录，连同两个文件的 ETag 存在手机上（SharedPreferences `market.official`）：6 小时内直接用，不发请求；过了 6 小时带 `If-None-Match` 重新验证（304 就续期）；下拉刷新和「重试」总是重新验证；两个地址都连不上时用手机上那份（不论多旧）。手机上没有时照旧：哪儿都没发布（404）是空市场，其余是错误。
 - 卡片：分区标记 + 风险标签（low 不显示，medium 黄色，high 红色）。
 - 详情页：截图、中文介绍、风险逐条解释、版本、来源链接。
 - 安装：装到当前主机，用索引锁定的版本（`name@version`），装前核对 integrity。medium / high 先弹确认，列出风险。
