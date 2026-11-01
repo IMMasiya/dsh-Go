@@ -45,10 +45,7 @@ object PhoneToolCatalog {
 
     private fun str(description: String) = linkedMapOf<String, Any?>("type" to "string", "description" to description)
     private fun bool(description: String) = linkedMapOf<String, Any?>("type" to "boolean", "description" to description)
-    private fun int(description: String, min: Int? = null, max: Int? = null) = linkedMapOf<String, Any?>("type" to "integer", "description" to description).apply {
-        if (min != null) put("minimum", min)
-        if (max != null) put("maximum", max)
-    }
+    private fun int(description: String) = linkedMapOf<String, Any?>("type" to "integer", "description" to description)
     private fun num(description: String) = linkedMapOf<String, Any?>("type" to "number", "description" to description)
     private fun enum(values: List<String>, description: String) =
         linkedMapOf<String, Any?>("type" to "string", "enum" to values, "description" to description)
@@ -91,17 +88,17 @@ object PhoneToolCatalog {
                 // l10n:keep agent tool catalog
                 "kind" to enum(INTENT_KINDS, "事务类型"),
                 // l10n:keep agent tool catalog
-                "hour" to int("时 0–23", 0, 23),
+                "hour" to int("时 0–23"),
                 // l10n:keep agent tool catalog
-                "minute" to int("分 0–59", 0, 59),
+                "minute" to int("分 0–59"),
                 "days" to linkedMapOf(
                     "type" to "array",
-                    "items" to linkedMapOf("type" to "integer", "minimum" to 1, "maximum" to 7),
+                    "items" to linkedMapOf("type" to "integer"),
                     // l10n:keep agent tool catalog
                     "description" to "重复的星期，1=周一 … 7=周日；省略只响一次",
                 ),
                 // l10n:keep agent tool catalog
-                "seconds" to int("秒 1–86400", 1, 86400),
+                "seconds" to int("秒 1–86400"),
                 // l10n:keep agent tool catalog
                 "message" to str("闹钟 / 计时器标签"),
                 // l10n:keep agent tool catalog
@@ -176,7 +173,7 @@ object PhoneToolCatalog {
                 // l10n:keep agent tool catalog
                 "list" to int("列表的编号"),
                 // l10n:keep agent tool catalog
-                "max_pages" to int("最多翻几页，默认 10", 1, 30),
+                "max_pages" to int("最多翻几页（1–30），默认 10"),
                 // l10n:keep agent tool catalog
                 "until" to str("出现这段文字就停"),
             ),
@@ -234,9 +231,9 @@ object PhoneToolCatalog {
                 // l10n:keep agent tool catalog
                 "observation" to str("那张截图的屏幕号"),
                 // l10n:keep agent tool catalog
-                "x" to int("横坐标（像素）", 0),
+                "x" to int("横坐标（像素，从 0 开始）"),
                 // l10n:keep agent tool catalog
-                "y" to int("纵坐标（像素）", 0),
+                "y" to int("纵坐标（像素，从 0 开始）"),
             ),
             listOf("observation", "x", "y"),
         ),
