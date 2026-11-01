@@ -149,7 +149,7 @@ abstract class L10n {
   /// No description provided for @a11yRestoreRootNote.
   ///
   /// In zh, this message translates to:
-  /// **'以 root 执行一次 pm grant，只授予这一项权限。'**
+  /// **'通过已授权的 root 连接，只授予这一项权限。'**
   String get a11yRestoreRootNote;
 
   /// No description provided for @a11yRestoreSetup.
