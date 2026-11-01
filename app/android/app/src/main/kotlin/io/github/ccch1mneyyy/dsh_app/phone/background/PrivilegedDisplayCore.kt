@@ -404,20 +404,25 @@ class PrivilegedDisplayCore(private val context: Context) {
         @Suppress("UNCHECKED_CAST")
         val all = invoke(automation, "getWindowsOnAllDisplays") as? SparseArray<List<AccessibilityWindowInfo>>
             ?: throw Fault("treeUnavailable")
-        val appWindow = all.get(displayId).orEmpty().firstOrNull {
+        val windows = all.get(displayId).orEmpty().filter {
             it.type == AccessibilityWindowInfo.TYPE_APPLICATION
-        } ?: throw Fault("treeUnavailable")
-        val root = appWindow.root ?: throw Fault("treeUnavailable")
-        val tree = TreeRead(targetId)
+        }
+        val roots = ArrayList<AccessibilityNodeInfo?>()
         try {
-            if (root.packageName?.toString() != pkg) throw Fault("displayTargetChanged")
-            walk(root, tree, 0, 600)
-            assignRegions(tree.elements)
-            return tree
-        } catch (e: Throwable) {
-            tree.target?.recycle()
-            throw e
-        } finally { root.recycle() }
+            for (window in windows) roots.add(window.root)
+            val selected = BackgroundTree.selectApplicationWindow(roots.map { it?.packageName?.toString() }, pkg)
+                ?: throw Fault(if (roots.firstOrNull() != null) "displayTargetChanged" else "treeUnavailable")
+            val tree = TreeRead(targetId)
+            tree.complete = selected.complete
+            try {
+                walk(roots[selected.index]!!, tree, 0, 600)
+                assignRegions(tree.elements)
+                return tree
+            } catch (e: Throwable) {
+                tree.target?.recycle()
+                throw e
+            }
+        } finally { roots.forEach { it?.recycle() } }
     }
 
     private fun walk(node: AccessibilityNodeInfo?, tree: TreeRead, indent: Int, budget: Int) {

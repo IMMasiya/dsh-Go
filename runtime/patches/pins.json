@@ -190,7 +190,7 @@
       "0.2.1-rc.4": {
         "node_modules/@deepseek-ai/dsh-session-persistence-jsonl/lib/index.js": {
           "before": "973dd78679b2661d6f492343bc22b124ae958aa597d3b36c698a2c650f909984",
-          "after": "bf3ac4eae2d0c7f474d71b3a1fb3bb265cb4ae287c4ab5e60fbc6aa9f8514d6a"
+          "after": "58dd786b79137604d4e330185d009a34337bd9b53efab59e32ed2cdfbcd3f73e"
         },
         "node_modules/@deepseek-ai/dsh-session/lib/index.js": {
           "before": "2f5dd07cb5c744a29abbb8003a8a4cefd9e582c6e2538074ca299a0ddd02a3bf",
