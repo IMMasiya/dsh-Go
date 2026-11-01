@@ -47,7 +47,7 @@ When DSH needs your approval, the capsule says "Waiting for you below" and the a
 
 Adjust it under **Floating bar** on the phone control page (shown once phone control is on):
 
-- **Idle opacity**: how far the ball fades after 3 seconds untouched, 30% to 100%, 70% by default. The capsule and the card never fade.
+- **Idle opacity**: how far the capsule or the ball fades after 3 seconds untouched, 30% to 100%, 70% by default. A touch brings it back; the card and anything waiting for you stay solid.
 - **Collapse when idle**: off by default. When on, the capsule shrinks to a ball after a few idle seconds, and opens by itself when you need to approve something.
 - **Back to DSH Go when done**: on by default. When the reply ends and the app is in the background, it tries to bring you back to that chat. If the system blocks background windows, use the notification; see Confirmations and return below.
 

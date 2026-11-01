@@ -19,16 +19,49 @@ class FoldClockTest {
         start(now)
     }
 
-    // ---- 胶囊：默认形态，一直实心，不变淡 ------------------------------------------------------------
+    // ---- 胶囊：默认形态，闲置后变淡，一碰就恢复 --------------------------------------------------------
 
-    @Test fun itStartsAsTheCapsuleAndStaysSolid() {
+    @Test fun itStartsAsTheCapsuleAndFadesWhenLeftAlone() {
         val c = open(1_000)
         assertEquals(Form.CAPSULE, c.form)
-        // Nothing due: the capsule carries the line, it never fades nor folds on its own.
+        assertFalse(c.dimmed)
+        assertEquals(1_000 + dim, c.nextAt)
+        assertEquals(Tick.NONE, c.tick(1_000 + dim - 1))
+        assertEquals(Tick.DIM, c.tick(1_000 + dim))
+        assertTrue(c.dimmed)
+        // Faded, it stays the capsule: without 自动收起 nothing more is due.
         assertNull(c.nextAt)
         assertEquals(Tick.NONE, c.tick(1_000 + 100 * dim))
         assertEquals(Form.CAPSULE, c.form)
+        // A touch brings it to full and counts again.
+        assertTrue(c.touch(500_000))
         assertFalse(c.dimmed)
+        assertEquals(500_000 + dim, c.nextAt)
+    }
+
+    @Test fun theCardNeverFadesAndOpensAFadedCapsuleAtFull() {
+        val c = open()
+        c.tick(dim)
+        assertTrue(c.dimmed)
+        assertTrue(c.expand(dim + 1))
+        assertFalse(c.dimmed)
+        // Only the card's own count runs, and it goes back to a capsule at full.
+        assertEquals(dim + 1 + card, c.nextAt)
+        assertEquals(Tick.COLLAPSE, c.tick(dim + 1 + card))
+        assertFalse(c.dimmed)
+        assertEquals(dim + 1 + card + dim, c.nextAt)
+    }
+
+    @Test fun whatAsksThePersonBringsAFadedCapsuleToFull() {
+        for (h in Hold.values()) {
+            val c = open()
+            c.tick(dim)
+            c.hold(h, dim + 1)
+            assertFalse("$h", c.dimmed)
+            assertNull("$h", c.nextAt)
+            c.release(h, 10_000)
+            assertEquals("$h", 10_000 + dim, c.nextAt)
+        }
     }
 
     @Test fun statusLinesAreNotTouches() {
@@ -51,8 +84,8 @@ class FoldClockTest {
         assertEquals(Tick.NONE, c.tick(5_000 + card - 1))
         assertEquals(Tick.COLLAPSE, c.tick(5_000 + card))
         assertEquals(Form.CAPSULE, c.form)
-        // Back as the capsule: nothing more due without 自动收起.
-        assertNull(c.nextAt)
+        // Back as the capsule, which fades when left alone.
+        assertEquals(5_000 + card + dim, c.nextAt)
     }
 
     @Test fun theLineAgainClosesTheCard() {
@@ -149,6 +182,7 @@ class FoldClockTest {
 
     @Test fun autoFoldFoldsAnIdleCapsule() {
         val c = open(auto = true)
+        // The fold comes instead of the fade: the capsule goes at full.
         assertEquals(fold, c.nextAt)
         assertEquals(Tick.FOLD, c.tick(fold))
         assertTrue(c.folded)
@@ -185,11 +219,11 @@ class FoldClockTest {
 
     @Test fun switchingAutoFoldAppliesAtOnce() {
         val c = open()
-        assertNull(c.nextAt)
+        assertEquals(dim, c.nextAt)
         c.setAutoFold(true, 1_000)
         assertEquals(1_000 + fold, c.nextAt)
         c.setAutoFold(false, 2_000)
-        assertNull(c.nextAt)
+        assertEquals(2_000 + dim, c.nextAt)
     }
 
     // ---- 等待：确认、交还、插话、已停止时什么都不变 ----------------------------------------------------
