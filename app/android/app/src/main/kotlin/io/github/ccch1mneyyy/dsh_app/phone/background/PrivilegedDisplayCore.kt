@@ -20,6 +20,7 @@ import android.graphics.PixelFormat
 import android.graphics.Rect
 import android.hardware.display.DisplayManager
 import android.hardware.display.VirtualDisplay
+import android.hardware.input.InputManager
 import android.media.ImageReader
 import android.os.Binder
 import android.os.Build
@@ -675,9 +676,9 @@ class PrivilegedDisplayCore(private val context: Context) {
         val id = display?.display?.displayId ?: throw Fault("displayMissing")
         InputEvent::class.java.getDeclaredMethod("setDisplayId", Int::class.javaPrimitiveType)
             .apply { isAccessible = true }.invoke(event, id)
-        val type = Class.forName("android.hardware.input.InputManager")
-        val manager = type.getDeclaredMethod("getInstance").apply { isAccessible = true }.invoke(null)
-        val method = type.getMethod("injectInputEvent", InputEvent::class.java, Int::class.javaPrimitiveType)
+        // Android 17 removed InputManager.getInstance(); the Context service works on every version.
+        val manager = privileged.getSystemService(InputManager::class.java)
+        val method = InputManager::class.java.getMethod("injectInputEvent", InputEvent::class.java, Int::class.javaPrimitiveType)
         // WAIT_FOR_FINISH can time out after the event was delivered. A false result is
         // not proof of rejection: never replay the same event with another mode.
         val accepted = method.invoke(manager, event, 2) == true
