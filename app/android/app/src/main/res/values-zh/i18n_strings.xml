@@ -101,6 +101,8 @@
     <string name="pairing_port_missing">未发现无线调试配对端口，请确认已打开「使用配对码配对设备」</string>
     <string name="pairing_failed">配对失败，请重新获取配对码</string>
     <string name="pairing_error">配对失败：%1$s</string>
+    <string name="pairing_complete">配对成功，回到 App 点「连接」</string>
+    <string name="pairing_result_failure">%1$s\n回到 App 点「开始配对」再试，或用「手动填写」</string>
     <!-- pet -->
     <string name="pet_open_chat">打开对话</string>
     <string name="pet_more">更多</string>

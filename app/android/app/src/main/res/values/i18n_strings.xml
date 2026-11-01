@@ -106,6 +106,8 @@
     <string name="pairing_port_missing">Pairing port not found. Open “Pair device with pairing code”</string>
     <string name="pairing_failed">Couldn’t pair. Get a new pairing code</string>
     <string name="pairing_error">Couldn’t pair: %1$s</string>
+    <string name="pairing_complete">Paired. Go back to the App and tap “Connect”.</string>
+    <string name="pairing_result_failure">%1$s\nGo back to the App and tap “Start pairing” to try again, or use “Enter manually”.</string>
     <!-- pet -->
     <string name="pet_open_chat">Open chat</string>
     <string name="pet_more">More</string>

@@ -9,6 +9,8 @@ import android.app.RemoteInput
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.util.Log
+import io.github.ccch1mneyyy.dsh_app.MainActivity
 import io.github.ccch1mneyyy.dsh_app.R
 
 /**
@@ -50,6 +52,33 @@ object AdbPairingNotification {
         context.getSystemService(NotificationManager::class.java).cancel(NOTIFICATION_ID)
     }
 
+    /** Show the actual pairing result; a new attempt starts from the App's existing flow. */
+    private fun showResult(context: Context, result: Map<String, Any?>) {
+        val text = if (result["ok"] == true) {
+            AppStrings.get(context, R.string.pairing_complete)
+        } else {
+            val reason = result["reason"] as? String ?: AppStrings.get(context, R.string.pairing_failed)
+            AppStrings.get(context, R.string.pairing_result_failure, reason)
+        }
+        val open = PendingIntent.getActivity(
+            context, NOTIFICATION_ID,
+            Intent(context, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
+        context.getSystemService(NotificationManager::class.java).notify(
+            NOTIFICATION_ID,
+            Notification.Builder(context, CHANNEL_ID)
+                .setSmallIcon(R.drawable.ic_stat_dsh)
+                .setContentTitle(AppStrings.get(context, R.string.pairing_title))
+                .setContentText(text)
+                .setStyle(Notification.BigTextStyle().bigText(text))
+                .setContentIntent(open)
+                .setOnlyAlertOnce(true)
+                .setAutoCancel(true)
+                .build(),
+        )
+    }
+
     /** The code the person typed, or null. */
     fun codeFrom(intent: Intent): String? =
         RemoteInput.getResultsFromIntent(intent)?.getCharSequence(CODE_KEY)?.toString()?.trim()
@@ -58,8 +87,10 @@ object AdbPairingNotification {
     class Receiver : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
             val code = codeFrom(intent) ?: return
-            dismiss(context)
-            BackgroundControl.get(context).adbPair(code, null)
+            Log.i("DshAdbPairing", "notification: received")
+            val result = BackgroundControl.get(context).adbPair(code, null)
+            Log.i("DshAdbPairing", "notification: result ok=${result["ok"] == true}")
+            showResult(context, result)
         }
     }
 }
