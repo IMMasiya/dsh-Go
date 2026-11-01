@@ -164,7 +164,7 @@ void main() {
       expect(client.prompts[1].images, 0);
       expect(client.prompts[1].receipts, ['receipt-notes.md', 'receipt-cat.png']);
       expect(client.prompts[1].requestId, client.prompts[0].requestId);
-      expect(state().notice, contains('只能读文字'));
+      expect(state().notice, contains('已按文件发送'));
       expect(state().error, isNull);
 
       chat().dismissNotice();
@@ -321,7 +321,7 @@ void main() {
     expect(client.uploads, isEmpty);
     expect(client.prompts, hasLength(1));
     expect(state().pending, isEmpty);
-    expect(state().error, '当前模型看不了图片，换成 V4.1 Flash 再发');
+    expect(state().error, '当前模型未声明支持图片。请换模型，或把自定义模型的输入类型设为「文本和图片」再发');
   });
 
   group('unknown outcome', () {

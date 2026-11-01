@@ -16010,13 +16010,14 @@ class L10nEn extends L10n {
 
   @override
   String get stateChatTextOnlyModel =>
-      'This model reads text only. Images were sent as files. Switch to V4.1 Flash to let AI view them.';
+      'Sent as files: this model doesn’t list image input. Switch models or set its Input to Text + image.';
 
   @override
   String get stateAttachmentUploadFailed => 'Couldn’t upload attachment';
 
   @override
-  String get stateChatImageModelRequired => 'This model can’t view images. Switch to V4.1 Flash and send again.';
+  String get stateChatImageModelRequired =>
+      'This model doesn’t list image input. Switch models or set its Input to Text + image and resend.';
 
   @override
   String get stateSendFailed => 'Couldn’t send';

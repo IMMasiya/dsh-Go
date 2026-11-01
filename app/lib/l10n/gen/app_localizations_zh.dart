@@ -15190,13 +15190,13 @@ class L10nZh extends L10n {
   String get stateChatStopSteered => '没能停下本轮，已作为插话发送';
 
   @override
-  String get stateChatTextOnlyModel => '当前模型只能读文字，图片已作为文件发给 AI。想让 AI 直接看图，请换成 V4.1 Flash';
+  String get stateChatTextOnlyModel => '当前模型未声明支持图片，已按文件发送。可换模型，或把自定义模型的输入类型设为「文本和图片」';
 
   @override
   String get stateAttachmentUploadFailed => '附件上传失败';
 
   @override
-  String get stateChatImageModelRequired => '当前模型看不了图片，换成 V4.1 Flash 再发';
+  String get stateChatImageModelRequired => '当前模型未声明支持图片。请换模型，或把自定义模型的输入类型设为「文本和图片」再发';
 
   @override
   String get stateSendFailed => '发送失败';

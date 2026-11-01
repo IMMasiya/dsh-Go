@@ -17,6 +17,8 @@
     <string name="background_not_ready">特权通道未就绪</string>
     <string name="background_no_response">特权通道未响应</string>
     <string name="background_injection_denied">未能确认后台屏输入结果，请检查通道授权和设备支持情况</string>
+    <string name="background_input_api_unavailable">这个系统没有可用的后台输入接口，请更新 App，或反馈机型和系统版本</string>
+    <string name="background_input_permission_denied">系统拒绝了后台输入，请检查通道授权；小米 / 红米需打开「USB 调试(安全设置)」</string>
     <!-- notify -->
     <string name="notify_decline">拒绝</string>
     <string name="notify_allow_once">允许本次</string>
@@ -101,6 +103,8 @@
     <string name="pairing_port_missing">未发现无线调试配对端口，请确认已打开「使用配对码配对设备」</string>
     <string name="pairing_failed">配对失败，请重新获取配对码</string>
     <string name="pairing_error">配对失败：%1$s</string>
+    <string name="pairing_complete">配对成功，回到 App 点「连接」</string>
+    <string name="pairing_result_failure">%1$s\n回到 App 点「开始配对」再试，或用「手动填写」</string>
     <!-- pet -->
     <string name="pet_open_chat">打开对话</string>
     <string name="pet_more">更多</string>

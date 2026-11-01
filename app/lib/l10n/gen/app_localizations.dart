@@ -27821,7 +27821,7 @@ abstract class L10n {
   /// No description provided for @stateChatTextOnlyModel.
   ///
   /// In zh, this message translates to:
-  /// **'当前模型只能读文字，图片已作为文件发给 AI。想让 AI 直接看图，请换成 V4.1 Flash'**
+  /// **'当前模型未声明支持图片，已按文件发送。可换模型，或把自定义模型的输入类型设为「文本和图片」'**
   String get stateChatTextOnlyModel;
 
   /// No description provided for @stateAttachmentUploadFailed.
@@ -27833,7 +27833,7 @@ abstract class L10n {
   /// No description provided for @stateChatImageModelRequired.
   ///
   /// In zh, this message translates to:
-  /// **'当前模型看不了图片，换成 V4.1 Flash 再发'**
+  /// **'当前模型未声明支持图片。请换模型，或把自定义模型的输入类型设为「文本和图片」再发'**
   String get stateChatImageModelRequired;
 
   /// No description provided for @stateSendFailed.
