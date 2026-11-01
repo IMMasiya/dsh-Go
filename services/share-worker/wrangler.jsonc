@@ -23,14 +23,28 @@
   "assets": {
     "directory": "./public",
     "binding": "ASSETS",
-    // Every request goes through the Worker, which picks the file and adds
-    // the security headers; paths are taken literally.
-    "run_worker_first": true,
+    // The site is served as files, without running the Worker (no request
+    // counted against its limits), with the headers in public/_headers and
+    // / and /share/ from public/_redirects. The Worker runs first only for
+    // its own routes (src/index.ts) and the files it hides (/c.html,
+    // /index.html: 404). Paths are taken literally; one with no file goes
+    // to the Worker too (its 404).
+    "run_worker_first": [
+      "/api/*", "/c/*", "/market", "/market/*", "/p", "/p/*", "/beta", "/beta/*",
+      "/download", "/download/*", "/share", "/c.html", "/index.html"
+    ],
     "html_handling": "none",
     "not_found_handling": "none"
   },
-  // Lifecycle rules on this bucket: 7d/ → 7 days, 30d/ → 30 days (provision.sh).
-  "r2_buckets": [{ "binding": "BUCKET", "bucket_name": "dshgo-share" }],
+  // Every 10 minutes: the plugin market onto dshgo-dl (src/market.ts publishMarket).
+  "triggers": { "crons": ["*/10 * * * *"] },
+  "r2_buckets": [
+    // Lifecycle rules on this bucket: 7d/ → 7 days, 30d/ → 30 days (provision.sh).
+    { "binding": "BUCKET", "bucket_name": "dshgo-share" },
+    // The public download bucket at DL_BASE_URL (publish-release.sh fills it);
+    // the Worker only writes market/ there.
+    { "binding": "DL", "bucket_name": "dshgo-dl" }
+  ],
   // Hourly upload counters (src/limits.ts). The id: scripts/cloudflare.sh.
   "kv_namespaces": [{ "binding": "QUOTA", "id": "00000000000000000000000000000000" }],
   // Wrong beta access keys, one object per client (src/beta-guard.ts); the
@@ -46,10 +60,9 @@
     { "tag": "v2", "new_sqlite_classes": ["StatsSalt"] }
   ],
   // Download clicks, update checks, the app's usage reports (src/stats.ts,
-  // src/usage.ts). Analytics Engine isn't enabled on the account yet, so
-  // provision.sh deploys without them unless --analytics (or DSH_ANALYTICS=1):
-  // until then nothing is counted and /api/usage/v1 is 404. wrangler dev has
-  // them locally. docs/design/share-links.md §15.
+  // src/usage.ts). provision.sh deploys them unless --no-analytics (or
+  // DSH_ANALYTICS=0), for an account without Analytics Engine: then nothing
+  // is counted and /api/usage/v1 is 404. docs/design/share-links.md §15.
   "analytics_engine_datasets": [
     { "binding": "DOWNLOADS", "dataset": "dshgo_downloads" },
     { "binding": "CHECKS", "dataset": "dshgo_checks" },

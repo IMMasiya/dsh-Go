@@ -38,19 +38,19 @@ KV_ID=$(cf_id "${CF_KV_QUOTA_ID:-}" "$KV_ID_FILE" '.kv_namespaces[] | select(.bi
 real_id() { [[ "$1" =~ ^[0-9a-f]{32}$ && "$1" != 00000000000000000000000000000000 ]]; }
 
 # The config wr runs wrangler with: wrangler.jsonc with our ids, HOST as its
-# custom domain when given, and the Analytics Engine datasets only with
-# ANALYTICS=1 (a deploy with them fails until Analytics Engine is enabled on
-# the account). It sits next to wrangler.jsonc (wrangler resolves main, assets
-# and the build against the config's directory) and is removed on exit (this
-# sets the EXIT trap).
+# custom domain when given, and without the Analytics Engine datasets when
+# ANALYTICS=0 (a deploy with them fails on an account that hasn't enabled
+# Analytics Engine). It sits next to wrangler.jsonc (wrangler resolves main,
+# assets and the build against the config's directory) and is removed on exit
+# (this sets the EXIT trap).
 wrangler_config() { # [HOST]
   WRANGLER_CONFIG=$(mktemp --tmpdir="$PWD" --suffix=.json .wrangler-XXXXXX)
   trap 'rm -f "$WRANGLER_CONFIG"' EXIT
-  wrangler_json | jq --arg account "$ACCOUNT" --arg kv "$KV_ID" --arg host "${1:-}" --arg analytics "${ANALYTICS:-0}" '
+  wrangler_json | jq --arg account "$ACCOUNT" --arg kv "$KV_ID" --arg host "${1:-}" --arg analytics "${ANALYTICS:-1}" '
     .account_id = $account
     | (.kv_namespaces[] | select(.binding == "QUOTA")).id = $kv
     | if $host == "" then . else .routes = [{pattern: $host, custom_domain: true}] end
-    | if $analytics == "1" then . else del(.analytics_engine_datasets) end' >"$WRANGLER_CONFIG"
+    | if $analytics == "0" then del(.analytics_engine_datasets) else . end' >"$WRANGLER_CONFIG"
 }
 
 wr() { # wrangler, with the token from CF_TOKEN_FILE and that config

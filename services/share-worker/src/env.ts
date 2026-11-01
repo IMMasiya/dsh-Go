@@ -3,10 +3,13 @@ import type { RateLimiter } from './limits';
 export interface Env {
   /** HTTPS publication root; defaults to dsh-go-market GitHub Pages. */
   MARKET_SOURCE_URL?: string;
-  /** Static files: the viewer (`/c.html`) and the landing page (`/share/`). */
+  /** Static files (public/): the site, and the viewer the Worker serves at /c/<id>. */
   ASSETS: { fetch(request: Request): Promise<Response> };
   /** Ciphertexts, under the tier prefixes of ids.ts. */
   BUCKET: R2Bucket;
+  /** The public download bucket (dshgo-dl, at DL_BASE_URL): the cron writes
+   *  the market's files there (src/market.ts). */
+  DL: R2Bucket;
   /** Hourly upload counters; beta grants and blocks (`beta:` keys). */
   QUOTA?: KVNamespace;
   UPLOAD_BURST?: RateLimiter;

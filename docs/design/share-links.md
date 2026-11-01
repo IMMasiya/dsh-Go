@@ -19,9 +19,9 @@ App（分享面板「链接」）
 
 | 部分 | 位置 |
 |---|---|
-| Worker（API、限速、页面路由、安全头） | `services/share-worker/src/` |
+| Worker（API、限速、查看器路由、插件市场） | `services/share-worker/src/` |
 | 部署配置（无 secret） | `services/share-worker/wrangler.jsonc` |
-| 页面构建（拷贝查看器、着陆页与首页，提取 CSP） | `services/share-worker/scripts/build-site.mjs` |
+| 页面构建（拷贝查看器、着陆页与首页，提取 CSP，生成 `_headers` / `_redirects`） | `services/share-worker/scripts/build-site.mjs` |
 | 首页（社区制作的展示网站） | `site/home/`（说明见其 `README.md`） |
 | 开通与部署脚本 | `services/share-worker/scripts/provision.sh`（账号与 KV id：`scripts/cloudflare.sh`） |
 | 线上 / 本地端到端检查 | `services/share-worker/scripts/e2e.mjs`、`smoke.mjs` |
@@ -39,10 +39,11 @@ App（分享面板「链接」）
 |---|---|
 | `/c/<id>` | 查看器 `c.html`（`site/build/share/c.html`） |
 | `/share/` | 着陆页（`site/share/`，从 `site/build/share/` 拷贝）；App 的 `shareLandingUrl` 指向这里 |
-| `/` | 首页（`site/home/dist/index.html`，拷到 `public/home/`）；页面引用的文件按原路径提供（`/app.js`、`/styles.css`、`/assets/…`，构建时生成清单），直接访问 `/home/…` 是 404 |
+| `/` | 首页（`site/home/dist/`，拷到 `public/` 根下）；页面引用的文件按原路径提供（`/app.js`、`/styles.css`、`/assets/…`），直接访问 `/index.html` 是 404 |
 | `/robots.txt` | 只放行首页和它的文件，其余 `Disallow` |
 
-- 所有请求先过 Worker（`run_worker_first`），路径按字面匹配（`html_handling: none`），未知路径 404。
+- 首页、着陆页和它们的文件是静态资源，**不经过 Worker**（不计 Worker 请求数）：`build-site.mjs` 把每个文件的安全头写进 `public/_headers`（逐个路径，不用通配），`/` 和 `/share/` 由 `public/_redirects` 的 200 改写指到 `index.html`。只有 Worker 自己的路由先进 Worker（`wrangler.jsonc` 的 `run_worker_first` 列表：`/api/*`、`/c/*`、`/market*`、`/p*`、`/beta*`、`/download*`、`/share`（301 到 `/share/`），以及要藏起来的 `/c.html`、`/index.html`）。路径按字面匹配（`html_handling: none`）；没有对应文件的路径也落到 Worker，返回同样的 404。
+- 和全部走 Worker 时相比，头部逐项相同（`wrangler dev` 对比过 111 个请求）；只差两处无关紧要的：对静态文件用 GET/HEAD 以外的方法，405 由资源服务直接给（不带 `Allow`，带该文件的安全头）；304 也带上该文件的 `Cache-Control`。
 - 旧着陆页 `https://ccch1mneyyy.github.io/dsh-go/share/` 保留不下线：已经发出去的分享码链接照常能开，App 也继续认（`legacyShareLandingUrls`）。新生成的分享码链接都用 `go.dshtui.com/share/`。
 - 安全头：
   - HTML：CSP 与页面自带的 `<meta>` 一致，再加 `frame-ancestors 'none'`（构建时从页面里提取，没有 CSP 或允许 `unsafe-inline` 脚本时构建失败）；另有 `X-Frame-Options: DENY`、`Referrer-Policy: no-referrer`、`nosniff`、`COOP`、`Permissions-Policy`、`noindex`。
@@ -139,10 +140,12 @@ CF_TOKEN_FILE=<token 文件> scripts/provision.sh apply   # 建 R2 + 生命周�
 | Worker | `dshgo-share` |
 | Custom Domain | `go.dshtui.com` |
 | R2 bucket | `dshgo-share`（私有；规则 `expire-7d`、`expire-30d`、`abort-multipart`） |
-| R2 bucket | `dshgo-dl`（公开读，只放发版文件，自定义域名 `dl.dshtui.com`；后台建，脚本不建，§14） |
+| R2 bucket | `dshgo-dl`（公开读，放发版文件和插件市场的 `market/`，自定义域名 `dl.dshtui.com`；后台建，脚本不建，§14；Worker 绑定为 `DL`，只写 `market/`） |
 | KV | `dshgo-share-quota`（id 在 `~/keys/dshgo-cloudflare-kv-quota-id` 或 `CF_KV_QUOTA_ID`；`provision.sh apply` 发现或新建时写这个文件） |
 | Rate Limiting 命名空间 | `42001`（上传）、`42002`（读取）、`42003`（App 使用统计，§15）；账号内唯一，别的 Worker 不要复用 |
-| Analytics Engine 数据集 | `wrangler.jsonc` 绑定 `dshgo_downloads`、`dshgo_checks`、`dshgo_usage`（第一次写入时自动建）；账号还没开通 Analytics Engine，部署时默认去掉，`provision.sh deploy --analytics` 才带上（§15） |
+| Analytics Engine 数据集 | `wrangler.jsonc` 绑定 `dshgo_downloads`、`dshgo_checks`、`dshgo_usage`（第一次写入时自动建）；`provision.sh` 默认带上，没开通 Analytics Engine 的账号用 `--no-analytics`（§15） |
+| Cron Trigger | 每 10 分钟一次，把插件市场写到 `dshgo-dl` 的 `market/`（[plugin-market.md](plugin-market.md) §3） |
+| Redirect Rule（zone 级，单条重定向） | 描述 `dshgo-share: plugin market from the public bucket`：`go.dshtui.com/market/index.json`、`/market/dsh-go.json` → 302 `https://dl.dshtui.com/market/<同名>`（带 `Origin` 头的请求不跳）；`provision.sh` 在 `dl` 上的文件和 Worker 一致后按描述建或改，不碰别的规则 |
 | Durable Object | `BetaGuard`（migration `v1`）、`StatsSalt`（`v2`，§15） |
 | Worker secret | `ADMIN_KEY`（管理员删除用；`provision.sh apply` 生成并设置，本地副本默认 `~/.config/keys/dshgo-share-admin.txt`（`ADMIN_FILE`），权限 600，放在仓库外） |
 | Worker secret | `BETA_SECRET`（内测发包，§14；`scripts/beta-keys.sh init` 生成并设置，本地副本默认 `~/keys/dshgo-beta-secret`（`BETA_SECRET_FILE`），权限 600） |
@@ -157,7 +160,7 @@ CF_TOKEN_FILE=<token 文件> scripts/provision.sh apply   # 建 R2 + 生命周�
 
 | 项 | 免费额度 | 本服务用量 | 够用到 |
 |---|---|---|---|
-| Worker 请求 | 10 万 / 天 | 打开一次 2–3 次（页面、密文、浏览器自己要的图标），上传 1 次 | 约 3–5 万次打开 / 天 |
+| Worker 请求 | 10 万 / 天 | 打开一次 2 次（查看器、密文；图标等静态文件不算），上传 1 次；首页、着陆页不算；插件市场在 `dl.dshtui.com`，不算 | 约 4 万次打开 / 天 |
 | Worker CPU | 10 ms / 次 | 以 I/O 为主；20 MB 上传的拷贝在毫秒级 | — |
 | R2 存储 | 10 GB-月 | 每条约 50 KB（纯文字）到几 MB（带图） | 约几万条存活链接 |
 | R2 写（A 类） | 100 万 / 月 | 上传 1 次（删除不收费） | 约 3 万次上传 / 天 |
@@ -166,7 +169,7 @@ CF_TOKEN_FILE=<token 文件> scripts/provision.sh apply   # 建 R2 + 生命周�
 | KV 读 / 写 | 10 万 / 1000 每天 | 每次上传各 1 | 约 1000 次上传 / 天（超了小时额度失效，分钟限速仍在） |
 | Analytics Engine 写 | 10 万个数据点 / 天（以 Cloudflare 价格页为准） | 每次点下载、每次带令牌的更新检查、每份 App 使用报告各 1 | 三者合计约 10 万 / 天；超了只是少记，不影响下载 |
 
-- 早期完全够用。最先碰到的是 KV 写入（1000 次上传 / 天）和 Worker 请求（约 3–5 万次打开 / 天）。
+- 早期完全够用。最先碰到的是 KV 写入（1000 次上传 / 天）和 Worker 请求（下载页、更新检查、使用统计等每天约 2 万次，剩下的够约 4 万次打开）。
 - 超出后升级 Workers Paid（$5 / 月）：请求 1000 万 / 月，KV 写 100 万 / 月；R2 超额按 $0.015 / GB-月、A 类 $4.5 / 百万、B 类 $0.36 / 百万计。
 - 「永久」链接会持续占空间，是长期成本的主要来源。
 
@@ -289,9 +292,7 @@ CLOUDFLARE_API_TOKEN="$(cat <token 文件>)" npx wrangler secret put ADMIN_KEY <
 
 ## 15. 统计与隐私
 
-> **当前没有开通 Analytics Engine**：`wrangler.jsonc` 绑定了三个数据集，但 `provision.sh` 部署时默认把它们去掉（带着绑定的部署在没开通的账号上会失败），所以下载按钮和更新检查照常工作但不计数（也不去取当天的盐），`POST /api/usage/v1` 恒为 404（App 当天不再上报），`scripts/stats.sh` 没有数据可读。
->
-> **打开**：① Cloudflare 后台开通 Analytics Engine；② 设好 `USAGE_SECRET`（`docs/release.md`「统计」）；③ `CF_TOKEN_FILE=… scripts/provision.sh deploy --analytics`（或 `DSH_ANALYTICS=1`）；④ 几分钟后 `scripts/stats.sh` 有数，就把 `provision.sh` 的默认（`ANALYTICS=${DSH_ANALYTICS:-0}`）改成 `1` 并提交，否则下一次不带开关的部署会把绑定撤掉。之后下面的设计原样生效；`wrangler dev` 本地一直带着这三个绑定。
+> 我们的账号已开通 Analytics Engine，`provision.sh` 默认带着三个数据集部署。Fork 的账号没开通时用 `provision.sh deploy --no-analytics`（或 `DSH_ANALYTICS=0`）：带着绑定的部署在没开通的账号上会失败；去掉后下载按钮和更新检查照常工作但不计数（也不去取当天的盐），`POST /api/usage/v1` 恒为 404（App 当天不再上报），`scripts/stats.sh` 没有数据可读。`wrangler dev` 本地一直带着这三个绑定。
 
 公测起统计三样东西，都只在服务端，都写进 Workers Analytics Engine（AE），**没有公开的查询端点**：只能用 `scripts/stats.sh` 凭 API token 读。代码在 `src/stats.ts`、`src/usage.ts`。
 
