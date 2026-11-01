@@ -693,7 +693,7 @@ class _ChatListState extends ConsumerState<ChatList> {
       text: prompt.text,
       attachments: prompt.attachments.isEmpty ? null : SentAttachments.pending(prompt.attachments),
       pendingLabel: prompt.failed ? appL10n.chatFailedSubmission : label,
-      pendingIcon: prompt.failed ? Icons.error_outline : icon,
+      pendingIcon: prompt.failed ? AppIcons.error : icon,
       pendingActions: [
         if (prompt.failed && prompt.resendable) (appL10n.chatEditFailedSubmission, () => _editFailedSubmission(prompt)),
         if (canAct && prompt.resendable && widget.onSendNow != null)
