@@ -37,7 +37,7 @@ class L10nZh extends L10n {
   String get a11yRestoreGrantAdb => '通过自连 ADB 授予';
 
   @override
-  String get a11yRestoreRootNote => '以 root 执行一次 pm grant，只授予这一项权限。';
+  String get a11yRestoreRootNote => '通过已授权的 root 连接，只授予这一项权限。';
 
   @override
   String get a11yRestoreSetup => '配置 Shizuku 或无线调试';

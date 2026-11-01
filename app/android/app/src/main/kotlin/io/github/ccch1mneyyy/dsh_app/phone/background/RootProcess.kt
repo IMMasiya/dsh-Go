@@ -34,13 +34,6 @@ internal class RootProcess private constructor(private val process: Process) : C
         Frames.read(process.inputStream) ?: throw IOException("rootDisconnected")
     }
 
-    /** The fixed pm grant: stdout drained unread. */
-    fun exitCode(timeoutMs: Long): Int = bounded(timeoutMs) {
-        val buffer = ByteArray(4096)
-        while (process.inputStream.read(buffer) >= 0) { }
-        process.waitFor()
-    }
-
     // The deadline is the caller's: a pending authorization blocks the read until the person answers.
     private fun <T> bounded(timeoutMs: Long, action: () -> T): T {
         if (closed.get()) throw IOException("rootDisconnected")
