@@ -142,6 +142,20 @@ class FakeChatController extends ChatController {
   }
 
   @override
+  Future<bool> retryFailed(PendingPrompt prompt, String text) async {
+    final ok = await send(text, attachments: prompt.attachments);
+    if (ok) {
+      state = state.copyWith(
+        pending: [
+          for (final p in state.pending)
+            if (p.requestId != prompt.requestId) p,
+        ],
+      );
+    }
+    return ok;
+  }
+
+  @override
   Future<bool> steerQueued(PendingPrompt prompt) async {
     steered.add(prompt.requestId);
     return true;

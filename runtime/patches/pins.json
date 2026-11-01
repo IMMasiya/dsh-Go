@@ -225,6 +225,18 @@
           "after": "164a848270827b1a778aee27afc2e6513f636fae7b9d90ff4059bf445c00b99f"
         }
       }
+    },
+    "zzzzzzz-input-recovery.diff": {
+      "0.2.1-rc.4": {
+        "node_modules/@deepseek-ai/dsh-agent-loop/lib/index.js": {
+          "before": "83e26a1b11be4d40532fd7ce6192490f5b595de4f795459c7b27723d56eb9711",
+          "after": "8dd7f5f0e0b7e875a9547cd16672827f1c9f493d9d849f53f189130e7b0a5ce1"
+        },
+        "node_modules/@deepseek-ai/dsh-api-session-controller/lib/index.js": {
+          "before": "6b0e64cd9b89923988d1219b9c1a6c650e00dfd4cca9f92d35cbaaddd7932d3b",
+          "after": "3cc3565215c6efc7c216bc0900a295a72f12397a7f5889cf5b86ca77b8013b29"
+        }
+      }
     }
   },
   "schema": 1

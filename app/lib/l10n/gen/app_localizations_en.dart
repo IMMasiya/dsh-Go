@@ -3393,6 +3393,16 @@ class L10nEn extends L10n {
   String get chatUnsent => 'Not sent';
 
   @override
+  String get chatFailedSubmission => 'Failed · Input kept';
+
+  @override
+  String get chatEditFailedSubmission => 'Edit and resend';
+
+  @override
+  String get chatErrReasoningEffortUnsupported =>
+      'This model does not support the selected reasoning effort. Change the effort or model.';
+
+  @override
   String get chatSteerNextStep => 'Steer · Next step';
 
   @override
