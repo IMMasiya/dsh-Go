@@ -1,10 +1,12 @@
 // In-memory stand-ins for the Worker's bindings (just what src/ uses).
+import { readFileSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { extname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { BetaGuard } from '../src/beta-guard';
 import type { Env } from '../src/env';
+import worker from '../src/index';
 import { StatsSalt } from '../src/stats';
 
 interface Stored {
@@ -125,6 +127,51 @@ export const fakeAssets = {
     }
   },
 };
+
+/** The config's `"run_worker_first"` and public/'s _redirects and _headers, read once. */
+let site: { workerFirst: RegExp[]; rewrites: Map<string, string>; headers: Map<string, [string, string][]> } | undefined;
+function readSite() {
+  const jsonc = readFileSync(new URL('../wrangler.jsonc', import.meta.url), 'utf8')
+    .replace(/"(?:\\.|[^"\\])*"|\/\/[^\n]*/g, (m) => (m.startsWith('"') ? m : ''))
+    .replace(/,(\s*[}\]])/g, '$1');
+  const patterns: string[] = JSON.parse(jsonc).assets.run_worker_first;
+  const glob = (p: string) => new RegExp('^' + p.replace(/[.+?^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*') + '$');
+  const file = (name: string) => readFileSync(join(fakeAssets.root, name), 'utf8').split('\n').filter(Boolean);
+  const headers = new Map<string, [string, string][]>();
+  let rule: [string, string][] = [];
+  for (const line of file('_headers')) {
+    if (!line.startsWith(' ')) headers.set(line, (rule = []));
+    else rule.push(line.trim().split(/: (.*)/).slice(0, 2) as [string, string]);
+  }
+  const rewrites = new Map(file('_redirects').map((l) => l.split(' ')).filter((r) => r[2] === '200').map((r) => [r[0]!, r[1]!]));
+  return { workerFirst: patterns.map(glob), rewrites, headers };
+}
+
+const siteConfig = () => (site ??= readSite());
+
+/** [path] goes to the Worker before any file is looked up (wrangler.jsonc). */
+export function workerFirst(path: string): boolean {
+  return siteConfig().workerFirst.some((re) => re.test(path));
+}
+
+/** Cloudflare in front of the Worker, as wrangler dev's asset server does
+ *  it: a run_worker_first path goes to the Worker; else a rewrite from
+ *  _redirects, then a file at the exact path is served with that path's
+ *  _headers rule (405 to other methods); anything else goes to the Worker. */
+export async function serve(request: Request, env: Env, ctx = makeCtx().ctx): Promise<Response> {
+  const path = new URL(request.url).pathname;
+  const { rewrites, headers: rules } = siteConfig();
+  if (!workerFirst(path)) {
+    const res = await fakeAssets.fetch(new Request(new URL(rewrites.get(path) ?? path, request.url)));
+    if (res.ok) {
+      const headers = new Headers(res.headers);
+      for (const [k, v] of rules.get(path) ?? []) headers.set(k, v);
+      if (request.method !== 'GET' && request.method !== 'HEAD') return new Response(null, { status: 405, headers });
+      return new Response(request.method === 'HEAD' ? null : res.body, { status: 200, headers });
+    }
+  }
+  return worker.fetch(request, env, ctx);
+}
 
 /** Durable Object storage: just what BetaGuard uses. */
 export class FakeDoStorage {

@@ -3,7 +3,7 @@ import type { RateLimiter } from './limits';
 export interface Env {
   /** HTTPS publication root; defaults to dsh-go-market GitHub Pages. */
   MARKET_SOURCE_URL?: string;
-  /** Static files: the viewer (`/c.html`) and the landing page (`/share/`). */
+  /** Static files (public/): the site, and the viewer the Worker serves at /c/<id>. */
   ASSETS: { fetch(request: Request): Promise<Response> };
   /** Ciphertexts, under the tier prefixes of ids.ts. */
   BUCKET: R2Bucket;

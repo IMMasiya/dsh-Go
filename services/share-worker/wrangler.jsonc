@@ -23,9 +23,16 @@
   "assets": {
     "directory": "./public",
     "binding": "ASSETS",
-    // Every request goes through the Worker, which picks the file and adds
-    // the security headers; paths are taken literally.
-    "run_worker_first": true,
+    // The site is served as files, without running the Worker (no request
+    // counted against its limits), with the headers in public/_headers and
+    // / and /share/ from public/_redirects. The Worker runs first only for
+    // its own routes (src/index.ts) and the files it hides (/c.html,
+    // /index.html: 404). Paths are taken literally; one with no file goes
+    // to the Worker too (its 404).
+    "run_worker_first": [
+      "/api/*", "/c/*", "/market", "/market/*", "/p", "/p/*", "/beta", "/beta/*",
+      "/download", "/download/*", "/share", "/c.html", "/index.html"
+    ],
     "html_handling": "none",
     "not_found_handling": "none"
   },
