@@ -5,6 +5,8 @@ import dgram from 'node:dgram';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { spawnSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 import { createLookup, readDnsConfig } from '../../direct/dns.mjs';
 
@@ -178,4 +180,11 @@ test('the live directory watcher observes atomic replacement and recovers after 
   fs.writeFileSync(adapter.resolvConf + '.new', `nameserver ${first.endpoint}\n`);
   fs.renameSync(adapter.resolvConf + '.new', adapter.resolvConf);
   await eventually(async () => (await adapter.promiseLookup('dual.test', 4)).address === '192.0.2.7');
+});
+
+test('the PRoot DNS import never stops Node, whether or not its resolver starts', () => {
+  const glue = fileURLToPath(new URL('../../direct/proot-dns.mjs', import.meta.url));
+  const result = spawnSync(process.execPath, ['--import', glue, '-e', 'console.log("main")'], { encoding: 'utf8' });
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(result.stdout, 'main\n');
 });
