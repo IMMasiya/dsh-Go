@@ -14,6 +14,7 @@ interface Stored {
   uploaded: Date;
   customMetadata: Record<string, string>;
   contentType?: string;
+  cacheControl?: string;
 }
 
 export class FakeBucket {
@@ -55,12 +56,13 @@ export class FakeBucket {
     };
   }
 
-  async put(key: string, value: Uint8Array, options: { customMetadata?: Record<string, string>; httpMetadata?: { contentType?: string } }) {
+  async put(key: string, value: Uint8Array | string, options: { customMetadata?: Record<string, string>; httpMetadata?: { contentType?: string; cacheControl?: string } }) {
     const stored: Stored = {
-      bytes: new Uint8Array(value),
+      bytes: typeof value === 'string' ? new TextEncoder().encode(value) : new Uint8Array(value),
       uploaded: this.now(),
       customMetadata: options.customMetadata ?? {},
       contentType: options.httpMetadata?.contentType,
+      cacheControl: options.httpMetadata?.cacheControl,
     };
     this.objects.set(key, stored);
     return { key, size: stored.bytes.byteLength, uploaded: stored.uploaded };
@@ -260,6 +262,7 @@ export class FakeDataset {
 
 export function makeEnv(overrides: Partial<Env> = {}) {
   const bucket = new FakeBucket();
+  const dl = new FakeBucket();
   const kv = new FakeKv();
   const uploadBurst = new FakeLimiter();
   const readLimit = new FakeLimiter();
@@ -272,6 +275,7 @@ export function makeEnv(overrides: Partial<Env> = {}) {
   const env = {
     ASSETS: fakeAssets,
     BUCKET: bucket as unknown as R2Bucket,
+    DL: dl as unknown as R2Bucket,
     QUOTA: kv as unknown as KVNamespace,
     UPLOAD_BURST: uploadBurst,
     READ_LIMIT: readLimit,
@@ -286,7 +290,7 @@ export function makeEnv(overrides: Partial<Env> = {}) {
     MAX_BYTES: String(1024 * 1024),
     ...overrides,
   } satisfies Env;
-  return { env, bucket, kv, uploadBurst, readLimit, guards, salts, downloads, checks, usage, usageLimit };
+  return { env, bucket, dl, kv, uploadBurst, readLimit, guards, salts, downloads, checks, usage, usageLimit };
 }
 
 /** caches.default: full responses keyed by URL; a Range lookup slices them. */

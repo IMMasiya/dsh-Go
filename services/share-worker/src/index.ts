@@ -14,6 +14,10 @@
 //   POST   /api/usage/v1                  the app's anonymous usage report (src/usage.ts)
 //   GET    /api/github/stars              the repository's star count, for the home page
 //                                         (src/github.ts)
+//   GET    /market/index.json, /market/dsh-go.json, /p/<package>
+//                                         the official plugin market (src/market.ts),
+//                                         also put on the public bucket every 10
+//                                         minutes (the cron, below)
 //
 // Downloads, update checks and usage reports are counted in Analytics Engine
 // without keeping IPs (src/stats.ts); scripts/stats.sh reads them.
@@ -29,7 +33,7 @@ import { accessMode, download, isDownloadPath } from './download';
 export { StatsSalt } from './stats';
 import { usage } from './usage';
 import { githubStars } from './github';
-import { isMarketPath, market } from './market';
+import { isMarketPath, market, publishMarket } from './market';
 import type { Ctx } from './files';
 import { notFound, redirect, viewer } from './site';
 
@@ -79,5 +83,8 @@ export default {
       console.error('unhandled', e instanceof Error ? e.message : String(e));
       return json(500, { error: 'internal' });
     }
+  },
+  async scheduled(_controller: ScheduledController, env: Env): Promise<void> {
+    await publishMarket(env);
   },
 } satisfies ExportedHandler<Env>;

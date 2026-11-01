@@ -36,8 +36,15 @@
     "html_handling": "none",
     "not_found_handling": "none"
   },
-  // Lifecycle rules on this bucket: 7d/ → 7 days, 30d/ → 30 days (provision.sh).
-  "r2_buckets": [{ "binding": "BUCKET", "bucket_name": "dshgo-share" }],
+  // Every 10 minutes: the plugin market onto dshgo-dl (src/market.ts publishMarket).
+  "triggers": { "crons": ["*/10 * * * *"] },
+  "r2_buckets": [
+    // Lifecycle rules on this bucket: 7d/ → 7 days, 30d/ → 30 days (provision.sh).
+    { "binding": "BUCKET", "bucket_name": "dshgo-share" },
+    // The public download bucket at DL_BASE_URL (publish-release.sh fills it);
+    // the Worker only writes market/ there.
+    { "binding": "DL", "bucket_name": "dshgo-dl" }
+  ],
   // Hourly upload counters (src/limits.ts). The id: scripts/cloudflare.sh.
   "kv_namespaces": [{ "binding": "QUOTA", "id": "00000000000000000000000000000000" }],
   // Wrong beta access keys, one object per client (src/beta-guard.ts); the
