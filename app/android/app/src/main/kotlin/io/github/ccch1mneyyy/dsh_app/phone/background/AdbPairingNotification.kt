@@ -12,6 +12,7 @@ import android.content.Intent
 import android.util.Log
 import io.github.ccch1mneyyy.dsh_app.MainActivity
 import io.github.ccch1mneyyy.dsh_app.R
+import kotlin.concurrent.thread
 
 /**
  * LADB-style pairing helper: a heads-up notification carrying a [RemoteInput] text box, so the
@@ -88,9 +89,18 @@ object AdbPairingNotification {
         override fun onReceive(context: Context, intent: Intent) {
             val code = codeFrom(intent) ?: return
             Log.i("DshAdbPairing", "notification: received")
-            val result = BackgroundControl.get(context).adbPair(code, null)
-            Log.i("DshAdbPairing", "notification: result ok=${result["ok"] == true}")
-            showResult(context, result)
+            val app = context.applicationContext
+            // Pairing opens a socket, which the main thread may not (NetworkOnMainThreadException).
+            val pending = goAsync()
+            thread(name = "dsh-adb-pair") {
+                try {
+                    val result = BackgroundControl.get(app).adbPair(code, null)
+                    Log.i("DshAdbPairing", "notification: result ok=${result["ok"] == true}")
+                    showResult(app, result)
+                } finally {
+                    pending.finish()
+                }
+            }
         }
     }
 }
