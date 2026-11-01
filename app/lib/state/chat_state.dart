@@ -1643,20 +1643,22 @@ class ChatController extends Notifier<ChatState> {
   }
 
   Future<void> respond(ApprovalRequest request, ApprovalDecision decision) async {
+    final scope = _approvalScope;
     try {
       await _client?.respondApproval(request, decision);
     } catch (e) {
-      if (!ref.mounted) return;
+      if (!ref.mounted || !identical(scope, _approvalScope)) return;
       state = state.copyWith(error: chatErrorText(e, action: appL10n.stateChatApprovalFailed));
     }
   }
 
   Future<bool> answer(UserQuestionRequest request, List<QuestionAnswer> answers) async {
+    final scope = _approvalScope;
     try {
       await _client?.answerQuestion(request, answers);
       return true;
     } catch (e) {
-      if (!ref.mounted) return false;
+      if (!ref.mounted || !identical(scope, _approvalScope)) return false;
       state = state.copyWith(error: chatErrorText(e, action: appL10n.stateChatAnswerFailed));
       return false;
     }
@@ -1667,6 +1669,7 @@ class ChatController extends Notifier<ChatState> {
   Future<bool> rejectQuestion(UserQuestionRequest request) async {
     final client = _client;
     if (client == null) return false;
+    final scope = _approvalScope;
     try {
       await client.rejectQuestion(
         request,
@@ -1675,7 +1678,9 @@ class ChatController extends Notifier<ChatState> {
       );
       return true;
     } catch (e) {
-      if (ref.mounted) state = state.copyWith(error: chatErrorText(e, action: appL10n.stateChatAnswerFailed));
+      if (ref.mounted && identical(scope, _approvalScope)) {
+        state = state.copyWith(error: chatErrorText(e, action: appL10n.stateChatAnswerFailed));
+      }
       return false;
     }
   }
