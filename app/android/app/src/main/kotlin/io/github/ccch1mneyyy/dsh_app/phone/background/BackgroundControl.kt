@@ -39,6 +39,9 @@ class BackgroundControl private constructor(context: Context) {
     private val keep = PrivilegedKeepState(keepPrefs.getString("keptMode", "off") ?: "off",
         PhoneControl.switchedOn(app), Build.VERSION.SDK_INT >= BackgroundPolicy.MIN_SDK)
     private val recovery = Executors.newSingleThreadExecutor { r -> Thread(r, "dsh-privileged-keep").apply { isDaemon = true } }
+    // Pairing from the App and from the notification share one queue: an older attempt can't
+    // stop a newer one's discovery, and its result can't replace the newer one's notification.
+    private val pairing = Executors.newSingleThreadExecutor { r -> Thread(r, "dsh-adb-pair").apply { isDaemon = true } }
     private var restoring: FutureTask<PrivilegedChannel?>? = null
     private var restoringTicket: PrivilegedKeepState.Ticket? = null
     private var restoreAgain = false
@@ -217,11 +220,18 @@ class BackgroundControl private constructor(context: Context) {
 
     fun adbStartPairing(): Map<String, Any?> {
         if (!androidOk()) return mapOf("ok" to false, "reason" to AppStrings.get(app, R.string.background_requires_android))
-        AdbPairingNotification.show(app)
-        return adb.startPairing()
+        return pairing.submit<Map<String, Any?>> {
+            AdbPairingNotification.show(app)
+            adb.startPairing()
+        }.get()
     }
 
-    fun adbPair(code: String, port: Int?): Map<String, Any?> = adb.pair(code, port)
+    fun adbPair(code: String, port: Int?): Map<String, Any?> = pairing.submit<Map<String, Any?>> { adb.pair(code, port) }.get()
+
+    /** The code typed into the notification: paired after anything queued, its result shown from the queue. */
+    fun adbPairFromNotification(code: String) {
+        pairing.execute { AdbPairingNotification.showResult(app, adb.pair(code, null)) }
+    }
 
     fun adbConnect(port: Int? = null, mayStart: () -> Boolean = { true }): Map<String, Any?> {
         if (!androidOk()) return mapOf("ok" to false, "reason" to AppStrings.get(app, R.string.background_requires_android))

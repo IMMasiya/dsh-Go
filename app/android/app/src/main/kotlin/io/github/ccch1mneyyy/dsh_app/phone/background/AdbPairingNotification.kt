@@ -12,13 +12,12 @@ import android.content.Intent
 import android.util.Log
 import io.github.ccch1mneyyy.dsh_app.MainActivity
 import io.github.ccch1mneyyy.dsh_app.R
-import kotlin.concurrent.thread
 
 /**
  * LADB-style pairing helper: a heads-up notification carrying a [RemoteInput] text box, so the
  * person types the 6-digit code straight from the notification while the system's
  * 「无线调试 → 使用配对码配对设备」dialog (and Settings' pairing sheet) is on screen. The code is
- * handed to [BackgroundControl.adbPair]; it is never sent anywhere else. Uses framework
+ * handed to [BackgroundControl.adbPairFromNotification]; it is never sent anywhere else. Uses framework
  * android.app APIs only (minSdk 26), so no extra support-library dependency.
  */
 object AdbPairingNotification {
@@ -54,7 +53,7 @@ object AdbPairingNotification {
     }
 
     /** Show the actual pairing result; a new attempt starts from the App's existing flow. */
-    private fun showResult(context: Context, result: Map<String, Any?>) {
+    internal fun showResult(context: Context, result: Map<String, Any?>) {
         val text = if (result["ok"] == true) {
             AppStrings.get(context, R.string.pairing_complete)
         } else {
@@ -89,18 +88,8 @@ object AdbPairingNotification {
         override fun onReceive(context: Context, intent: Intent) {
             val code = codeFrom(intent) ?: return
             Log.i("DshAdbPairing", "notification: received")
-            val app = context.applicationContext
             // Pairing opens a socket, which the main thread may not (NetworkOnMainThreadException).
-            val pending = goAsync()
-            thread(name = "dsh-adb-pair") {
-                try {
-                    val result = BackgroundControl.get(app).adbPair(code, null)
-                    Log.i("DshAdbPairing", "notification: result ok=${result["ok"] == true}")
-                    showResult(app, result)
-                } finally {
-                    pending.finish()
-                }
-            }
+            BackgroundControl.get(context.applicationContext).adbPairFromNotification(code)
         }
     }
 }
