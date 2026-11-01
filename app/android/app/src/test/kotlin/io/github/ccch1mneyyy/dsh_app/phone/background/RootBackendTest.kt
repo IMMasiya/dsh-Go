@@ -28,11 +28,6 @@ class RootBackendTest {
             try { PrivilegedCommands.appProcess(path); fail(path) } catch (_: IllegalArgumentException) { }
         }
     }
-    @Test fun fixedGrantTargetsExplicitAppUser() {
-        assertEquals(listOf("su", "-c", "exec /system/bin/pm grant --user 10 io.github.ccch1mneyyy.dsh_app android.permission.WRITE_SECURE_SETTINGS"), RootCommands.grantSecureSettings(10))
-        assertTrue(PrivilegedCommands.grantSecureSettings(0).contains("--user 0 "))
-        try { PrivilegedCommands.grantSecureSettings(-1); fail() } catch (_: IllegalArgumentException) { }
-    }
     @Test fun rootProbeRequiresAllThreeFacts() {
         assertTrue(RootProbe.accepted(true, 0, "v1", "v1"))
         assertFalse(RootProbe.accepted(false, 0, "v1", "v1"))
@@ -124,12 +119,6 @@ class RootBackendTest {
         catch (error: IOException) { assertEquals("rootStartFailed", error.message); assertNull(error.cause) }
         awaitExit(captured.get())
     }
-    @Test fun actualCommandExitCodeDrainsBothStreams() {
-        for ((mode, code) in listOf("exit-ok" to 0, "exit-fail" to 7)) {
-            val process = launch(mode)
-            try { assertEquals(code, process.exitCode(3000)) } finally { process.close() }
-        }
-    }
     @Test fun missingExecutableBecomesFixedReasonOnly() {
         try { RootProcess.launch(listOf("/synthetic/does-not-exist")); fail() }
         catch (error: IOException) { assertEquals("rootStartFailed", error.message); assertNull(error.cause) }
@@ -174,10 +163,6 @@ object RootProcessChild {
             "bad-frame" -> {
                 System.err.print("PRIVATE_DIAGNOSTIC_NOT_A_REASON")
                 System.out.write(Frames.MAGIC); System.out.write(byteArrayOf(-1, -1, -1, -1)); System.out.flush()
-            }
-            "exit-ok", "exit-fail" -> {
-                System.out.write(ByteArray(256 * 1024)); System.err.write(ByteArray(256 * 1024))
-                kotlin.system.exitProcess(if (args.single() == "exit-ok") 0 else 7)
             }
         }
     }

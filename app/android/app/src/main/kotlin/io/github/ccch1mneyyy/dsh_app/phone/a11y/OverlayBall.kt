@@ -149,14 +149,7 @@ internal class OverlayBall(
     }
 
     /** The whole ball's opacity: the 闲置时不透明度 when idle, full otherwise. */
-    fun setIdle(alpha: Float, animated: Boolean, durationMs: Long) {
-        root.animate().cancel()
-        if (!animated || !OverlayMotion.on()) {
-            root.alpha = alpha
-            return
-        }
-        root.animate().alpha(alpha).setDuration(durationMs).setInterpolator(OverlayMotion.emphasized).start()
-    }
+    fun setIdle(alpha: Float, animated: Boolean, durationMs: Long) = OverlayMotion.fadeIdle(root, alpha, animated, durationMs)
 
     /** Where the ball rests now ([dock] on the current screen). */
     fun dockPos(): WindowPos = EdgeSnap.position(dock, size, size, area(), margin)

@@ -166,7 +166,7 @@ class BackgroundControl private constructor(context: Context) {
     private fun secureSettingsGranted(): Boolean =
         app.checkSelfPermission(SecureSettingsGrant.PERMISSION) == PackageManager.PERMISSION_GRANTED
 
-    /** pm's exit code isn't the answer: the permission itself is. Without a root connection no su runs. */
+    /** The RPC result isn't the answer: the permission itself is. An existing root connection is required. */
     fun grantRootSecureSettings(): Map<String, Any?> {
         if (secureSettingsGranted()) return mapOf("ok" to true)
         val ran = root.grantSecureSettings()

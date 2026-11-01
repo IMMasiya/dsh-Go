@@ -73,13 +73,13 @@ Dart 保留原 `PhoneBackgroundMode` 三值，避免旧页面 exhaustive switch 
 
 root 的首次执行入口只有明确用户动作：`setBackgroundMode(root)`，或者独立的 `prepareRoot()`。`RootStarter` 构造、status、connect、页面读取、推荐计算和任务重连均不执行 su。一次准备直接启动服务并用现有 probe 同时确认 OK、uid=0、revision匹配，不额外执行一次 su id。
 
-root 命令固定为三个 argv：su、-c、一个完整 command 字符串。共享 `PrivilegedCommands` 仅使用 OS ApplicationInfo 提供的 APK 路径构造安全引用的 classpath，Main 类与可执行程序固定；授予命令的包名和权限固定，userId来自 App UID。没有用户/网络任意命令入口。
+root 命令固定为三个 argv：su、-c、一个完整 command 字符串。共享 `PrivilegedCommands` 仅使用 OS ApplicationInfo 提供的 APK 路径构造安全引用的 classpath，Main 类与可执行程序固定；授予通过已连接 root 进程的既有权限 RPC，包名和权限固定，userId来自 App UID。没有用户/网络任意命令入口。
 
 PhonePlugin 在主线程收到关闭总开关、选择off/别的通道时，递增 `PrivilegedActionGate` 代际并取消root连接；engine detach 由 `attached=false` 让排队动作失效，同样取消root连接。IO队列在执行前检查attached与ticket；`RootStarter.start(mayStart)` 又在与disconnect共用的短guard内检查门禁并建立启动代际，填补“调用者检查通过、UI取消、之后才begin”的窗口。等待启动锁后仍会重新检查；旧动作不能借已有连接返回过期成功。接纳之后只看启动代际：取消一律经 disconnect，使代际失效并关闭待定进程，不再逐步重查门禁。阻塞启动/读写不占该guard，不让UI等30秒才取消。
 
-此处的“接纳”是锁内确认动作仍有效、分配启动代际的线性化时点。未接纳的旧动作不得首次su；已经接纳并开始执行的操作按现有关闭管道/销毁直接子进程语义处理。**不承诺撤回manager已收到的授权请求，也不承诺撤销已经完成的pm grant。** 多次轮询不能被解释成再次授权。
+此处的“接纳”是锁内确认动作仍有效、分配启动代际的线性化时点。未接纳的旧动作不得首次su；已经接纳并开始执行的操作按现有关闭管道/销毁直接子进程语义处理。**不承诺撤回manager已收到的授权请求，也不承诺撤销已经完成的权限授予。** 多次轮询不能被解释成再次授权。
 
-App策略上限是启动30秒、单次协议操作30秒、固定grant10秒。这些数值不是上游授权倒计时。超时/取消会使当前连接不可继续使用，后续root尝试由用户重新触发。stderr不用于猜测“拒绝授权”；未知失败统一为固定原因。
+App策略上限是启动30秒、单次协议操作30秒。授予权限复用已连接 root 进程，也沿用协议操作30秒预算（含排队），不再另起独立su进程及其原10秒等待；超时会退役共享root连接。这些数值不是上游授权倒计时。超时/取消会使当前连接不可继续使用，后续root尝试由用户重新触发。stderr不用于猜测“拒绝授权”；未知失败统一为固定原因。
 
 ## 5. 失败时用户看到什么
 
@@ -105,7 +105,7 @@ App策略上限是启动30秒、单次协议操作30秒、固定grant10秒。这
 
 `prepareRoot()` 只建立root通道并标rootSelected，不开启虚拟屏、不把现有mode改成root，也不替换已经选择的Sui/ADB模式。因此可以在API26–33上单独用于权限准备；后台屏的API34门槛不应隐藏这个独立用途。API26是当前App最低版本和所用Java Process限时API的门槛，不能据此承诺每个旧系统的root方案都可用。
 
-用户流程：主动“申请root授权” → 检查root.connected → 主动“通过root授予” → 原生运行固定`pm grant --user <App所属userId>` → App通过checkSelfPermission确认WSS → 页面显示已授予。rootSelected为true但连接断开时grantPath为setup，不悄悄换成Sui/ADB。无已建root连接时授予方法返回失败，不隐式start。
+用户流程：主动“申请root授权” → 检查root.connected → 主动“通过root授予” → 已连接的 root 进程执行固定的授予 RPC（App 所属 userId）→ App通过checkSelfPermission确认WSS → 页面显示已授予。rootSelected为true但连接断开时grantPath为setup，不悄悄换成Sui/ADB。无已建root连接时授予方法返回失败，不隐式start。
 
 App所属userId来自Process.myUid()/100000，不使用前台用户“current”，也不默认0。个人用户、次用户、工作资料要分别核验授予目标。固定permission为android.permission.WRITE_SECURE_SETTINGS，包名为io.github.ccch1mneyyy.dsh_app。
 
@@ -145,7 +145,7 @@ root/ADB入口先准备Looper再创建ActivityThread systemContext，之后进�
 - **不打扰模式**：有通道在用时顶部一张「正在使用：X」卡，就绪写「可以用了」，root 等待时写原生原因；其余失败在卡下用一条警示写 `effectiveReason` 原文。卡上的「关闭」在等待 root 时也可点，用来取消。下面「通道」卡按 `supportedModes` 列出 off 以外的通道，每行是名称、适用人群一行和状态词（使用中 / 未就绪 / 等待授权 / 可以用 / 待授权 / 未运行 / 未安装 / 未检测到 / 由 Sui 提供 / 尚未检查 / 未连接 / 已配对 / 未配对），`recommendedMode` 只是标题后的淡色「建议」标签。
 - **点行只展开**该通道的检查项和下一步，选择只发生在展开后的「用 X 开启 / 改用 X」按钮；root 的按钮先过一次中档风险提醒（`phone.root`），再调用 `setPrivilegedMode(root)`。在用但未就绪的通道默认展开，全部就绪时全部收起，常见情况一眼看完。provider 为 Sui 时 Shizuku 行写「由 Sui 提供」并指向 Sui，没有自己的开启按钮。
 - 旧原生（无 v1 块）只列 Shizuku 与自连 ADB，不出现 Sui / root、不出现建议。
-- **自动恢复无障碍**按 grantPath 写出路径（通过 Shizuku / Sui / root / 自连 ADB 授予，或先授权 Shizuku / Sui），root 路径附「以 root 执行一次 pm grant」；无路径时在「配置…」下另给「申请 root 授权」（`prepareRoot`，同一提醒，不看 Android 14 门槛）；root 已选但断开时只给重新申请，不换别的路径。
+- **自动恢复无障碍**按 grantPath 写出路径（通过 Shizuku / Sui / root / 自连 ADB 授予，或先授权 Shizuku / Sui），root 路径附「通过已授权的 root 连接，只授予这一项权限」；无路径时在「配置…」下另给「申请 root 授权」（`prepareRoot`，同一提醒，不看 Android 14 门槛）；root 已选但断开时只给重新申请，不换别的路径。
 
 具体页面验收：只开设置页/搜索/前后台切换无root提示；点prepare一次才产生一次启动尝试；API33仍能独立准备；API34+选择root后gate才决定后台屏；prepare不改变原mode；来源改变的旧Sui按钮不授权错误来源；按off后等待中的旧结果不复活勾选；旧原生侧不发送prepareRoot；新原生root投影旧字段off/false，但断线/超时后的任务错误保留实际原因；Sui授WSS后当前共享后台服务不被解绑。
 

@@ -40,11 +40,16 @@ class FakeDsh {
   final List<FakeMuxSocket> sockets = [];
   int _generation = 0;
   bool rejectWebSocket = false;
+  int rejectedWebSocketStatus = 401;
 
   String? acceptedAuthority;
   String indexHtml = '';
   bool gzipIndex = false;
   Future<void> Function()? beforeIndex;
+
+  // Test gates that hold an RPC or the mux ready event; the real login/RPC/WebSocket path is unchanged.
+  Future<void> Function(String endpoint, Map<String, Object?> args)? beforeRpc;
+  Future<void> Function()? beforeEventsReady;
 
   Future<void> close() async {
     for (final socket in sockets) {
@@ -107,7 +112,7 @@ class FakeDsh {
     }
     if (request.uri.path == '/api/remote.mux') {
       if (rejectWebSocket || !_cookieOk(request)) {
-        response.statusCode = 401;
+        response.statusCode = rejectedWebSocketStatus;
         await response.close();
         return;
       }
@@ -149,6 +154,7 @@ class FakeDsh {
         return;
       }
       final args = ((envelope['payload'] as Map)['args'] as Map).cast<String, Object?>();
+      if (beforeRpc != null) await beforeRpc!(endpoint, args);
       result = handler(args);
     }
     response.headers.contentType = ContentType.json;
@@ -173,7 +179,7 @@ class FakeMuxSocket {
   void item(String streamId, Object? value) => send({'type': 'item', 'streamId': streamId, 'value': value});
   void event(Map<String, Object?> value) => item(eventsStreamId!, value);
 
-  void _onMessage(Object? data) {
+  void _onMessage(Object? data) async {
     final frame = (jsonDecode(data! as String) as Map).cast<String, Object?>();
     received.add(frame);
     if (frame['type'] != 'open') return;
@@ -181,6 +187,7 @@ class FakeMuxSocket {
     final endpoint = frame['endpoint']! as String;
     if (endpoint == r'$events') {
       eventsStreamId = streamId;
+      if (host.beforeEventsReady != null) await host.beforeEventsReady!();
       event({
         'type': 'ready',
         'clientId': clientId,

@@ -83,6 +83,16 @@ internal object OverlayMotion {
 
     /** 系统设置 → 移除动画 sets the animator scale to 0. */
     fun on(): Boolean = if (Build.VERSION.SDK_INT >= 26) ValueAnimator.areAnimatorsEnabled() else true
+
+    /** The 闲置时不透明度 fade of a whole form: [view] to [alpha], over [durationMs] when [animated]. */
+    fun fadeIdle(view: View, alpha: Float, animated: Boolean, durationMs: Long) {
+        view.animate().cancel()
+        if (!animated || !on()) {
+            view.alpha = alpha
+            return
+        }
+        view.animate().alpha(alpha).setDuration(durationMs).setInterpolator(emphasized).start()
+    }
 }
 
 internal fun Context.dp(v: Int): Int = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, v.toFloat(), resources.displayMetrics).roundToInt()

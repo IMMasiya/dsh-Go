@@ -39,7 +39,7 @@ class L10nEn extends L10n {
   String get a11yRestoreGrantAdb => 'Grant with Direct ADB';
 
   @override
-  String get a11yRestoreRootNote => 'Runs pm grant once as root, for this one permission only.';
+  String get a11yRestoreRootNote => 'Uses the authorized root connection to grant only this permission.';
 
   @override
   String get a11yRestoreSetup => 'Set up Shizuku or wireless debugging';
