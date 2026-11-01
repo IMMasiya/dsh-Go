@@ -589,6 +589,7 @@ internal class ControlOverlay(private val service: AccessibilityService) : UserG
             endEditing()
             if (fold.collapse(now())) p.collapse(animationsOn())
         } else if (fold.expand(now())) {
+            applyIdle(animated = true)
             renderPill(animated = false)
             p.expand(animationsOn())
         }
@@ -943,7 +944,7 @@ internal class ControlOverlay(private val service: AccessibilityService) : UserG
         if (fold.folded && !ballShown) {
             fold.unfold(now())
             pill?.cancelMorph()
-        } else fold.touch(now())
+        } else if (fold.touch(now())) applyIdle(animated = true)
         scheduleFold()
     }
 
@@ -997,20 +998,21 @@ internal class ControlOverlay(private val service: AccessibilityService) : UserG
         val p = OverlayPrefs.from(overlayPrefs)
         idleOpacity = p.idleOpacity
         fold.setAutoFold(p.autoFold, now())
-        // A new 不透明度 shows at once on a faded ball.
+        // A new 不透明度 shows at once on a faded ball or capsule.
         applyIdle(animated = false)
         scheduleFold()
     }
 
     /**
-     * The ball fades, all of it alike, to the idle opacity, or comes back to full: slowly going
-     * idle, quickly on a touch. The capsule and the card never fade — they carry the line, on a
-     * solid surface; what wants them out of the way folds them.
+     * The ball or the capsule fades, all of it alike, to the idle opacity, or comes back to full:
+     * slowly going idle, quickly on a touch. The card never fades. The form not on screen is kept
+     * at full, ready for the next fold or unfold.
      */
     private fun applyIdle(animated: Boolean) {
-        val b = ball ?: return
-        val target = if (fold.folded && fold.dimmed) idleOpacity else 1f
-        b.setIdle(target, animated, if (target < 1f) DIM_FADE_MS else UNDIM_FADE_MS)
+        val target = if (fold.dimmed) idleOpacity else 1f
+        val durationMs = if (target < 1f) DIM_FADE_MS else UNDIM_FADE_MS
+        ball?.setIdle(if (fold.folded) target else 1f, animated, durationMs)
+        pill?.setIdle(if (fold.folded) 1f else target, animated, durationMs)
     }
 
     /** The ball's window for this control, added (hidden) on first use; null when the system refused it. */
