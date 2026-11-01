@@ -1,4 +1,4 @@
-"""The CLIs print UTF-8 even when stdout is a legacy-codepage pipe (Windows)."""
+"""The CLIs emit UTF-8 even through legacy-codepage pipes (Windows)."""
 import json
 import os
 from pathlib import Path
@@ -29,6 +29,20 @@ class ConsoleEncodingTest(unittest.TestCase):
                     code, out, err = cli(TOOLS / name, arg, encoding=encoding)
                     self.assertEqual(code, 0, err)
                     self.assertEqual(err, '')
+
+    def test_guide_error_is_utf8_on_stderr(self):
+        with tempfile.TemporaryDirectory() as temp:
+            repo = Path(temp) / '中文仓库'
+            for encoding in LEGACY:
+                with self.subTest(encoding=encoding):
+                    code, out, err = cli(
+                        TOOLS / 'guide_sync.py', '--check', '--repo', str(repo),
+                        encoding=encoding,
+                    )
+                    self.assertEqual(code, 1)
+                    self.assertEqual(out, '')
+                    self.assertIn(str(repo), err)
+                    self.assertIn('missing SKILL.md', err)
 
     def test_a_failed_l10n_check_still_fails_and_writes_nothing(self):
         with tempfile.TemporaryDirectory() as temp:
