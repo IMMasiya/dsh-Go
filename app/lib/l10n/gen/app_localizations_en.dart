@@ -10352,7 +10352,7 @@ class L10nEn extends L10n {
 
   @override
   String get phonePrivilegedRootRiskBody =>
-      'Your root manager (Magisk, KernelSU or APatch) will ask you. If you allow it, DSH Go runs its own background service as root, and never asks again on its own after a disconnect.';
+      'Your root manager (Magisk, KernelSU or APatch) will ask you. If you allow it, DSH Go runs its own background service as root. It asks again on its own after a disconnect or restart only with “Keep root channel” on.';
 
   @override
   String get phoneModeTitle => 'How DSH confirms';

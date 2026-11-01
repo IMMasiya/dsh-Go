@@ -285,4 +285,6 @@
     <string name="background_root_failed">root 未能启动，请检查 root 管理器与授权</string>
     <string name="background_sui_not_provider">当前接口并非由 Sui 提供，请检查 Sui 并重启 App</string>
     <string name="background_selection_cancelled">通道选择已取消</string>
+    <string name="background_keep_phone_disabled">请先开启手机操控，再保持此通道。</string>
+    <string name="background_keep_save_failed">未能保存通道保持设置，请在重启 App 前确认。</string>
 </resources>

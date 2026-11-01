@@ -292,4 +292,6 @@
     <string name="background_root_failed">Could not start root. Check the root manager and authorization.</string>
     <string name="background_sui_not_provider">The current interface is not provided by Sui. Check Sui and restart the app.</string>
     <string name="background_selection_cancelled">The channel selection was cancelled</string>
+    <string name="background_keep_phone_disabled">Turn on phone control before keeping this connection.</string>
+    <string name="background_keep_save_failed">Could not save the connection preference. Check it before restarting the app.</string>
 </resources>

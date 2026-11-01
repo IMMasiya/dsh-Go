@@ -18137,7 +18137,7 @@ abstract class L10n {
   /// No description provided for @phonePrivilegedRootRiskBody.
   ///
   /// In zh, this message translates to:
-  /// **'root 管理器（Magisk、KernelSU 或 APatch）会弹窗问你。允许后，DSH Go 以 root 运行自己的后台服务；连接断开后不会自己重新申请。'**
+  /// **'root 管理器（Magisk、KernelSU 或 APatch）会弹窗问你。允许后，DSH Go 以 root 运行自己的后台服务；只有打开「保持 root 通道」，断开或重启后才会自己再去申请。'**
   String get phonePrivilegedRootRiskBody;
 
   /// No description provided for @phoneModeTitle.
