@@ -5978,6 +5978,24 @@ abstract class L10n {
   /// **'未发送'**
   String get chatUnsent;
 
+  /// No description provided for @chatFailedSubmission.
+  ///
+  /// In zh, this message translates to:
+  /// **'未送达 · 已保留'**
+  String get chatFailedSubmission;
+
+  /// No description provided for @chatEditFailedSubmission.
+  ///
+  /// In zh, this message translates to:
+  /// **'编辑后重发'**
+  String get chatEditFailedSubmission;
+
+  /// No description provided for @chatErrReasoningEffortUnsupported.
+  ///
+  /// In zh, this message translates to:
+  /// **'当前模型不支持此推理档位，请调整档位或换模型'**
+  String get chatErrReasoningEffortUnsupported;
+
   /// No description provided for @chatSteerNextStep.
   ///
   /// In zh, this message translates to:
