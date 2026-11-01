@@ -300,6 +300,21 @@
                 android:resource="@xml/dsh_file_paths" />
         </provider>
 
+        <!-- 文件管理器「添加存储 → 内部存储」: exposes the DSH home (rootfs/root) as a browsable
+             root (documents/AppDocumentsProvider.kt). MANAGE_DOCUMENTS is a signature permission
+             only the system holds, so exported=true is safe; the app itself never calls it. -->
+        <provider
+            android:name=".documents.AppDocumentsProvider"
+            android:authorities="${applicationId}.documents"
+            android:exported="true"
+            android:grantUriPermissions="true"
+            android:permission="android.permission.MANAGE_DOCUMENTS">
+            <intent-filter>
+                <!-- The literal action string value (Intent.ACTION_DOCUMENTS_PROVIDER). -->
+                <action android:name="android.content.action.DOCUMENTS_PROVIDER" />
+            </intent-filter>
+        </provider>
+
         <!-- Don't delete the meta-data below.
              This is used by the Flutter tool to generate GeneratedPluginRegistrant.java -->
         <meta-data

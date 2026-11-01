@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 中文版：values/documents_strings.xml 的对应译文。 -->
+<resources>
+    <string name="documents_root_title">DSH 家目录</string>
+    <string name="documents_root_summary">会话、配置与工作区</string>
+</resources>

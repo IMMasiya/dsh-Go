@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Strings of the DSH DocumentsProvider (documents/AppDocumentsProvider.kt). Own file so other
+     modules' string edits never collide with it. English here, Chinese in values-zh/. -->
+<resources>
+    <string name="documents_root_title">DSH home</string>
+    <string name="documents_root_summary">Sessions, configuration and workspaces</string>
+</resources>
