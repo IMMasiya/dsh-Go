@@ -396,6 +396,7 @@
   "pluginsInstallSpecNotBundle": "这个包不是 DSH 插件",
   "pluginsInstallSpecNetwork": "连不上 registry，检查网络或 registry 地址",
   "pluginsInstallSpecUnknown": "检查失败，换个写法再试",
+  "pluginsInstallSpecFallback": "没找到？用包名或 Git 地址直接装",
   "pluginsMarketTitle": "插件市场",
   "pluginsConnectToManage": "连上引擎后管理插件",
   "pluginsSafeModeOperationsBlocked": "安全模式下不能安装或卸载插件",

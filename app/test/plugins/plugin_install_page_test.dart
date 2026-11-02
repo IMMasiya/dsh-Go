@@ -78,4 +78,66 @@ void main() {
     expect(asked, 0, reason: 'a local path is refused before any request');
     expect(find.textContaining('写法不认识'), findsOneWidget);
   });
+testWidgets('a wide window puts the check beside the form', (tester) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(1400, 1000);
+    addTearDown(tester.view.reset);
+    final fake = FakePluginCarrier();
+    final client = DshClient.withCarrier(fake);
+
+    await tester.pumpWidget(
+      testApp(
+        const PluginInstallPage(canInstall: true, safeMode: false),
+        overrides: [
+          activeConnectionProvider.overrideWith(
+            (ref) => AsyncData(HostConnection(client: client, isLocal: true, label: 'local')),
+          ),
+        ],
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const ValueKey('plugin-install-wide')), findsOneWidget);
+    expect(find.byKey(const ValueKey('plugin-install-narrow')), findsNothing);
+  });
+
+  testWidgets('a phone keeps one column', (tester) async {
+    usePhoneView(tester);
+    final fake = FakePluginCarrier();
+    final client = DshClient.withCarrier(fake);
+
+    await tester.pumpWidget(
+      testApp(
+        const PluginInstallPage(canInstall: true, safeMode: false),
+        overrides: [
+          activeConnectionProvider.overrideWith(
+            (ref) => AsyncData(HostConnection(client: client, isLocal: true, label: 'local')),
+          ),
+        ],
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const ValueKey('plugin-install-narrow')), findsOneWidget);
+    expect(find.byKey(const ValueKey('plugin-install-wide')), findsNothing);
+  });
+
+  testWidgets('the market carries its search term into the page', (tester) async {
+    final fake = FakePluginCarrier();
+    final client = DshClient.withCarrier(fake);
+
+    await tester.pumpWidget(
+      testApp(
+        const PluginInstallPage(initialSpec: 'you/dsh-plugin', canInstall: true, safeMode: false),
+        overrides: [
+          activeConnectionProvider.overrideWith(
+            (ref) => AsyncData(HostConnection(client: client, isLocal: true, label: 'local')),
+          ),
+        ],
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('you/dsh-plugin'), findsOneWidget);
+  });
 }

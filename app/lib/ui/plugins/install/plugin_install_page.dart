@@ -1,8 +1,8 @@
-// 按包名 / Git 地址安装（票 #24）：一个表单页，先检查再安装。
+// 按包名 / Git 地址安装（票 #24 / #25）：一个表单页，先检查再安装。
 //
 // 安装不直接调 `installBundle`：`pluginManager/inspect` 先说出这是什么
 // （名称 / 版本 / 来源），再把结果交给现有安装队列，进度、取消、断线恢复
-// 与市场安装共用一套。
+// 与市场安装共用一套。宽屏双栏：左输入、右检查结果。
 
 import 'dart:async';
 
@@ -16,14 +16,17 @@ import '../../../state/plugins_state.dart';
 import '../../shell/page_frame.dart';
 import 'plugin_spec.dart';
 
+/// Two columns from here on, like the rest of the wide layout.
+const pluginInstallWideWidth = 840.0;
+
 class PluginInstallPage extends ConsumerStatefulWidget {
-  const PluginInstallPage({super.key, required this.canInstall, required this.safeMode, this.initialSpec});
+  const PluginInstallPage({super.key, this.canInstall, this.safeMode, this.initialSpec});
 
-  /// This host accepts installs (a remote relay may not).
-  final bool canInstall;
+  /// Overrides the host's own answer (tests).
+  final bool? canInstall;
 
-  /// The engine runs a repair profile: no installs at all.
-  final bool safeMode;
+  /// Overrides the host's own answer (tests).
+  final bool? safeMode;
 
   /// Prefilled from the market's "not found?" row.
   final String? initialSpec;
@@ -39,7 +42,7 @@ class _PluginInstallPageState extends ConsumerState<PluginInstallPage> {
   String? _problem;
   String? _installing;
 
-  bool get _closed => !widget.canInstall || widget.safeMode;
+  bool _closed(PluginHost? host) => !(widget.canInstall ?? host?.canInstall ?? false) || (widget.safeMode ?? host?.safeMode ?? false);
 
   @override
   void dispose() {
@@ -85,98 +88,122 @@ class _PluginInstallPageState extends ConsumerState<PluginInstallPage> {
   Widget build(BuildContext context) {
     final l10n = context.l10n;
     final theme = Theme.of(context);
-    final inspection = _inspection;
-    final job = _installing == null ? null : ref.watch(pluginInstallsProvider.select((jobs) => jobs[_installing]));
+    final host = ref.watch(pluginHostProvider);
+    final closed = _closed(host);
+    final wide = MediaQuery.sizeOf(context).width >= pluginInstallWideWidth;
+    final form = _form(context, l10n, theme, closed);
+    final result = _result(context, l10n, theme);
     return AppPage(
       title: l10n.pluginsInstallBySpec,
       slivers: [
         SliverToBoxAdapter(
           child: Padding(
             padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
+            child: wide
+                ? Row(
+                    key: const ValueKey('plugin-install-wide'),
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(child: form),
+                      const SizedBox(width: 16),
+                      Expanded(child: result),
+                    ],
+                  )
+                : Column(
+                    key: const ValueKey('plugin-install-narrow'),
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [form, result],
+                  ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _form(BuildContext context, L10n l10n, ThemeData theme, bool closed) => Column(
+    crossAxisAlignment: CrossAxisAlignment.stretch,
+    children: [
+      if (closed)
+        Padding(
+          padding: const EdgeInsets.only(bottom: 12),
+          child: Text(
+            (widget.safeMode ?? ref.read(pluginHostProvider)?.safeMode ?? false)
+                ? l10n.hubPluginSafeModeInstall
+                : l10n.statePluginRemoteForbidden,
+            style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.error),
+          ),
+        ),
+      TextField(
+        controller: _input,
+        enabled: !closed,
+        autocorrect: false,
+        keyboardType: TextInputType.url,
+        decoration: InputDecoration(hintText: l10n.pluginsInstallSpecHint, border: const OutlineInputBorder()),
+        onSubmitted: (_) => unawaited(_inspect()),
+      ),
+      const SizedBox(height: 8),
+      Text(
+        l10n.pluginsInstallSpecTypes,
+        style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+      ),
+      const SizedBox(height: 12),
+      Row(
+        children: [
+          FilledButton(
+            onPressed: closed || _busy ? null : () => unawaited(_inspect()),
+            child: Text(l10n.pluginsInstallSpecCheck),
+          ),
+          const SizedBox(width: 8),
+          if (_inspection is PluginInspectionAccepted && _installing == null)
+            FilledButton.tonal(
+              onPressed: () => unawaited(_install(_inspection! as PluginInspectionAccepted)),
+              child: Text(l10n.pluginsInstallSpecInstall),
+            ),
+        ],
+      ),
+    ],
+  );
+
+  Widget _result(BuildContext context, L10n l10n, ThemeData theme) {
+    final inspection = _inspection;
+    final job = _installing == null ? null : ref.watch(pluginInstallsProvider.select((jobs) => jobs[_installing]));
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (_busy) const Padding(padding: EdgeInsets.only(bottom: 8), child: LinearProgressIndicator()),
+        if (_problem case final problem?)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: Text(problem, style: theme.textTheme.bodyMedium?.copyWith(color: theme.colorScheme.error)),
+          ),
+        if (inspection case PluginInspectionRefused(:final problem))
+          Text(
+            _problemText(l10n, problem),
+            style: theme.textTheme.bodyMedium?.copyWith(color: theme.colorScheme.error),
+          ),
+        if (inspection is PluginInspectionAccepted) _AcceptedCard(inspection: inspection),
+        if (job != null)
+          Padding(
+            padding: const EdgeInsets.only(top: 12),
+            child: Row(
               children: [
-                if (_closed)
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: 12),
-                    child: Text(
-                      widget.safeMode ? l10n.hubPluginSafeModeInstall : l10n.statePluginRemoteForbidden,
-                      style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.error),
+                Expanded(
+                  child: Text(
+                    job.failure?.message ??
+                        (job.phase == PluginInstallPhase.succeeded ? l10n.pluginsInstallSpecInstalled : job.phase.name),
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      color: job.failure != null ? theme.colorScheme.error : null,
                     ),
                   ),
-                TextField(
-                  controller: _input,
-                  enabled: !_closed,
-                  autocorrect: false,
-                  keyboardType: TextInputType.url,
-                  decoration: InputDecoration(hintText: l10n.pluginsInstallSpecHint, border: const OutlineInputBorder()),
-                  onSubmitted: (_) => unawaited(_inspect()),
                 ),
-                const SizedBox(height: 8),
-                Text(
-                  l10n.pluginsInstallSpecTypes,
-                  style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant),
-                ),
-                const SizedBox(height: 12),
-                Row(
-                  children: [
-                    FilledButton(
-                      onPressed: _closed || _busy ? null : () => unawaited(_inspect()),
-                      child: Text(l10n.pluginsInstallSpecCheck),
-                    ),
-                    const SizedBox(width: 8),
-                    if (inspection is PluginInspectionAccepted && _installing == null)
-                      FilledButton.tonal(
-                        onPressed: () => unawaited(_install(inspection)),
-                        child: Text(l10n.pluginsInstallSpecInstall),
-                      ),
-                  ],
-                ),
-                if (_busy) const Padding(padding: EdgeInsets.only(top: 12), child: LinearProgressIndicator()),
-                if (_problem case final problem?)
-                  Padding(
-                    padding: const EdgeInsets.only(top: 12),
-                    child: Text(problem, style: theme.textTheme.bodyMedium?.copyWith(color: theme.colorScheme.error)),
+                if (job.isActive)
+                  TextButton(
+                    onPressed: () => unawaited(ref.read(pluginInstallsProvider.notifier).cancel(job.request.name)),
+                    child: Text(l10n.commonCancel),
                   ),
-                if (inspection case PluginInspectionRefused(:final problem))
-                  Padding(
-                    padding: const EdgeInsets.only(top: 12),
-                    child: Text(
-                      _problemText(l10n, problem),
-                      style: theme.textTheme.bodyMedium?.copyWith(color: theme.colorScheme.error),
-                    ),
-                  ),
-                if (inspection is PluginInspectionAccepted) _AcceptedCard(inspection: inspection),
-                if (job != null)
-                  Padding(
-                    padding: const EdgeInsets.only(top: 12),
-                    child: Row(
-                      children: [
-                        Expanded(
-                          child: Text(
-                            job.failure?.title ??
-                                job.failure?.message ??
-                                (job.phase == PluginInstallPhase.succeeded
-                                    ? l10n.pluginsInstallSpecInstalled
-                                    : job.phase.name),
-                            style: theme.textTheme.bodyMedium?.copyWith(
-                              color: job.failure != null ? theme.colorScheme.error : null,
-                            ),
-                          ),
-                        ),
-                        if (job.isActive)
-                          TextButton(
-                            onPressed: () => unawaited(ref.read(pluginInstallsProvider.notifier).cancel(job.request.name)),
-                            child: Text(l10n.commonCancel),
-                          ),
-                      ],
-                    ),
-                  ),
-                const SizedBox(height: 24),
               ],
             ),
           ),
-        ),
       ],
     );
   }
@@ -210,31 +237,28 @@ class _AcceptedCard extends StatelessWidget {
         _ => l10n.pluginsInstallSpecKindNpm,
       }),
     ];
-    return Padding(
-      padding: const EdgeInsets.only(top: 16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          for (final (label, value) in rows)
-            Padding(
-              padding: const EdgeInsets.only(bottom: 6),
-              child: Row(
-                children: [
-                  SizedBox(
-                    width: 64,
-                    child: Text(
-                      label,
-                      style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant),
-                    ),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        for (final (label, value) in rows)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 6),
+            child: Row(
+              children: [
+                SizedBox(
+                  width: 64,
+                  child: Text(
+                    label,
+                    style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant),
                   ),
-                  Expanded(child: Text(value, style: theme.textTheme.bodyMedium)),
-                ],
-              ),
+                ),
+                Expanded(child: Text(value, style: theme.textTheme.bodyMedium)),
+              ],
             ),
-          if (inspection.description case final d? when d.isNotEmpty)
-            Text(d, style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
-        ],
-      ),
+          ),
+        if (inspection.description case final d? when d.isNotEmpty)
+          Text(d, style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
+      ],
     );
   }
 }

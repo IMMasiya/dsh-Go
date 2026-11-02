@@ -20282,6 +20282,12 @@ abstract class L10n {
   /// **'检查失败，换个写法再试'**
   String get pluginsInstallSpecUnknown;
 
+  /// No description provided for @pluginsInstallSpecFallback.
+  ///
+  /// In zh, this message translates to:
+  /// **'没找到？用包名或 Git 地址直接装'**
+  String get pluginsInstallSpecFallback;
+
   /// No description provided for @pluginsMarketTitle.
   ///
   /// In zh, this message translates to:

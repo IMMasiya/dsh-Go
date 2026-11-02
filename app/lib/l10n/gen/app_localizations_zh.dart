@@ -10995,6 +10995,9 @@ class L10nZh extends L10n {
   String get pluginsInstallSpecUnknown => '检查失败，换个写法再试';
 
   @override
+  String get pluginsInstallSpecFallback => '没找到？用包名或 Git 地址直接装';
+
+  @override
   String get pluginsMarketTitle => '插件市场';
 
   @override

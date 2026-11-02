@@ -10,6 +10,7 @@ import '../common/app_sheet.dart' show groupTitleStyle;
 import '../common/capsule_chip.dart';
 import '../common/list_page_row.dart';
 import '../common/search_capsule.dart';
+import 'install/plugin_install_page.dart';
 import '../features/feature_kit.dart';
 import '../theme/app_icons.dart';
 import '../theme/theme.dart';
@@ -168,12 +169,31 @@ class _MarketSliverState extends ConsumerState<MarketSliver> {
           ),
           if (results.isEmpty)
             SliverToBoxAdapter(
-              child: EmptyView(
-                icon: AppIcons.noResults,
-                title: filter.query.trim().isEmpty
-                    ? l10n.pluginsNoCategoryPlugins
-                    : l10n.pluginsNoSearchResults(filter.query.trim()),
-                padding: const EdgeInsets.fromLTRB(32, 32, 32, 24),
+              child: Column(
+                children: [
+                  EmptyView(
+                    icon: AppIcons.noResults,
+                    title: filter.query.trim().isEmpty
+                        ? l10n.pluginsNoCategoryPlugins
+                        : l10n.pluginsNoSearchResults(filter.query.trim()),
+                    padding: const EdgeInsets.fromLTRB(32, 32, 32, 12),
+                  ),
+                  // Not in the index? The Host can install any spec; carry the
+                  // search term over so nothing is typed twice.
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 24),
+                    child: TextButton(
+                      onPressed: () => unawaited(
+                        Navigator.of(context).push(
+                          MaterialPageRoute<void>(
+                            builder: (_) => PluginInstallPage(initialSpec: filter.query.trim()),
+                          ),
+                        ),
+                      ),
+                      child: Text(l10n.pluginsInstallSpecFallback),
+                    ),
+                  ),
+                ],
               ),
             )
           else
