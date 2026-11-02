@@ -49,9 +49,9 @@ const maxImageBytes = 20 * 1024 * 1024;
 
 /// Files stream to the engine (`/api/session/uploadFileBinary`), so the
 /// transfer holds about one copy of the file; the picker still keeps the
-/// staged bytes (about two while assembling), and one message has no byte
-/// budget. On a host without that route the client falls back to base64 and
-/// refuses what one RPC frame can't hold.
+/// staged bytes (about two while assembling), so one message also has
+/// [maxMessageBytes]. On a host without that route the client falls back to
+/// base64 and refuses what one RPC frame can't hold.
 const maxFileBytes = 200 * 1024 * 1024;
 
 /// At most this many attachments per message (DSH allows 20 images).
