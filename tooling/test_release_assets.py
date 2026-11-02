@@ -95,6 +95,8 @@ class ReleaseBuildTest(unittest.TestCase):
     def test_apk_without_native_libraries_is_refused(self):
         with self.assertRaisesRegex(ReleaseError, "expected only arm64-v8a"):
             check_abis("arm64", ["classes.dex"])
+        with self.assertRaisesRegex(ReleaseError, "expected only arm64-v8a"):
+            check_abis("arm64", ["lib/arm64-v8a/"])
 
     def test_badging_line(self):
         line = ("package: name='io.github.ccch1mneyyy.dsh_app' versionCode='10251234' versionName='1.2.0-beta.1' "

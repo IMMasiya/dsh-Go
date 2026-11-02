@@ -53,7 +53,7 @@ class ReleaseError(Exception):
 
 def check_abis(flavor: str, entries: list[str]) -> None:
     """A flavor's APK holds native libraries for its own ABI and no other."""
-    abis = {name.split("/")[1] for name in entries if name.startswith("lib/") and name.count("/") >= 2}
+    abis = {name.split("/")[1] for name in entries if name.startswith("lib/") and name.endswith(".so")}
     if abis != {FLAVOR_ABI[flavor]}:
         raise ReleaseError(f"{flavor} APK has native libraries for {sorted(abis)}, expected only {FLAVOR_ABI[flavor]}")
 
