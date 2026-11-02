@@ -95,12 +95,14 @@ Future<T?> showAppSheet<T>(
     backgroundColor: glass ? Colors.transparent : null,
     elevation: 0,
     // 曲线也会被采纳(包括下拉松手后的剩余行程)。
-    sheetAnimationStyle: const AnimationStyle(
-      duration: AppMotion.sheetIn,
-      reverseDuration: AppMotion.sheetOut,
-      curve: AppMotion.sheetRise,
-      reverseCurve: AppMotion.sheetFall,
-    ),
+    sheetAnimationStyle: AppMotion.reduced(context)
+        ? AnimationStyle.noAnimation
+        : const AnimationStyle(
+            duration: AppMotion.sheetIn,
+            reverseDuration: AppMotion.sheetOut,
+            curve: AppMotion.sheetRise,
+            reverseCurve: AppMotion.sheetFall,
+          ),
     builder: sized((context) {
       final content = Column(
         mainAxisSize: MainAxisSize.min,

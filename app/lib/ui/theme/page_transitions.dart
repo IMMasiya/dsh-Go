@@ -21,13 +21,19 @@ import 'motion.dart';
 ///   navigation, tablets, desktop).
 ///
 /// Release past the middle, or fling right, and the page leaves; otherwise it
-/// settles back. Everything goes through [AppMotion.of], so "remove
-/// animations" makes it instant.
+/// settles back.
 class AppPageTransitionsBuilder extends PageTransitionsBuilder {
-  const AppPageTransitionsBuilder();
+  const AppPageTransitionsBuilder() : _duration = AppMotion.push;
+
+  /// The same transition taking no time, for [AppMotion.reduced]. A builder has
+  /// no context to ask, and the route reads this duration from the theme at
+  /// every push and pop, so the theme picks this one (lib/app.dart).
+  const AppPageTransitionsBuilder.instant() : _duration = Duration.zero;
+
+  final Duration _duration;
 
   @override
-  Duration get transitionDuration => AppMotion.push;
+  Duration get transitionDuration => _duration;
 
   @override
   DelegatedTransitionBuilder? get delegatedTransition =>
