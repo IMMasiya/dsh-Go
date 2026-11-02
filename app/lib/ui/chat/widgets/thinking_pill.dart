@@ -137,7 +137,10 @@ class _ThinkingPillState extends State<ThinkingPill> {
               shape: Squircle.border(StreamRow.lead * 0.32),
             ),
             child: Center(
-              child: ThinkGlyph(size: 15, color: brand, spinning: active),
+              // 自己一层:转动只重绘这个图形,不重绘整行。
+              child: RepaintBoundary(
+                child: ThinkGlyph(size: 15, color: brand, spinning: active),
+              ),
             ),
           ),
         ),
@@ -380,12 +383,15 @@ class ThinkingTicker extends StatelessWidget {
           textDirection: Directionality.of(context),
           textScaler: scaler,
         )..layout(maxWidth: width);
+        final textHeight = painter.height;
+        // 每次发布都量一遍:排版对象持有原生资源,不能等 GC。
+        painter.dispose();
         final window = lineHeight * ThinkingTicker.rows;
         // 恒高三行:流式期间块高不变,列表就不会一行一行地追底,快写时也不抖。
         final height = window;
         // 多出来的部分往上推,露出来的永远是最后三行。写满一行时目标只
         // 挪一行,由 AnimatedContainer 平滑推上去 —— 不换内容、不叠字。
-        final shift = (painter.height - window).clamp(0.0, double.infinity);
+        final shift = (textHeight - window).clamp(0.0, double.infinity);
         return SizedBox(
           width: width,
           height: height,
