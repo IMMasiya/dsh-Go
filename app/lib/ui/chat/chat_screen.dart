@@ -333,21 +333,30 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
   }
 
   /// A toast from the list (a fork's 「返回原对话」): above the composer, once
-  /// the frame has laid out whatever just went into it (编辑后重发's text).
+  /// the frame has laid out whatever just went into it (编辑后重发's text) and
+  /// the capsule has finished growing to it.
   void _composerToast(String message, {String? actionLabel, VoidCallback? onAction}) {
+    void show() {
+      if (!mounted) return;
+      showComposerToast(
+        context,
+        message,
+        composerHeight: _veilHeight.value + _ChatLayout.overlap,
+        actionLabel: actionLabel,
+        onAction: onAction,
+      );
+    }
+
     WidgetsBinding.instance
       ..addPostFrameCallback((_) {
         if (!mounted) return;
-        showComposerToast(
-          context,
-          message,
-          composerHeight: _veilHeight.value + _ChatLayout.overlap,
-          actionLabel: actionLabel,
-          onAction: onAction,
-        );
+        _composerToastWait?.cancel();
+        _composerToastWait = Timer(AppMotion.of(context, AppMotion.quick), show);
       })
       ..ensureVisualUpdate();
   }
+
+  Timer? _composerToastWait;
 
   @override
   void dispose() {
@@ -357,6 +366,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
     _draftScope = Object();
     _creating = null;
     _syncWait = null;
+    _composerToastWait?.cancel();
     _input.removeListener(_saveDraft);
     _mentions.dispose();
     _voice.removeListener(_reportVoice);
@@ -824,10 +834,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
         picked = switch (source) {
           AttachSource.gallery => PickedAttachments(await picker.pickImages(limit: room)),
           AttachSource.camera => PickedAttachments([?await picker.takePhoto()]),
-          AttachSource.files => await picker.pickFiles(
-            limit: room,
-            heldBytes: totalAttachmentBytes(_drafts),
-          ),
+          AttachSource.files => await picker.pickFiles(limit: room, heldBytes: totalAttachmentBytes(_drafts)),
         };
       } on PlatformException catch (e) {
         if (!ownsDraft()) return;
