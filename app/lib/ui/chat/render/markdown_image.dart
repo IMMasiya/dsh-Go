@@ -256,6 +256,28 @@ class CachedImageReader implements WorkspaceImageReader {
   }
 }
 
+/// Reads images the connected engine serves itself, such as a plugin's
+/// `/api/…` assets: they need the session's cookie, which NetworkImage can't
+/// send. [path] is the image's full URL.
+class EngineImageReader implements WorkspaceImageReader {
+  const EngineImageReader(this.client);
+
+  final DshClient? client;
+
+  @override
+  Future<LoadedImage> read(String sessionId, String path) async {
+    final client = this.client;
+    if (client == null) throw const ArtifactError('offline');
+    final bytes = await client.readEngineUrl(path, maxBytes: maxMarkdownImageBytes);
+    return isSvgUrl(path) ? SvgImageBytes(bytes) : RasterImage(MemoryImage(bytes));
+  }
+}
+
+/// Images from the engine's own address; one cache per connection.
+final engineImageReaderProvider = Provider<CachedImageReader>(
+  (ref) => CachedImageReader(EngineImageReader(ref.watch(artifactFilesProvider).connection?.client)),
+);
+
 /// The reader reply images use; one cache per connection.
 final workspaceImageReaderProvider = Provider<CachedImageReader>(
   (ref) => CachedImageReader(ArtifactImageReader(ref.watch(artifactFilesProvider))),
@@ -343,6 +365,9 @@ class _MarkdownImageState extends ConsumerState<MarkdownImage> {
   /// Workspace images: the session and the path read.
   String? _sessionId;
   String? _path;
+
+  /// A web image the connected engine serves itself: read with its cookie.
+  String? _engineUrl;
   Future<LoadedImage>? _future;
   LoadedImage? _loaded;
   Object? _error;
@@ -369,6 +394,20 @@ class _MarkdownImageState extends ConsumerState<MarkdownImage> {
 
   void _resolve() {
     final source = _source;
+    if (source is WebImageSource) {
+      final engine = ref.read(artifactFilesProvider).connection?.client.isEngineUrl(source.url) ?? false;
+      final next = engine ? source.url : null;
+      if (next == _engineUrl && (next == null || _future != null || _loaded != null)) return;
+      _engineUrl = next;
+      _sessionId = null;
+      _path = null;
+      _future = null;
+      _loaded = null;
+      _error = null;
+      if (next != null) _load();
+      return;
+    }
+    _engineUrl = null;
     if (source is! WorkspaceImageSource) return;
     final scope = MarkdownImageScope.maybeOf(context);
     final sessionId = scope?.sessionId ?? ref.read(currentSessionProvider);
@@ -403,9 +442,10 @@ class _MarkdownImageState extends ConsumerState<MarkdownImage> {
   }
 
   void _load() {
-    final reader = ref.read(workspaceImageReaderProvider);
-    final sessionId = _sessionId!;
-    final path = _path!;
+    final engineUrl = _engineUrl;
+    final reader = ref.read(engineUrl != null ? engineImageReaderProvider : workspaceImageReaderProvider);
+    final sessionId = engineUrl != null ? '' : _sessionId!;
+    final path = engineUrl ?? _path!;
     _error = null;
     _loaded = reader.peek(sessionId, path);
     if (_loaded != null) {
@@ -433,11 +473,16 @@ class _MarkdownImageState extends ConsumerState<MarkdownImage> {
     setState(() {
       _attempt += 1;
       final source = _source;
-      if (source is WorkspaceImageSource && _sessionId != null && _path != null) {
+      if (_engineUrl != null) {
+        ref.read(engineImageReaderProvider).forget('', _engineUrl!);
+        _load();
+      } else if (source is WorkspaceImageSource && _sessionId != null && _path != null) {
         ref.read(workspaceImageReaderProvider).forget(_sessionId!, _path!);
         _load();
       } else if (source is WebImageSource) {
         PaintingBinding.instance.imageCache.evict(NetworkImage(source.url));
+        // The connection may have arrived since this image was first drawn.
+        _resolve();
       }
     });
   }
@@ -483,11 +528,27 @@ class _MarkdownImageState extends ConsumerState<MarkdownImage> {
       return _ImageError(name: name, message: message, action: l10n.chatImageTapToRetry, onTap: _retry);
     }
 
+    Widget read() {
+      final loaded = _loaded;
+      if (_error != null) return failed(_error);
+      if (loaded == null) return placeholder();
+      return switch (loaded) {
+        RasterImage(:final provider) => _raster(provider, placeholder: placeholder, failed: failed),
+        // The preview page shows bitmaps only.
+        SvgImageBytes(:final bytes) => _framed(
+          memorySvg(bytes, fit: BoxFit.contain, error: (_) => failed(null)),
+          onTap: null,
+        ),
+      };
+    }
+
     final source = _source;
     final Widget child;
     switch (source) {
       case UnsupportedImageSource():
         child = _ImageError(name: name, message: l10n.chatImageUnsupportedAddress);
+      case WebImageSource() when _engineUrl != null:
+        child = read();
       case WebImageSource(:final url) when isSvgUrl(url):
         child = _framed(
           NetworkSvg(
@@ -511,21 +572,7 @@ class _MarkdownImageState extends ConsumerState<MarkdownImage> {
           child = _raster(MemoryImage(bytes), placeholder: placeholder, failed: failed);
         }
       case WorkspaceImageSource():
-        final loaded = _loaded;
-        if (_error != null) {
-          child = failed(_error);
-        } else if (loaded == null) {
-          child = placeholder();
-        } else {
-          child = switch (loaded) {
-            RasterImage(:final provider) => _raster(provider, placeholder: placeholder, failed: failed),
-            // The preview page shows bitmaps only.
-            SvgImageBytes(:final bytes) => _framed(
-              memorySvg(bytes, fit: BoxFit.contain, error: (_) => failed(null)),
-              onTap: null,
-            ),
-          };
-        }
+        child = read();
     }
     return Semantics(image: true, label: name, child: child);
   }

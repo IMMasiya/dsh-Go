@@ -237,6 +237,20 @@ class DshConnection {
     );
   }
 
+  /// [url]'s path and query when it names this engine, by the address this
+  /// connection dials or the authority the engine knows itself by; null for
+  /// anything else. Only these may carry [cookie], and the request always goes
+  /// to [baseUri], never to the address in [url].
+  ({String path, Map<String, String> query})? ownPath(String url) {
+    final uri = Uri.tryParse(url);
+    if (uri == null || uri.scheme != baseUri.scheme || uri.userInfo.isNotEmpty) return null;
+    final named = _authorityOf(uri);
+    if (named != authority && named != _authorityOf(baseUri)) return null;
+    final mount = baseUri.path;
+    if (!uri.path.startsWith('$mount/')) return null;
+    return (path: uri.path.substring(mount.length), query: uri.queryParameters);
+  }
+
   Uri webSocketUri(String path) {
     final http = resolve(path);
     return http.replace(scheme: http.scheme == 'https' ? 'wss' : 'ws');

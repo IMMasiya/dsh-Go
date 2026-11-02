@@ -55,6 +55,28 @@ extension DshFilesApi on DshClient {
     return DshFileStat.fromJson(value);
   }
 
+  /// Whether [url] is served by this client's own engine, over HTTP.
+  bool isEngineUrl(String url) {
+    final carrier = this.carrier;
+    return carrier is DshHttpCarrier && carrier.connection.ownPath(url) != null;
+  }
+
+  /// The bytes at [url], which [isEngineUrl] accepted, read with the session's
+  /// credentials: no redirects, at most [maxBytes].
+  Future<Uint8List> readEngineUrl(String url, {required int maxBytes}) async {
+    final carrier = this.carrier;
+    final target = carrier is DshHttpCarrier ? carrier.connection.ownPath(url) : null;
+    if (carrier is! DshHttpCarrier || target == null) throw ArgumentError.value(url, 'url', 'not this engine');
+    final response = await carrier.connection.getBounded(
+      target.path,
+      query: target.query,
+      maxBytes: maxBytes,
+      autoUncompress: true,
+    );
+    if (response.statusCode == 200) return response.body;
+    throw DshHttpException(response.statusCode, 'GET ${target.path}: HTTP ${response.statusCode}');
+  }
+
   /// Whether this client can read raw file bytes at all.
   bool get canReadFileBytes => carrier is DshHttpCarrier || supportsEndpoint('workspaceFiles/readBytes');
 
