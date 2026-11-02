@@ -478,7 +478,7 @@ class FakePicker implements AttachmentPicker {
   }
 
   @override
-  Future<PickedAttachments> pickFiles({int limit = maxAttachments}) async {
+  Future<PickedAttachments> pickFiles({int limit = maxAttachments, int heldBytes = 0}) async {
     calls.add('files');
     return PickedAttachments(files);
   }

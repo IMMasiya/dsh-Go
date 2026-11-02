@@ -16753,8 +16753,11 @@ class L10nEn extends L10n {
 
   @override
   String stateAttachmentFileLimit(String name) {
-    return 'File “$name” exceeds 30 MB';
+    return 'File “$name” exceeds 200 MB';
   }
+
+  @override
+  String get stateAttachmentTotalLimit => 'Attachments exceed 400 MB in total';
 
   @override
   String stateBotFinished(String name) {

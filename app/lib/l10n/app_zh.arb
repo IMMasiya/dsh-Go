@@ -9864,7 +9864,7 @@
       }
     }
   },
-  "stateAttachmentFileLimit": "文件「{name}」超过 30 MB",
+  "stateAttachmentFileLimit": "文件「{name}」超过 200 MB",
   "@stateAttachmentFileLimit": {
     "placeholders": {
       "name": {
@@ -9872,6 +9872,7 @@
       }
     }
   },
+  "stateAttachmentTotalLimit": "附件总大小超过 400 MB",
   "stateBotFinished": "{name} 完成了工作",
   "@stateBotFinished": {
     "placeholders": {
