@@ -3400,6 +3400,18 @@ class L10nZh extends L10n {
   String get chatComposerHint => '给 DSH 发消息…';
 
   @override
+  String get chatAgentPreset => 'Agent 预设';
+
+  @override
+  String get chatAgentPresetNext => '对下一个对话生效';
+
+  @override
+  String get chatAgentPresetPick => '选择 Agent 预设';
+
+  @override
+  String get chatAgentPresetFollowingHost => '跟随主机默认';
+
+  @override
   String get chatStopGenerating => '停止生成';
 
   @override

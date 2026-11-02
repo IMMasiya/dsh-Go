@@ -21,7 +21,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'package:dsh_client/dsh_client.dart';
+
 import '../../../l10n/l10n.dart';
+import '../../../state/agents_state.dart';
 import '../../../state/chat_state.dart';
 import '../../../state/connection_state.dart';
 import '../../../state/features_state.dart';
@@ -135,9 +138,148 @@ class _PlusRoot extends ConsumerWidget {
             ],
           ),
         ),
+        const SizedBox(height: 16),
+        _AgentPresetCard(sessionId: sessionId),
         if (sessionId != null) ...[const SizedBox(height: 16), _ThisChatCard(sessionId: sessionId)],
         if (phoneOn) ...[const SizedBox(height: 24), const _PhoneCard()],
         const SizedBox(height: 20),
+      ],
+    );
+  }
+}
+
+/// Agent 预设: the working style the next conversation starts with.
+///
+/// The engine picks a preset per conversation and a later change only affects
+/// agents created afterwards, so this is a chooser for the next conversation,
+/// never a switch for the one on screen (that one is shown read-only).
+class _AgentPresetCard extends ConsumerWidget {
+  const _AgentPresetCard({required this.sessionId});
+
+  final String? sessionId;
+
+  Future<void> _pick(BuildContext context, WidgetRef ref, List<AgentPresetInfo> presets) async {
+    HapticFeedback.selectionClick();
+    final picked = await showAppSheet<String?>(
+      context,
+      isScrollControlled: true,
+      builder: (sheet) => SafeArea(
+        top: false,
+        child: SingleChildScrollView(
+          child: SheetNavigator(
+            root: (_) => _AgentPresetSheet(presets: presets, selected: ref.read(pendingAgentPresetProvider)),
+          ),
+        ),
+      ),
+    );
+    if (picked != null) ref.read(pendingAgentPresetProvider.notifier).select(picked);
+  }
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final l10n = context.l10n;
+    final theme = Theme.of(context);
+    final presets = ref.watch(agentPresetsProvider).value;
+    final pending = ref.watch(pendingAgentPresetProvider);
+    final open = sessionId == null ? null : ref.watch(hostSessionsProvider)[sessionId]?.projections.agentPreset;
+    final shown = agentPresetFor(presets, pending ?? open);
+    final value = shown == null
+        ? l10n.chatAgentPresetFollowingHost
+        : (agentPresetName(shown).isEmpty ? shown.id : agentPresetName(shown));
+    final note = sessionId != null ? l10n.chatAgentPresetNext : null;
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: PlusPanelMetrics.side),
+      child: Material(
+        color: theme.colorScheme.surfaceContainerLow,
+        shape: AppShape.card,
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: presets == null || presets.isEmpty ? null : () => unawaited(_pick(context, ref, presets)),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 12, 12),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(l10n.chatAgentPreset, style: theme.textTheme.bodyMedium),
+                      if (note != null)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 2),
+                          child: Text(
+                            note,
+                            style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Flexible(
+                  child: Text(
+                    value,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    textAlign: TextAlign.right,
+                    style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _AgentPresetSheet extends StatelessWidget {
+  const _AgentPresetSheet({required this.presets, this.selected});
+
+  final List<AgentPresetInfo> presets;
+  final String? selected;
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = context.l10n;
+    final theme = Theme.of(context);
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        SheetHeader(l10n.chatAgentPresetPick),
+        for (final preset in presets)
+          if (preset.broken == null)
+            InkWell(
+              onTap: () => Navigator.pop(context, preset.id),
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(20, 12, 16, 12),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(agentPresetName(preset)),
+                          if (agentPresetDescription(preset) case final d?)
+                            Padding(
+                              padding: const EdgeInsets.only(top: 2),
+                              child: Text(d, style: Theme.of(context).textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
+                            ),
+                        ],
+                      ),
+                    ),
+                    if (preset.id == selected)
+                      Text('·', style: Theme.of(context).textTheme.titleLarge?.copyWith(color: Theme.of(context).colorScheme.primary)),
+                  ],
+                ),
+              ),
+            ),
+        const SizedBox(height: 12),
       ],
     );
   }

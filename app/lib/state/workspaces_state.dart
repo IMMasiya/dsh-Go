@@ -486,12 +486,17 @@ Future<String?> workspaceForNewSession(Ref ref) async {
 /// Creates a conversation in [workspaceId] when one is selected, else in
 /// [cwd] (null lets the host pick). Falls back to [cwd] if the workspace was
 /// removed in the meantime.
-Future<SessionCreated> createSessionInWorkspace(DshClient client, String? workspaceId, {String? cwd}) async {
-  if (workspaceId == null) return client.createSession(cwd: cwd);
+Future<SessionCreated> createSessionInWorkspace(
+  DshClient client,
+  String? workspaceId, {
+  String? cwd,
+  String? agentPreset,
+}) async {
+  if (workspaceId == null) return client.createSession(cwd: cwd, agentPreset: agentPreset);
   try {
-    return await client.createSession(workspaceId: workspaceId);
+    return await client.createSession(workspaceId: workspaceId, agentPreset: agentPreset);
   } on DshRemoteException catch (e) {
     if (e.code != WorkspaceErrors.notFound) rethrow;
-    return client.createSession(cwd: cwd);
+    return client.createSession(cwd: cwd, agentPreset: agentPreset);
   }
 }

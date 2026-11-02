@@ -8,6 +8,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../runtime/runtime_state.dart';
 import 'connection_state.dart';
+import 'features_state.dart';
 import 'hosts_state.dart';
 import 'read_list_cache.dart';
 import 'read_list_identity.dart';
@@ -555,11 +556,16 @@ class SessionsController extends AsyncNotifier<List<SessionSummary>> {
     if (conn == null) throw StateError('not connected');
     // Remote hosts: only the working directory configured for that host, else
     // the remote DSH's own default.
+    // The preset is chosen per conversation and only affects agents created
+    // after it, so it is spent on this one create and then cleared.
+    final preset = ref.read(pendingAgentPresetProvider);
     final created = await createSessionInWorkspace(
       conn.client,
       await workspaceForNewSession(ref),
       cwd: conn.isLocal ? localWorkspaceDir : conn.workingDirectory,
+      agentPreset: preset,
     );
+    if (preset != null) ref.read(pendingAgentPresetProvider.notifier).select(null);
     // Safe mode keeps the default preset: the agent there repairs the engine
     // with a full shell already, and every command should still be asked.
     final safeMode = ref.read(localRuntimeProvider).status.inSafeMode;

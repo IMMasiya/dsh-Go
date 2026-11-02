@@ -77,6 +77,31 @@ final skillsProvider = FutureProvider.autoDispose.family<List<SkillInfo>?, Strin
 
 // ── Agent 预设 ────────────────────────────────────────────────────────────────
 
+/// The Agent preset the next conversation starts with; null follows the
+/// Host's default. Cleared once a conversation is created with it.
+class PendingAgentPresetController extends Notifier<String?> {
+  @override
+  String? build() => null;
+
+  void select(String? id) => state = (id == null || id.isEmpty) ? null : id;
+}
+
+final pendingAgentPresetProvider = NotifierProvider<PendingAgentPresetController, String?>(PendingAgentPresetController.new);
+
+/// The preset [pending] names, else the Host default, else null.
+AgentPresetInfo? agentPresetFor(List<AgentPresetInfo>? presets, String? pending) {
+  if (presets == null || presets.isEmpty) return null;
+  if (pending != null) {
+    for (final p in presets) {
+      if (p.id == pending) return p;
+    }
+  }
+  for (final p in presets) {
+    if (p.isDefault) return p;
+  }
+  return presets.first;
+}
+
 /// Agent presets in the Host's order; refreshed when the default changes.
 final agentPresetsProvider = FutureProvider.autoDispose<List<AgentPresetInfo>?>((ref) async {
   final client = _client(ref);

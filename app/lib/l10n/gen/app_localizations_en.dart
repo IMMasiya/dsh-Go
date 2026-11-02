@@ -3585,6 +3585,18 @@ class L10nEn extends L10n {
   String get chatComposerHint => 'Message DSH…';
 
   @override
+  String get chatAgentPreset => 'Agent preset';
+
+  @override
+  String get chatAgentPresetNext => 'Applies to the next conversation';
+
+  @override
+  String get chatAgentPresetPick => 'Choose an agent preset';
+
+  @override
+  String get chatAgentPresetFollowingHost => 'Host default';
+
+  @override
   String get chatStopGenerating => 'Stop generating';
 
   @override

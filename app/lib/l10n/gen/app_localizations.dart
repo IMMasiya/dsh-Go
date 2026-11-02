@@ -6296,6 +6296,30 @@ abstract class L10n {
   /// **'给 DSH 发消息…'**
   String get chatComposerHint;
 
+  /// No description provided for @chatAgentPreset.
+  ///
+  /// In zh, this message translates to:
+  /// **'Agent 预设'**
+  String get chatAgentPreset;
+
+  /// No description provided for @chatAgentPresetNext.
+  ///
+  /// In zh, this message translates to:
+  /// **'对下一个对话生效'**
+  String get chatAgentPresetNext;
+
+  /// No description provided for @chatAgentPresetPick.
+  ///
+  /// In zh, this message translates to:
+  /// **'选择 Agent 预设'**
+  String get chatAgentPresetPick;
+
+  /// No description provided for @chatAgentPresetFollowingHost.
+  ///
+  /// In zh, this message translates to:
+  /// **'跟随主机默认'**
+  String get chatAgentPresetFollowingHost;
+
   /// No description provided for @chatStopGenerating.
   ///
   /// In zh, this message translates to:
