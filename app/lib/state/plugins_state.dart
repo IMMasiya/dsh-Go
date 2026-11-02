@@ -428,6 +428,19 @@ PluginInstallRequest marketInstallRequest(MarketEntry entry, {bool replace = fal
   );
 }
 
+/// A typed spec the Host accepted in `pluginManager/inspect`: the name comes
+/// from the inspection (the typed text may omit a version, or be a URL).
+PluginInstallRequest? customInstallRequest(PluginInspectionAccepted inspection, String spec, {bool replace = false}) {
+  final name = inspection.name;
+  if (name == null || name.isEmpty) return null;
+  return PluginInstallRequest(
+    name: name,
+    spec: spec.trim(),
+    registry: inspection.registry,
+    replaceInstalled: replace,
+  );
+}
+
 const _webOnlyCategoryIds = {'ui', 'skin', 'skins', 'theme', 'themes', 'client', 'clients', 'web', 'webui', 'web-ui'};
 final _webOnlyCategoryTitle = RegExp(r'\b(?:ui|themes?|skins?|panels?|clients?|appearance)\b', caseSensitive: false);
 final _webOnlyName = RegExp(r'(?:client-ui|web-ui|webui|(?:^|[-/])(?:themes?|skins?)(?:-|$))');

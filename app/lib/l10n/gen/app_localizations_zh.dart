@@ -10944,6 +10944,57 @@ class L10nZh extends L10n {
   String get pluginsRefresh => '刷新';
 
   @override
+  String get pluginsInstallBySpec => '按包名 / Git 安装';
+
+  @override
+  String get pluginsInstallSpecHint => '@scope/plugin、owner/repo 或 https://…/x.tgz';
+
+  @override
+  String get pluginsInstallSpecTypes => '填 npm 包名、Git 仓库地址或 .tgz 链接；装到当前主机。';
+
+  @override
+  String get pluginsInstallSpecCheck => '检查';
+
+  @override
+  String get pluginsInstallSpecInstall => '安装';
+
+  @override
+  String get pluginsInstallSpecInstalled => '这个插件已经装过了';
+
+  @override
+  String get pluginsInstallSpecName => '包名';
+
+  @override
+  String get pluginsInstallSpecVersion => '版本';
+
+  @override
+  String get pluginsInstallSpecSource => '来源';
+
+  @override
+  String get pluginsInstallSpecKindNpm => 'npm 包';
+
+  @override
+  String get pluginsInstallSpecKindGit => 'Git 仓库';
+
+  @override
+  String get pluginsInstallSpecKindTarball => 'tarball 链接';
+
+  @override
+  String get pluginsInstallSpecBadSpec => '写法不认识：填包名、Git 地址或 .tgz 链接';
+
+  @override
+  String get pluginsInstallSpecNotFound => 'registry 里没有这个包';
+
+  @override
+  String get pluginsInstallSpecNotBundle => '这个包不是 DSH 插件';
+
+  @override
+  String get pluginsInstallSpecNetwork => '连不上 registry，检查网络或 registry 地址';
+
+  @override
+  String get pluginsInstallSpecUnknown => '检查失败，换个写法再试';
+
+  @override
   String get pluginsMarketTitle => '插件市场';
 
   @override

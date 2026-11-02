@@ -11502,6 +11502,57 @@ class L10nEn extends L10n {
   String get pluginsRefresh => 'Refresh';
 
   @override
+  String get pluginsInstallBySpec => 'Install by name or Git';
+
+  @override
+  String get pluginsInstallSpecHint => '@scope/plugin, owner/repo or https://…/x.tgz';
+
+  @override
+  String get pluginsInstallSpecTypes => 'An npm package, a git repository or a .tgz link; installed on this host.';
+
+  @override
+  String get pluginsInstallSpecCheck => 'Check';
+
+  @override
+  String get pluginsInstallSpecInstall => 'Install';
+
+  @override
+  String get pluginsInstallSpecInstalled => 'Already installed';
+
+  @override
+  String get pluginsInstallSpecName => 'Package';
+
+  @override
+  String get pluginsInstallSpecVersion => 'Version';
+
+  @override
+  String get pluginsInstallSpecSource => 'Source';
+
+  @override
+  String get pluginsInstallSpecKindNpm => 'npm package';
+
+  @override
+  String get pluginsInstallSpecKindGit => 'git repository';
+
+  @override
+  String get pluginsInstallSpecKindTarball => 'tarball link';
+
+  @override
+  String get pluginsInstallSpecBadSpec => 'Not a spec we know: a package name, a git URL or a .tgz link';
+
+  @override
+  String get pluginsInstallSpecNotFound => 'The registry has no such package';
+
+  @override
+  String get pluginsInstallSpecNotBundle => 'That package is not a DSH plugin';
+
+  @override
+  String get pluginsInstallSpecNetwork => 'Can’t reach the registry; check the network or registry';
+
+  @override
+  String get pluginsInstallSpecUnknown => 'The check failed; try another form';
+
+  @override
   String get pluginsMarketTitle => 'Plugin market';
 
   @override

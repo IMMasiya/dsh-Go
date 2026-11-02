@@ -20180,6 +20180,108 @@ abstract class L10n {
   /// **'刷新'**
   String get pluginsRefresh;
 
+  /// No description provided for @pluginsInstallBySpec.
+  ///
+  /// In zh, this message translates to:
+  /// **'按包名 / Git 安装'**
+  String get pluginsInstallBySpec;
+
+  /// No description provided for @pluginsInstallSpecHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'@scope/plugin、owner/repo 或 https://…/x.tgz'**
+  String get pluginsInstallSpecHint;
+
+  /// No description provided for @pluginsInstallSpecTypes.
+  ///
+  /// In zh, this message translates to:
+  /// **'填 npm 包名、Git 仓库地址或 .tgz 链接；装到当前主机。'**
+  String get pluginsInstallSpecTypes;
+
+  /// No description provided for @pluginsInstallSpecCheck.
+  ///
+  /// In zh, this message translates to:
+  /// **'检查'**
+  String get pluginsInstallSpecCheck;
+
+  /// No description provided for @pluginsInstallSpecInstall.
+  ///
+  /// In zh, this message translates to:
+  /// **'安装'**
+  String get pluginsInstallSpecInstall;
+
+  /// No description provided for @pluginsInstallSpecInstalled.
+  ///
+  /// In zh, this message translates to:
+  /// **'这个插件已经装过了'**
+  String get pluginsInstallSpecInstalled;
+
+  /// No description provided for @pluginsInstallSpecName.
+  ///
+  /// In zh, this message translates to:
+  /// **'包名'**
+  String get pluginsInstallSpecName;
+
+  /// No description provided for @pluginsInstallSpecVersion.
+  ///
+  /// In zh, this message translates to:
+  /// **'版本'**
+  String get pluginsInstallSpecVersion;
+
+  /// No description provided for @pluginsInstallSpecSource.
+  ///
+  /// In zh, this message translates to:
+  /// **'来源'**
+  String get pluginsInstallSpecSource;
+
+  /// No description provided for @pluginsInstallSpecKindNpm.
+  ///
+  /// In zh, this message translates to:
+  /// **'npm 包'**
+  String get pluginsInstallSpecKindNpm;
+
+  /// No description provided for @pluginsInstallSpecKindGit.
+  ///
+  /// In zh, this message translates to:
+  /// **'Git 仓库'**
+  String get pluginsInstallSpecKindGit;
+
+  /// No description provided for @pluginsInstallSpecKindTarball.
+  ///
+  /// In zh, this message translates to:
+  /// **'tarball 链接'**
+  String get pluginsInstallSpecKindTarball;
+
+  /// No description provided for @pluginsInstallSpecBadSpec.
+  ///
+  /// In zh, this message translates to:
+  /// **'写法不认识：填包名、Git 地址或 .tgz 链接'**
+  String get pluginsInstallSpecBadSpec;
+
+  /// No description provided for @pluginsInstallSpecNotFound.
+  ///
+  /// In zh, this message translates to:
+  /// **'registry 里没有这个包'**
+  String get pluginsInstallSpecNotFound;
+
+  /// No description provided for @pluginsInstallSpecNotBundle.
+  ///
+  /// In zh, this message translates to:
+  /// **'这个包不是 DSH 插件'**
+  String get pluginsInstallSpecNotBundle;
+
+  /// No description provided for @pluginsInstallSpecNetwork.
+  ///
+  /// In zh, this message translates to:
+  /// **'连不上 registry，检查网络或 registry 地址'**
+  String get pluginsInstallSpecNetwork;
+
+  /// No description provided for @pluginsInstallSpecUnknown.
+  ///
+  /// In zh, this message translates to:
+  /// **'检查失败，换个写法再试'**
+  String get pluginsInstallSpecUnknown;
+
   /// No description provided for @pluginsMarketTitle.
   ///
   /// In zh, this message translates to:

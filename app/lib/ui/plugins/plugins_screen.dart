@@ -12,6 +12,7 @@ import '../common/segmented_pill.dart';
 import '../features/feature_kit.dart';
 import '../shell/page_frame.dart';
 import '../theme/app_icons.dart';
+import 'install/plugin_install_page.dart';
 import 'installed_tab.dart';
 import 'market_tab.dart';
 
@@ -97,6 +98,20 @@ class _PluginsScreenState extends ConsumerState<PluginsScreen> {
       subtitle: Text(_subtitle(host)),
       actions: [
         const AskAiButton(AskAiTopic.plugins),
+        // A package the market does not index: by npm name, git URL or .tgz.
+        GlassIconButton(
+          icon: AppIcons.plugin,
+          tooltip: l10n.pluginsInstallBySpec,
+          onPressed: host == null
+              ? null
+              : () => unawaited(
+                  Navigator.of(context).push(
+                    MaterialPageRoute<void>(
+                      builder: (_) => PluginInstallPage(canInstall: host.canInstall, safeMode: host.safeMode),
+                    ),
+                  ),
+                ),
+        ),
         GlassIconButton(
           icon: AppIcons.refresh,
           tooltip: l10n.pluginsRefresh,
