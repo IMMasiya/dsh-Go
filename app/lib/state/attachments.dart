@@ -115,9 +115,10 @@ int totalAttachmentBytes(Iterable<DraftAttachment> attachments) {
 
 /// Why [a] can't join a message already holding [heldBytes], or null when it
 /// fits. Checked in every path that grows the tray, so repeated picks cannot
-/// pile past [maxMessageBytes].
-String? attachmentBudgetProblem(int heldBytes, DraftAttachment a) =>
-    heldBytes + a.size > maxMessageBytes ? appL10n.stateAttachmentTotalLimit : null;
+/// pile past [maxMessageBytes] (or [limit], a smaller carrier such as the web
+/// page's composer).
+String? attachmentBudgetProblem(int heldBytes, DraftAttachment a, {int limit = maxMessageBytes}) =>
+    heldBytes + a.size > limit ? appL10n.stateAttachmentTotalLimit : null;
 
 /// The system pickers behind the composer's ＋ menu. Tests swap in a fake.
 abstract class AttachmentPicker {

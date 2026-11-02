@@ -59,11 +59,30 @@ class ComposeRequest {
 
   /// Reads a share's files (copied into the app cache by the native side)
   /// into attachments, then deletes the copies: the bytes live in the draft.
-  static Future<ComposeRequest> fromShare(IncomingShare share, {Future<Uint8List> Function(String path)? read}) async {
+  ///
+  /// [heldBytes] is what the target draft already holds and [maxBytes] is the
+  /// budget of the composer it lands in (the web page takes far less than a
+  /// chat message): both are checked before a file is read, so a share cannot
+  /// buffer bytes that the merge below would refuse anyway.
+  static Future<ComposeRequest> fromShare(
+    IncomingShare share, {
+    Future<Uint8List> Function(String path)? read,
+    int heldBytes = 0,
+    int maxBytes = maxMessageBytes,
+  }) async {
     final load = read ?? (path) => File(path).readAsBytes();
     final attachments = <DraftAttachment>[];
     final problems = [for (final s in share.skipped) skippedText(s)];
+    var used = heldBytes;
     for (final file in share.files) {
+      // Metadata can refuse a file before it is read; content providers may
+      // omit it, so the post-read check below still applies.
+      final length = read == null ? _fileLength(file.path) : null;
+      if (length != null && used + length > maxBytes) {
+        problems.add(appL10n.stateAttachmentTotalLimit);
+        if (read == null) _discard(file.path);
+        continue;
+      }
       final Uint8List bytes;
       try {
         bytes = await load(file.path);
@@ -74,26 +93,46 @@ class ComposeRequest {
         if (read == null) _discard(file.path);
       }
       final attachment = DraftAttachment.sniff(file.name, bytes);
-      final problem = attachmentProblem(attachment);
+      final problem =
+          attachmentProblem(attachment) ?? attachmentBudgetProblem(used, attachment, limit: maxBytes);
       if (problem != null) {
         problems.add(problem);
       } else {
         attachments.add(attachment);
+        used += attachment.size;
       }
     }
     return ComposeRequest(text: share.composedText, attachments: attachments, problems: problems);
   }
 
   /// A file opened with the app (not a share code), already in the cache.
-  static Future<ComposeRequest> fromFile(String path, {Future<Uint8List> Function(String path)? read}) async {
+  static Future<ComposeRequest> fromFile(
+    String path, {
+    Future<Uint8List> Function(String path)? read,
+    int heldBytes = 0,
+    int maxBytes = maxMessageBytes,
+  }) async {
     final name = path.split('/').last;
+    final length = read == null ? _fileLength(path) : null;
+    if (length != null && heldBytes + length > maxBytes) {
+      return ComposeRequest(problems: [appL10n.stateAttachmentTotalLimit]);
+    }
     try {
       final bytes = await (read ?? (p) => File(p).readAsBytes())(path);
       final attachment = DraftAttachment.sniff(name, bytes);
-      final problem = attachmentProblem(attachment);
+      final problem =
+          attachmentProblem(attachment) ?? attachmentBudgetProblem(heldBytes, attachment, limit: maxBytes);
       return problem == null ? ComposeRequest(attachments: [attachment]) : ComposeRequest(problems: [problem]);
     } catch (_) {
       return ComposeRequest(problems: [appL10n.stateShareReadFailed(name)]);
+    }
+  }
+
+  static int? _fileLength(String path) {
+    try {
+      return File(path).lengthSync();
+    } catch (_) {
+      return null;
     }
   }
 
