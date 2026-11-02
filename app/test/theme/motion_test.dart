@@ -47,6 +47,15 @@ void main() {
     expect(AppMotion.settle(AppMotion.sheetSpring, 0, 1, 2).dx(0), closeTo(2, 1e-6));
   });
 
+  test('the rubber band gives ever less and never reaches its limit', () {
+    expect(AppMotion.rubberBand(0), 0);
+    expect(AppMotion.rubberBand(100), closeTo(25.6, 0.1));
+    expect(AppMotion.rubberBand(200), greaterThan(AppMotion.rubberBand(100)));
+    expect(AppMotion.rubberBand(200) - AppMotion.rubberBand(100), lessThan(AppMotion.rubberBand(100)));
+    expect(AppMotion.rubberBand(1e6), lessThan(48));
+    expect(AppMotion.rubberBand(1e6), closeTo(48, 0.1));
+  });
+
   test('done means close by the extent, in the time the spring promises', () {
     final ratio = AppMotion.settle(AppMotion.sheetSpring, 1, 0, 0);
     final pixels = AppMotion.settle(AppMotion.sheetSpring, 400, 0, 0, extent: 400);

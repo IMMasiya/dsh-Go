@@ -21,7 +21,7 @@ import 'motion.dart';
 ///   navigation, tablets, desktop).
 ///
 /// Release past the middle, or fling right, and the page leaves; otherwise it
-/// settles back.
+/// settles back. The in-app swipe hands its speed to a spring for either.
 class AppPageTransitionsBuilder extends PageTransitionsBuilder {
   const AppPageTransitionsBuilder() : _duration = AppMotion.push;
 
@@ -246,6 +246,8 @@ class _BackGestureState extends State<_BackGesture> with WidgetsBindingObserver,
       if (_route.isCurrent) {
         _route.handleUpdateBackGestureProgress(progress: _settle.value);
       }
+      // Off screen: the rest of the spring has nothing to show, so don't wait.
+      if (_settle.value == 0 && _settle.isAnimating) _settle.stop();
     });
   }
 
@@ -314,7 +316,7 @@ class _BackGestureState extends State<_BackGesture> with WidgetsBindingObserver,
     if (progress == null) return;
     final velocity = _sign() * details.velocity.pixelsPerSecond.dx / _width;
     final leave = velocity.abs() >= _minFlingVelocity ? velocity > 0 : progress < 0.5;
-    _finish(from: progress, leave: leave);
+    _finish(from: progress, leave: leave, velocity: -velocity);
   }
 
   void _onCancel() {
@@ -322,10 +324,9 @@ class _BackGestureState extends State<_BackGesture> with WidgetsBindingObserver,
     if (progress != null) _finish(from: progress, leave: false);
   }
 
-  void _finish({required double from, required bool leave}) {
+  /// [velocity]: route values a second.
+  void _finish({required double from, required bool leave, double velocity = 0}) {
     final target = leave ? 0.0 : 1.0;
-    final distance = (target - from).abs();
-    final duration = AppMotion.of(context, AppMotion.push * distance);
     _settle.value = from;
     void done() {
       _progress = null;
@@ -337,15 +338,16 @@ class _BackGestureState extends State<_BackGesture> with WidgetsBindingObserver,
       }
     }
 
-    if (duration == Duration.zero || distance == 0) {
+    if (AppMotion.reduced(context) || from == target) {
       if (_route.isCurrent) {
         _route.handleUpdateBackGestureProgress(progress: target);
       }
       done();
       return;
     }
-    _settle.duration = duration;
-    _settle.animateTo(target, curve: AppMotion.glide).whenCompleteOrCancel(done);
+    _settle
+        .animateWith(AppMotion.settle(AppMotion.sheetSpring, from, target, velocity, landing: !leave))
+        .whenCompleteOrCancel(done);
   }
 
   @override

@@ -238,6 +238,31 @@ void main() {
       expect(find.byType(AlertDialog), findsNothing);
     });
 
+    testWidgets('flicked back up, it brakes into place and never past it', (tester) async {
+      await openDraft(tester, '未保存');
+      final handle = find.byType(SheetDragHandle);
+      final rest = tester.getTopLeft(handle).dy;
+      var time = Duration.zero;
+      final finger = await tester.startGesture(tester.getCenter(handle));
+      for (var i = 0; i < 10; i++) {
+        time += const Duration(milliseconds: 40);
+        await finger.moveBy(const Offset(0, 8), timeStamp: time);
+        await tester.pump(const Duration(milliseconds: 40));
+      }
+      for (var i = 0; i < 8; i++) {
+        time += const Duration(milliseconds: 4);
+        await finger.moveBy(const Offset(0, -2), timeStamp: time);
+      }
+      await finger.up(timeStamp: time);
+      await tester.pump();
+      for (var i = 0; i < 60; i++) {
+        await tester.pump(const Duration(milliseconds: 16));
+        expect(tester.getTopLeft(handle).dy, greaterThanOrEqualTo(rest));
+      }
+      await tester.pumpAndSettle();
+      expect(tester.getTopLeft(handle).dy, rest);
+    });
+
     testWidgets('nothing typed: the drag closes at once', (tester) async {
       await openDraft(tester, '');
       await tester.fling(find.byType(SheetDragHandle), const Offset(0, 240), 1500);

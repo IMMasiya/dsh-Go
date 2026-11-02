@@ -70,13 +70,13 @@ abstract final class AppMotion {
     bounce: 0.15,
   );
 
-  /// 回弹为 0 的弹簧从 [from] 带着速度 [velocity] 落到 [to],准确停在 [to] 上。
+  /// 弹簧从 [from] 带着速度 [velocity] 落到 [to],准确停在 [to] 上。
   ///
   /// [landing]:落点看得见。朝落点冲得太快时,回弹为 0 的弹簧也会越过去再回来,
-  /// 所以速度封顶在刚好不越过的那一档。落点在屏幕外(页面离场、弹层落下)传 false,
-  /// 手指多快就多快。
+  /// 所以速度封顶在刚好不越过的那一档(只对回弹为 0 的弹簧成立)。落点在屏幕外
+  /// (页面离场、弹层落下)或控制器边界会截住时传 false,手指多快就多快。
   ///
-  /// [extent]:这段运动一共多少单位(比例控制器是 1,按像素算的传像素数)。差 0.2%
+  /// [extent]:这段运动一共多少单位(比例控制器是 1,按像素算的传像素数)。差 0.1%
   /// 就算到位,不等速度归零:默认容差下肉眼早停了,路由和手势还在等。
   static SpringSimulation settle(
     SpringDescription spring,
@@ -97,9 +97,12 @@ abstract final class AppMotion {
       to,
       start,
       snapToEnd: true,
-      tolerance: Tolerance(distance: 0.002 * extent, velocity: double.infinity),
+      tolerance: Tolerance(distance: 0.001 * extent, velocity: double.infinity),
     );
   }
+
+  /// 拉过头时的橡皮筋:手指拉出 [x],东西只走这么多,越拉越沉,不会超过 [limit]。
+  static double rubberBand(double x, {double limit = 48}) => (1 - 1 / (x * 0.55 / limit + 1)) * limit;
 
   /// 页面级的步骤切换(引导各步、启动页 → 主页)。
   static const page = Duration(milliseconds: 300);

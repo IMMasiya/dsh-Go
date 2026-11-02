@@ -160,15 +160,22 @@ class _HeldSheetDragState extends State<_HeldSheetDrag> with SingleTickerProvide
     _offset.value = math.max(0, _dragged);
   }
 
-  void _settle() {
+  /// [velocity]: pixels a second, downwards.
+  void _settle([double velocity = 0]) {
     _dragged = 0;
-    unawaited(_offset.animateTo(0, duration: AppMotion.of(context, AppMotion.standard), curve: AppMotion.enter));
+    if (AppMotion.reduced(context) || _offset.value == 0) {
+      _offset.value = 0;
+      return;
+    }
+    final height = context.size?.height ?? MediaQuery.sizeOf(context).height;
+    unawaited(_offset.animateWith(AppMotion.settle(AppMotion.sheetSpring, _offset.value, 0, velocity, extent: height)));
   }
 
   void _end(DragEndDetails details) {
     final height = context.size?.height ?? double.infinity;
-    final closing = (details.primaryVelocity ?? 0) > _flingVelocity || _dragged > height * _closeFraction;
-    _settle();
+    final velocity = details.primaryVelocity ?? 0;
+    final closing = velocity > _flingVelocity || _dragged > height * _closeFraction;
+    _settle(velocity);
     if (closing) unawaited(Navigator.of(context).maybePop());
   }
 
