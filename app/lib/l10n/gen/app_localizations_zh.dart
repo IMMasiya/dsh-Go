@@ -15867,8 +15867,11 @@ class L10nZh extends L10n {
 
   @override
   String stateAttachmentFileLimit(String name) {
-    return '文件「$name」超过 30 MB';
+    return '文件「$name」超过 200 MB';
   }
+
+  @override
+  String get stateAttachmentTotalLimit => '附件总大小超过 400 MB';
 
   @override
   String stateBotFinished(String name) {

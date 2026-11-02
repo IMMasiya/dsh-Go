@@ -29105,8 +29105,14 @@ abstract class L10n {
   /// No description provided for @stateAttachmentFileLimit.
   ///
   /// In zh, this message translates to:
-  /// **'文件「{name}」超过 30 MB'**
+  /// **'文件「{name}」超过 200 MB'**
   String stateAttachmentFileLimit(String name);
+
+  /// No description provided for @stateAttachmentTotalLimit.
+  ///
+  /// In zh, this message translates to:
+  /// **'附件总大小超过 400 MB'**
+  String get stateAttachmentTotalLimit;
 
   /// No description provided for @stateBotFinished.
   ///
