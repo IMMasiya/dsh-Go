@@ -824,7 +824,10 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
         picked = switch (source) {
           AttachSource.gallery => PickedAttachments(await picker.pickImages(limit: room)),
           AttachSource.camera => PickedAttachments([?await picker.takePhoto()]),
-          AttachSource.files => await picker.pickFiles(limit: room),
+          AttachSource.files => await picker.pickFiles(
+            limit: room,
+            heldBytes: totalAttachmentBytes(_drafts),
+          ),
         };
       } on PlatformException catch (e) {
         if (!ownsDraft()) return;

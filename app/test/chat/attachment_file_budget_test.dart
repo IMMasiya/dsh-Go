@@ -167,6 +167,25 @@ void main() {
     expect(files[2].streams, 0);
   });
 
+  test('bytes already in the tray count before another file is opened', () async {
+    final file = _File('tail.bin', _megabytes(150), reportedLength: 150 * _mib);
+    picker.selected = [file];
+    final result = await device.pickFiles(heldBytes: maxMessageBytes - 100 * _mib);
+    expect(result.attachments, isEmpty);
+    expect(result.problem, appL10n.stateAttachmentTotalLimit);
+    expect(file.streams, 0);
+  });
+
+  test('a streamed aggregate overflow reports the total-size limit', () async {
+    // Unknown length, so the guard fires while streaming, not on metadata.
+    final file = _File('extra.bin', _megabytes(20));
+    picker.selected = [file];
+    final result = await device.pickFiles(heldBytes: maxMessageBytes - 10 * _mib);
+    expect(result.attachments, isEmpty);
+    expect(result.problem, appL10n.stateAttachmentTotalLimit);
+    expect(file.closed, isTrue);
+  });
+
   test('split image signature applies 20 MiB before retaining the offending chunk', () async {
     final file = _File('misleading.bin', [
       Uint8List.fromList(_png.take(3).toList()),

@@ -123,7 +123,10 @@ String? attachmentBudgetProblem(int heldBytes, DraftAttachment a) =>
 abstract class AttachmentPicker {
   Future<List<DraftAttachment>> pickImages({required int limit});
   Future<DraftAttachment?> takePhoto();
-  Future<PickedAttachments> pickFiles({int limit = maxAttachments});
+
+  /// [heldBytes] is what the tray already holds: the picker refuses to retain
+  /// more once the message's byte budget is spent, before opening a file.
+  Future<PickedAttachments> pickFiles({int limit = maxAttachments, int heldBytes = 0});
 
   /// A small text file (an SSH private key); null when cancelled.
   Future<String?> pickTextFile({int maxBytes = 64 * 1024});
@@ -164,10 +167,12 @@ class DeviceAttachmentPicker implements AttachmentPicker {
   }
 
   @override
-  Future<PickedAttachments> pickFiles({int limit = maxAttachments}) async {
+  Future<PickedAttachments> pickFiles({int limit = maxAttachments, int heldBytes = 0}) async {
     final picked = await FilePicker.pickFiles();
     final accepted = <DraftAttachment>[];
-    var acceptedBytes = 0;
+    // Bytes already in the tray plus what this pick has retained so far: the
+    // budget covers the whole message, not one picker invocation.
+    var usedBytes = heldBytes;
     String? problem;
     for (final file in picked) {
       if (accepted.length >= limit) {
@@ -181,7 +186,7 @@ class DeviceAttachmentPicker implements AttachmentPicker {
         problem ??= appL10n.stateAttachmentFileLimit(file.name);
         continue;
       }
-      if (length != null && acceptedBytes + length > maxMessageBytes) {
+      if (length != null && usedBytes + length > maxMessageBytes) {
         problem ??= appL10n.stateAttachmentTotalLimit;
         continue;
       }
@@ -190,6 +195,7 @@ class DeviceAttachmentPicker implements AttachmentPicker {
       var prefixLength = 0;
       String? mediaType;
       var tooLarge = false;
+      var overMessageBudget = false;
       await for (final chunk in file.readAsByteStream()) {
         // Signatures may span chunks. Inspect only the small prefix before
         // retaining a chunk, and use image limits even with a misleading name.
@@ -198,27 +204,32 @@ class DeviceAttachmentPicker implements AttachmentPicker {
         prefixLength += take;
         mediaType = inlineImageType(Uint8List.sublistView(prefix, 0, prefixLength));
         final budget = mediaType == null ? maxFileBytes : maxImageBytes;
-        if ((length != null && length > budget) ||
-            chunk.length > budget - bytes.length ||
-            chunk.length > maxMessageBytes - acceptedBytes - bytes.length) {
+        if ((length != null && length > budget) || chunk.length > budget - bytes.length) {
           tooLarge = true;
           break; // Cancels the stream without retaining the excess chunk.
+        }
+        if (chunk.length > maxMessageBytes - usedBytes - bytes.length) {
+          tooLarge = true;
+          overMessageBudget = true;
+          break;
         }
         bytes.add(chunk);
       }
       if (tooLarge) {
-        problem ??= mediaType == null
-            ? appL10n.stateAttachmentFileLimit(file.name)
-            : appL10n.stateAttachmentImageLimit(file.name);
+        problem ??= overMessageBudget
+            ? appL10n.stateAttachmentTotalLimit
+            : (mediaType == null
+                  ? appL10n.stateAttachmentFileLimit(file.name)
+                  : appL10n.stateAttachmentImageLimit(file.name));
         continue;
       }
       final attachment = DraftAttachment(name: file.name, bytes: bytes.takeBytes(), mediaType: mediaType);
-      final issue = attachmentProblem(attachment) ?? attachmentBudgetProblem(acceptedBytes, attachment);
+      final issue = attachmentProblem(attachment) ?? attachmentBudgetProblem(usedBytes, attachment);
       if (issue != null) {
         problem ??= issue;
       } else {
         accepted.add(attachment);
-        acceptedBytes += attachment.size;
+        usedBytes += attachment.size;
       }
     }
     return PickedAttachments(accepted, problem: problem);
