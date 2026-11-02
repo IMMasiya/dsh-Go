@@ -12,8 +12,9 @@ import 'connection_state.dart';
 /// Something picked in the composer and not sent yet.
 ///
 /// Images DSH takes inline (png, jpeg, webp, gif) ride in the prompt itself;
-/// anything else is staged first with `fileUploads/upload` and referenced by
-/// its receipt. Which one is decided from the bytes, not the file name.
+/// anything else is staged first (`fileUploads/upload`, or a streamed binary
+/// upload on hosts that support it) and referenced by its receipt. Which one
+/// is decided from the bytes, not the file name.
 class DraftAttachment {
   DraftAttachment({required this.name, required this.bytes, this.mediaType}) : id = _nextId++;
 
@@ -46,9 +47,12 @@ class PickedAttachments {
 /// DSH's inline image limit (`SessionProjections.imageLimits` default).
 const maxImageBytes = 20 * 1024 * 1024;
 
-/// Files travel base64 inside one RPC frame; keep them to what a phone can
-/// hold twice over without trouble.
-const maxFileBytes = 30 * 1024 * 1024;
+/// Files stream to the engine (`/api/session/uploadFileBinary`), so the
+/// transfer holds about one copy of the file; the picker still keeps the
+/// staged bytes (about two while assembling), and one message has no byte
+/// budget. On a host without that route the client falls back to base64 and
+/// refuses what one RPC frame can't hold.
+const maxFileBytes = 200 * 1024 * 1024;
 
 /// At most this many attachments per message (DSH allows 20 images).
 const maxAttachments = 9;

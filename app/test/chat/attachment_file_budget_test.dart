@@ -135,12 +135,12 @@ void main() {
 
   for (final reported in <int?>[null, 0, 1, maxFileBytes]) {
     test('unknown or stale size $reported still stops at the first oversized chunk', () async {
-      final file = _File('export.zip', _megabytes(33), reportedLength: reported);
+      final file = _File('export.zip', _megabytes(maxFileBytes ~/ _mib + 1), reportedLength: reported);
       picker.selected = [file];
       final result = await device.pickFiles();
       expect(result.attachments, isEmpty);
       expect(result.problem, appL10n.stateAttachmentFileLimit(file.name));
-      expect(file.consumed, 31 * _mib);
+      expect(file.consumed, maxFileBytes + _mib);
       expect(file.closed, isTrue);
       expect(file.wholeReads, 0);
     });
@@ -182,8 +182,8 @@ void main() {
     expect(file.closed, isTrue);
   });
 
-  test('normal file named png retains the 30 MiB allowance and accepts its exact boundary', () async {
-    final file = _File('not-an-image.png', _megabytes(30), reportedLength: maxFileBytes);
+  test('normal file named png retains the 200 MiB allowance and accepts its exact boundary', () async {
+    final file = _File('not-an-image.png', _megabytes(maxFileBytes ~/ _mib), reportedLength: maxFileBytes);
     picker.selected = [file];
     final result = await device.pickFiles();
     expect(result.problem, isNull);

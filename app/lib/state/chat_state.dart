@@ -1201,7 +1201,9 @@ class ChatController extends Notifier<ChatState> {
   }
 
   /// Sends [text] with [attachments]; resolves to `false` when it could not be
-  /// delivered. Files are staged first (`fileUploads/upload`), images go inline.
+  /// delivered. Files are staged first (streamed as raw bytes on a Host with
+  /// `/api/session/uploadFileBinary`, else `fileUploads/upload`); images go
+  /// inline.
   ///
   /// While a turn runs, [mode] picks how the message reaches the agent; when
   /// idle every mode just starts a turn.
@@ -1328,7 +1330,8 @@ class ChatController extends Notifier<ChatState> {
   static String _contentKey(String text, List<DraftAttachment> attachments) =>
       [text, for (final a in attachments) a.name].join('\n');
 
-  /// Stages the files among [attachments] (`fileUploads/upload`); images go
+  /// Stages the files among [attachments] (`DshClient.uploadFile` prefers the
+  /// Host's raw-byte route and falls back to `fileUploads/upload`); images go
   /// inline with the prompt instead, unless [images] asks for them.
   Future<List<String>> _stageFiles(
     _ChatOperation operation,

@@ -327,7 +327,7 @@
   "statePetChatsQuestion": "{count, plural, =1{1 chat needs your answer} other{{count} chats need your answer}}",
   "stateAttachmentEmpty": "“{name}” is empty",
   "stateAttachmentImageLimit": "Image “{name}” exceeds 20 MB",
-  "stateAttachmentFileLimit": "File “{name}” exceeds 30 MB",
+  "stateAttachmentFileLimit": "File “{name}” exceeds 200 MB",
   "stateBotFinished": "{name} finished working",
   "stateBotQuestion": "{name} asks: {text}",
   "stateBotApproval": "{name} needs approval: {text}",
