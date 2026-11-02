@@ -98,7 +98,9 @@ object Proto {
 
 /** Stable reason codes → one short Chinese sentence for the model (after Phase's set). */
 object Reasons {
-    fun of(code: String?, detail: String?): String = of(code) + detail?.let { "（$it）" }.orEmpty()
+    fun of(code: String?, detail: String?): String = withDetail(of(code), detail)
+
+    fun withDetail(reason: String, detail: String?): String = reason + detail?.let { "（$it）" }.orEmpty()
 
     fun of(code: String?): String = when (code) {
         null -> ""

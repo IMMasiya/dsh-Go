@@ -17,5 +17,6 @@ class PrivilegedInputReasonTest {
     @Test fun aGenericFailureNamesTheStepWhenItIsKnown() {
         assertTrue(Reasons.of("deviceUnavailable", "adb closed").endsWith("（adb closed）"))
         assertFalse(Reasons.of("deviceUnavailable", null).contains("（"))
+        assertTrue(Reasons.withDetail("gate", "adb closed").endsWith("（adb closed）"))
     }
 }

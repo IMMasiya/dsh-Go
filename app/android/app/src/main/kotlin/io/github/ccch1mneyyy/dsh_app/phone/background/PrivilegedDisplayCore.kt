@@ -107,7 +107,7 @@ class PrivilegedDisplayCore(private val context: Context) {
         } catch (e: Throwable) {
             response.putBoolean(Proto.OK, false)
             response.putString(Proto.ERROR, failureCode(e))
-            if (e !is Fault && e !is SecurityException) response.putString(Proto.ERROR_DETAIL, e.javaClass.simpleName)
+            failureDetail(e)?.let { response.putString(Proto.ERROR_DETAIL, it) }
         }
         return response
     }
@@ -117,6 +117,9 @@ class PrivilegedDisplayCore(private val context: Context) {
         is SecurityException -> "systemOperationDenied"
         else -> "deviceUnavailable"
     }
+
+    private fun failureDetail(e: Throwable): String? =
+        if (e is Fault || e is SecurityException) null else e.javaClass.simpleName
 
     private fun dispatch(op: String?, request: Bundle, response: Bundle) {
         val ownerId = request.getString(Proto.OWNER).orEmpty()
@@ -191,7 +194,10 @@ class PrivilegedDisplayCore(private val context: Context) {
                 ) { injectTap(1, 1, false) }
             }
             response.putBoolean(Proto.INJECT_OK, injection.isSuccess)
-            injection.exceptionOrNull()?.let { response.putString(Proto.INJECT_ERROR, failureCode(it)) }
+            injection.exceptionOrNull()?.let {
+                response.putString(Proto.INJECT_ERROR, failureCode(it))
+                failureDetail(it)?.let { detail -> response.putString(Proto.ERROR_DETAIL, detail) }
+            }
             response.putInt(Proto.DISPLAY_ID, displayId())
         } finally {
             releaseAll()
