@@ -12,4 +12,10 @@ class PrivilegedInputReasonTest {
         assertTrue(reason, reason.contains("可能已发出"))
         assertTrue(reason, reason.contains("不要重复"))
     }
+
+    // The generic message hides which step failed; a report can only name it through the detail (#342).
+    @Test fun aGenericFailureNamesTheStepWhenItIsKnown() {
+        assertTrue(Reasons.of("deviceUnavailable", "adb closed").endsWith("（adb closed）"))
+        assertFalse(Reasons.of("deviceUnavailable", null).contains("（"))
+    }
 }
