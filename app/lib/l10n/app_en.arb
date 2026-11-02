@@ -4836,6 +4836,7 @@
   "stateAttachmentEmpty": "“{name}” is empty",
   "stateAttachmentImageLimit": "Image “{name}” exceeds 20 MB",
   "stateAttachmentFileLimit": "File “{name}” exceeds 200 MB",
+  "stateAttachmentTotalLimit": "Attachments exceed 400 MB in total",
   "stateBotFinished": "{name} finished working",
   "stateBotQuestion": "{name} asks: {text}",
   "stateBotApproval": "{name} needs approval: {text}",

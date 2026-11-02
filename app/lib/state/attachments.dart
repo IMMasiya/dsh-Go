@@ -57,6 +57,12 @@ const maxFileBytes = 200 * 1024 * 1024;
 /// At most this many attachments per message (DSH allows 20 images).
 const maxAttachments = 9;
 
+/// Bytes one message's attachments may hold. The picker and the tray keep
+/// every file in memory until the message is sent, so the ceiling is the
+/// phone's heap rather than the Host; the share path's Kotlin budget
+/// (`MAX_TOTAL_BYTES`) matches this.
+const maxMessageBytes = 400 * 1024 * 1024;
+
 /// Media type when [bytes] is an image DSH accepts inline, else null.
 String? inlineImageType(Uint8List bytes) {
   bool at(int offset, List<int> sig) {
@@ -97,6 +103,21 @@ String? attachmentProblem(DraftAttachment a) {
   }
   return null;
 }
+
+/// Bytes held by [attachments], counted against [maxMessageBytes].
+int totalAttachmentBytes(Iterable<DraftAttachment> attachments) {
+  var total = 0;
+  for (final a in attachments) {
+    total += a.size;
+  }
+  return total;
+}
+
+/// Why [a] can't join a message already holding [heldBytes], or null when it
+/// fits. Checked in every path that grows the tray, so repeated picks cannot
+/// pile past [maxMessageBytes].
+String? attachmentBudgetProblem(int heldBytes, DraftAttachment a) =>
+    heldBytes + a.size > maxMessageBytes ? appL10n.stateAttachmentTotalLimit : null;
 
 /// The system pickers behind the composer's ＋ menu. Tests swap in a fake.
 abstract class AttachmentPicker {
@@ -146,6 +167,7 @@ class DeviceAttachmentPicker implements AttachmentPicker {
   Future<PickedAttachments> pickFiles({int limit = maxAttachments}) async {
     final picked = await FilePicker.pickFiles();
     final accepted = <DraftAttachment>[];
+    var acceptedBytes = 0;
     String? problem;
     for (final file in picked) {
       if (accepted.length >= limit) {
@@ -157,6 +179,10 @@ class DeviceAttachmentPicker implements AttachmentPicker {
       final length = file.lengthSync();
       if (length != null && length > maxFileBytes) {
         problem ??= appL10n.stateAttachmentFileLimit(file.name);
+        continue;
+      }
+      if (length != null && acceptedBytes + length > maxMessageBytes) {
+        problem ??= appL10n.stateAttachmentTotalLimit;
         continue;
       }
       final bytes = BytesBuilder(copy: false);
@@ -172,7 +198,9 @@ class DeviceAttachmentPicker implements AttachmentPicker {
         prefixLength += take;
         mediaType = inlineImageType(Uint8List.sublistView(prefix, 0, prefixLength));
         final budget = mediaType == null ? maxFileBytes : maxImageBytes;
-        if ((length != null && length > budget) || chunk.length > budget - bytes.length) {
+        if ((length != null && length > budget) ||
+            chunk.length > budget - bytes.length ||
+            chunk.length > maxMessageBytes - acceptedBytes - bytes.length) {
           tooLarge = true;
           break; // Cancels the stream without retaining the excess chunk.
         }
@@ -185,11 +213,12 @@ class DeviceAttachmentPicker implements AttachmentPicker {
         continue;
       }
       final attachment = DraftAttachment(name: file.name, bytes: bytes.takeBytes(), mediaType: mediaType);
-      final issue = attachmentProblem(attachment);
+      final issue = attachmentProblem(attachment) ?? attachmentBudgetProblem(acceptedBytes, attachment);
       if (issue != null) {
         problem ??= issue;
       } else {
         accepted.add(attachment);
+        acceptedBytes += attachment.size;
       }
     }
     return PickedAttachments(accepted, problem: problem);

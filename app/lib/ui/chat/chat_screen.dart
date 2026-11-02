@@ -864,13 +864,15 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
 
   void _addDrafts(List<DraftAttachment> picked, {String? problem}) {
     final room = maxAttachments - _drafts.length;
+    var heldBytes = totalAttachmentBytes(_drafts);
     final ok = <DraftAttachment>[];
     for (final a in picked) {
-      final p = attachmentProblem(a);
+      final p = attachmentProblem(a) ?? attachmentBudgetProblem(heldBytes, a);
       if (p != null) {
         problem ??= p;
       } else if (ok.length < room) {
         ok.add(a);
+        heldBytes += a.size;
       } else {
         problem ??= appL10n.chatAttachmentLimit(maxAttachments);
       }

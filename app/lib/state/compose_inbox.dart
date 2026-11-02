@@ -180,11 +180,33 @@ MergedDraft mergeIntoDraft({
     problems.add(appL10n.stateShareImagesOnly);
   }
 
+  // The tray keeps every attachment's bytes until send; do not let shares pile
+  // one message past its byte budget.
+  var held = totalAttachmentBytes(attachments);
+  final budgeted = <DraftAttachment>[];
+  for (final a in incoming) {
+    final over = attachmentBudgetProblem(held, a);
+    if (over != null) {
+      problems.add(over);
+      continue;
+    }
+    held += a.size;
+    budgeted.add(a);
+  }
+  incoming = budgeted;
+
   var shared = request.text.trim();
   if (shared.length > maxComposerShareChars) {
     if (filesAllowed && attachments.length + incoming.length < maxAttachments) {
-      incoming = [DraftAttachment.sniff(sharedTextFileName, Uint8List.fromList(utf8.encode(shared))), ...incoming];
-      shared = '';
+      final textFile = DraftAttachment.sniff(sharedTextFileName, Uint8List.fromList(utf8.encode(shared)));
+      if (attachmentBudgetProblem(held, textFile) == null) {
+        incoming = [textFile, ...incoming];
+        held += textFile.size;
+        shared = '';
+      } else {
+        shared = _cut(shared, maxComposerShareChars);
+        problems.add(appL10n.stateShareTextTruncated(maxComposerShareChars));
+      }
     } else {
       shared = _cut(shared, maxComposerShareChars);
       problems.add(appL10n.stateShareTextTruncated(maxComposerShareChars));

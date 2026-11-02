@@ -460,6 +460,7 @@
       }
     }
   },
+  "stateAttachmentTotalLimit": "附件总大小超过 400 MB",
   "stateBotFinished": "{name} 完成了工作",
   "@stateBotFinished": {
     "placeholders": {

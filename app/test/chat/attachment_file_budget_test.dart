@@ -155,6 +155,18 @@ void main() {
     expect(file.closed, isTrue);
   });
 
+  test('a multi-file pick stops at the message byte budget', () async {
+    // 150 MiB each with known sizes: two fit (300 MiB), the third would pass 400 MiB.
+    final files = [
+      for (var i = 0; i < 3; i++) _File('part$i.bin', _megabytes(150), reportedLength: 150 * _mib),
+    ];
+    picker.selected = files;
+    final result = await device.pickFiles();
+    expect(result.attachments.map((a) => a.name), ['part0.bin', 'part1.bin']);
+    expect(result.problem, appL10n.stateAttachmentTotalLimit);
+    expect(files[2].streams, 0);
+  });
+
   test('split image signature applies 20 MiB before retaining the offending chunk', () async {
     final file = _File('misleading.bin', [
       Uint8List.fromList(_png.take(3).toList()),
