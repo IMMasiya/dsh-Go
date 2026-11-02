@@ -33,6 +33,9 @@ abstract final class AppMotion {
   static const sheetIn = Duration(milliseconds: 380);
   static const sheetOut = Duration(milliseconds: 260);
 
+  /// 弹层停稳后,模糊透出来。
+  static const glassIn = Duration(milliseconds: 120);
+
   /// 页面级过场、安装步骤切换。
   static const slow = Duration(milliseconds: 480);
 
