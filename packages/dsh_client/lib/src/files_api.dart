@@ -58,21 +58,16 @@ extension DshFilesApi on DshClient {
   /// Whether [url] is served by this client's own engine, over HTTP.
   bool isEngineUrl(String url) {
     final carrier = this.carrier;
-    return carrier is DshHttpCarrier && carrier.connection.ownPath(url) != null;
+    return carrier is DshHttpCarrier && carrier.connection.ownUri(url) != null;
   }
 
   /// The bytes at [url], which [isEngineUrl] accepted, read with the session's
   /// credentials: no redirects, at most [maxBytes].
   Future<Uint8List> readEngineUrl(String url, {required int maxBytes}) async {
     final carrier = this.carrier;
-    final target = carrier is DshHttpCarrier ? carrier.connection.ownPath(url) : null;
+    final target = carrier is DshHttpCarrier ? carrier.connection.ownUri(url) : null;
     if (carrier is! DshHttpCarrier || target == null) throw ArgumentError.value(url, 'url', 'not this engine');
-    final response = await carrier.connection.getBounded(
-      target.path,
-      query: target.query,
-      maxBytes: maxBytes,
-      autoUncompress: true,
-    );
+    final response = await carrier.connection.getBoundedAt(target, maxBytes: maxBytes, autoUncompress: true);
     if (response.statusCode == 200) return response.body;
     throw DshHttpException(response.statusCode, 'GET ${target.path}: HTTP ${response.statusCode}');
   }

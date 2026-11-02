@@ -5,6 +5,7 @@ import 'package:dsh_app/ui/chat/render/markdown_image.dart';
 import 'package:dsh_client/dsh_client.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'support/harness.dart';
@@ -24,22 +25,34 @@ class _Reader implements WorkspaceImageReader {
   }
 }
 
+class _Files extends Notifier<ArtifactFiles> {
+  @override
+  ArtifactFiles build() => _filesOn(_engine);
+
+  void reconnect() => state = _filesOn(_engine);
+}
+
+ArtifactFiles _filesOn(String base) => ArtifactFiles(
+  connection: HostConnection(
+    client: DshClient.withCarrier(DshHttpCarrier(DshConnection(Uri.parse(base)))),
+    isLocal: true,
+  ),
+  channel: const FilesChannel(),
+);
+
+final _files = NotifierProvider<_Files, ArtifactFiles>(_Files.new);
+
 void main() {
   late _Reader reader;
 
   Widget scene(String url) => testApp(
     Scaffold(body: MarkdownImage(url: url)),
     overrides: [
-      artifactFilesProvider.overrideWithValue(
-        ArtifactFiles(
-          connection: HostConnection(
-            client: DshClient.withCarrier(DshHttpCarrier(DshConnection(Uri.parse(_engine)))),
-            isLocal: true,
-          ),
-          channel: const FilesChannel(),
-        ),
-      ),
-      engineImageReaderProvider.overrideWith((ref) => CachedImageReader(reader)),
+      artifactFilesProvider.overrideWith((ref) => ref.watch(_files)),
+      engineImageReaderProvider.overrideWith((ref) {
+        ref.watch(artifactFilesProvider);
+        return CachedImageReader(reader);
+      }),
     ],
   );
 
@@ -72,4 +85,54 @@ void main() {
     expect(reader.reads, [_emoji, _emoji]);
     expect(tester.takeException(), isNull);
   });
+
+  testWidgets('a replaced connection reads the image again through the new one', (tester) async {
+    reader.fails = true;
+    await tester.pumpWidget(scene(_emoji));
+    await tester.pump();
+    await tester.pump();
+    expect(reader.reads, [_emoji]);
+    reader.fails = false;
+    ProviderScope.containerOf(tester.element(find.byType(MarkdownImage))).read(_files.notifier).reconnect();
+    await tester.pump();
+    await tester.pump();
+    expect(reader.reads, [_emoji, _emoji]);
+    expect(find.textContaining('重试'), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
+  group('what the engine reader holds', () {
+    final big = Uint8List(maxHeldEngineImageBytes + 1);
+    final small = Uint8List(16);
+
+    Future<CachedImageReader> reading(Uint8List bytes) async {
+      final container = ProviderContainer(
+        overrides: [artifactFilesProvider.overrideWithValue(_filesOn(_engine))],
+      );
+      addTearDown(container.dispose);
+      final keeps = container.read(engineImageReaderProvider).keeps!;
+      return CachedImageReader(_Fixed(bytes), keeps: keeps);
+    }
+
+    test('a small asset stays for the next read', () async {
+      final cache = await reading(small);
+      await cache.read('', _emoji);
+      expect(cache.peek('', _emoji), isNotNull);
+    });
+
+    test('a large image is not held in memory', () async {
+      final cache = await reading(big);
+      await cache.read('', _emoji);
+      expect(cache.peek('', _emoji), isNull);
+    });
+  });
+}
+
+class _Fixed implements WorkspaceImageReader {
+  _Fixed(this.bytes);
+
+  final Uint8List bytes;
+
+  @override
+  Future<LoadedImage> read(String sessionId, String path) async => RasterImage(MemoryImage(bytes));
 }

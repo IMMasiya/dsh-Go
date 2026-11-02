@@ -5,13 +5,16 @@ import 'package:dsh_client/dsh_client.dart';
 import 'package:test/test.dart';
 
 void main() {
-  group('ownPath', () {
+  group('ownUri', () {
     final engine = DshConnection(Uri.parse('http://127.0.0.1:3080'));
 
     test('takes the engine address, with its path and query', () {
-      final own = engine.ownPath('http://127.0.0.1:3080/api/dsh-emoji/assets/a.png?v=2');
-      expect(own?.path, '/api/dsh-emoji/assets/a.png');
-      expect(own?.query, {'v': '2'});
+      final own = engine.ownUri('http://127.0.0.1:3080/api/dsh-emoji/assets/a.png?v=2');
+      expect(own, Uri.parse('http://127.0.0.1:3080/api/dsh-emoji/assets/a.png?v=2'));
+    });
+
+    test('keeps a query as written, repeated keys and all', () {
+      expect(engine.ownUri('http://127.0.0.1:3080/a.png?part=a&part=b&sig=x%2By')?.query, 'part=a&part=b&sig=x%2By');
     });
 
     test('refuses every other address, which must never see the cookie', () {
@@ -24,22 +27,22 @@ void main() {
         'http://user@127.0.0.1:3080/a.png',
         'not a url',
       ]) {
-        expect(engine.ownPath(url), isNull, reason: url);
+        expect(engine.ownUri(url), isNull, reason: url);
       }
     });
 
     test('a tunnelled engine answers to the name it knows itself by, on the dialled address', () {
       final tunnel = DshConnection(Uri.parse('http://127.0.0.1:49152'), hostHeader: '127.0.0.1:3080');
-      expect(tunnel.ownPath('http://127.0.0.1:3080/a.png')?.path, '/a.png');
-      expect(tunnel.ownPath('http://127.0.0.1:49152/a.png')?.path, '/a.png');
-      expect(tunnel.ownPath('http://127.0.0.1:9999/a.png'), isNull);
+      expect(tunnel.ownUri('http://127.0.0.1:3080/a.png'), Uri.parse('http://127.0.0.1:49152/a.png'));
+      expect(tunnel.ownUri('http://127.0.0.1:49152/a.png'), Uri.parse('http://127.0.0.1:49152/a.png'));
+      expect(tunnel.ownUri('http://127.0.0.1:9999/a.png'), isNull);
     });
 
     test('stays inside the mount path', () {
       final mounted = DshConnection(Uri.parse('http://127.0.0.1:3080/dsh'));
-      expect(mounted.ownPath('http://127.0.0.1:3080/dsh/a.png')?.path, '/a.png');
-      expect(mounted.ownPath('http://127.0.0.1:3080/other/a.png'), isNull);
-      expect(mounted.ownPath('http://127.0.0.1:3080/dshx/a.png'), isNull);
+      expect(mounted.ownUri('http://127.0.0.1:3080/dsh/a.png'), Uri.parse('http://127.0.0.1:3080/dsh/a.png'));
+      expect(mounted.ownUri('http://127.0.0.1:3080/other/a.png'), isNull);
+      expect(mounted.ownUri('http://127.0.0.1:3080/dshx/a.png'), isNull);
     });
   });
 

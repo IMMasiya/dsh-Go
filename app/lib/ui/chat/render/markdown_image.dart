@@ -211,10 +211,13 @@ class ArtifactImageReader implements WorkspaceImageReader {
 /// scrolling a reply back into view draws it at once instead of reading the
 /// file again. A failed read is forgotten, so the next attempt reads afresh.
 class CachedImageReader implements WorkspaceImageReader {
-  CachedImageReader(this.inner, {this.capacity = 64});
+  CachedImageReader(this.inner, {this.capacity = 64, this.keeps});
 
   final WorkspaceImageReader inner;
   final int capacity;
+
+  /// Whether a read image is worth holding; null holds all of them.
+  final bool Function(LoadedImage image)? keeps;
   final _pending = <(String, String), Future<LoadedImage>>{};
   final _done = <(String, String), LoadedImage>{};
 
@@ -236,6 +239,7 @@ class CachedImageReader implements WorkspaceImageReader {
         .then(
           (image) {
             _pending.remove(key);
+            if (keeps?.call(image) == false) return image;
             _done[key] = image;
             while (_done.length > capacity) {
               _done.remove(_done.keys.first);
@@ -273,9 +277,23 @@ class EngineImageReader implements WorkspaceImageReader {
   }
 }
 
-/// Images from the engine's own address; one cache per connection.
+/// Largest engine image held in memory between reads. These hold their bytes,
+/// unlike workspace images (a file handle): small assets such as emoji repeat
+/// in a chat, and anything bigger is read again when it scrolls back.
+const maxHeldEngineImageBytes = 256 * 1024;
+
+/// Images from the engine's own address; one cache per connection, at most
+/// 8 MiB of bytes.
 final engineImageReaderProvider = Provider<CachedImageReader>(
-  (ref) => CachedImageReader(EngineImageReader(ref.watch(artifactFilesProvider).connection?.client)),
+  (ref) => CachedImageReader(
+    EngineImageReader(ref.watch(artifactFilesProvider).connection?.client),
+    capacity: 32,
+    keeps: (image) => switch (image) {
+      RasterImage(provider: MemoryImage(:final bytes)) || SvgImageBytes(:final bytes) =>
+        bytes.length <= maxHeldEngineImageBytes,
+      _ => true,
+    },
+  ),
 );
 
 /// The reader reply images use; one cache per connection.
@@ -507,6 +525,14 @@ class _MarkdownImageState extends ConsumerState<MarkdownImage> {
 
   @override
   Widget build(BuildContext context) {
+    // A replaced connection has its own cookie and cache: read through it again.
+    ref.listen(artifactFilesProvider.select((files) => files.connection?.client), (_, _) {
+      if (_source is! WebImageSource) return;
+      setState(() {
+        _engineUrl = null;
+        _resolve();
+      });
+    });
     final l10n = context.l10n;
     // A media card above already shows this file: not a second time. Only
     // for a conversation already open (a previewed file never starts one).

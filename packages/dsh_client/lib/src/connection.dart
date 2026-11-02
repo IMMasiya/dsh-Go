@@ -237,18 +237,17 @@ class DshConnection {
     );
   }
 
-  /// [url]'s path and query when it names this engine, by the address this
-  /// connection dials or the authority the engine knows itself by; null for
-  /// anything else. Only these may carry [cookie], and the request always goes
-  /// to [baseUri], never to the address in [url].
-  ({String path, Map<String, String> query})? ownPath(String url) {
+  /// The address to dial for [url] when it names this engine, by the address
+  /// this connection dials or the authority the engine knows itself by; null
+  /// for anything else. Only these may carry [cookie]. The result is always on
+  /// [baseUri], never the address in [url], and keeps [url]'s query as written.
+  Uri? ownUri(String url) {
     final uri = Uri.tryParse(url);
     if (uri == null || uri.scheme != baseUri.scheme || uri.userInfo.isNotEmpty) return null;
     final named = _authorityOf(uri);
     if (named != authority && named != _authorityOf(baseUri)) return null;
-    final mount = baseUri.path;
-    if (!uri.path.startsWith('$mount/')) return null;
-    return (path: uri.path.substring(mount.length), query: uri.queryParameters);
+    if (!uri.path.startsWith('${baseUri.path}/')) return null;
+    return baseUri.replace(path: uri.path, query: uri.hasQuery ? uri.query : null);
   }
 
   Uri webSocketUri(String path) {
@@ -363,9 +362,16 @@ class DshConnection {
     required int maxBytes,
     bool autoUncompress = false,
     Duration timeout = const Duration(seconds: 30),
+  }) => getBoundedAt(resolve(path, query), maxBytes: maxBytes, autoUncompress: autoUncompress, timeout: timeout);
+
+  /// [getBounded] for an address already on this engine, as from [ownUri].
+  Future<DshHttpResponse> getBoundedAt(
+    Uri uri, {
+    required int maxBytes,
+    bool autoUncompress = false,
+    Duration timeout = const Duration(seconds: 30),
   }) async {
     if (maxBytes < 1) throw ArgumentError.value(maxBytes, 'maxBytes');
-    final uri = resolve(path, query);
     final http = HttpClient()
       ..connectionTimeout = connectTimeout
       ..autoUncompress = autoUncompress;
