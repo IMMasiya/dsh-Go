@@ -2,6 +2,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
+import '../common/pressable.dart';
 import '../common/ui_trace.dart';
 
 import 'shapes.dart';
@@ -112,9 +113,16 @@ class GlassSurface extends StatelessWidget {
     Widget content = child ?? const SizedBox.shrink();
     if (padding != null) content = Padding(padding: padding!, child: content);
     if (onTap != null || onLongPress != null) {
+      // Press feedback on the content, not the glass: scaling a surface that
+      // blurs would re-sample what is behind it at a new size every frame.
       content = Material(
         type: MaterialType.transparency,
-        child: InkWell(customBorder: shape, onTap: onTap, onLongPress: onLongPress, child: content),
+        child: InkWell(
+          customBorder: shape,
+          onTap: onTap,
+          onLongPress: onLongPress,
+          child: Pressable(behavior: HitTestBehavior.translucent, child: content),
+        ),
       );
     }
 

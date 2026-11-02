@@ -14,7 +14,7 @@ import 'package:flutter/physics.dart';
 /// 系统开启"移除动画"时,用 [of] 取时长会得到 0;循环动画用 [reduced]
 /// 判断后停在静止帧。
 abstract final class AppMotion {
-  /// 按压缩放、水波起始。
+  /// 按压缩放、水波起始;列表里按压显现前的等待,和显现后至少停留的时长。
   static const press = Duration(milliseconds: 90);
 
   /// 淡入淡出、图标交叉切换、复制成功对勾。
@@ -114,9 +114,8 @@ abstract final class AppMotion {
   /// 首次出现时上移的距离(逻辑像素)。
   static const rise = 8.0;
 
-  /// 按压缩放:按下 [press] 缩到 [pressScale],松手 [release] 回到 1(不越过)。
+  /// 按压缩放:按下缩到 [pressScale],松手回到 1(不越过),都走 [pressSpring]。
   static const pressScale = 0.97;
-  static const release = Duration(milliseconds: 200);
 
   /// 弹层升起:快出、长尾减速,像有一点阻尼;不回弹。
   static const sheetRise = Cubic(0.2, 0.9, 0.25, 1.0);
