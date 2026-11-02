@@ -1,6 +1,9 @@
 // Portions derived from PiPilot (https://github.com/CikeSeven/pi_pilot), MIT, Copyright (c) 2026 CikeSeven. See THIRD_PARTY_NOTICES.md.
 
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
+import 'package:flutter/physics.dart';
 
 /// 动效 token。原则:**安静、短、跟手**。
 ///
@@ -51,9 +54,52 @@ abstract final class AppMotion {
   /// 滑行:抽屉、胶囊位移这类"跟手后落位"的运动,iOS 式长尾减速。
   static const glide = Cubic(0.32, 0.72, 0.0, 1.0);
 
-  /// 轻微欠阻尼的弹簧(阻尼比约 0.93):落位时几乎不回弹,只有一点"活"气。
-  /// 用于抽屉 fling、底栏指示器。
-  static const spring = SpringDescription(mass: 1, stiffness: 420, damping: 38);
+  /// 弹簧,时长 + 回弹,取 Apple 的默认值:回弹 0 最通用,0.15 几乎看不出在弹,
+  /// 超过 0.4 就夸张了。按压落位。
+  static final pressSpring = SpringDescription.withDurationAndBounce(duration: const Duration(milliseconds: 150));
+
+  /// 尺寸、位置变化的落位。
+  static final layoutSpring = SpringDescription.withDurationAndBounce(duration: const Duration(milliseconds: 350));
+
+  /// 跟手之后的落位:弹层、返回手势。
+  static final sheetSpring = SpringDescription.withDurationAndBounce(duration: const Duration(milliseconds: 500));
+
+  /// 甩出去的抽屉:这里才有一点"活"气。
+  static final flingSpring = SpringDescription.withDurationAndBounce(
+    duration: const Duration(milliseconds: 500),
+    bounce: 0.15,
+  );
+
+  /// 回弹为 0 的弹簧从 [from] 带着速度 [velocity] 落到 [to],准确停在 [to] 上。
+  ///
+  /// [landing]:落点看得见。朝落点冲得太快时,回弹为 0 的弹簧也会越过去再回来,
+  /// 所以速度封顶在刚好不越过的那一档。落点在屏幕外(页面离场、弹层落下)传 false,
+  /// 手指多快就多快。
+  ///
+  /// [extent]:这段运动一共多少单位(比例控制器是 1,按像素算的传像素数)。差 0.2%
+  /// 就算到位,不等速度归零:默认容差下肉眼早停了,路由和手势还在等。
+  static SpringSimulation settle(
+    SpringDescription spring,
+    double from,
+    double to,
+    double velocity, {
+    bool landing = true,
+    double extent = 1,
+  }) {
+    var start = velocity;
+    if (landing) {
+      final limit = (to - from) * spring.damping / (2 * spring.mass);
+      start = limit > 0 ? math.min(velocity, limit) : math.max(velocity, limit);
+    }
+    return SpringSimulation(
+      spring,
+      from,
+      to,
+      start,
+      snapToEnd: true,
+      tolerance: Tolerance(distance: 0.002 * extent, velocity: double.infinity),
+    );
+  }
 
   /// 页面级的步骤切换(引导各步、启动页 → 主页)。
   static const page = Duration(milliseconds: 300);
