@@ -643,11 +643,12 @@ class _ChatListState extends ConsumerState<ChatList> {
     );
   }
 
-  /// 过程行:工具、工具组、只有思考的回复、斜杠指令、非错误提示。
+  /// 过程行:工具、工具组、只有思考的回复(或还在等第一个字:接上来多半是思考,
+  /// 间距先按它算,交接时不跳)、斜杠指令、非错误提示。
   /// 它们自带上下 4 的留白,彼此之间不再加间距(图形块之间正好 8)。
   static bool _isProcess(ChatRow? row) => switch (row) {
     ToolCallRow() || ToolGroupRow() || CommandNoticeRow() => true,
-    AssistantRow(:final item) => item.text.trim().isEmpty && item.reasoning.trim().isNotEmpty,
+    AssistantRow(:final item) => item.text.trim().isEmpty && (item.reasoning.trim().isNotEmpty || item.streaming),
     NoticeRowData(:final item) => item.kind != 'error',
     _ => false,
   };

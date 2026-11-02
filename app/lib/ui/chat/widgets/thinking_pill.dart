@@ -46,7 +46,13 @@ import 'stream_row.dart';
 const _brandBlue = Color(0xFF4D6BFE);
 
 class ThinkingPill extends StatefulWidget {
-  const ThinkingPill({super.key, required this.reasoning, this.active = false, this.streaming = false});
+  const ThinkingPill({
+    super.key,
+    required this.reasoning,
+    this.active = false,
+    this.streaming = false,
+    this.growIn = false,
+  });
 
   final String reasoning;
 
@@ -55,6 +61,10 @@ class ThinkingPill extends StatefulWidget {
 
   /// 这条回复还在流式输出:一轮(streaming 结束)时把展开的全文收回去。
   final bool streaming;
+
+  /// 接在等待的三个点后面出现:三行实时窗口从 0 长出来,而不是一帧多出来 ——
+  /// 这一行的高度三个点已经占好了,窗口没法提前占。
+  final bool growIn;
 
   @override
   State<ThinkingPill> createState() => _ThinkingPillState();
@@ -78,6 +88,18 @@ class _ThinkingPillState extends State<ThinkingPill> {
 
   /// 译文与"看译文还是原文":收起再展开也还在。
   final _translation = _TranslationHolder();
+
+  /// 第一帧窗口先关着,下一帧打开,[ExpandReveal] 才有得展开。
+  late bool _windowHeld = widget.growIn;
+
+  @override
+  void initState() {
+    super.initState();
+    if (!_windowHeld) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) setState(() => _windowHeld = false);
+    });
+  }
 
   @override
   void didUpdateWidget(ThinkingPill oldWidget) {
@@ -183,7 +205,7 @@ class _ThinkingPillState extends State<ThinkingPill> {
           child: StreamRowFrame(onTap: () => setState(() => _expanded = !_expanded), child: header),
         ),
         // 一个槽:思考中是实时窗口,点开换成全文,一轮结束收起。
-        ExpandReveal(open: open, child: _body ?? const SizedBox.shrink()),
+        ExpandReveal(open: open && !_windowHeld, child: _body ?? const SizedBox.shrink()),
       ],
     );
   }
