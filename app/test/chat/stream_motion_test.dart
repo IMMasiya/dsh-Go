@@ -308,11 +308,11 @@ void main() {
     harness.controllers['s1']!.emit(_state([...done, assistant(3, '回答', rowKey: 'm1.1', streaming: true)]));
     await tester.pump();
     var last = tester.getTopLeft(find.byType(AssistantMessage)).dy;
-    expect(last - before, lessThan(1), reason: 'the frame the text arrives on');
+    expect((last - before).abs(), lessThan(1), reason: 'the frame the text arrives on');
     for (var i = 0; i < 16; i++) {
       await tester.pump(const Duration(milliseconds: 16));
       final now = tester.getTopLeft(find.byType(AssistantMessage)).dy;
-      expect(now - last, lessThan(3), reason: 'frame $i');
+      expect((now - last).abs(), lessThan(3), reason: 'frame $i');
       last = now;
     }
     expect(last - before, closeTo(8, 0.01), reason: 'the usual gap once settled');

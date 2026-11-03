@@ -228,6 +228,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
     _draftScope = Object();
     _creating = null;
     _syncWait = null;
+    _composerToastWait?.cancel();
     if (_voice.active) unawaited(_voice.cancel());
     _mentions.dismiss();
     _saveDraft();
