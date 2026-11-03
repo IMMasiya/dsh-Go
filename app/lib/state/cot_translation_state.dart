@@ -9,10 +9,11 @@ import 'package:dsh_client/dsh_client.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../l10n/l10n.dart';
 import 'connection_state.dart';
 
 /// The app's interface language, the target of `auto`.
-const reasoningUiLanguage = 'zh';
+String get reasoningUiLanguage => AppLocale.current.languageCode;
 
 /// `cotTranslation/limits` of the active host; null while the bundle is off,
 /// its provider can't take requests, or nothing is connected. Read only while
