@@ -329,12 +329,12 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
     if (insert.skill case final name?) _handedSkills.add(name);
     _input.value = insertComposerToken(_input.value, insert.token);
     _focus.requestFocus();
-    showComposerToast(context, composerInsertedText, composerHeight: _veilHeight.value + _ChatLayout.overlap);
+    _composerToast(composerInsertedText);
   }
 
-  /// A toast from the list (a fork's 「返回原对话」): above the composer, once
-  /// the frame has laid out whatever just went into it (编辑后重发's text) and
-  /// the capsule has finished growing to it.
+  /// A toast about the composer (a fork's 「返回原对话」, an inserted skill): above
+  /// it, once the frame has laid out whatever just went into it (编辑后重发's text)
+  /// and the capsule has finished growing to it.
   void _composerToast(String message, {String? actionLabel, VoidCallback? onAction}) {
     void show() {
       if (!mounted) return;

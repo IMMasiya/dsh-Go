@@ -241,7 +241,9 @@ void main() {
   testWidgets('the hand-over from thinking to text never pushes the list up by the new line', (tester) async {
     await tester.pumpWidget(_reply(assistant(2, '', reasoning: '先看一下', streaming: true)));
     await pumpFrames(tester);
+    final before = _replyHeight(tester);
     await tester.pumpWidget(_reply(assistant(2, '回答', reasoning: '先看一下', streaming: true)));
+    expect((_replyHeight(tester) - before).abs(), lessThan(13), reason: 'the frame the text arrives on');
     expect(await _largestStep(tester, 30), lessThan(13));
   });
 
