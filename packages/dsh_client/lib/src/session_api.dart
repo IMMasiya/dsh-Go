@@ -786,9 +786,16 @@ class DshClient {
       executeCommand(sessionId, '/permission $preset');
 
   /// `commands/execute` (slash commands as typed in the composer).
+  /// Compaction waits for model generation; its request owns the cancellation
+  /// signal, so the ordinary HTTP deadline would cancel a healthy compaction.
   Future<CommandResult> executeCommand(String sessionId, String line) async {
+    final compact = RegExp(r'^/compact(?:\s|$)').hasMatch(line.trim());
     final value = asMap(
-      await rpc.call('commands/execute', {'agentId': sessionId, 'line': line, 'submittedAttachments': <Object?>[]}),
+      await rpc.call('commands/execute', {
+        'agentId': sessionId,
+        'line': line,
+        'submittedAttachments': <Object?>[],
+      }, compact ? const Duration(minutes: 30) : null),
     );
     final result = asMapOrEmpty(value?['result']);
     return CommandResult(asString(value?['commandId']), result['kind'] == 'success', asString(result['text']));
