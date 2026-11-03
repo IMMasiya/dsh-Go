@@ -20,6 +20,11 @@
   <a href="https://qm.qq.com/q/OEy2RqZnqY"><img alt="QQ group 1132118290" src="https://img.shields.io/badge/QQ%20group-1132118290-4B67B4?style=flat-square&logo=tencentqq&logoColor=white&labelColor=2B3245"></a>
 </p>
 
+<p align="center">
+  <a href="https://trendshift.io/repositories/319451"><img src="https://trendshift.io/api/badge/trendshift/repositories/319451/daily" alt="DSH Go: #1 on Trendshift's all-language daily ranking (2026-10-30)" width="250" height="55"></a><br>
+  <sub>#1 on Trendshift's all-language daily ranking · 2026-10-30</sub>
+</p>
+
 <br>
 
 <h3 align="center">Deepy and Whale girl keep you company</h3>
