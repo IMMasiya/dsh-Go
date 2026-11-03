@@ -13,6 +13,8 @@
 - 动效：等待的三个点换成思考或正文时不再硬切；思考文字上有一道缓慢的亮度扫光，图标转得更慢；工具之后直接出正文时，回复不再跳一下；输入框多一行时平滑长高。
 - 动画开关现在也管页面切换、底部弹窗和壁纸、启动画面的预览。系统的「移除动画」同样生效，App 开着时改也立刻生效。弹窗移动时不做模糊，只在停稳后模糊，中低端手机上更省。这些手感还没在真机上验证过，遇到问题请开 issue 反馈。
 - 安装包小了约 13 MB：arm64 包不再带另外两种架构用不上的库。
+- 远程：聊天输入框可以把文件上传到当前会话的工作目录，不再只能传图片。单个文件最大 200 MiB；走 Relay/TURN、未知路径或旧版主机时通常仍限 20 MiB，以主机的回复为准。这项还没在真实远程主机上验证过，遇到问题请开 issue 反馈。
+- 远程：抽屉底部的主机图标直接打开连接详情，点主机名或下拉仍是切换主机；本机图标打开引擎页。
 - 模型：`设置 › 模型` 顶部新增**新对话默认**，可以沿用上次的选择，也可以固定一个模型和思考深度。固定默认需要新版引擎支持。
 - 对话：回复里由引擎提供的图片（比如表情包插件的图）现在能显示，不再一律显示“无法显示”。展开的待办清单超长时，滑到底不再被拉回，能看到最后几项。
 - 对话：手动 `/compact` 不再在 120 秒时被中断，等待上限改为 30 分钟；模型、远程主机或代理自己的限制仍然有效。
@@ -32,6 +34,8 @@
 - Motion: the waiting dots no longer cut to thinking or text. The thinking label has a slow brightness sweep and its icon turns more slowly. A reply no longer jumps when text comes straight after a tool, and the composer grows smoothly by a line.
 - The animation switch now also covers page transitions, bottom sheets, and the wallpaper and launch previews. The system's remove-animations setting does too, including when changed with the app open. Sheets blur only at rest, not while moving, which is cheaper on mid-range and low-end phones. None of this has been felt on a real device yet, so please open an issue if it misbehaves.
 - The APK is about 13 MB smaller: the arm64 package no longer carries libraries for the other two architectures.
+- Remote: the composer can upload files to the current chat's working directory, not only images. Each file can be up to 200 MiB; over Relay or TURN, on an unknown path or with an older host the limit is usually still 20 MiB, and the host's reply decides. This hasn't been tried on a real remote host yet, so please open an issue if it misbehaves.
+- Remote: the host icon at the bottom of the drawer opens the connection details directly, and the host name or dropdown still switches hosts. The local icon opens the engine page.
 - Models: `Settings › Models` has **New chat defaults** at the top. Keep your last choice, or fix a model and thinking effort. A fixed default needs an engine that supports it.
 - Chat: images the engine serves itself in replies, such as those from an emoji plugin, now load instead of showing "can't display". A long expanded to-do list no longer pulls back when you scroll to the end, so the last items can be seen.
 - Chat: a manual `/compact` is no longer cut off at 120 seconds. It can now wait up to 30 minutes, though limits set by the model, a remote host or a proxy still apply.
