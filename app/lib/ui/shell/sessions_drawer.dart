@@ -1094,7 +1094,7 @@ class _RoundButton extends StatelessWidget {
         onTap: onTap,
         onLongPress: hold,
         excludeSemantics: true,
-        child: Pressable(child: button),
+        child: button,
       ),
     );
   }
