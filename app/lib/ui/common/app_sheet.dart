@@ -217,7 +217,11 @@ class _HeldSheetDragState extends State<_HeldSheetDrag> with SingleTickerProvide
   }
 
   void _update(DragUpdateDetails details) {
-    _offset.stop();
+    // Caught on its way back: the drag carries on from where the sheet is.
+    if (_offset.isAnimating) {
+      _offset.stop();
+      _dragged = _offset.value;
+    }
     _dragged += details.delta.dy;
     _offset.value = math.max(0, _dragged);
   }

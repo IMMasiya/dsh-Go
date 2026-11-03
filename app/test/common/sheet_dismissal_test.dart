@@ -20,12 +20,14 @@ Future<void> _open(
   bool canPop = true,
   VoidCallback? onBlocked,
   Widget? content,
+  bool animations = false,
 }) async {
   usePhoneSurface(tester);
   tester.view.physicalSize = Size(width * 2, 844 * 2);
   await tester.pumpWidget(
     goldenApp(
       brightness: brightness,
+      animations: animations,
       home: Builder(
         builder: (context) => Scaffold(
           body: TextButton(
@@ -202,12 +204,13 @@ void main() {
   });
 
   group('unsaved input holds a draggable sheet', () {
-    Future<TextEditingController> openDraft(WidgetTester tester, String text) async {
+    Future<TextEditingController> openDraft(WidgetTester tester, String text, {bool animations = false}) async {
       final draft = TextEditingController(text: text);
       addTearDown(draft.dispose);
       await _open(
         tester,
         dismissal: SheetDismissal.drag,
+        animations: animations,
         content: DiscardGuard(
           listenable: draft,
           isDirty: () => draft.text.isNotEmpty,
@@ -239,7 +242,7 @@ void main() {
     });
 
     testWidgets('flicked back up, it brakes into place and never past it', (tester) async {
-      await openDraft(tester, '未保存');
+      await openDraft(tester, '未保存', animations: true);
       final handle = find.byType(SheetDragHandle);
       final rest = tester.getTopLeft(handle).dy;
       var time = Duration.zero;
@@ -259,6 +262,32 @@ void main() {
         await tester.pump(const Duration(milliseconds: 16));
         expect(tester.getTopLeft(handle).dy, greaterThanOrEqualTo(rest));
       }
+      await tester.pumpAndSettle();
+      expect(tester.getTopLeft(handle).dy, rest);
+    });
+
+    testWidgets('caught on its way back, it carries on from where it is', (tester) async {
+      await openDraft(tester, '未保存', animations: true);
+      final handle = find.byType(SheetDragHandle);
+      final rest = tester.getTopLeft(handle).dy;
+      final first = await tester.startGesture(tester.getCenter(handle));
+      for (var i = 0; i < 10; i++) {
+        await first.moveBy(const Offset(0, 8));
+        await tester.pump(const Duration(milliseconds: 40));
+      }
+      await first.up();
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 32));
+      final caught = tester.getTopLeft(handle).dy;
+      expect(caught, greaterThan(rest + 8), reason: 'still on its way back');
+
+      final second = await tester.startGesture(tester.getCenter(handle));
+      await second.moveBy(const Offset(0, 24));
+      await tester.pump();
+      await second.moveBy(const Offset(0, 4));
+      await tester.pump();
+      expect(tester.getTopLeft(handle).dy, greaterThanOrEqualTo(caught));
+      await second.up();
       await tester.pumpAndSettle();
       expect(tester.getTopLeft(handle).dy, rest);
     });
