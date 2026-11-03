@@ -106,7 +106,13 @@ final conversationOutProvider = Provider<ConversationOut>(
 String fileStem(String title) {
   final cleaned = title.replaceAll(RegExp(r'[\\/:*?"<>|\x00-\x1f]+'), ' ').replaceAll(RegExp(r'\s+'), ' ').trim();
   if (cleaned.isEmpty) return appL10n.fileChatFallback;
-  return cleaned.length <= 40 ? cleaned : cleaned.substring(0, 40).trim();
+  if (cleaned.length <= 40) return cleaned;
+  var end = 40;
+  final lead = cleaned.codeUnitAt(end - 1);
+  final trail = cleaned.codeUnitAt(end);
+  // Keep the existing code-unit budget without splitting a surrogate pair.
+  if (lead >= 0xd800 && lead <= 0xdbff && trail >= 0xdc00 && trail <= 0xdfff) end--;
+  return cleaned.substring(0, end).trim();
 }
 
 // ── Hosted links ─────────────────────────────────────────────────────────────

@@ -371,6 +371,7 @@ class SharePanelModel extends ChangeNotifier {
   void setScope(ShareScope scope) {
     if (scope == _scope) return;
     _scope = scope;
+    _export = null;
     _changed();
     if (scope == ShareScope.whole) unawaited(_loadHistory());
   }

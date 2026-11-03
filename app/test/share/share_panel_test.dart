@@ -33,7 +33,7 @@ import 'package:dsh_client/dsh_client.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart' show AsyncData;
+import 'package:flutter_riverpod/flutter_riverpod.dart' show AsyncData, ProviderScope;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:share_plus/share_plus.dart';
 
@@ -255,6 +255,7 @@ void _expectWhole(WidgetTester tester, String text) {
 }
 
 void main() {
+  _wholeScopeAfterUpdateTests();
   // ── Goldens ───────────────────────────────────────────────────────────────
 
   for (final brightness in Brightness.values) {
@@ -782,4 +783,132 @@ void main() {
     }
     expect(find.byType(SharePanelHome), findsOneWidget);
   });
+}
+
+Future<void> _wholeScopeTap(WidgetTester tester, Finder finder) async {
+  await tester.ensureVisible(finder);
+  await tester.pumpAndSettle();
+  await tester.tap(finder);
+  await tester.pumpAndSettle();
+}
+
+void _wholeScopeAfterUpdateTests() {
+  for (final append in [false, true]) {
+    testWidgets('[share-whole-update] whole export uses current messages: append=$append', (tester) async {
+      final source = _fixture();
+      final initial = ChatState(
+        items: [
+          for (final item in source.items)
+            if (item is UserChatItem)
+              UserChatItem(seq: item.seq, time: item.time, text: item.text, images: const [], files: item.files)
+            else
+              item,
+        ],
+        turns: [...source.turns],
+        commands: [...source.commands],
+        title: source.title,
+        loading: false,
+      );
+      try {
+        final panel = await _open(tester, state: initial, reply: 'a15');
+        final panelState = tester.state(find.byType(SharePanel));
+        final home = tester.element(find.byType(SharePanelHome));
+        final container = ProviderScope.containerOf(home, listen: false);
+        final controller = container.read(chatProvider('s1').notifier) as _Chat;
+        final model = SharePanelScope.of(home);
+        expect(model.scope, ShareScope.reply);
+        expect(model.anchor?.id, 'a15');
+        await _wholeScopeTap(tester, find.byKey(const ValueKey('share-to-file')));
+        final first = await model.prepare();
+        expect(
+          first.share.entries.whereType<ReplyEntry>().where((entry) => entry.text == _reply(initial, 'a15').text),
+          hasLength(1),
+        );
+        await _wholeScopeTap(tester, find.byTooltip('返回'));
+        expect(tester.state(find.byType(SharePanel)), same(panelState));
+        expect(SharePanelScope.of(tester.element(find.byType(SharePanelHome))), same(model));
+
+        final addedPrompt = UserChatItem(
+          seq: 19,
+          time: at(150100),
+          text: '请补充本轮验收结论',
+          images: const [],
+          files: const [],
+        );
+        final addedReply = AssistantChatItem(
+          id: 'a20',
+          seq: 20,
+          time: at(151000),
+          text: '新增验收结论：第三轮已完整核对。',
+          reasoning: '',
+          model: 'deepseek-v4-pro',
+        );
+        if (append) {
+          final updated = ChatState(
+            items: [...initial.items, addedPrompt, addedReply],
+            turns: [
+              ...initial.turns,
+              TurnTrace(
+                turn: 3,
+                startSeq: 18,
+                start: at(150000),
+                endSeq: 21,
+                end: at(151100),
+                endReason: const TurnEndReason('completed'),
+                spans: [
+                  TraceSpan(
+                    kind: TraceKind.model,
+                    step: 1,
+                    seq: 20,
+                    start: at(150200),
+                    firstToken: at(150300),
+                    lastToken: at(151000),
+                    end: at(151000),
+                  ),
+                ],
+              ),
+            ],
+            commands: [...initial.commands],
+            title: initial.title,
+            loading: false,
+          );
+          controller.emit(updated);
+          await tester.pump();
+          expect(container.read(chatProvider('s1')), same(updated));
+          expect(model.shareable.map((item) => item.key), contains(addedReply.key));
+          expect(initial.items.map((item) => item.key), isNot(contains(addedReply.key)));
+        }
+        expect(first.share.entries.whereType<ReplyEntry>().map((e) => e.text), isNot(contains(addedReply.text)));
+        await _wholeScopeTap(tester, find.text('整段对话'));
+        expect(
+          tester.widget<SegmentedPill<ShareScope>>(find.byType(SegmentedPill<ShareScope>)).selected,
+          ShareScope.whole,
+        );
+        expect(model.scope, ShareScope.whole);
+        expect(find.byType(MessagePicker), findsNothing);
+        expect(tester.state(find.byType(SharePanel)), same(panelState));
+        expect(SharePanelScope.of(tester.element(find.byType(SharePanelHome))), same(model));
+        expect(model.keys, {for (final item in model.shareable) item.key});
+        await _wholeScopeTap(tester, find.byKey(const ValueKey('share-to-file')));
+        final whole = await model.prepare();
+        await tester.runAsync(() => model.saveFile());
+        expect(model.fileSaved, isTrue);
+        expect(panel.out.saved, hasLength(1));
+        final (saved, format) = panel.out.saved.single;
+        expect(format, ConversationFormat.file);
+        final text = (await tester.runAsync(saved.readAsString))!;
+        final decoded = _decode(text);
+        for (final share in [decoded, whole.share]) {
+          expect(share.range, isNull, reason: 'the whole conversation');
+          final replies = share.entries.whereType<ReplyEntry>();
+          expect(replies.where((entry) => entry.text == _reply(initial, 'a15').text), hasLength(1));
+          expect(replies.where((entry) => entry.text == addedReply.text), hasLength(append ? 1 : 0));
+        }
+        expect(tester.takeException(), isNull);
+      } finally {
+        await tester.pumpWidget(const SizedBox.shrink());
+        await tester.pump();
+      }
+    });
+  }
 }
