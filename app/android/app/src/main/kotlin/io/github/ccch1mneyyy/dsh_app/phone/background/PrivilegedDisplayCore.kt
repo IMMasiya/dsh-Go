@@ -419,8 +419,10 @@ class PrivilegedDisplayCore(private val context: Context) {
     private fun readTree(displayId: Int, pkg: String): TreeRead {
         val vd = display ?: throw Fault("displayMissing")
         val conn = TreeConnection(context, pkg)
-        val automation = try { conn.open(vd.display) } catch (_: Throwable) { throw Fault("treeUnavailable") }
-        try { return readTree(automation, displayId, pkg) } finally { conn.close() }
+        try {
+            val automation = try { conn.open(vd.display) } catch (_: Throwable) { throw Fault("treeUnavailable") }
+            return readTree(automation, displayId, pkg)
+        } finally { conn.close() }
     }
 
     private fun readTree(automation: UiAutomation, displayId: Int, pkg: String, targetId: Int = 0): TreeRead {
@@ -614,8 +616,8 @@ class PrivilegedDisplayCore(private val context: Context) {
         if (index < 1 || text.isEmpty() || text.length > 500 || '\u0000' in text) throw Fault("invalidArguments")
         val vd = display ?: throw Fault("displayMissing")
         val conn = TreeConnection(context, pkg)
-        val automation = try { conn.open(vd.display) } catch (_: Throwable) { throw Fault("textConnectionUnavailable") }
         try {
+            val automation = try { conn.open(vd.display) } catch (_: Throwable) { throw Fault("textConnectionUnavailable") }
             val node = readTree(automation, vd.display.displayId, pkg, index).target ?: throw Fault("elementMissing")
             try {
                 if (!node.refresh()) throw Fault("textTargetChanged")
