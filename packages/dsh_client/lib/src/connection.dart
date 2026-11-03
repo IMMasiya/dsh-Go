@@ -362,14 +362,26 @@ class DshConnection {
     required int maxBytes,
     bool autoUncompress = false,
     Duration timeout = const Duration(seconds: 30),
-  }) => getBoundedAt(resolve(path, query), maxBytes: maxBytes, autoUncompress: autoUncompress, timeout: timeout);
+  }) => _getBounded(resolve(path, query), maxBytes: maxBytes, autoUncompress: autoUncompress, timeout: timeout);
 
-  /// [getBounded] for an address already on this engine, as from [ownUri].
-  Future<DshHttpResponse> getBoundedAt(
-    Uri uri, {
+  /// [getBounded] for a whole [url] that [ownUri] accepts. Anything else is
+  /// refused here, before a socket opens, so the cookie can't leave this engine.
+  Future<DshHttpResponse> getBoundedOwn(
+    String url, {
     required int maxBytes,
     bool autoUncompress = false,
     Duration timeout = const Duration(seconds: 30),
+  }) async {
+    final uri = ownUri(url);
+    if (uri == null) throw ArgumentError.value(url, 'url', 'not this engine');
+    return _getBounded(uri, maxBytes: maxBytes, autoUncompress: autoUncompress, timeout: timeout);
+  }
+
+  Future<DshHttpResponse> _getBounded(
+    Uri uri, {
+    required int maxBytes,
+    required bool autoUncompress,
+    required Duration timeout,
   }) async {
     if (maxBytes < 1) throw ArgumentError.value(maxBytes, 'maxBytes');
     final http = HttpClient()

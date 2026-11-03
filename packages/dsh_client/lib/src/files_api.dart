@@ -65,11 +65,10 @@ extension DshFilesApi on DshClient {
   /// credentials: no redirects, at most [maxBytes].
   Future<Uint8List> readEngineUrl(String url, {required int maxBytes}) async {
     final carrier = this.carrier;
-    final target = carrier is DshHttpCarrier ? carrier.connection.ownUri(url) : null;
-    if (carrier is! DshHttpCarrier || target == null) throw ArgumentError.value(url, 'url', 'not this engine');
-    final response = await carrier.connection.getBoundedAt(target, maxBytes: maxBytes, autoUncompress: true);
+    if (carrier is! DshHttpCarrier) throw ArgumentError.value(url, 'url', 'not this engine');
+    final response = await carrier.connection.getBoundedOwn(url, maxBytes: maxBytes, autoUncompress: true);
     if (response.statusCode == 200) return response.body;
-    throw DshHttpException(response.statusCode, 'GET ${target.path}: HTTP ${response.statusCode}');
+    throw DshHttpException(response.statusCode, 'GET ${Uri.parse(url).path}: HTTP ${response.statusCode}');
   }
 
   /// Whether this client can read raw file bytes at all.

@@ -109,6 +109,13 @@ void main() {
       expect(paths, ['/moved']);
     });
 
+    test('the connection itself refuses another address, not only the client', () async {
+      final connection = DshConnection(base, cookie: const DshCookie(name: 'dsh', value: 'v1', authority: 'x'));
+      addTearDown(connection.close);
+      await expectLater(connection.getBoundedOwn('http://example.com/a.png', maxBytes: 1024), throwsArgumentError);
+      expect(paths, isEmpty);
+    });
+
     test('another address is never requested', () async {
       const url = 'http://example.com/a.png';
       expect(client.isEngineUrl(url), isFalse);
