@@ -125,6 +125,10 @@ class BackgroundControl private constructor(context: Context) {
         injectOk == false -> Reasons.withDetail(AppStrings.get(app, when (injectError) {
             "inputApiUnavailable" -> R.string.background_input_api_unavailable
             "systemOperationDenied" -> R.string.background_input_permission_denied
+            "inputWindowNotReady" -> R.string.background_input_window_not_ready
+            "inputUnconfirmed" -> R.string.background_input_unconfirmed
+            "inputProbeCleanupFailed" -> R.string.background_input_cleanup_failed
+            "cancelled" -> R.string.background_input_cancelled
             else -> R.string.background_injection_denied
         }), gateDetail)
         else -> null
