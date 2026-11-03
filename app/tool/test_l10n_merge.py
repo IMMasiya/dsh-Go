@@ -22,6 +22,18 @@ class MessagePreflightTest(unittest.TestCase):
         _, errors = l10n_merge.parse_message('{count, plural, feww{few} other{other}}')
         self.assertTrue(any('unknown plural category' in e for e in errors), errors)
 
+    def test_exact_selector_and_its_category_cannot_share_a_block(self):
+        for first, second in [('=0', 'zero'), ('=1', 'one'), ('=2', 'two'), ('one', '=1')]:
+            with self.subTest(first=first, second=second):
+                _, errors = l10n_merge.parse_message(
+                    f'{{n, plural, {first}{{A}} {second}{{B}} other{{C}}}}')
+                self.assertTrue(any('same case to gen-l10n' in e for e in errors), errors)
+
+    def test_exact_selector_alone_remains_valid(self):
+        names, errors = l10n_merge.parse_message('{n, plural, =0{None} =1{One} other{{n} items}}')
+        self.assertEqual(names, {'n'})
+        self.assertEqual(errors, [])
+
     def test_select_values_are_not_plural_categories(self):
         names, errors = l10n_merge.parse_message('{state, select, ready{Ready} failed{Failed} other{Other}}')
         self.assertEqual(names, {'state'})

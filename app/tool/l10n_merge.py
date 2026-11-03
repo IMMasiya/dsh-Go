@@ -11,7 +11,8 @@ Checks, all fatal (exit 1, nothing written):
   - the placeholders of a key are the same in zh and en, and match its
     "@key" metadata when placeholders are declared (including an empty map);
   - plural / select blocks have unique cases and an `other` case;
-  - plural categories are valid. This is a structural preflight, not a full ICU
+  - plural categories are valid, and no exact selector shares a block with its
+    category (`=1` and `one`). This is a structural preflight, not a full ICU
     compiler; `flutter gen-l10n` remains the authoritative syntax check.
 
 Usage: tool/l10n_merge.py [--check] [--no-gen] [--part AREA] [--locale LOCALE ...]
@@ -44,6 +45,9 @@ LANGS = ('zh', 'en')
 KEY_RE = re.compile(r'^[a-z][a-zA-Z0-9]*$')
 IDENT = re.compile(r'[A-Za-z_][A-Za-z0-9_]*')
 PLURAL_CASES = frozenset(('zero', 'one', 'two', 'few', 'many', 'other'))
+# gen-l10n folds these into one argument: the later case replaces the earlier
+# with only a warning, so `one{{n} x} =1{1 x}` renders 21 as "1 x" in Russian.
+PLURAL_TWINS = {'=0': 'zero', 'zero': '=0', '=1': 'one', 'one': '=1', '=2': 'two', 'two': '=2'}
 LOCALE_RE = re.compile(r'^[a-z]{2,3}(?:_[A-Z][a-z]{3})?(?:_(?:[A-Z]{2}|[0-9]{3}))?$')
 
 
@@ -112,6 +116,8 @@ def parse_message(msg: str):
                 errors.append(f'duplicate {kind} case "{case}"')
             if kind == 'plural' and not case.startswith('=') and case not in PLURAL_CASES:
                 errors.append(f'unknown plural category "{case}"')
+            if kind == 'plural' and PLURAL_TWINS.get(case) in cases:
+                errors.append(f'plural cases "{case}" and "{PLURAL_TWINS[case]}" are the same case to gen-l10n')
             cases.append(case)
             j = parse_body(m.end(), 1)
             i = j + 1
