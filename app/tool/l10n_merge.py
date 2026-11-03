@@ -227,7 +227,7 @@ def main(argv):
         zh = data['zh']
         zkeys = [k for k in zh if not k.startswith('@')]
         for k in zkeys:
-            if not KEY_RE.match(k):
+            if not KEY_RE.fullmatch(k):
                 errors.append(f'{area}: bad key "{k}" (lowerCamel identifiers only)')
             if k in owner:
                 errors.append(f'{area}: key "{k}" already defined in {owner[k]}')
