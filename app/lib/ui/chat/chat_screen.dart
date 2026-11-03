@@ -814,8 +814,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
     try {
       final choice = await showPlusPanel(
         context,
-        // DSH Remote stages no files: photos only.
-        files: client?.supportsEndpoint('fileUploads/upload') ?? true,
+        files: canStageFiles(ref.read(activeConnectionProvider).value, ref.read(activeHostProvider)),
         sessionId: ref.read(currentSessionProvider),
         generate: ref.read(mediaPluginProvider) != MediaPluginState.absent,
       );
