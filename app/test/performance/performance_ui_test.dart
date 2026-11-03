@@ -159,6 +159,38 @@ void main() {
     expect(DshSurfaces.of(context).blurEnabled, isTrue);
   });
 
+  testWidgets('remove animations turned on with the app open takes the transition off pages', (tester) async {
+    window(tester);
+    addTearDown(tester.platformDispatcher.clearAccessibilityFeaturesTestValue);
+    SharedPreferences.setMockInitialValues({'performance.mode': 'full'});
+    await mount(
+      tester,
+      Builder(
+        builder: (context) => Scaffold(
+          body: Center(
+            child: TextButton(
+              onPressed: () => Navigator.of(context).push(
+                MaterialPageRoute<void>(
+                  builder: (_) => const Scaffold(body: Center(child: Text('page'))),
+                ),
+              ),
+              child: const Text('push'),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(AppMotion.reduced(tester.element(find.text('push'))), isFalse);
+
+    tester.platformDispatcher.accessibilityFeaturesTestValue = const FakeAccessibilityFeatures(disableAnimations: true);
+    await tester.pump();
+    expect(AppMotion.reduced(tester.element(find.text('push'))), isTrue);
+    await tester.tap(find.text('push'));
+    await tester.pump();
+    expect(tester.getCenter(find.text('page')).dx, 195);
+  });
+
   testWidgets('the animation switch takes the transition off pages and sheets', (tester) async {
     window(tester);
     SharedPreferences.setMockInitialValues({'performance.mode': 'full'});

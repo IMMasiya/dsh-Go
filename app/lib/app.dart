@@ -78,6 +78,11 @@ class _DshAppState extends ConsumerState<DshApp> with WidgetsBindingObserver {
     if (ref.read(appLanguageProvider) == AppLanguage.system) setState(() {});
   }
 
+  /// The system's remove-animations setting changed while the app was open: page
+  /// transitions are chosen in [build], so they would keep the old answer.
+  @override
+  void didChangeAccessibilityFeatures() => setState(() {});
+
   void _themesFor(AppAccent accent, bool english, bool glassBlur, bool instantPages) {
     if (accent == _accent && english == _english && glassBlur == _glassBlur && instantPages == _instantPages) return;
     _accent = accent;
