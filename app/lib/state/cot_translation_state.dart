@@ -52,17 +52,20 @@ final reasoningTranslatorProvider = Provider<ReasoningTranslator?>((ref) {
 /// the target script (Chinese into `zh`) is not.
 bool reasoningNeedsTranslation(String text, String target) {
   if (!target.toLowerCase().startsWith('zh')) return true;
-  var cjk = 0;
-  for (final rune in text.runes) {
-    if (rune >= 0x4E00 && rune <= 0x9FFF || rune >= 0x3400 && rune <= 0x4DBF) {
-      cjk++;
-    }
-  }
-  // A Chinese character carries about as much as a Latin word; identifiers in
-  // Chinese reasoning don't make it foreign.
-  final words = RegExp('[A-Za-z]+').allMatches(text).length;
+  // Kana, Hangul, Cyrillic and other non-Han/non-Latin letters are not
+  // evidence of Chinese. Keep an explicit translation choice for such text.
+  if (_reasoningOtherLetters.hasMatch(text)) return true;
+  // A Han character carries about as much as a Latin word; identifiers in
+  // Chinese reasoning don't make it foreign. This is only an offer heuristic:
+  // Han-only Japanese cannot be distinguished from Chinese by script alone.
+  final cjk = _reasoningHan.allMatches(text).length;
+  final words = _reasoningLatinWords.allMatches(text).length;
   return words > cjk;
 }
+
+final _reasoningHan = RegExp(r'\p{Script=Han}', unicode: true);
+final _reasoningLatinWords = RegExp(r'\p{Script=Latin}+', unicode: true);
+final _reasoningOtherLetters = RegExp(r'(?!\p{Script=Han}|\p{Script=Latin})\p{L}', unicode: true);
 
 /// Sequential paragraph translation for one reasoning block, as the official
 /// client does it: complete paragraphs (and request-sized pieces of long ones)
