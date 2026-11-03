@@ -181,7 +181,7 @@ class PrivilegedDisplayCore(private val context: Context) {
     /** Test a real input receiver, not an empty display. Never launches or touches a user app. */
     private fun gateProbe(response: Bundle) {
         // A settings probe must not replace or release an active task's display.
-        if (owner != null || display != null) throw Fault("identityChanged")
+        if (owner != null || display != null) throw Fault("probeBusy")
         try {
             owner = "__gate__"
             createDisplay(Bundle().apply { putInt(Proto.SHORT_SIDE, 360); putInt(Proto.ASPECT_W, 9); putInt(Proto.ASPECT_H, 20) }, probe = true)
