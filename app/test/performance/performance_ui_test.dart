@@ -189,6 +189,18 @@ void main() {
     await tester.tap(find.text('push'));
     await tester.pump();
     expect(tester.getCenter(find.text('page')).dx, 195);
+    Navigator.of(tester.element(find.text('page'))).pop();
+    await tester.pumpAndSettle();
+
+    // And off again: the transition is back.
+    tester.platformDispatcher.accessibilityFeaturesTestValue = const FakeAccessibilityFeatures();
+    await tester.pump();
+    expect(AppMotion.reduced(tester.element(find.text('push'))), isFalse);
+    await tester.tap(find.text('push'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 60));
+    expect(tester.getCenter(find.text('page')).dx, greaterThan(195));
+    await tester.pumpAndSettle();
   });
 
   testWidgets('the animation switch takes the transition off pages and sheets', (tester) async {
