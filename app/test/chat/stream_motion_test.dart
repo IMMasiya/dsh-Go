@@ -290,6 +290,34 @@ void main() {
     expect(tester.getTopLeft(find.byType(AssistantMessage)).dy, before);
   });
 
+  testWidgets('after a tool row the dots hand over to direct text without a step', (tester) async {
+    usePhoneView(tester);
+    final done = [
+      user(1, '问题'),
+      tool('b', 'bash', {'command': 'echo hi'}, result: 'hi'),
+    ];
+    final harness = ChatHarness(
+      session: 's1',
+      states: {
+        's1': _state([...done, assistant(3, '', rowKey: 'm1.1', streaming: true)]),
+      },
+    );
+    await tester.pumpWidget(testApp(const ChatScreen(), overrides: harness.overrides));
+    await tester.pump();
+    final before = tester.getTopLeft(find.byType(AssistantMessage)).dy;
+    harness.controllers['s1']!.emit(_state([...done, assistant(3, '回答', rowKey: 'm1.1', streaming: true)]));
+    await tester.pump();
+    var last = tester.getTopLeft(find.byType(AssistantMessage)).dy;
+    expect(last - before, lessThan(1), reason: 'the frame the text arrives on');
+    for (var i = 0; i < 16; i++) {
+      await tester.pump(const Duration(milliseconds: 16));
+      final now = tester.getTopLeft(find.byType(AssistantMessage)).dy;
+      expect(now - last, lessThan(3), reason: 'frame $i');
+      last = now;
+    }
+    expect(last - before, closeTo(8, 0.01), reason: 'the usual gap once settled');
+  });
+
   testWidgets('tool detail stays mounted while it collapses', (tester) async {
     usePhoneView(tester);
     final item = tool('b', 'bash', {'command': 'echo hi'}, result: 'hi');
