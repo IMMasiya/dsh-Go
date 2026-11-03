@@ -121,7 +121,8 @@ internal class ControlOverlay(private val service: AccessibilityService) : UserG
     private var pendingHandoff: Pending<HandoffResult>? = null
     @Volatile private var sharedPrompt: PromptPresentation? = null
     private var passThrough = false
-    private var captureHidden = false
+    private val captureVisibility = CaptureVisibility()
+    private val captureHidden: Boolean get() = captureVisibility.hidden
     private var darkBuilt: Boolean? = null
 
     // The form: FoldClock decides, the morphs follow.
@@ -271,18 +272,19 @@ internal class ControlOverlay(private val service: AccessibilityService) : UserG
         if (on && changed) SystemClock.sleep(80) // input windows update a frame after the layout
     }
 
-    /** Hides the overlay for a full-display screenshot (API 30–33). */
+    /** Paired hides for full-display screenshots; captures may overlap. */
     fun hideForCapture(hide: Boolean) {
-        val changed = onMain(500) {
-            if (captureHidden == hide) return@onMain false
-            captureHidden = hide
-            val v = if (hide) View.INVISIBLE else View.VISIBLE
-            syncWindows()
-            confirmCard?.root?.visibility = v
-            handoffCard?.root?.visibility = v
-            pill != null || confirmCard != null || handoffCard != null
+        val settle = onMain(500) {
+            if (captureVisibility.update(hide)) {
+                val v = if (captureHidden) View.INVISIBLE else View.VISIBLE
+                syncWindows()
+                confirmCard?.root?.visibility = v
+                handoffCard?.root?.visibility = v
+            }
+            hide && (pill != null || confirmCard != null || handoffCard != null)
         } == true
-        if (hide && changed) SystemClock.sleep(120)
+        // Blocking agent captures wait here; the main-thread pet caller schedules its own delay.
+        if (settle && Looper.myLooper() != Looper.getMainLooper()) SystemClock.sleep(120)
     }
 
     /** Screen off, lock, 停止 elsewhere, service going away: answer everything pending with STOP. */

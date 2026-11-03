@@ -91,17 +91,35 @@ data class PetHost(val ref: String, val label: String, val current: Boolean)
 
 /** The long-press menu's rows (docs/design/pets.md §2.7): shortcuts only where they apply. */
 enum class PetMenuItem {
-    ASK, NEW_CHAT, STOP, SWITCH_HOST, SNOOZE, SETTINGS;
+    ASK, NEW_CHAT, SCREENSHOT, STOP, SWITCH_HOST, SNOOZE, SETTINGS;
 
     companion object {
         fun of(push: PetPush?): List<PetMenuItem> = buildList {
             add(ASK)
             add(NEW_CHAT)
+            add(SCREENSHOT)
             if (push?.canStop == true) add(STOP)
             if ((push?.hosts?.size ?: 0) > 1) add(SWITCH_HOST)
             add(SNOOZE)
             add(SETTINGS)
         }
+    }
+}
+
+/** Invalidating an action must not release the visibility gate before the actual capture ends. */
+internal class PetCaptureState {
+    class Request internal constructor() { internal var valid = true }
+    private var pending: Request? = null
+    val inFlight: Boolean get() = pending != null
+    fun begin(): Request? {
+        if (inFlight) return null
+        return Request().also { pending = it }
+    }
+    fun invalidate() { pending?.valid = false }
+    fun finish(request: Request): Boolean {
+        if (pending !== request) return false
+        pending = null
+        return request.valid
     }
 }
 
