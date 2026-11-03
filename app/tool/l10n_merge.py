@@ -6,11 +6,13 @@
       -> flutter gen-l10n -> lib/l10n/gen/
 
 Checks, all fatal (exit 1, nothing written):
-  - every part is valid JSON, keys are lowerCamel identifiers;
+  - every part is a JSON object with no duplicate keys, identifiers are lowerCamel;
   - a key appears in only one part, and in both languages of that part;
   - the placeholders of a key are the same in zh and en, and match its
-    "@key" metadata when that declares any;
-  - braces balance and plural / select blocks have an `other` case.
+    "@key" metadata when placeholders are declared (including an empty map);
+  - plural / select blocks have unique cases and an `other` case;
+  - plural categories are valid. This is a structural preflight, not a full ICU
+    compiler; `flutter gen-l10n` remains the authoritative syntax check.
 
 Usage: tool/l10n_merge.py [--check] [--no-gen] [--part AREA]
   --check      validate only (no writes, no gen-l10n)
@@ -34,6 +36,7 @@ PARTS = os.path.join(L10N, 'parts')
 LANGS = ('zh', 'en')
 KEY_RE = re.compile(r'^[a-z][a-zA-Z0-9]*$')
 IDENT = re.compile(r'[A-Za-z_][A-Za-z0-9_]*')
+PLURAL_CASES = frozenset(('zero', 'one', 'two', 'few', 'many', 'other'))
 
 
 def parse_message(msg: str):
@@ -69,7 +72,7 @@ def parse_message(msg: str):
                         errors.append(f'unknown ICU kind "{kind}" in {{{name}}}')
                         return n
                     names.add(name)
-                    i, cases = parse_cases(k + 1)
+                    i, cases = parse_cases(k + 1, kind)
                     if 'other' not in cases:
                         errors.append(f'{kind} {{{name}}} has no "other" case')
                     continue
@@ -85,7 +88,7 @@ def parse_message(msg: str):
             errors.append('unbalanced braces')
         return i
 
-    def parse_cases(i):
+    def parse_cases(i, kind):
         cases = []
         while i < n:
             while i < n and msg[i] in ' \n\t':
@@ -96,7 +99,12 @@ def parse_message(msg: str):
             if not m:
                 errors.append(f'bad plural/select case near "{msg[i:i + 20]}"')
                 return n, cases
-            cases.append(m.group(1))
+            case = m.group(1)
+            if case in cases:
+                errors.append(f'duplicate {kind} case "{case}"')
+            if kind == 'plural' and not case.startswith('=') and case not in PLURAL_CASES:
+                errors.append(f'unknown plural category "{case}"')
+            cases.append(case)
             j = parse_body(m.end(), 1)
             i = j + 1
         errors.append('unterminated plural/select')
@@ -106,12 +114,55 @@ def parse_message(msg: str):
     return names, errors
 
 
+def unique_object(pairs):
+    result = OrderedDict()
+    for key, value in pairs:
+        if key in result:
+            raise ValueError(f'duplicate key "{key}"')
+        result[key] = value
+    return result
+
+
+def reject_constant(value):
+    raise ValueError(f'non-JSON constant {value}')
+
+
 def load(path):
     try:
         with open(path, encoding='utf-8') as f:
-            return json.load(f, object_pairs_hook=OrderedDict)
+            data = json.load(f, object_pairs_hook=unique_object, parse_constant=reject_constant)
+        if not isinstance(data, dict):
+            raise ValueError('ARB root must be an object')
+        return data
     except Exception as e:  # noqa: BLE001
         raise SystemExit(f'✗ {os.path.relpath(path, APP)}: invalid JSON: {e}')
+
+
+def metadata_errors(data, lang):
+    errors = []
+    for key, meta in data.items():
+        if not key.startswith('@') or key.startswith('@@'):
+            continue
+        if key[1:] not in data:
+            errors.append(f'{lang}: orphan metadata "{key}"')
+        if not isinstance(meta, dict):
+            errors.append(f'{lang}: "{key}" metadata must be an object')
+            continue
+        if 'placeholders' not in meta:
+            continue
+        placeholders = meta['placeholders']
+        if not isinstance(placeholders, dict):
+            errors.append(f'{lang}: "{key}" placeholders must be an object')
+            continue
+        for name, spec in placeholders.items():
+            if not isinstance(spec, dict):
+                errors.append(f'{lang}: "{key}" placeholder "{name}" must be an object')
+        message = data.get(key[1:])
+        if isinstance(message, str):
+            names, _ = parse_message(message)
+            if set(placeholders) != names:
+                errors.append(f'{lang}: "{key}" placeholders {sorted(placeholders)} ≠ message {sorted(names)}')
+    return errors
 
 
 def main(argv):
@@ -138,6 +189,7 @@ def main(argv):
                 data[lang] = OrderedDict()
                 continue
             data[lang] = load(p)
+            errors += [f'{area}: {e}' for e in metadata_errors(data[lang], lang)]
         zh, en = data['zh'], data['en']
         zkeys = [k for k in zh if not k.startswith('@')]
         ekeys = [k for k in en if not k.startswith('@')]
@@ -159,6 +211,8 @@ def main(argv):
             if not isinstance(zv, str) or not isinstance(ev, str):
                 errors.append(f'{area}: "{k}" value must be a string')
                 continue
+            if not zv.strip():
+                errors.append(f'{area}: "{k}" zh is empty')
             if not ev.strip():
                 errors.append(f'{area}: "{k}" en is empty')
             zn, ze = parse_message(zv)
@@ -168,9 +222,6 @@ def main(argv):
             if zn != en_n:
                 errors.append(f'{area}: "{k}" placeholders differ: zh {sorted(zn)} en {sorted(en_n)}')
             meta = zh.get('@' + k) or {}
-            declared = set((meta.get('placeholders') or {}).keys()) if isinstance(meta, dict) else set()
-            if declared and declared != zn:
-                errors.append(f'{area}: "{k}" @{k}.placeholders {sorted(declared)} ≠ message {sorted(zn)}')
             merged['zh'][k] = zv
             if meta:
                 merged['zh']['@' + k] = meta
