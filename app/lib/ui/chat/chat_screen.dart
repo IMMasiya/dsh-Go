@@ -33,6 +33,7 @@ import '../../state/hosts_state.dart' show HostKind, activeHostProvider;
 import '../../state/media_generation.dart';
 import '../../state/mention_state.dart';
 import '../../state/models_state.dart';
+import '../../state/session_search.dart' show folderLabel;
 import '../../state/safe_mode_state.dart';
 import '../../state/session_modes.dart';
 import '../../state/sessions_state.dart';
@@ -1441,6 +1442,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
           ? questionText(question)
           : _spoken,
     );
+    final narrow = MediaQuery.sizeOf(context).width < WindowClass.mediumMin;
     // Where a new conversation starts (the drawer's workspace).
     final workspace = ref.watch(selectedWorkspaceProvider);
     // A one-shot subagent takes no messages: DSH Web shows it read-only.
@@ -1612,6 +1614,22 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
                         scrolledUnder: sessionId == null ? null : _scrolledUnder,
                         title: title,
                         status: status,
+                        detail: !narrow || isChild
+                            ? null
+                            : [
+                                ?folderLabel(
+                                  ref.watch(
+                                    sessionsProvider.select(
+                                      (s) => s.value?.where((session) => session.sessionId == sessionId).firstOrNull?.cwd,
+                                    ),
+                                  ),
+                                ),
+                                modelShortName(
+                                  (sessionId == null ? pendingModel : chat?.model) ??
+                                      ref.watch(currentModelCatalogProvider)?.defaultSelection,
+                                  ref.watch(currentModelCatalogProvider),
+                                ),
+                              ].join(' · '),
                         onOpenDrawer: widget.onOpenDrawer,
                         onNewChat: sessionId == null || isChild
                             ? null
@@ -1624,11 +1642,15 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
                         onTitleTap: sessionId == null
                             ? null
                             : () => SessionDetailPage.open(context, sessionId, toggle: true),
-                        trailing: ModelChip(
-                          selection: sessionId == null ? pendingModel : chat?.model,
-                          onSelected: _modelTarget(),
-                          grouped: true,
-                        ),
+                        // A phone has no room for it: the model is said under the
+                        // title, and picked with the key beside the composer's +.
+                        trailing: narrow
+                            ? null
+                            : ModelChip(
+                                selection: sessionId == null ? pendingModel : chat?.model,
+                                onSelected: _modelTarget(),
+                                grouped: true,
+                              ),
                       ),
                     ),
                   ),
@@ -1867,7 +1889,19 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
                                     onContentInserted: connected ? _pasteContent : null,
                                     onStop: _stop,
                                     hasAttachments: _drafts.isNotEmpty,
-                                    leading: AttachButton(onPressed: connected ? _attach : null),
+                                    leading: narrow && !isChild
+                                        ? Row(
+                                            mainAxisSize: MainAxisSize.min,
+                                            children: [
+                                              AttachButton(onPressed: connected ? _attach : null),
+                                              const SizedBox(width: 6),
+                                              ModelKey(
+                                                selection: sessionId == null ? pendingModel : chat?.model,
+                                                onSelected: _modelTarget(),
+                                              ),
+                                            ],
+                                          )
+                                        : AttachButton(onPressed: connected ? _attach : null),
                                     tray: ComposerTrayStack.maybe(
                                       quote: switch (quote) {
                                         final quote? => QuoteChip(

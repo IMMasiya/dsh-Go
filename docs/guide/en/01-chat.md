@@ -106,6 +106,8 @@ Swipe right to left over the chat and **Shortcuts** slides in from the right; ta
 
 You can turn off **Open with a left swipe**, and under **What it lists** tick what to show and drag to reorder. There's no swipe while the chat list stays open at the side.
 
+With a conversation open, the panel is about that conversation: the icons along the top switch between **Overview**, files, trajectory, changes, progress and context (plus subagents and plugins when it has them), the top-right key opens the full page, and the shortcuts you ticked sit along the bottom. On a phone the header has no model chip: the model is named under the title, and you change it with the key beside the composer's + or from Overview.
+
 ## Hardware keyboard
 
 Focus the chat's composer before using these shortcuts:

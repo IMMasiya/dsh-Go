@@ -9416,6 +9416,11 @@
       }
     }
   },
+  "shellPanelOverview": "基础信息",
+  "shellPanelWorkspace": "工作区",
+  "shellPanelModel": "模型",
+  "shellPanelHost": "主机",
+  "shellPanelOpenFull": "打开完整页面",
   "shellQuickPanel": "快捷入口",
   "shellQuickPanelHint": "在「{path}」里调整",
   "@shellQuickPanelHint": {

@@ -14923,6 +14923,21 @@ class L10nZh extends L10n {
   }
 
   @override
+  String get shellPanelOverview => '基础信息';
+
+  @override
+  String get shellPanelWorkspace => '工作区';
+
+  @override
+  String get shellPanelModel => '模型';
+
+  @override
+  String get shellPanelHost => '主机';
+
+  @override
+  String get shellPanelOpenFull => '打开完整页面';
+
+  @override
   String get shellQuickPanel => '快捷入口';
 
   @override

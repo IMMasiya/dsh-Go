@@ -8,6 +8,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../l10n/l10n.dart';
 import '../../state/quick_panel_state.dart';
+import '../session/conversation_panel.dart';
 import '../theme/app_icons.dart';
 import '../theme/theme.dart';
 import 'drawer/drawer_destination.dart';
@@ -37,7 +38,11 @@ extension DrawerDestinationLook on DrawerDestination {
 }
 
 class QuickPanel extends ConsumerWidget {
-  const QuickPanel({super.key, required this.motion, required this.onOpen});
+  const QuickPanel({super.key, required this.motion, required this.onOpen, this.sessionId});
+
+  /// The conversation open behind it: the panel is about that one, the shortcuts become
+  /// its foot. Null: just the shortcuts.
+  final String? sessionId;
 
   /// The panel's 0 → 1 animation: while it moves the glass drops its blur,
   /// like the pulled-over drawer's.
@@ -46,6 +51,9 @@ class QuickPanel extends ConsumerWidget {
 
   /// Short labels need less than the drawer's 320.
   static const width = 260.0;
+
+  /// With a conversation, as wide as what it shows wants: its panes are the page's tabs.
+  static const conversationWidth = 360.0;
 
   static const _radius = BorderRadius.only(
     topLeft: Radius.circular(AppShape.xl),
@@ -61,7 +69,9 @@ class QuickPanel extends ConsumerWidget {
       type: MaterialType.transparency,
       child: SafeArea(
         left: false,
-        child: Column(
+        child: switch (sessionId) {
+          final sessionId? => ConversationPanel(sessionId: sessionId, onOpen: onOpen),
+          null => Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Padding(
@@ -93,6 +103,7 @@ class QuickPanel extends ConsumerWidget {
             ),
           ],
         ),
+        },
       ),
     );
     return AnimatedBuilder(

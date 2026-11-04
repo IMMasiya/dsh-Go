@@ -7,6 +7,7 @@ import 'dart:math' as math;
 
 import 'package:dsh_client/dsh_client.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -56,6 +57,47 @@ String effortLabel(String id, [String? fallback]) => switch (id) {
   'max' => appL10n.viewModelThinkingMax,
   _ => fallback ?? id,
 };
+
+/// The model on a phone: a key beside the composer's +, which opens the same sheet as
+/// the chip does on wider windows. The header says which model it is.
+class ModelKey extends ConsumerWidget {
+  const ModelKey({super.key, required this.selection, required this.onSelected});
+
+  final ModelSelection? selection;
+  final ValueChanged<ModelSelection> onSelected;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final l10n = context.l10n;
+    final scheme = Theme.of(context).colorScheme;
+    final catalog = ref.watch(currentModelCatalogProvider);
+    final effective = selection ?? catalog?.defaultSelection;
+    final label = l10n.viewModelLabel(modelShortName(effective, catalog));
+    void open() => showModelSheet(context, current: effective, onSelected: onSelected);
+    return Semantics(
+      button: true,
+      label: label,
+      excludeSemantics: true,
+      onTap: open,
+      child: Tooltip(
+        message: label,
+        child: InkResponse(
+          onTap: () {
+            HapticFeedback.selectionClick();
+            open();
+          },
+          radius: 22,
+          child: Container(
+            width: 40,
+            height: 40,
+            decoration: BoxDecoration(color: scheme.onSurface.withValues(alpha: 0.06), shape: BoxShape.circle),
+            child: Icon(AppIcons.model, size: 20, color: scheme.primary),
+          ),
+        ),
+      ),
+    );
+  }
+}
 
 /// 顶栏右侧的模型胶囊:"✦ V4 Pro · 高 ⌄"。换模型时宽度平滑过渡、文字淡变。
 ///
