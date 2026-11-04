@@ -62,8 +62,7 @@ class ChatHeader extends ConsumerStatefulWidget {
   final String title;
   final HeaderStatus status;
 
-  /// What follows the status under the title (a phone: the workspace and the model,
-  /// which have no chip of their own there). Shortens first.
+  /// What follows the status under the title (a phone: the workspace). Shortens first.
   final String? detail;
 
   /// 右侧件(模型胶囊 [ModelChip])。需要传 `grouped: true` 与顶栏共享一次

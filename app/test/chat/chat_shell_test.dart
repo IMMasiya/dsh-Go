@@ -158,7 +158,7 @@ void main() {
       await pumpFrames(tester, 6);
       expect(tester.takeException(), isNull);
       expect(find.text('思考深度'), findsNothing, reason: 'closed at once');
-      expect(find.text(' · V41 Flash · 不思考'), findsOneWidget);
+      expect(find.text('V41 Flash 不思考'), findsOneWidget);
 
       await tester.enterText(find.byType(TextField), '/');
       await pumpFrames(tester, 2);

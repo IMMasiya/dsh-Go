@@ -169,7 +169,6 @@ void main() {
     );
     await tester.pumpWidget(testApp(const ChatScreen(), overrides: harness.overrides));
     await pumpFrames(tester);
-    expect(find.text(' · V4 Pro · 高'), findsOneWidget, reason: 'said under the title');
     await tester.tap(find.byType(TextField));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 500));
@@ -293,7 +292,7 @@ void main() {
       expect(find.text('思考深度'), findsOneWidget, reason: 'thumb first');
       await pumpFrames(tester, 8);
       expect(find.text('思考深度'), findsNothing);
-      expect(find.text(' · V4 Pro · 最高'), findsOneWidget);
+      expect(find.text('V4 Pro 最高'), findsOneWidget);
     });
 
     testWidgets('cards read as selectable buttons to a screen reader', (tester) async {

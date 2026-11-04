@@ -389,7 +389,7 @@ void main() {
         catalog: ModelCatalog.fromJson(const {'groups': <Object?>[]}),
       );
       await pumpChat(tester, harness);
-      expect(find.text(' · 选择模型'), findsOneWidget);
+      expect(find.text('选择模型'), findsOneWidget);
       await tester.tap(find.byType(TextField));
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 500));

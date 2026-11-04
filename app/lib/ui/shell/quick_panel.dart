@@ -44,8 +44,7 @@ class QuickPanel extends ConsumerWidget {
   /// its foot. Null: just the shortcuts.
   final String? sessionId;
 
-  /// The panel's 0 → 1 animation: while it moves the glass drops its blur,
-  /// like the pulled-over drawer's.
+  /// The panel's 0 → 1 animation, for its glass ([SlidingGlass]).
   final Animation<double> motion;
   final ValueChanged<DrawerDestination> onOpen;
 
@@ -106,16 +105,7 @@ class QuickPanel extends ConsumerWidget {
         },
       ),
     );
-    return AnimatedBuilder(
-      animation: motion,
-      child: content,
-      builder: (context, child) => GlassSurface(
-        tier: GlassTier.sheet,
-        borderRadius: _radius,
-        blur: motion.value > 0.0 && motion.value < 1.0 ? false : null,
-        child: child,
-      ),
-    );
+    return SlidingGlass(motion: motion, tier: GlassTier.sheet, borderRadius: _radius, child: content);
   }
 }
 

@@ -1616,27 +1616,13 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
                         status: status,
                         detail: !narrow || isChild
                             ? null
-                            : [
-                                ?folderLabel(
-                                  ref.watch(
-                                    sessionsProvider.select(
-                                      (s) =>
-                                          s.value?.where((session) => session.sessionId == sessionId).firstOrNull?.cwd,
-                                    ),
+                            : folderLabel(
+                                ref.watch(
+                                  sessionsProvider.select(
+                                    (s) => s.value?.where((session) => session.sessionId == sessionId).firstOrNull?.cwd,
                                   ),
                                 ),
-                                modelShortName(
-                                  (sessionId == null ? pendingModel : chat?.model) ??
-                                      ref.watch(currentModelCatalogProvider)?.defaultSelection,
-                                  ref.watch(currentModelCatalogProvider),
-                                ),
-                                ?switch (((sessionId == null ? pendingModel : chat?.model) ??
-                                        ref.watch(currentModelCatalogProvider)?.defaultSelection)
-                                    ?.reasoningEffort) {
-                                  final effort? => effortLabel(effort),
-                                  null => null,
-                                },
-                              ].join(' · '),
+                              ),
                         onOpenDrawer: widget.onOpenDrawer,
                         onNewChat: sessionId == null || isChild
                             ? null
@@ -1649,8 +1635,8 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
                         onTitleTap: sessionId == null
                             ? null
                             : () => SessionDetailPage.open(context, sessionId, toggle: true),
-                        // A phone has no room for it: the model is said under the
-                        // title, and picked from the composer's foot while typing.
+                        // A phone has no room for it: the model is shown and picked at the
+                        // composer's foot while typing.
                         trailing: narrow
                             ? null
                             : ModelChip(

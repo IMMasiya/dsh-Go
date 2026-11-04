@@ -54,7 +54,7 @@ void main() {
     testWidgets('on a phone the title has the room, the model under it', (tester) async {
       await screen(tester, const Size(390, 844));
       expect(find.byType(ModelChip), findsNothing);
-      expect(find.descendant(of: find.byType(ChatHeader), matching: find.textContaining(' · ')), findsOneWidget);
+      expect(find.descendant(of: find.byType(ChatHeader), matching: find.textContaining('V4 Pro')), findsNothing);
       final title = tester.getRect(find.byKey(const ValueKey('chat-title-pill')));
       final fresh = tester.getRect(find.byKey(const ValueKey('chat-new-chat')));
       expect(fresh.left - title.right, lessThan(12), reason: 'a long title reaches the key');
@@ -199,6 +199,42 @@ void main() {
       focus.unfocus();
       await tester.pumpAndSettle();
       even(tester, open: false);
+    });
+  });
+
+  group('sliding glass', () {
+    testWidgets('fades to glass when it lands and back when it moves, no cut', (tester) async {
+      final motion = AnimationController(vsync: const TestVSync());
+      addTearDown(motion.dispose);
+      await tester.pumpWidget(
+        testApp(
+          SlidingGlass(
+            motion: motion,
+            tier: GlassTier.sheet,
+            borderRadius: BorderRadius.zero,
+            child: const SizedBox.square(key: Key('inside'), dimension: 50),
+          ),
+        ),
+      );
+      double settled() => tester.widget<GlassSurface>(find.byType(GlassSurface)).settled!;
+      final inside = tester.element(find.byKey(const Key('inside')));
+      expect(settled(), 0);
+      motion.value = 0.5;
+      await tester.pump();
+      expect(settled(), 0, reason: 'moving: no sampling');
+      motion.value = 1;
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 40));
+      expect(settled(), inExclusiveRange(0, 1), reason: 'landing fades, it does not cut');
+      await tester.pumpAndSettle();
+      expect(settled(), 1);
+      motion.value = 0.9;
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 40));
+      expect(settled(), inExclusiveRange(0, 1), reason: 'and so does setting off');
+      await tester.pumpAndSettle();
+      expect(settled(), 0);
+      expect(tester.element(find.byKey(const Key('inside'))), same(inside), reason: 'content is not rebuilt');
     });
   });
 
