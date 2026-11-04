@@ -302,14 +302,6 @@
         }
       }
     },
-    "zzzzzzz-domain-owner-dispose.diff": {
-      "0.2.1-rc.4": {
-        "node_modules/@deepseek-ai/dsh-storage-domain/lib/index.js": {
-          "after": "7b97af47ceaa1b2b9343590f78a8b1a7291ddf3b341980d294f4e095d9f726d9",
-          "before": "8964715e236171af953101d3767c2403b6a9faa7768f9a0d44a9d8c58ec6da93"
-        }
-      }
-    },
     "zzzzzzz-file-query-normalization.diff": {
       "0.2.1-rc.4": {
         "node_modules/@deepseek-ai/dsh-file-reference-local/lib/index.js": {
