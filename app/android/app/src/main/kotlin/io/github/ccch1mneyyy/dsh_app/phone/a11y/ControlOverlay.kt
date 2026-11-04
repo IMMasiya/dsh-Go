@@ -266,9 +266,12 @@ internal class ControlOverlay(private val service: AccessibilityService) : UserG
 
     /** Makes every overlay window untouchable (true) so an injected stroke reaches the app below. */
     fun setPassThrough(on: Boolean) {
+        // Cleanup must survive a busy main thread or an interrupted gesture worker.
+        // Gesture calls are serialized; this stays ahead of the next queued enable.
+        if (!on) { main.post { applyPassThrough(false) }; return }
         if (Looper.myLooper() == Looper.getMainLooper()) { applyPassThrough(on); return }
         val changed = onMain(500) { applyPassThrough(on) } == true
-        if (on && changed) SystemClock.sleep(80) // input windows update a frame after the layout
+        if (changed) SystemClock.sleep(80) // input windows update a frame after the layout
     }
 
     /** Hides the overlay for a full-display screenshot (API 30–33). */
