@@ -589,6 +589,8 @@ export class Feed {
     this.rev = `${this.epoch}.${this.seq}`;
     this.data = next;
     for (const w of this.waiters.splice(0)) w();
+    // Later subscribers receive the current full data, not these unsent patches.
+    if (this.subs.size === 0) return;
     let msg;
     if (prev !== undefined && prev !== null && next !== null && base !== null) {
       const merge = mergeDiff(prev, next);
