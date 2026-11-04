@@ -246,7 +246,13 @@ class ApkDownloader {
         timeout: connectTimeout,
       );
     } on Object {
-      return _Step.unreachable;
+      return (cancel?.isCancelled ?? false) ? _Step.cancelled : _Step.unreachable;
+    }
+    // Cancellation can arrive while get is waiting for response headers.
+    if (cancel?.isCancelled ?? false) {
+      final body = response.body.listen(null, onError: (Object _) {});
+      unawaited(body.cancel().catchError((Object _) {}));
+      return _Step.cancelled;
     }
 
     var append = false;
