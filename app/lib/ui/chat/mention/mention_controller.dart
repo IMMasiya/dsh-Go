@@ -149,8 +149,6 @@ class MentionPickerController extends ChangeNotifier {
     }
     if (previous == null || previous.start != next.start) {
       _dismissedAt = null;
-      _sections = const [];
-      _highlight = -1;
     }
     if (previous != null &&
         previous.start == next.start &&
@@ -161,6 +159,10 @@ class MentionPickerController extends ChangeNotifier {
     }
     // Closed with Esc: nothing to look up until the next `@`.
     if (_dismissedAt == next.start) return;
+    // The old rows belong to the previous query, including while typing
+    // is debounced or the next lookup is still pending.
+    _sections = const [];
+    _highlight = -1;
     _loading = true;
     _timer?.cancel();
     final generation = ++_generation;
@@ -391,8 +393,8 @@ class MentionPickerController extends ChangeNotifier {
 
   /// Puts [item] into the draft as a reference chip.
   void pick(MentionItem item) {
-    final q = _query;
-    if (q == null) return;
+    if (!_canSelect(item)) return;
+    final q = _query!;
     HapticFeedback.selectionClick();
     final sid = sessionId();
     recents.record(
@@ -409,8 +411,8 @@ class MentionPickerController extends ChangeNotifier {
 
   /// Opens [item] (a folder) in the picker instead of picking it.
   void drill(MentionItem item) {
-    final q = _query;
-    if (q == null || !item.drillable) return;
+    if (!item.drillable || !_canSelect(item)) return;
+    final q = _query!;
     HapticFeedback.selectionClick();
     final text = input.text;
     final next = text.replaceRange(q.start, q.end, item.mention);
@@ -420,6 +422,11 @@ class MentionPickerController extends ChangeNotifier {
       selection: TextSelection.collapsed(offset: caret),
     );
   }
+
+  // A row callback can outlive its rendered batch, even when a new batch
+  // contains an item with the same path or session key.
+  bool _canSelect(MentionItem item) =>
+      isOpen && _sections.any((section) => section.items.any((current) => identical(current, item)));
 
   /// Sending while the picker shows a typed query picks the marked row.
   bool pickHighlighted() {
