@@ -148,7 +148,9 @@ export class CapabilityRuntime {
     });
     const transfer = async () => {
       const result = await call(reg.def, { ...e.scope }, { key, locale: e.locale, signal: controller.signal });
-      if (controller.signal.aborted || !this.alive(e) || !this.leases.has(e.lease)) fail(410, 'cancelled', 'media cancelled');
+      // Registration changes precede the deferred sweep; their old bytes must not be published.
+      if (controller.signal.aborted || !this.alive(e) || !this.leases.has(e.lease)
+        || this.core.registration(pkg, 'media', id)?.token !== reg.token) fail(410, 'cancelled', 'media cancelled');
       if (!result || !(result.body instanceof Uint8Array) || !AUDIO_TYPES.has(result.contentType)) fail(502, 'invalid-media', 'expected bounded audio bytes and supported MIME');
       if (result.body.byteLength === 0 || result.body.byteLength > L.mediaBytes) fail(413, 'too-large', 'audio must be 1..16 MiB');
       // Keep the slot and cancellation live until Node has finished the response.
