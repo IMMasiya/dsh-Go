@@ -105,6 +105,8 @@ class SecureChannel {
 
   Future<void> _handshake(Duration timeout) async {
     final done = _handshakeDone = Completer<void>();
+    // listen may synchronously replay closure before the awaited send starts.
+    done.future.ignore();
     _transport.listen(onData: _onData, onHandshake: _onHandshakeMessage, onClosed: _onTransportClosed);
     try {
       await _transport.sendHandshake(1, _noise.writeHandshake());
