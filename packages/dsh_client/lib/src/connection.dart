@@ -528,17 +528,14 @@ class DshConnection {
       final setCookies = response.headers[HttpHeaders.setCookieHeader] ?? const <String>[];
       final builder = BytesBuilder(copy: false);
       final chunks = responseBody = StreamIterator(response);
-      try {
-        while (await chunks.moveNext()) {
-          final chunk = chunks.current;
-          if (maxResponseBytes != null && builder.length + chunk.length > maxResponseBytes) {
-            request?.abort();
-            throw DshProtocolException('$method ${uri.path}: response exceeds $maxResponseBytes bytes');
-          }
-          builder.add(chunk);
+      while (await chunks.moveNext()) {
+        final chunk = chunks.current;
+        if (maxResponseBytes != null && builder.length + chunk.length > maxResponseBytes) {
+          request?.abort();
+          await chunks.cancel();
+          throw DshProtocolException('$method ${uri.path}: response exceeds $maxResponseBytes bytes');
         }
-      } finally {
-        await chunks.cancel();
+        builder.add(chunk);
       }
       final type = response.headers.contentType;
       return DshHttpResponse(
