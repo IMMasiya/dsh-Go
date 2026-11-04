@@ -363,3 +363,29 @@ class _SlidingGlassState extends State<SlidingGlass> with SingleTickerProviderSt
     child: widget.child,
   );
 }
+
+/// [child]'s glass without its blur, for chrome floating over a web page: the page is a
+/// native view, which a backdrop filter can't see. It would blur whatever Flutter drew
+/// underneath instead, and show it through the key as a band.
+class GlassOverNativeView extends StatelessWidget {
+  const GlassOverNativeView({super.key, required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final surfaces = DshSurfaces.of(context);
+    if (!surfaces.blurEnabled) return child;
+    return Theme(
+      data: theme.copyWith(
+        extensions: [
+          for (final e in theme.extensions.values)
+            if (e is! DshSurfaces) e,
+          surfaces.copyWith(blurEnabled: false),
+        ],
+      ),
+      child: child,
+    );
+  }
+}

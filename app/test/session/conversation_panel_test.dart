@@ -202,6 +202,26 @@ void main() {
     });
   });
 
+  testWidgets('glass over a web page does not blur what it cannot see', (tester) async {
+    await tester.pumpWidget(
+      testApp(
+        const Column(
+          children: [
+            GlassSurface(tier: GlassTier.chrome, child: SizedBox.square(dimension: 40)),
+            GlassOverNativeView(
+              child: GlassSurface(
+                tier: GlassTier.chrome,
+                child: SizedBox.square(key: Key('web'), dimension: 40),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+    expect(find.byType(BackdropFilter), findsOneWidget, reason: 'the first one only');
+    expect(find.ancestor(of: find.byKey(const Key('web')), matching: find.byType(BackdropFilter)), findsNothing);
+  });
+
   group('sliding glass', () {
     testWidgets('fades to glass when it lands and back when it moves, no cut', (tester) async {
       final motion = AnimationController(vsync: const TestVSync());
