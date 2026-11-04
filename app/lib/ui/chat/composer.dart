@@ -504,6 +504,7 @@ class _SendButtonState extends State<_SendButton> {
   Widget build(BuildContext context) {
     final l10n = context.l10n;
     final colors = Theme.of(context).colorScheme;
+    final fluid = AppMotion.fluid(context);
     final enabled = widget.enabled && !widget.busy;
     final mode = widget.mode;
     final mic = mode == _KeyMode.mic || widget.quiet;
@@ -542,17 +543,19 @@ class _SendButtonState extends State<_SendButton> {
         onTapCancel: () => setState(() => _pressed = false),
         child: AnimatedScale(
           scale: _pressed ? 0.9 : 1,
-          duration: AppMotion.of(context, AppMotion.press),
-          curve: AppMotion.std,
+          duration: fluid && !_pressed ? AppMotion.thumbCurve.duration : AppMotion.of(context, AppMotion.press),
+          curve: fluid && !_pressed ? AppMotion.thumbCurve : AppMotion.std,
           child: AnimatedContainer(
             duration: AppMotion.of(context, AppMotion.quick),
             width: _keySize,
             height: _keySize,
             decoration: BoxDecoration(color: bg, shape: BoxShape.circle),
             child: AnimatedSwitcher(
-              duration: AppMotion.of(context, AppMotion.quick),
-              switchInCurve: AppMotion.enter,
-              transitionBuilder: (child, anim) => ScaleTransition(scale: anim, child: child),
+              duration: fluid ? AppMotion.standard : AppMotion.of(context, AppMotion.quick),
+              switchInCurve: fluid ? Curves.linear : AppMotion.enter,
+              switchOutCurve: Curves.linear,
+              transitionBuilder: (child, anim) =>
+                  fluid ? _FluidKeySwap(animation: anim, child: child) : ScaleTransition(scale: anim, child: child),
               child: widget.busy
                   ? Padding(
                       key: const ValueKey('busy'),
@@ -566,4 +569,39 @@ class _SendButtonState extends State<_SendButton> {
       ),
     );
   }
+}
+
+/// The fluid send key's icon swap: the plane that was sent flies off up and to the
+/// right, and what comes next pops in on a spring.
+class _FluidKeySwap extends StatelessWidget {
+  const _FluidKeySwap({required this.animation, required this.child});
+
+  final Animation<double> animation;
+  final Widget child;
+
+  static const _flight = 16.0;
+
+  @override
+  Widget build(BuildContext context) => AnimatedBuilder(
+    animation: animation,
+    child: child,
+    builder: (context, child) {
+      final v = animation.value.clamp(0.0, 1.0);
+      final leaving = animation.status == AnimationStatus.reverse;
+      final flies = leaving && this.child.key == const ValueKey(_KeyMode.send);
+      final away = flies ? _flight * Curves.easeIn.transform(1 - v) : 0.0;
+      final scale = flies
+          ? 1.0
+          : leaving
+          ? 0.4 + 0.6 * v
+          : 0.4 + 0.6 * AppMotion.thumbCurve.transform(v);
+      return Opacity(
+        opacity: v,
+        child: Transform.translate(
+          offset: Offset(away, -away),
+          child: Transform.scale(scale: scale, child: child),
+        ),
+      );
+    },
+  );
 }

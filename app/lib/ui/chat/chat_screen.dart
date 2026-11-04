@@ -45,6 +45,7 @@ import '../../state/workspaces_state.dart' show selectedWorkspaceProvider, works
 import '../../usage/usage_stats.dart';
 import '../common/app_sheet.dart';
 import '../common/brief_notice.dart';
+import '../common/fluid_bits.dart';
 import '../common/ui_trace.dart';
 import '../common/sheet_title_bar.dart';
 import '../common/smooth_size.dart';
@@ -1573,19 +1574,23 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
                               makeVideo: readOnly || !mediaVideo
                                   ? null
                                   : (meta, item) => unawaited(_reuseMedia(sessionId, meta, item, video: true)),
-                              child: ChatList(
+                              // Keyed by conversation: opening another one fades it in.
+                              child: FluidFadeIn(
                                 key: ValueKey(sessionId),
-                                sessionId: sessionId,
-                                topInset: headerHeight,
-                                bottomInset: _ChatLayout.overlap,
-                                scrolledUnder: _scrolledUnder,
-                                onWithdraw: _withdraw,
-                                onSendNow: _sendNow,
-                                onEditPrompt: _compose,
-                                onResend: _resend,
-                                onQuote: readOnly ? null : (passage) => _quote(sessionId, passage),
-                                onToast: _composerToast,
-                                onSwitchModel: readOnly ? null : _switchModel,
+                                child: ChatList(
+                                  key: ValueKey(sessionId),
+                                  sessionId: sessionId,
+                                  topInset: headerHeight,
+                                  bottomInset: _ChatLayout.overlap,
+                                  scrolledUnder: _scrolledUnder,
+                                  onWithdraw: _withdraw,
+                                  onSendNow: _sendNow,
+                                  onEditPrompt: _compose,
+                                  onResend: _resend,
+                                  onQuote: readOnly ? null : (passage) => _quote(sessionId, passage),
+                                  onToast: _composerToast,
+                                  onSwitchModel: readOnly ? null : _switchModel,
+                                ),
                               ),
                             ),
                           ),
