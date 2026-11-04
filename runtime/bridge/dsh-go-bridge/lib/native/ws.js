@@ -141,7 +141,8 @@ export class WsConnection extends EventEmitter {
         if (opcode === 0x0 && this.#fragments.length === 0) return this.close(1002, "unexpected continuation");
         this.#fragmentBytes += payload.length;
         if (this.#fragmentBytes > this.#maxMessage) return this.close(1009, "message too big");
-        this.#fragments.push(payload);
+        // Keep the first fragment as the message marker, without accumulating empty continuations.
+        if (payload.length > 0 || this.#fragments.length === 0) this.#fragments.push(payload);
         if (!fin) return;
         const whole = this.#fragments.length === 1 ? this.#fragments[0] : Buffer.concat(this.#fragments);
         this.#fragments = [];

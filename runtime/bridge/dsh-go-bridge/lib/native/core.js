@@ -601,9 +601,15 @@ export class Feed {
   waitFirst(ms) {
     if (this.data !== undefined || this.stopped) return Promise.resolve();
     return new Promise((resolve) => {
-      const timer = setTimeout(resolve, ms);
+      const done = () => {
+        clearTimeout(timer);
+        const index = this.waiters.indexOf(done);
+        if (index !== -1) this.waiters.splice(index, 1);
+        resolve();
+      };
+      const timer = setTimeout(done, ms);
       timer.unref?.();
-      this.waiters.push(() => { clearTimeout(timer); resolve(); });
+      this.waiters.push(done);
     });
   }
 
