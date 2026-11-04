@@ -156,7 +156,16 @@ class _ProviderFormPageState extends ConsumerState<ProviderFormPage> {
     final errors = <_F, String>{_F.baseUrl: ?baseUrlError(_baseUrl.text), _F.key: ?keyError};
     _showErrors(errors);
     if (errors.isNotEmpty) return;
-    final url = normalizeBaseUrl(_baseUrl.text, _api);
+    final backend = ref.read(providerBackendProvider);
+    final api = _api;
+    var expectedUrl = _baseUrl.text;
+    final url = normalizeBaseUrl(expectedUrl, api);
+    bool isCurrent() =>
+        mounted &&
+        identical(ref.read(providerBackendProvider), backend) &&
+        _api == api &&
+        _baseUrl.text == expectedUrl &&
+        normalizeProviderKey(_key.text) == key;
     setState(() {
       _discovering = true;
       _modelsError = null;
@@ -165,26 +174,28 @@ class _ProviderFormPageState extends ConsumerState<ProviderFormPage> {
     try {
       final result = await ref
           .read(providerActionsProvider)
-          .discover(api: _api, baseUrl: url, apiKey: key, existingId: _editing?.id);
-      if (!mounted) return;
+          .discover(api: api, baseUrl: url, apiKey: key, existingId: _editing?.id);
+      if (!mounted || !isCurrent()) return;
       if (result.baseUrl != url) {
         _baseUrl.text = result.baseUrl;
         setState(() => _baseUrlNote = context.l10n.engineProviderCompletedUrl(result.baseUrl));
       } else if (_baseUrl.text != url) {
         _baseUrl.text = url;
       }
+      // Our own normalization belongs to this discovery; later user edits do not.
+      expectedUrl = _baseUrl.text;
       if (result.models.isEmpty) {
         setState(() => _modelsError = context.l10n.engineProviderNoDiscoveredModels);
         return;
       }
       final picked = await showModelPicker(context, candidates: result.models, added: {for (final m in _models) m.id});
-      if (picked == null || picked.isEmpty || !mounted) return;
+      if (picked == null || picked.isEmpty || !isCurrent()) return;
       setState(() {
         _models = [..._models, for (final m in picked) m.toSpec()];
         _errors = {..._errors}..remove(_F.models);
       });
     } catch (error) {
-      if (mounted) setState(() => _modelsError = describeProviderError(error));
+      if (isCurrent()) setState(() => _modelsError = describeProviderError(error));
     } finally {
       if (mounted) setState(() => _discovering = false);
     }
