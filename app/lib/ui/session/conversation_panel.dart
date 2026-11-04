@@ -91,8 +91,9 @@ class ConversationPanel extends ConsumerWidget {
         if (destinations.isNotEmpty)
           Padding(
             padding: const EdgeInsets.fromLTRB(8, 4, 8, 8),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+            // Every shortcut ticked on a narrow phone doesn't fit on one line.
+            child: Wrap(
+              alignment: WrapAlignment.spaceEvenly,
               children: [
                 for (final destination in destinations)
                   _Key(
