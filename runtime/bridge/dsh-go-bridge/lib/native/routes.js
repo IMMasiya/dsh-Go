@@ -117,7 +117,7 @@ export function createNativeRoutes(core) {
   const capabilities = new CapabilityRuntime(core, fail);
   const files = new FilePickerRuntime(core, { fail, sendJson, readJsonBody });
   let disposed = false;
-  const staticViews = new Map();   // file -> {stamp, view}
+  const staticViews = new Map();   // file -> {stamp, view: normalized JSON value and byte size}
 
   const pluginOrFail = (pkg, caps) => {
     const rec = core.plugin(pkg);
@@ -171,8 +171,10 @@ export function createNativeRoutes(core) {
       fail(500, "invalid-view", "static view file is not JSON");
     }
     if (!isPlainObject(view)) fail(500, "invalid-view", "static view must be an object");
-    staticViews.set(file, { stamp, view });
-    return view;
+    const json = toJson(view);
+    const normalized = json && { value: json.value, bytes: json.bytes };
+    staticViews.set(file, { stamp, view: normalized });
+    return normalized;
   }
 
   async function view(req, res, url, rest) {
@@ -216,7 +218,7 @@ export function createNativeRoutes(core) {
       }
       viewJson = json;
     } else if (item.viewFile !== undefined) {
-      viewJson = toJson(await staticView(item.viewFile).finally(requireCurrent));
+      viewJson = await staticView(item.viewFile).finally(requireCurrent);
     } else {
       fail(409, "no-handler", `${pkg} has neither panel("${id}") nor a static view`);
     }
