@@ -317,8 +317,19 @@ final remoteConnectionProvider = AsyncNotifierProvider.autoDispose
 class ConnectionDiagnostics {
   static const _unobserved = <String, Object?>{'host': 'not_observed', 'state': 'not_observed'};
   Map<String, Object?> _value = _unobserved;
+  final _changes = StreamController<void>.broadcast();
 
   Map<String, Object?> get snapshot => Map.unmodifiable(_value);
+
+  /// Passive notifications from connections already observed by their normal
+  /// callers. Subscribing never creates or retries a connection.
+  Stream<void> get changes => _changes.stream;
+
+  void _changed() {
+    if (!_changes.isClosed) _changes.add(null);
+  }
+
+  void dispose() => unawaited(_changes.close());
 
   void _observe(Ref ref, HostRef host, AsyncValue<HostConnection?> connection) {
     final error = connection.error;
@@ -333,8 +344,12 @@ class ConnectionDiagnostics {
       if (error is HostLinkError) ...{'errorKind': error.kind.name, 'retryable': error.retryable},
     };
     _value = value;
+    _changed();
     void clear() {
-      if (identical(_value, value)) _value = _unobserved;
+      if (identical(_value, value)) {
+        _value = _unobserved;
+        _changed();
+      }
     }
 
     ref.onDispose(clear);
@@ -358,6 +373,7 @@ class ConnectionDiagnostics {
         },
         if (status.error case final error?) ...{'errorKind': error.kind.name, 'retryable': error.retryable},
       });
+      _changed();
     }
 
     record(link.status);
@@ -366,7 +382,11 @@ class ConnectionDiagnostics {
   }
 }
 
-final connectionDiagnosticsProvider = Provider((ref) => ConnectionDiagnostics());
+final connectionDiagnosticsProvider = Provider((ref) {
+  final diagnostics = ConnectionDiagnostics();
+  ref.onDispose(diagnostics.dispose);
+  return diagnostics;
+});
 
 /// The host the chat UI talks to: the one picked in the host switcher.
 ///
