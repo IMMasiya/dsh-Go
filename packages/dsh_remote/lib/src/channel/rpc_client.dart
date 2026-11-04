@@ -132,8 +132,9 @@ class RemoteRpcClient {
       message = RemoteMessage.decode(bytes);
     } on Object catch (error) {
       // Fail closed on malformed plaintext.
-      unawaited(_channel.close());
-      _onClosed(SecureChannelClosed('SECURE_CHANNEL_FAILED', 'Invalid Remote message: $error'));
+      final reason = SecureChannelClosed('SECURE_CHANNEL_FAILED', 'Invalid Remote message: $error');
+      unawaited(_channel.close(reason: reason));
+      _onClosed(reason);
       return;
     }
     switch (message.type) {

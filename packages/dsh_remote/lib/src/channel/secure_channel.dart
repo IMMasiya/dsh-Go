@@ -234,8 +234,12 @@ class SecureChannel {
     _onClosed?.call(reason);
   }
 
-  Future<void> close() async {
+  /// Closes the channel before notifying receivers, retaining an optional
+  /// local protocol failure instead of reporting it as a client shutdown.
+  Future<void> close({SecureChannelClosed? reason}) async {
     if (_closed) return;
-    _fail(const SecureChannelClosed('CLIENT_CLOSED', 'The client closed the secure channel.', retryable: false));
+    _fail(
+      reason ?? const SecureChannelClosed('CLIENT_CLOSED', 'The client closed the secure channel.', retryable: false),
+    );
   }
 }
