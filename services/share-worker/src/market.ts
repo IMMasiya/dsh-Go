@@ -201,7 +201,11 @@ async function catalog(env: Env): Promise<{ value: Snapshot; stale: boolean }> {
     const saved = await env.QUOTA?.get(key);
     if (saved) {
       const parsed: unknown = JSON.parse(saved);
-      if (snapshot(parsed) && (!previous || parsed.at > previous.at)) previous = parsed;
+      // Only a newer snapshot can replace the already validated memory entry.
+      if (
+        (!previous || (record(parsed) && typeof parsed.at === 'number' && parsed.at > previous.at)) &&
+        snapshot(parsed)
+      ) previous = parsed;
     }
   } catch {
     /* memory fallback */
