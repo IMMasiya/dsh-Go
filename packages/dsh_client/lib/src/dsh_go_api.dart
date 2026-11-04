@@ -1643,6 +1643,7 @@ class DshGoStream {
         _subs.remove(sub.sid);
         _emit(sub, DshGoEnded(asString(map['reason']) ?? 'error', code: asString(map['code'])));
         unawaited(sub.controller.close());
+        if (_subs.isEmpty && _holds == 0) _disconnect(DshGoLink.idle);
       default:
         // sync: already current, nothing to deliver.
         break;
