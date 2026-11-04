@@ -64,6 +64,7 @@ class FilesPlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandle
     }
 
     override fun onDetachedFromEngine(binding: FlutterPlugin.FlutterPluginBinding) {
+        onDetachedFromActivity()
         methods.setMethodCallHandler(null)
         pdfPages.run({ close() }) {}
     }
@@ -73,13 +74,16 @@ class FilesPlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandle
         binding.addRequestPermissionsResultListener(this)
     }
 
-    override fun onDetachedFromActivityForConfigChanges() = onDetachedFromActivity()
+    override fun onDetachedFromActivityForConfigChanges() {
+        activity?.removeRequestPermissionsResultListener(this)
+        activity = null
+    }
 
     override fun onReattachedToActivityForConfigChanges(binding: ActivityPluginBinding) = onAttachedToActivity(binding)
 
     override fun onDetachedFromActivity() {
-        activity?.removeRequestPermissionsResultListener(this)
-        activity = null
+        onDetachedFromActivityForConfigChanges()
+        finishPermission(granted = false)
     }
 
     override fun onMethodCall(call: MethodCall, result: MethodChannel.Result) {
@@ -186,20 +190,35 @@ class FilesPlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandle
     }
 
     private fun ask(result: MethodChannel.Result, then: () -> Unit) {
+        if (pendingSave != null) return result.error("permission", "storage permission request already pending", null)
         val host = activity?.activity ?: return result.error("permission", "no activity to ask for permission", null)
+        val denied = { result.error("permission", "storage permission denied", null) }
         pendingSave = then
-        pendingDenied = { result.error("permission", "storage permission denied", null) }
-        host.requestPermissions(arrayOf(Manifest.permission.WRITE_EXTERNAL_STORAGE), STORAGE_REQUEST)
+        pendingDenied = denied
+        try {
+            host.requestPermissions(arrayOf(Manifest.permission.WRITE_EXTERNAL_STORAGE), STORAGE_REQUEST)
+        } catch (error: Exception) {
+            // A synchronous callback may already have consumed this request.
+            if (pendingDenied === denied) {
+                pendingSave = null
+                pendingDenied = null
+                result.error("permission", error.message, null)
+            }
+        }
     }
 
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray): Boolean {
         if (requestCode != STORAGE_REQUEST) return false
         val granted = grantResults.isNotEmpty() && grantResults.all { it == PackageManager.PERMISSION_GRANTED }
+        finishPermission(granted)
+        return true
+    }
+
+    private fun finishPermission(granted: Boolean) {
         val next = if (granted) pendingSave else pendingDenied
         pendingSave = null
         pendingDenied = null
         next?.invoke()
-        return true
     }
 
     private fun saveNow(file: File, name: String, mime: String): String {
