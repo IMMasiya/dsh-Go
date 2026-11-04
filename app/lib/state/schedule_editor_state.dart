@@ -117,6 +117,9 @@ Future<ScheduleTask> requestSchedule(
 }) async {
   final known = {for (final t in await client.scheduleCatalog()) t.id};
   final done = Completer<ScheduleTask>();
+  // Host events can fail before prompt's RPC returns. Observe that interval;
+  // the await below still returns the task or throws the same failure.
+  done.future.ignore();
   var running = false;
   Timer? idle;
 

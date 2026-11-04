@@ -210,6 +210,8 @@ class LoginSession extends ChangeNotifier {
         return;
       }
     }
+    // An answer may have started another poll while this one was in flight.
+    _timer?.cancel();
     _timer = Timer(interval, () => unawaited(_poll()));
   }
 
