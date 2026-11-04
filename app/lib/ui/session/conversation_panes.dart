@@ -2,12 +2,17 @@
 // side panel a left swipe pulls in, the page behind the title, the column beside the
 // chat on a wide window) picks from these instead of keeping a list of its own.
 
+import 'package:dsh_client/dsh_client.dart' show DshGoPanel;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../l10n/l10n.dart';
-import '../../state/agents_state.dart';
-import '../../state/chat_state.dart';
+import '../../plugins/native/native_icons.dart';
+import '../../plugins/native/native_model.dart';
+import '../../plugins/native/native_state.dart';
+import '../../plugins/seams/seat_planner.dart';
+import '../plugins/native/chat_plugins_sheet.dart';
+import '../plugins/native/native_panel.dart';
 import '../plugins/seats/session_plugins_tab.dart';
 import '../theme/app_icons.dart';
 import 'conversation_overview.dart';
@@ -50,22 +55,48 @@ class ConversationPane {
   /// The pane behind [tab].
   static ConversationPane ofTab(SessionTab tab) => _tabs[tab]!;
 
-  /// What the side panel offers for [sessionId], in order: the ones that only exist once
-  /// there is something in them come and go.
-  static List<ConversationPane> shownFor(WidgetRef ref, String sessionId) {
-    final delegated =
-        ref.watch(chatProvider(sessionId).select((s) => dispatchedSubagents(s.items))) ||
-        ref.watch(subagentLineageProvider(sessionId)).isNotEmpty;
-    final plugins = !ref.watch(sessionPluginPlanProvider(sessionId)).isEmpty;
+  /// A plugin's own panel, wherever it asked to be: in the side panel it is its own, with
+  /// its own icon and name.
+  static ConversationPane ofNative(NativePanel panel) => ConversationPane(
+    id: 'native|${panel.package}|${panel.id}',
+    icon: nativeIcon(panel.icon) ?? AppIcons.plugin,
+    label: () => panel.title,
+    build: (id) => ListView(
+      padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
+      // One for 全部功能 only has no conversation to be about.
+      children: [
+        NativePanelView(
+          panel: panel,
+          sessionId: panel.placement.difference(const {DshGoPanel.features}).isEmpty ? null : id,
+        ),
+      ],
+    ),
+  );
+
+  /// The web plugins, all in one: their chat-page parts share one island, and the pages of
+  /// any plugin without such parts are a row away.
+  static final webPlugins = ConversationPane(
+    id: 'plugins',
+    icon: AppIcons.plugin,
+    label: () => appL10n.hubPlugins,
+    tab: SessionTab.plugins,
+    build: (id) => Builder(
+      builder: (context) => ChatWebPluginsPane(
+        sessionId: id,
+        onOtherPages: () => SessionDetailPage.open(context, id, tab: SessionTab.plugins),
+      ),
+    ),
+  );
+
+  /// The side panel's 插件, for [sessionId]: every plugin panel, wherever it asked to be,
+  /// each its own; then the web plugins.
+  static List<ConversationPane> pluginsFor(WidgetRef ref, String sessionId) {
+    final webParts = !ref.watch(chatWebPluginsProvider(sessionId)).isEmpty;
+    // The page's tab holds native panels too: those are listed on their own here.
+    final pages = ref.watch(sessionPluginPlanProvider(sessionId)).visible.any((item) => item.mode != SeatMode.native);
     return [
-      overview,
-      ofTab(SessionTab.files),
-      ofTab(SessionTab.trajectory),
-      ofTab(SessionTab.changes),
-      ofTab(SessionTab.progress),
-      ofTab(SessionTab.context),
-      if (delegated) ofTab(SessionTab.subagents),
-      if (plugins) ofTab(SessionTab.plugins),
+      for (final panel in ref.watch(nativePanelsProvider)) ofNative(panel),
+      if (webParts) webPlugins else if (pages) ofTab(SessionTab.plugins),
     ];
   }
 }

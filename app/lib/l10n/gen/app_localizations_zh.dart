@@ -14923,7 +14923,7 @@ class L10nZh extends L10n {
   }
 
   @override
-  String get shellPanelOverview => '基础信息';
+  String get shellPanelOverview => '信息';
 
   @override
   String get shellPanelWorkspace => '工作区';
@@ -14936,6 +14936,9 @@ class L10nZh extends L10n {
 
   @override
   String get shellPanelOpenFull => '打开完整页面';
+
+  @override
+  String get shellPanelNoPlugins => '这段对话还没有插件面板';
 
   @override
   String get shellQuickPanel => '快捷入口';

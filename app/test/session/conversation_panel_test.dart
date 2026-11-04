@@ -1,6 +1,8 @@
 // A phone's header and side panel: the title gets the header's width, the model moves
 // beside the composer, and the panel shows the conversation's panes.
 
+import 'package:dsh_app/plugins/native/native_model.dart';
+import 'package:dsh_app/plugins/native/native_state.dart';
 import 'package:dsh_app/state/chat_state.dart';
 import 'package:dsh_app/ui/chat/chat_header.dart';
 import 'package:dsh_app/ui/chat/chat_screen.dart';
@@ -125,7 +127,13 @@ void main() {
       }
       await tester.pumpAndSettle();
       expect(largest, lessThan(8), reason: 'the height moves a little every frame');
-      expect(tester.getRect(key).left, greaterThan(tester.getRect(find.byType(AttachButton)).right));
+      final plus = tester.getRect(find.byType(AttachButton));
+      final glass = tester.getRect(find.byType(Composer));
+      // The same gap all round the second row: beside the pill and to the glass.
+      expect(tester.getRect(key).left - plus.right, moreOrLessEquals(plus.left - glass.left, epsilon: 0.5));
+      expect(glass.bottom - plus.bottom, moreOrLessEquals(plus.left - glass.left, epsilon: 0.5));
+      expect(tester.getRect(key).center.dy, moreOrLessEquals(plus.center.dy, epsilon: 0.5));
+      expect(tester.getRect(key).width, lessThan(160), reason: 'as wide as its words, the rest left free');
       expect(tester.getRect(key).top, greaterThan(tester.getRect(find.byType(TextField)).top));
     });
 
@@ -135,6 +143,62 @@ void main() {
       await tester.tap(find.byType(TextField));
       await tester.pumpAndSettle();
       expect(find.byKey(const ValueKey('composer-model')), findsNothing, reason: 'the chip says it');
+    });
+  });
+
+  group('the composer\'s gaps', () {
+    // Something taller than a key beside the send key, as the context ring can be.
+    Future<FocusNode> composer(WidgetTester tester) async {
+      usePhoneView(tester);
+      final focus = FocusNode();
+      addTearDown(focus.dispose);
+      await tester.pumpWidget(
+        testApp(
+          Scaffold(
+            body: Align(
+              alignment: Alignment.bottomCenter,
+              child: Composer(
+                controller: TextEditingController(),
+                focusNode: focus,
+                connected: true,
+                running: false,
+                onSend: () {},
+                onStop: () {},
+                leading: AttachButton(onPressed: () {}),
+                accessory: const SizedBox(key: Key('ring'), width: 50, height: 44),
+                footer: const SizedBox(key: Key('pill'), width: 100, height: 36),
+              ),
+            ),
+          ),
+        ),
+      );
+      return focus;
+    }
+
+    void even(WidgetTester tester, {required bool open}) {
+      final glass = tester.getRect(find.byType(Composer));
+      final plus = tester.getRect(find.byType(AttachButton));
+      final side = plus.left - glass.left;
+      expect(glass.bottom - plus.bottom, moreOrLessEquals(side, epsilon: 0.5), reason: 'below the keys');
+      if (!open) expect(plus.top - glass.top, moreOrLessEquals(side, epsilon: 0.5), reason: 'above them');
+      final ring = tester.getRect(find.byKey(const Key('ring')));
+      expect(ring.center.dy, moreOrLessEquals(plus.center.dy, epsilon: 0.5), reason: 'one centre line');
+      if (open) {
+        final pill = tester.getRect(find.byKey(const Key('pill')));
+        expect(pill.center.dy, moreOrLessEquals(plus.center.dy, epsilon: 0.5), reason: 'one centre line');
+        expect(pill.left - plus.right, moreOrLessEquals(side, epsilon: 0.5), reason: 'beside the pill');
+      }
+    }
+
+    testWidgets('are even at rest and open, with something tall beside the key', (tester) async {
+      final focus = await composer(tester);
+      even(tester, open: false);
+      focus.requestFocus();
+      await tester.pumpAndSettle();
+      even(tester, open: true);
+      focus.unfocus();
+      await tester.pumpAndSettle();
+      even(tester, open: false);
     });
   });
 
@@ -158,31 +222,61 @@ void main() {
       return opened;
     }
 
-    testWidgets('opens on the overview, with the whole title', (tester) async {
+    testWidgets('opens on 信息, with the whole title', (tester) async {
       await panel(tester);
       expect(find.byType(ConversationOverview), findsOneWidget);
       expect(find.text('修复登录重复提交的问题并补上回归测试'), findsOneWidget);
       expect(find.byKey(const ValueKey('overview-model')), findsOneWidget);
     });
 
-    testWidgets('panes open and come back', (tester) async {
-      await panel(tester);
-      // The rest ask the host for their data; the page's own tests have those.
-      for (final id in ['trajectory', 'changes', 'overview']) {
-        await tester.tap(find.byKey(ValueKey('pane-$id')), warnIfMissed: false);
-        await tester.pump();
-        await tester.pump(const Duration(milliseconds: 300));
-        expect(tester.takeException(), isNull, reason: id);
-      }
-      expect(find.byType(ConversationOverview), findsOneWidget);
-    });
-
-    testWidgets('remembers the pane picked', (tester) async {
-      await panel(tester);
-      await tester.tap(find.byKey(const ValueKey('pane-changes')));
+    testWidgets('插件 is there with no plugins, and says where they come from', (tester) async {
+      final opened = await panel(tester);
+      await tester.tap(find.text('插件'));
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 300));
       expect(find.byType(ConversationOverview), findsNothing);
+      expect(find.text('这段对话还没有插件面板'), findsOneWidget);
+      await tester.tap(find.byKey(const ValueKey('pane-find-plugins')));
+      expect(opened, [DrawerDestination.plugins]);
+    });
+
+    Future<void> withPanels(WidgetTester tester, List<NativePanel> panels) async {
+      usePhoneView(tester);
+      mockClipboard(tester);
+      await tester.pumpWidget(
+        testApp(
+          Scaffold(
+            body: SizedBox(
+              width: 334,
+              child: ConversationPanel(sessionId: 's1', onOpen: (_) {}),
+            ),
+          ),
+          overrides: [..._harness().overrides, nativePanelsProvider.overrideWithValue(panels)],
+        ),
+      );
+      await tester.pump();
+      await tester.tap(find.text('插件').first);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+    }
+
+    testWidgets('several plugin panels get a row, whichever place they asked for', (tester) async {
+      await withPanels(tester, const [
+        NativePanel(package: 'a', id: 'chat', title: '工具', placement: {DshGoPanel.chatPanel}),
+        NativePanel(package: 'a', id: 'tab', title: '统计', placement: {DshGoPanel.sessionTab}),
+        NativePanel(package: 'b', id: 'all', title: '大全', placement: {DshGoPanel.features}),
+      ]);
+      expect(find.byKey(const ValueKey('pane-native|a|chat')), findsOneWidget);
+      expect(find.byKey(const ValueKey('pane-native|a|tab')), findsOneWidget);
+      expect(find.byKey(const ValueKey('pane-native|b|all')), findsOneWidget);
+    });
+
+    testWidgets('one plugin panel fills it, no row', (tester) async {
+      await withPanels(tester, const [
+        NativePanel(package: 'a', id: 'chat', title: '工具', placement: {DshGoPanel.chatPanel}),
+      ]);
+      expect(find.byKey(const ValueKey('pane-native|a|chat')), findsNothing);
+      expect(find.text('这段对话还没有插件面板'), findsNothing);
     });
 
     testWidgets('its foot opens the shortcuts', (tester) async {

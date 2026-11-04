@@ -89,18 +89,21 @@ class ComposerModelPill extends ConsumerWidget {
         highlightShape: BoxShape.rectangle,
         borderRadius: BorderRadius.circular(20),
         child: Container(
-          height: 40,
-          padding: const EdgeInsets.symmetric(horizontal: 14),
-          alignment: Alignment.center,
+          height: 36,
+          padding: const EdgeInsets.symmetric(horizontal: 12),
           decoration: ShapeDecoration(color: colors.onSurface.withValues(alpha: 0.06), shape: const StadiumBorder()),
-          child: Text(
-            effort == null ? name : '$name ${effortLabel(effort)}',
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: theme.textTheme.labelMedium?.copyWith(
-              fontSize: 13,
-              color: colors.onSurface,
-              fontWeight: FontWeight.w400,
+          // As wide as its words: the row's free space stays between it and the keys.
+          child: Center(
+            widthFactor: 1,
+            child: Text(
+              effort == null ? name : '$name ${effortLabel(effort)}',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: theme.textTheme.labelMedium?.copyWith(
+                fontSize: 12.5,
+                color: colors.onSurface,
+                fontWeight: FontWeight.w400,
+              ),
             ),
           ),
         ),

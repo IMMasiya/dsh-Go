@@ -27305,7 +27305,7 @@ abstract class L10n {
   /// No description provided for @shellPanelOverview.
   ///
   /// In zh, this message translates to:
-  /// **'基础信息'**
+  /// **'信息'**
   String get shellPanelOverview;
 
   /// No description provided for @shellPanelWorkspace.
@@ -27331,6 +27331,12 @@ abstract class L10n {
   /// In zh, this message translates to:
   /// **'打开完整页面'**
   String get shellPanelOpenFull;
+
+  /// No description provided for @shellPanelNoPlugins.
+  ///
+  /// In zh, this message translates to:
+  /// **'这段对话还没有插件面板'**
+  String get shellPanelNoPlugins;
 
   /// No description provided for @shellQuickPanel.
   ///

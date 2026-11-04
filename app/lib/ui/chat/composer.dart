@@ -26,7 +26,7 @@ const _lineHeight = 1.45;
 
 /// 输入条:chrome 玻璃 + 28 圆角,1–6 行自动增高,右下角发送 / 停止。
 ///
-/// 两颗 40 圆键是胶囊的"端盖":四周都留 [_keyGap],单行时胶囊高 56、
+/// 两颗 36 圆键是胶囊的"端盖":四周都留 [_keyGap],单行时胶囊高 48、
 /// 圆角 28 = 键半径 20 + 8,圆键与胶囊两端同心;文字在 40 高里居中。
 /// 多行时键贴底,底边和侧边仍是 8。
 ///
@@ -143,8 +143,7 @@ class Composer extends StatefulWidget {
   /// upright phone under a tall keyboard keeps six up to about 1.2× text.
   static int linesFor(BuildContext pageContext) {
     final available = MediaQuery.sizeOf(pageContext).height - MediaQuery.viewInsetsOf(pageContext).bottom;
-    final fontSize = Theme.of(pageContext).textTheme.bodyLarge?.fontSize ?? 16;
-    final line = MediaQuery.textScalerOf(pageContext).scale(fontSize) * _lineHeight;
+    final line = MediaQuery.textScalerOf(pageContext).scale(_fontSize) * _lineHeight;
     if (line <= 0 || available <= 0) return 2;
     return (available * 0.4 / line).floor().clamp(2, 6);
   }
@@ -153,8 +152,11 @@ class Composer extends StatefulWidget {
   State<Composer> createState() => _ComposerState();
 }
 
-const double _keySize = 40;
-const double _keyGap = 8;
+const double _keySize = 36;
+const double _keyGap = 6;
+
+/// The composer's own text, a step under body text.
+const double _fontSize = 15.0;
 
 class _ComposerState extends State<Composer> with SingleTickerProviderStateMixin {
   Duration? _lastEscape;
@@ -346,10 +348,10 @@ class _ComposerState extends State<Composer> with SingleTickerProviderStateMixin
     final l10n = context.l10n;
     final theme = Theme.of(context);
     final dsh = DshColors.of(context);
-    final textStyle = theme.textTheme.bodyLarge?.copyWith(height: _lineHeight);
+    final textStyle = theme.textTheme.bodyLarge?.copyWith(fontSize: _fontSize, height: _lineHeight);
     // One line centred in the keys' 40: the padding that makes it so, at
     // the current text size (very large text just grows the row).
-    final line = MediaQuery.textScalerOf(context).scale(textStyle?.fontSize ?? 16) * _lineHeight;
+    final line = MediaQuery.textScalerOf(context).scale(_fontSize) * _lineHeight;
     final textPad = math.max(4.0, (_keySize - line) / 2);
     final voice = widget.voice;
     voice?.ensureFresh();
@@ -449,7 +451,11 @@ class _ComposerState extends State<Composer> with SingleTickerProviderStateMixin
                   decoration: InputDecoration(
                     hintText: hint,
                     hintMaxLines: 1,
-                    hintStyle: theme.textTheme.bodyLarge?.copyWith(color: dsh.textTertiary, height: 1.45),
+                    hintStyle: theme.textTheme.bodyLarge?.copyWith(
+                      fontSize: _fontSize,
+                      color: dsh.textTertiary,
+                      height: 1.45,
+                    ),
                     filled: false,
                     isDense: true,
                     border: InputBorder.none,
@@ -508,13 +514,17 @@ class _ComposerState extends State<Composer> with SingleTickerProviderStateMixin
                     ),
                     leading: leadingKey ?? const SizedBox.shrink(),
                     footer: FadeTransition(opacity: _open, child: footer),
-                    trailing: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      crossAxisAlignment: CrossAxisAlignment.end,
-                      children: [
-                        if (accessory != null) ...[accessory, const SizedBox(width: 2)],
-                        sendKey,
-                      ],
+                    // Exactly a key tall, whatever sits beside the key: the row's height is
+                    // what keeps the gaps around it even.
+                    trailing: SizedBox(
+                      height: _keySize,
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          if (accessory != null) ...[accessory, const SizedBox(width: _keyGap)],
+                          sendKey,
+                        ],
+                      ),
                     ),
                   );
             // The tray unfolds above the text and folds away again: the
@@ -616,8 +626,11 @@ class _RenderComposerRows extends RenderBox
         RenderBoxContainerDefaultsMixin<RenderBox, _ComposerRowsParentData> {
   _RenderComposerRows(this._open);
 
-  /// Around the text and between the pieces of a row.
+  /// Beside the text, on one row.
   static const _gap = 8.0;
+
+  /// Between the pieces of the second row: what the glass leaves around them.
+  static const _rowGap = _keyGap;
 
   /// The text's own inset once it has the line to itself.
   static const _inset = 8.0;
@@ -667,7 +680,7 @@ class _RenderComposerRows extends RenderBox
     final trail = layoutChild(trailing, loose);
     final foot = layoutChild(
       footer,
-      BoxConstraints(maxWidth: math.max(0.0, width - lead.width - trail.width - 2 * _gap)),
+      BoxConstraints(maxWidth: math.max(0.0, width - lead.width - trail.width - 2 * _rowGap)),
     );
     final field = layoutChild(text, BoxConstraints.tightFor(width: _textWidth(width, lead.width, trail.width)));
     final keys = math.max(math.max(lead.height, trail.height), foot.height);
@@ -690,9 +703,11 @@ class _RenderComposerRows extends RenderBox
     final keys = math.max(math.max(leading.size.height, trailing.size.height), footer.size.height);
     final restTop = math.max(0.0, math.max(text.size.height, keys) - text.size.height);
     place(text, ui.lerpDouble(restX, _inset, t)!, ui.lerpDouble(restTop, 0, t)!);
-    place(leading, 0, size.height - leading.size.height);
-    place(footer, leading.size.width + _gap, size.height - keys + (keys - footer.size.height) / 2);
-    place(trailing, size.width - trailing.size.width, size.height - trailing.size.height);
+    // On one centre line, whatever their heights.
+    double centred(RenderBox child) => size.height - keys + (keys - child.size.height) / 2;
+    place(leading, 0, centred(leading));
+    place(footer, leading.size.width + _rowGap, centred(footer));
+    place(trailing, size.width - trailing.size.width, centred(trailing));
   }
 
   @override
@@ -790,10 +805,10 @@ class _SendButtonState extends State<_SendButton> {
         ? colors.onPrimary
         : colors.onSurface.withValues(alpha: 0.38);
     final (icon, size, label) = switch (mode) {
-      _KeyMode.send => (AppIcons.send, 22.0, l10n.commonSend),
-      _KeyMode.stopRun => (AppIcons.stopGenerating, 20.0, l10n.chatStopGenerating),
-      _KeyMode.mic => (AppIcons.voice, 22.0, l10n.chatVoiceInput),
-      _KeyMode.stopVoice => (AppIcons.stopGenerating, 20.0, l10n.chatStopVoiceInput),
+      _KeyMode.send => (AppIcons.send, 20.0, l10n.commonSend),
+      _KeyMode.stopRun => (AppIcons.stopGenerating, 18.0, l10n.chatStopGenerating),
+      _KeyMode.mic => (AppIcons.voice, 20.0, l10n.chatVoiceInput),
+      _KeyMode.stopVoice => (AppIcons.stopGenerating, 18.0, l10n.chatStopVoiceInput),
     };
     return Semantics(
       button: true,
