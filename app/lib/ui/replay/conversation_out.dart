@@ -95,8 +95,22 @@ class ConversationOut {
   Future<void> shareText(String text) => _share(ShareParams(text: text));
 
   /// Into `Download/DSH-Go`; returns where it landed.
-  Future<String> save(File file, ConversationFormat format) =>
-      files.saveToDownloads(file.path, name: file.uri.pathSegments.last, mime: format.mime);
+  Future<String> save(String name, String content, ConversationFormat format) async {
+    final dir = await Directory('${(await _cacheRoot()).path}/conversation').create(recursive: true);
+    // A dismissed sheet can reopen before the native worker reads its source.
+    final operation = await dir.createTemp('save-');
+    try {
+      final file = File('${operation.path}/$name');
+      await file.writeAsString(content, flush: true);
+      return await files.saveToDownloads(file.path, name: name, mime: format.mime);
+    } finally {
+      try {
+        await operation.delete(recursive: true);
+      } catch (_) {
+        // Cleanup must preserve the native result or the original save error.
+      }
+    }
+  }
 }
 
 final conversationOutProvider = Provider<ConversationOut>(

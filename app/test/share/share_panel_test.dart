@@ -76,7 +76,8 @@ class _Out extends ConversationOut {
   Future<void> shareText(String text) async => texts.add(text);
 
   @override
-  Future<String> save(File file, ConversationFormat format) async {
+  Future<String> save(String name, String content, ConversationFormat format) async {
+    final file = await write(name, content);
     saved.add((file, format));
     return 'Download/DSH-Go/${file.uri.pathSegments.last}';
   }
