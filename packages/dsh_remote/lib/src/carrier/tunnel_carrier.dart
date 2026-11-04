@@ -464,7 +464,14 @@ class RemoteTunnelCarrier extends DshCarrier implements WorkspaceUploadCarrier {
         try {
           response = await session.rpc.call('harness.remote.call', request, timeout: timeout ?? callTimeout);
         } on RemoteRpcException catch (error) {
-          if (error.isLocal || error.code != 'RESPONSE_TOO_LARGE') rethrow;
+          // The Host checks response size after executing the request. A
+          // transfer retry would execute it again, not retrieve its result.
+          if (error.isLocal ||
+              error.code != 'RESPONSE_TOO_LARGE' ||
+              endpoint == 'commands/execute' ||
+              endpoint == 'settings/mutate') {
+            rethrow;
+          }
           response = await _callTransferred(session, endpoint, encoded, timeout);
         }
       }
