@@ -85,7 +85,7 @@ export function validateCatalog(index: unknown, sidecar: unknown): sidecar is Si
       !record(p.risk) ||
       !['low', 'medium', 'high'].includes(String(p.risk.level)) ||
       !Array.isArray(p.risk.flags) ||
-      p.risk.flags.some((f) => !FLAGS.includes(String(f))) ||
+      p.risk.flags.some((f) => typeof f !== 'string' || !FLAGS.includes(f)) ||
       new Set(p.risk.flags).size !== p.risk.flags.length ||
       typeof p.integrity !== 'string' ||
       !/^sha512-[A-Za-z0-9+/]{86}==$/.test(p.integrity) ||
