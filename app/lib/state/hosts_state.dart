@@ -138,18 +138,22 @@ class HostsController extends Notifier<HostsState> {
     state = HostsState(ssh: hosts, loaded: true);
   }
 
-  Future<void> _persist(List<SshHostConfig> hosts) async {
+  Future<bool> _persist(List<SshHostConfig> hosts) async {
     state = HostsState(ssh: List.unmodifiable(hosts), loaded: true);
     try {
       final prefs = await SharedPreferences.getInstance();
-      await prefs.setString(prefsKey, jsonEncode([for (final h in hosts) h.toJson()]));
-    } catch (_) {}
+      return await prefs.setString(prefsKey, jsonEncode([for (final h in hosts) h.toJson()]));
+    } catch (_) {
+      return false;
+    }
   }
 
   /// Adds or replaces [config]. With [secrets], stores the one matching the
   /// auth method and deletes the other kind, so a host never keeps a stale
   /// password next to its key.
-  Future<void> saveSsh(SshHostConfig config, {SshSecrets? secrets}) async {
+  /// Returns the preferences write result. A false result does not undo the
+  /// in-memory config or any completed secret operations.
+  Future<bool> saveSsh(SshHostConfig config, {SshSecrets? secrets}) async {
     await _loaded;
     ref.read(readListCredentialEpochProvider.notifier).advance();
     if (secrets != null) await _writeSecrets(config, secrets);
@@ -160,7 +164,7 @@ class HostsController extends Notifier<HostsState> {
     } else {
       hosts.add(config);
     }
-    await _persist(hosts);
+    return _persist(hosts);
   }
 
   Future<void> _writeSecrets(SshHostConfig config, SshSecrets secrets) async {
