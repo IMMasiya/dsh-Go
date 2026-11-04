@@ -76,7 +76,7 @@ class _PetOverlayBridgeState extends ConsumerState<PetOverlayBridge> {
 
   @override
   Widget build(BuildContext context) {
-    ref.watch(petOverlayBridgeProvider);
+    ref.listen<void>(petOverlayBridgeProvider, (_, _) {});
     return const SizedBox.shrink();
   }
 }
