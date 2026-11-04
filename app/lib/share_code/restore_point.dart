@@ -12,7 +12,7 @@
 // in step with LastKnownGood.kt (`load` / `save`).
 //
 // Skills and AGENTS.md aren't part of that record: what an import replaces is
-// copied to `/root/.dsh/backups/share-import-<stamp>/` (not a skill root).
+// copied under `/root/.dsh/backups/` (not a skill root).
 
 import 'dart:convert';
 import 'dart:io';
@@ -96,12 +96,16 @@ class RestorePoint {
     }
   }
 
-  /// Copies the imported-AGENTS.md slot's current text (if any) into [backup].
+  /// Copies the imported-AGENTS.md text into a new directory beside [backup].
   Future<void> backupAgentsMd(String backup) async {
     final text = await fs.readImportedAgentsMd();
     if (text == null) return;
-    final target = fs.file('$backup/AGENTS.md');
-    target.parent.createSync(recursive: true);
+    final parent = fs.dir(backup).parent;
+    parent.createSync(recursive: true);
+    // Two imports may share the timestamp; each copy owns a fresh directory.
+    final prefix = backup.substring(backup.lastIndexOf('/') + 1);
+    final saved = parent.createTempSync('$prefix-');
+    final target = File('${saved.path}/AGENTS.md');
     target.writeAsStringSync(text);
   }
 }
