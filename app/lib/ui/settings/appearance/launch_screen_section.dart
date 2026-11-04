@@ -460,6 +460,10 @@ final launchThumbProvider = FutureProvider.autoDispose.family<ui.Image?, String>
   );
   try {
     final image = (await codec.getNextFrame()).image;
+    if (!ref.mounted) {
+      image.dispose();
+      return null;
+    }
     ref.onDispose(image.dispose);
     return image;
   } finally {
