@@ -15422,6 +15422,18 @@ abstract class L10n {
   /// **'同时遵循系统的移除动画设置'**
   String get performanceSystemMotion;
 
+  /// No description provided for @performanceFluid.
+  ///
+  /// In zh, this message translates to:
+  /// **'灵动动效'**
+  String get performanceFluid;
+
+  /// No description provided for @performanceFluidHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'弹性回弹、按压光晕、卡片展开成页面。几乎不增加耗电'**
+  String get performanceFluidHint;
+
   /// No description provided for @performanceFollowMode.
   ///
   /// In zh, this message translates to:
@@ -25243,6 +25255,12 @@ abstract class L10n {
   /// In zh, this message translates to:
   /// **'动画,动效,减少动画'**
   String get searchKwAnimations;
+
+  /// No description provided for @searchKwFluidMotion.
+  ///
+  /// In zh, this message translates to:
+  /// **'灵动,弹性,回弹,光晕,丝滑'**
+  String get searchKwFluidMotion;
 
   /// No description provided for @searchKwNotifyEnabled.
   ///

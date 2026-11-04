@@ -8855,6 +8855,13 @@ class L10nEn extends L10n {
   String get performanceSystemMotion => 'Also follows the system\'s remove animations setting';
 
   @override
+  String get performanceFluid => 'Fluid motion';
+
+  @override
+  String get performanceFluidHint =>
+      'Springy releases, a soft glow under your finger, cards that open into pages. Costs almost no battery';
+
+  @override
   String get performanceFollowMode => 'Follow the performance mode';
 
   @override
@@ -14502,6 +14509,9 @@ class L10nEn extends L10n {
 
   @override
   String get searchKwAnimations => 'animation,motion,reduce motion';
+
+  @override
+  String get searchKwFluidMotion => 'fluid,spring,bounce,glow,smooth';
 
   @override
   String get searchKwNotifyEnabled => 'notifications on,turn off notifications';

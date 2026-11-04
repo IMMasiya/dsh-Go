@@ -856,6 +856,12 @@ abstract final class Spots {
     title: (l) => l.performanceAnimations,
     keywords: (l) => l.searchKwAnimations,
   );
+  static final fluidMotion = SettingSpot(
+    'fluid-motion',
+    page: SettingsPageId.performance,
+    title: (l) => l.performanceFluid,
+    keywords: (l) => l.searchKwFluidMotion,
+  );
 
   // 通知.
   static final notifyEnabled = SettingSpot(
@@ -1073,6 +1079,7 @@ final _rows = <SettingSpot>[
   Spots.refreshRate,
   Spots.blur,
   Spots.animations,
+  Spots.fluidMotion,
   Spots.notifyEnabled,
   Spots.notifyDone,
   Spots.notifyFailed,

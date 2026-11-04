@@ -25,6 +25,7 @@ import '../../state/read_list_identity.dart';
 import '../../state/workspaces_state.dart';
 import '../bots/bots_page.dart' show BotsPage, UnreadBadge;
 import '../chat/media/media_format.dart' show chatTitleShown;
+import '../common/app_dialog.dart';
 import '../common/app_sheet.dart';
 import '../common/empty_view.dart';
 import '../common/pressable.dart';
@@ -632,7 +633,7 @@ class _SessionList extends ConsumerWidget {
 
   Future<String?> _askTitle(BuildContext context, String initial) {
     final controller = TextEditingController(text: initial);
-    return showDialog<String>(
+    return showAppDialog<String>(
       context: context,
       builder: (dialog) => AlertDialog(
         title: Text(context.l10n.shellRenameChat),

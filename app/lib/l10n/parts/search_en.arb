@@ -62,6 +62,7 @@
   "searchKwPetDisplayWhen": "pet display,when to show",
   "searchKwBlur": "blur,glass,frosted",
   "searchKwAnimations": "animation,motion,reduce motion",
+  "searchKwFluidMotion": "fluid,spring,bounce,glow,smooth",
   "searchKwNotifyEnabled": "notifications on,turn off notifications",
   "searchKwNotifyDone": "reply done,finished",
   "searchKwNotifyFailed": "error,failed,stopped",

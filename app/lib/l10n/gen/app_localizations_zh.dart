@@ -8400,6 +8400,12 @@ class L10nZh extends L10n {
   String get performanceSystemMotion => '同时遵循系统的移除动画设置';
 
   @override
+  String get performanceFluid => '灵动动效';
+
+  @override
+  String get performanceFluidHint => '弹性回弹、按压光晕、卡片展开成页面。几乎不增加耗电';
+
+  @override
   String get performanceFollowMode => '效果跟随性能模式';
 
   @override
@@ -13791,6 +13797,9 @@ class L10nZh extends L10n {
 
   @override
   String get searchKwAnimations => '动画,动效,减少动画';
+
+  @override
+  String get searchKwFluidMotion => '灵动,弹性,回弹,光晕,丝滑';
 
   @override
   String get searchKwNotifyEnabled => '通知开关,关闭通知';

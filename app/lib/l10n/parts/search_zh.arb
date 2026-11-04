@@ -62,6 +62,7 @@
   "searchKwPetDisplayWhen": "宠物显示,显示时机",
   "searchKwBlur": "模糊,毛玻璃,玻璃",
   "searchKwAnimations": "动画,动效,减少动画",
+  "searchKwFluidMotion": "灵动,弹性,回弹,光晕,丝滑",
   "searchKwNotifyEnabled": "通知开关,关闭通知",
   "searchKwNotifyDone": "完成提醒,回复完成",
   "searchKwNotifyFailed": "出错提醒,失败",

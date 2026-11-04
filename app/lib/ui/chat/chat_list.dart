@@ -24,6 +24,7 @@ import '../../state/hosts_state.dart' show HostKind, activeHostProvider;
 import '../../state/regenerate.dart';
 import '../../state/sessions_state.dart';
 import '../../state/settings_state.dart';
+import '../common/app_dialog.dart';
 import '../common/bleed.dart';
 import '../common/ui_trace.dart';
 import '../pets/pet_perch.dart';
@@ -144,7 +145,7 @@ class ChatList extends ConsumerStatefulWidget {
   ConsumerState<ChatList> createState() => _ChatListState();
 }
 
-class _ChatListState extends ConsumerState<ChatList> {
+class _ChatListState extends ConsumerState<ChatList> with SingleTickerProviderStateMixin {
   late final _scroll = _TopBoundedScrollController(_leadingBoundary);
   final _centerKey = UniqueKey();
   final _beforeKey = GlobalKey();
@@ -174,7 +175,52 @@ class _ChatListState extends ConsumerState<ChatList> {
   /// 解除。
   bool _held = false;
 
-  late final _physics = _FollowPhysics(() => _pinned && !_held);
+  late final _physics = _FollowPhysics(() => _pinned && !_held, glides: () => _glidable);
+
+  /// The fluid tier: following glides to a new line instead of snapping to it. Real
+  /// scrolling, so everything else about the list is as it was; the new line only starts
+  /// a little lower, behind the composer.
+  bool _fluid = false;
+
+  /// The glide is ours: its scroll updates say nothing about what the user wants.
+  bool _gliding = false;
+  bool _snapNext = false;
+  late final Ticker _glide = createTicker(_onGlide);
+  Duration _glideLast = Duration.zero;
+
+  /// Time constant of the glide: a line (about 28) lands in some 150ms, and lines
+  /// arriving faster than that blend into one steady motion.
+  static const _glideSeconds = 0.07;
+
+  /// Further than this is not a next line: a jump, as before.
+  static const _glideReach = 240.0;
+
+  bool get _glidable => _fluid && !_snapNext;
+
+  void _startGlide() {
+    _gliding = true;
+    if (_glide.isActive) return;
+    _glideLast = Duration.zero;
+    _glide.start();
+  }
+
+  void _stopGlide() {
+    _gliding = false;
+    if (_glide.isActive) _glide.stop();
+  }
+
+  void _onGlide(Duration elapsed) {
+    if (!mounted || !_scroll.hasClients || !_pinned || _held) return _stopGlide();
+    final seconds = (elapsed - _glideLast).inMicroseconds / Duration.microsecondsPerSecond;
+    _glideLast = elapsed;
+    final p = _scroll.position;
+    final gap = p.maxScrollExtent - p.pixels;
+    if (gap <= 0.5 || gap > _glideReach) {
+      if (gap != 0) p.jumpTo(p.maxScrollExtent);
+      return _stopGlide();
+    }
+    p.jumpTo(p.pixels + gap * (1 - math.exp(-seconds / _glideSeconds)));
+  }
 
   /// 回到底部按钮 / 新内容角标。用 notifier 而不是 setState:
   /// 显隐翻转不该重建整个列表。
@@ -232,6 +278,7 @@ class _ChatListState extends ConsumerState<ChatList> {
 
   @override
   void dispose() {
+    _glide.dispose();
     _scroll.dispose();
     _showJump.dispose();
     _hasNew.dispose();
@@ -267,6 +314,13 @@ class _ChatListState extends ConsumerState<ChatList> {
       if (uiTraceEnabled && p.pixels != p.maxScrollExtent) {
         uiTrace('chat-list', 'follow', {'from': p.pixels, 'to': p.maxScrollExtent, 'held': _held, 'attempt': attempts});
       }
+      final gap = p.maxScrollExtent - p.pixels;
+      if (_glidable && gap > 0 && gap <= _glideReach) {
+        _followScheduled = false;
+        _startGlide();
+        return;
+      }
+      _snapNext = false;
       if (p.pixels != p.maxScrollExtent) p.jumpTo(p.maxScrollExtent);
       attempts++;
       if (attempts < 4 && _scroll.position.pixels < p.maxScrollExtent - 0.5) {
@@ -281,6 +335,8 @@ class _ChatListState extends ConsumerState<ChatList> {
 
   void jumpToBottom() {
     _pinned = true;
+    _snapNext = true;
+    _stopGlide();
     _hasNew.value = false;
     _showJump.value = false;
     _follow();
@@ -317,6 +373,10 @@ class _ChatListState extends ConsumerState<ChatList> {
 
   void _applyMetrics(ScrollMetrics metrics) {
     _reportScrolledUnder(metrics);
+    // The reveal grows the reply between state updates.
+    if (_glidable && _pinned && !_held && _scroll.hasClients && !_atBottom(0.5) && _atBottom(_glideReach)) {
+      _startGlide();
+    }
     // 点开的内容往下长出了视口:不再算贴底,之后的新内容不把它顶走。
     if (_held && _pinned && !_atBottom()) {
       _pinned = false;
@@ -336,6 +396,8 @@ class _ChatListState extends ConsumerState<ChatList> {
     if (n is UserScrollNotification && n.direction == ScrollDirection.forward) {
       // 手指往下拖 = 往回看:立刻停止跟随,别和用户抢。
       _pinned = false;
+    } else if (_gliding) {
+      // Our own motion: still following, however far behind it is for now.
     } else if (n is ScrollUpdateNotification || n is ScrollEndNotification) {
       _pinned = _atBottom();
     }
@@ -520,6 +582,7 @@ class _ChatListState extends ConsumerState<ChatList> {
     );
     final rows = _rows;
     final split = _split;
+    _fluid = AppMotion.fluid(context);
 
     // Images in replies read this conversation's workspace.
     final headroom = ref.watch(petHeadroomProvider);
@@ -548,7 +611,14 @@ class _ChatListState extends ConsumerState<ChatList> {
           return Stack(
             children: [
               Listener(
-                onPointerDown: (_) => _held = true,
+                onPointerDown: (_) {
+                  // The finger lands on where things end up, not on a moving list.
+                  if (_gliding && _scroll.hasClients) {
+                    _stopGlide();
+                    _scroll.position.jumpTo(_scroll.position.maxScrollExtent);
+                  }
+                  _held = true;
+                },
                 child: NotificationListener<ScrollMetricsNotification>(
                   onNotification: _onMetrics,
                   child: NotificationListener<ScrollNotification>(
@@ -628,7 +698,12 @@ class _ChatListState extends ConsumerState<ChatList> {
     final previous = index > 0 ? _rows[index - 1] : null;
     final fresh = _fresh.remove(row.key);
     final padding = EdgeInsets.fromLTRB(AppSpace.gutter, _gapBefore(row, previous), AppSpace.gutter, 0);
-    final body = StreamFadeIn(enabled: fresh != null, index: fresh ?? 0, child: _rowWidget(row));
+    final body = StreamFadeIn(
+      enabled: fresh != null,
+      index: fresh ?? 0,
+      rise: row is UserRow || row is PendingRow,
+      child: _rowWidget(row),
+    );
     return KeyedSubtree(
       key: ValueKey<String>(row.key),
       child: Center(
@@ -723,7 +798,7 @@ class _ChatListState extends ConsumerState<ChatList> {
     });
     var text = prompt.text;
     try {
-      final edited = await showDialog<String>(
+      final edited = await showAppDialog<String>(
         context: context,
         builder: (dialog) => AlertDialog(
           title: Text(appL10n.chatEditFailedSubmission),
@@ -1067,6 +1142,7 @@ class _JumpToBottom extends StatelessWidget {
     final colors = theme.colorScheme;
     final dsh = DshColors.of(context);
     final quick = AppMotion.of(context, AppMotion.quick);
+    final fluid = AppMotion.fluid(context);
 
     final pill = GlassSurface(
       key: const ValueKey('waiting'),
@@ -1116,8 +1192,8 @@ class _JumpToBottom extends StatelessWidget {
               valueListenable: hasNew,
               builder: (context, fresh, _) => AnimatedScale(
                 scale: fresh ? 1 : 0,
-                duration: quick,
-                curve: AppMotion.std,
+                duration: fluid && fresh ? AppMotion.popCurve.duration : quick,
+                curve: fluid && fresh ? AppMotion.popCurve : AppMotion.std,
                 child: Container(
                   width: 9,
                   height: 9,
@@ -1139,9 +1215,9 @@ class _JumpToBottom extends StatelessWidget {
       builder: (context, show, _) => IgnorePointer(
         ignoring: !show,
         child: AnimatedScale(
-          scale: show ? 1 : 0.8,
-          duration: quick,
-          curve: AppMotion.enter,
+          scale: show ? 1 : (fluid ? 0.6 : 0.8),
+          duration: fluid && show ? AppMotion.popCurve.duration : quick,
+          curve: fluid && show ? AppMotion.popCurve : AppMotion.enter,
           child: AnimatedOpacity(
             opacity: show ? 1 : 0,
             duration: quick,
@@ -1171,12 +1247,17 @@ class _JumpToBottom extends StatelessWidget {
 /// 且上一帧刚 `jumpTo` 过就不夹:那一帧末尾露出一道缝,再由回弹动画收回,
 /// 看起来像被往上推了一下。
 class _FollowPhysics extends ScrollPhysics {
-  const _FollowPhysics(this.follows, {super.parent});
+  const _FollowPhysics(this.follows, {required this.glides, super.parent});
 
   final bool Function() follows;
 
+  /// A taller list is left for the glide to catch up with. Shorter still lands at once:
+  /// a gap at the bottom can't wait.
+  final bool Function() glides;
+
   @override
-  _FollowPhysics applyTo(ScrollPhysics? ancestor) => _FollowPhysics(follows, parent: buildParent(ancestor));
+  _FollowPhysics applyTo(ScrollPhysics? ancestor) =>
+      _FollowPhysics(follows, glides: glides, parent: buildParent(ancestor));
 
   @override
   double adjustPositionForNewDimensions({
@@ -1194,7 +1275,8 @@ class _FollowPhysics extends ScrollPhysics {
     if (isScrolling || velocity != 0 || !follows()) return adjusted;
     // 上一帧之后可能刚追过底(帧后 jumpTo):看当前位置,也看上次记下的。
     final at = newPosition.pixels > oldPosition.pixels ? newPosition.pixels : oldPosition.pixels;
-    if (oldPosition.maxScrollExtent - at > 1) return adjusted;
+    if (oldPosition.maxScrollExtent - at > 1 && !glides()) return adjusted;
+    if (glides() && newPosition.maxScrollExtent >= at) return adjusted;
     return newPosition.maxScrollExtent;
   }
 }
