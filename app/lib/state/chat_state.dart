@@ -524,9 +524,7 @@ class ChatController extends Notifier<ChatState> {
       // These requests belong to the previous Host, even if the new Host has
       // the same session id. A new watch replays its own mux's pending requests.
       // Retire only the local cards; do not answer or cancel the old Host's work.
-      for (final id in [..._transcript.pendingApprovals.keys, ..._transcript.pendingQuestions.keys]) {
-        _transcript.apply(HostRequestCancelledEvent(id));
-      }
+      _retireHostRequests();
       _approvalHost = host;
       _defaultModelSaveFailed = false;
       _approvalScope = Object();
@@ -735,6 +733,12 @@ class ChatController extends Notifier<ChatState> {
     })();
   }
 
+  void _retireHostRequests() {
+    for (final id in [..._transcript.pendingApprovals.keys, ..._transcript.pendingQuestions.keys]) {
+      _transcript.apply(HostRequestCancelledEvent(id));
+    }
+  }
+
   void _listen(DshClient client, RunPulse pulse, {bool building = false}) {
     final owner = ref;
     final listener = _listenOwner = Object();
@@ -744,6 +748,10 @@ class ChatController extends Notifier<ChatState> {
     _syncReady = Completer<bool>();
     _markSyncing(building: building);
     unawaited(_sub?.cancel());
+    // A new watch replays its own mux's pending requests. It cannot retract
+    // cards forwarded only by the previous watch and settled while it was away.
+    // Retire local cards before replay; consent and in-flight answers stay intact.
+    _retireHostRequests();
     _sub = client
         .watch(
           sessionId,
