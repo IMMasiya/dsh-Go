@@ -556,9 +556,16 @@ class RemoteServerApi {
       throw const RemoteApiException('INVALID_MESSAGE', 'Refusing a cross-origin Server request.');
     }
     HttpClientRequest? request;
+    TimeoutException? expired;
     Future<(int, String)> run() async {
       request = await _http.openUrl(method, uri);
       final req = request!;
+      final deadline = expired;
+      if (deadline != null) {
+        req.done.ignore();
+        req.abort(deadline);
+        throw deadline;
+      }
       req.followRedirects = false;
       req.headers.set(HttpHeaders.acceptHeader, 'application/json');
       if (bearer != null) req.headers.set(HttpHeaders.authorizationHeader, 'Bearer $bearer');
@@ -587,7 +594,8 @@ class RemoteServerApi {
     final String text;
     try {
       (status, text) = await run().timeout(timeout);
-    } on TimeoutException {
+    } on TimeoutException catch (error) {
+      expired = error;
       request?.abort();
       throw const RemoteApiException('CONNECTION_FAILED', 'The server request timed out.', retryable: true);
     } on SocketException catch (error) {
