@@ -340,6 +340,12 @@ export function createNativeRoutes(core) {
     }
     const panels = new Set(rec.parsed.items.panels.map((p) => p.id));
     const deferred = splitPending(result);
+    // Invalid metadata still leaves the route owning an already-started Promise.
+    // The validator omits work on rejection; never start a refused lazy function.
+    if (deferred !== undefined && !deferred.ok) {
+      const work = result.result;
+      if (typeof work?.then === "function") work.then(undefined, () => {});
+    }
     if (!current() && typeof deferred?.work?.then === "function") deferred.work.then(undefined, () => {});
     if (!current()) return rejectStale();
     if (deferred !== undefined) {
