@@ -15,7 +15,6 @@ import 'package:dsh_app/state/usage_state.dart';
 import 'package:dsh_app/ui/chat/chat_screen.dart';
 import 'package:dsh_app/ui/chat/diff_page.dart';
 import 'package:dsh_app/ui/chat/empty_state.dart';
-import 'package:dsh_app/ui/chat/model_sheet.dart';
 import 'package:dsh_app/ui/chat/slash_palette.dart';
 import 'package:dsh_app/ui/chat/turn_summary.dart';
 import 'package:dsh_app/ui/chat/usage_sheet.dart';

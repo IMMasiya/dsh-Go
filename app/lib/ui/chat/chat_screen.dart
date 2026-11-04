@@ -354,12 +354,21 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
       ..addPostFrameCallback((_) {
         if (!mounted) return;
         _composerToastWait?.cancel();
-        _composerToastWait = Timer(AppMotion.of(context, AppMotion.emphasized), show);
+        // A composer that has just been focused is still opening.
+        final opening = _composerOpens(context) && _focus.hasFocus;
+        _composerToastWait = Timer(AppMotion.of(context, opening ? AppMotion.emphasized : AppMotion.quick), show);
       })
       ..ensureVisualUpdate();
   }
 
   Timer? _composerToastWait;
+
+  /// A phone's composer opens into two rows while typing. A window too short for the
+  /// extra row keeps it on one: the model is on the side panel's 信息 there.
+  bool _composerOpens(BuildContext context) {
+    final size = MediaQuery.sizeOf(context);
+    return size.width < WindowClass.mediumMin && size.height >= WindowClass.compactHeight;
+  }
 
   @override
   void dispose() {
@@ -1884,7 +1893,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
                                     hasAttachments: _drafts.isNotEmpty,
                                     leading: AttachButton(onPressed: connected ? _attach : null),
                                     keyboardInset: MediaQuery.viewInsetsOf(context).bottom,
-                                    footer: narrow && !isChild
+                                    footer: _composerOpens(context) && !isChild
                                         ? ComposerModelPill(
                                             selection: sessionId == null ? pendingModel : chat?.model,
                                             onSelected: _modelTarget(),

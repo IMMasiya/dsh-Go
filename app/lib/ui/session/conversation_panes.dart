@@ -17,7 +17,6 @@ import '../plugins/seats/session_plugins_tab.dart';
 import '../theme/app_icons.dart';
 import 'conversation_overview.dart';
 import 'session_detail_page.dart';
-import 'session_tab.dart';
 import 'workspace_files.dart';
 
 /// One thing to see about a conversation.

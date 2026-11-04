@@ -535,7 +535,7 @@ class _ComposerState extends State<Composer> with SingleTickerProviderStateMixin
               children: [
                 ExpandReveal(
                   open: widget.tray != null,
-                  child: Padding(padding: const EdgeInsets.fromLTRB(4, 0, 4, _keyGap), child: _tray),
+                  child: Padding(padding: const EdgeInsets.fromLTRB(_keyGap, 2, _keyGap, _keyGap), child: _tray),
                 ),
                 // A new line grows the glass instead of popping it: anchored
                 // at the bottom, where the caret and the keys stay put.

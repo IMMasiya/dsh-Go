@@ -499,7 +499,7 @@ class _FadeTop extends StatelessWidget {
 /// rounds and whether one runs, then 用时 / 步骤 / 改动文件. Without a [title]
 /// (the panel and the sheet, named in their bar) the rounds line leads.
 class SessionHero extends ConsumerWidget {
-  const SessionHero({required this.sessionId, required this.title, this.gutter = 24});
+  const SessionHero({super.key, required this.sessionId, required this.title, this.gutter = 24});
 
   final String sessionId;
   final String? title;
