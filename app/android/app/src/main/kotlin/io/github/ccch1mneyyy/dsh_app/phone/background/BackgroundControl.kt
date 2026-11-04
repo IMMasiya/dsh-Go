@@ -260,19 +260,20 @@ class BackgroundControl private constructor(context: Context) {
      * uses the same starter, else one opened for this and closed after. Blocks (an adb connect can
      * take seconds); true when the engine says it granted.
      */
-    fun grantSecureSettings(via: String): Boolean {
+    fun grantSecureSettings(via: String, mayStart: () -> Boolean): Boolean {
+        if (!mayStart()) return false
         val sharedApi = via == SecureSettingsGrant.SHIZUKU || via == SecureSettingsGrant.SUI
         val shared = PrivilegedPathPolicy.sharesGrantChannel(mode, via)
         val ch = when {
-            shared -> activeChannel()
-            sharedApi -> shizuku.connect()
-            else -> adb.connect()
+            shared -> activeChannel(mayStart)
+            sharedApi -> shizuku.connect(mayStart = mayStart)
+            else -> adb.connect(mayStart = mayStart)
         }
         val request = Bundle().apply {
             putString(Proto.OP, Proto.OP_GRANT_SECURE_SETTINGS)
             putInt(Proto.USER, Process.myUid() / PER_USER_RANGE)
         }
-        val ok = ch != null && runCatching { ch.execute(request).getBoolean(Proto.OK) }.getOrDefault(false)
+        val ok = ch != null && mayStart() && runCatching { ch.execute(request).getBoolean(Proto.OK) }.getOrDefault(false)
         if (!shared) if (sharedApi) shizuku.disconnectIfCurrent(ch) else adb.disconnectIfCurrent(ch)
         return ok
     }
