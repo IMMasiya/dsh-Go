@@ -253,7 +253,7 @@ class ApkDownloader {
     switch (response.status) {
       case 206:
         final start = RegExp(r'bytes (\d+)-').firstMatch(response.headers['content-range'] ?? '')?.group(1);
-        if (start != null && int.parse(start) != offset) {
+        if (start != null && int.tryParse(start) != offset) {
           await response.discard();
           await _deleteQuietly(part);
           return _Step.interrupted;
