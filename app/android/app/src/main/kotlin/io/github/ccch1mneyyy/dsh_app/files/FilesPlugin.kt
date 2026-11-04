@@ -234,8 +234,7 @@ class FilesPlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandle
         if (!canWriteShared()) throw FilesError("permission", "storage permission denied")
         val downloads = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
         val dir = File(downloads, SUBDIR).apply { mkdirs() }
-        val target = unique(dir, name)
-        file.copyTo(target)
+        val target = file.inputStream().use { LegacyDownloads.copy(it, dir, name) }
         MediaScannerConnection.scanFile(context, arrayOf(target.absolutePath), arrayOf(mime), null)
         return "${Environment.DIRECTORY_DOWNLOADS}/$SUBDIR/${target.name}"
     }
