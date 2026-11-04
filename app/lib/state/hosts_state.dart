@@ -270,22 +270,28 @@ final remoteAutoConnectProvider = NotifierProvider<RemoteAutoConnectController, 
 class ActiveHostController extends Notifier<HostRef> {
   static const prefsKey = 'active_host';
   bool _touched = false;
+  late Future<void> _loaded;
 
   @override
   HostRef build() {
     // Read the startup preference now, so the remote hosts page shows the
     // stored value from its first frame.
     ref.read(remoteAutoConnectProvider);
-    unawaited(_restore());
+    _loaded = _restore();
     return HostRef.local;
   }
 
+  /// The startup host choice has settled, including a disabled auto-connect
+  /// preference or an earlier explicit selection.
+  Future<void> get ready => _loaded;
+
   Future<void> _restore() async {
+    final owner = ref;
     try {
       final prefs = await SharedPreferences.getInstance();
       final restored = HostRef.decode(prefs.getString(prefsKey));
       final autoConnect = prefs.getBool(RemoteAutoConnectController.prefsKey) ?? true;
-      if (!_touched && ref.mounted && autoConnect) state = restored;
+      if (!_touched && owner.mounted && autoConnect) state = restored;
     } catch (_) {
       // No preferences backend (tests): stay on 本机.
     }
