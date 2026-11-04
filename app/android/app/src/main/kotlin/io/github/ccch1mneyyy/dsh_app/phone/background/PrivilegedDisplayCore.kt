@@ -371,7 +371,7 @@ class PrivilegedDisplayCore(private val context: Context) {
                 val src = plane.buffer.duplicate()
                 for (row in 0 until height) {
                     val start = row * plane.rowStride
-                    src.position(start); src.limit(start + width * 4)
+                    src.limit(start + width * 4); src.position(start)
                     pixels.put(src)
                 }
                 pixels.flip()
