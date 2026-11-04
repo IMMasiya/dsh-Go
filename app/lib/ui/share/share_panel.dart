@@ -371,6 +371,7 @@ class SharePanelModel extends ChangeNotifier {
   void setScope(ShareScope scope) {
     if (scope == _scope) return;
     _scope = scope;
+    _export = null;
     _changed();
     if (scope == ShareScope.whole) unawaited(_loadHistory());
   }
@@ -755,8 +756,7 @@ class SharePanelModel extends ChangeNotifier {
         final out = _ref.read(conversationOutProvider);
         final built = await prepare();
         final content = built.of(_format).text;
-        final file = await out.write(ConversationOut.fileName(built.share.title, _format), content);
-        await out.save(file, _format);
+        await out.save(ConversationOut.fileName(built.share.title, _format), content, _format);
       }
       _shared();
       HapticFeedback.lightImpact();
