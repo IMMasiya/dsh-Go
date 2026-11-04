@@ -281,6 +281,7 @@ void _expectWhole(WidgetTester tester, String text) {
 
 void main() {
   _selectionTests();
+  _wholeScopeAfterUpdateTests();
   // ── Goldens ───────────────────────────────────────────────────────────────
 
   for (final brightness in Brightness.values) {
@@ -661,9 +662,7 @@ void main() {
     expect(tester.widget<ReplayPage>(find.byType(ReplayPage)).preview, isTrue);
   });
 
-  testWidgets('over the limit: the file and the link say so and nothing goes out; Markdown still does', (
-    tester,
-  ) async {
+  testWidgets('over the limit: the file and the link say so and nothing goes out; Markdown still does', (tester) async {
     final random = Random(7);
     const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
     final noise = String.fromCharCodes(List.generate(5200000, (_) => alphabet.codeUnitAt(random.nextInt(64))));
@@ -790,7 +789,8 @@ void main() {
     await _open(tester);
     final sheet = tester.getRect(find.byType(SharePanel));
     final keys = [
-      for (final k in ['share-to-link', 'share-to-image', 'share-to-file', 'share-to-text']) tester.getRect(find.byKey(ValueKey(k))),
+      for (final k in ['share-to-link', 'share-to-image', 'share-to-file', 'share-to-text'])
+        tester.getRect(find.byKey(ValueKey(k))),
     ];
     for (final cell in keys) {
       expect(cell.width, moreOrLessEquals(keys.first.width));
@@ -817,7 +817,9 @@ void main() {
     for (final label in ['思考过程', '工具调用', '图片']) {
       final capsule = tester.getRect(find.byKey(ValueKey('share-toggle-$label')));
       final check = tester.getRect(find.byKey(ValueKey('share-toggle-check-$label')));
-      final text = tester.getRect(find.descendant(of: find.byKey(ValueKey('share-privacy')), matching: find.text(label)));
+      final text = tester.getRect(
+        find.descendant(of: find.byKey(ValueKey('share-privacy')), matching: find.text(label)),
+      );
       expect(capsule.height, ShareToggle.height);
       expect(check.left - capsule.left, moreOrLessEquals(ShareToggle.padding));
       expect(capsule.right - text.right, moreOrLessEquals(ShareToggle.padding));
@@ -831,7 +833,9 @@ void main() {
     // Off: no check, the same air.
     await _tap(tester, find.byKey(const ValueKey('share-toggle-图片')));
     final capsule = tester.getRect(find.byKey(const ValueKey('share-toggle-图片')));
-    final text = tester.getRect(find.descendant(of: find.byKey(const ValueKey('share-privacy')), matching: find.text('图片')));
+    final text = tester.getRect(
+      find.descendant(of: find.byKey(const ValueKey('share-privacy')), matching: find.text('图片')),
+    );
     expect(text.left - capsule.left, moreOrLessEquals(ShareToggle.padding));
     expect(capsule.right - text.right, moreOrLessEquals(ShareToggle.padding));
   });
@@ -851,9 +855,7 @@ void main() {
     expect(adjust.center.dy, moreOrLessEquals(after.center.dy, epsilon: 0.5));
   });
 
-  testWidgets('文件 and 链接 buttons: equal halves 12 apart on the 20 gutter; the make button full width', (
-    tester,
-  ) async {
+  testWidgets('文件 and 链接 buttons: equal halves 12 apart on the 20 gutter; the make button full width', (tester) async {
     await _open(tester, state: _fixture(), reply: 'a6');
     final sheet = tester.getRect(find.byType(SharePanel));
     await _key(tester, 'share-to-file');
@@ -1021,3 +1023,131 @@ TraceSpan _selectionModelSpan() => TraceSpan(
   lastToken: at(151000),
   end: at(151000),
 );
+
+Future<void> _wholeScopeTap(WidgetTester tester, Finder finder) async {
+  await tester.ensureVisible(finder);
+  await tester.pumpAndSettle();
+  await tester.tap(finder);
+  await tester.pumpAndSettle();
+}
+
+void _wholeScopeAfterUpdateTests() {
+  for (final append in [false, true]) {
+    testWidgets('[share-whole-update] whole export uses current messages: append=$append', (tester) async {
+      final source = _fixture();
+      final initial = ChatState(
+        items: [
+          for (final item in source.items)
+            if (item is UserChatItem)
+              UserChatItem(seq: item.seq, time: item.time, text: item.text, images: const [], files: item.files)
+            else
+              item,
+        ],
+        turns: [...source.turns],
+        commands: [...source.commands],
+        title: source.title,
+        loading: false,
+      );
+      try {
+        final panel = await _open(tester, state: initial, reply: 'a15');
+        final panelState = tester.state(find.byType(SharePanel));
+        final home = tester.element(find.byType(SharePanelHome));
+        final container = ProviderScope.containerOf(home, listen: false);
+        final controller = container.read(chatProvider('s1').notifier) as _Chat;
+        final model = SharePanelScope.of(home);
+        expect(model.scope, ShareScope.reply);
+        expect(model.anchor?.id, 'a15');
+        await _wholeScopeTap(tester, find.byKey(const ValueKey('share-to-file')));
+        final first = await model.prepare();
+        expect(
+          first.share.entries.whereType<ReplyEntry>().where((entry) => entry.text == _reply(initial, 'a15').text),
+          hasLength(1),
+        );
+        await _wholeScopeTap(tester, find.byTooltip('返回'));
+        expect(tester.state(find.byType(SharePanel)), same(panelState));
+        expect(SharePanelScope.of(tester.element(find.byType(SharePanelHome))), same(model));
+
+        final addedPrompt = UserChatItem(
+          seq: 19,
+          time: at(150100),
+          text: '请补充本轮验收结论',
+          images: const [],
+          files: const [],
+        );
+        final addedReply = AssistantChatItem(
+          id: 'a20',
+          seq: 20,
+          time: at(151000),
+          text: '新增验收结论：第三轮已完整核对。',
+          reasoning: '',
+          model: 'deepseek-v4-pro',
+        );
+        if (append) {
+          final updated = ChatState(
+            items: [...initial.items, addedPrompt, addedReply],
+            turns: [
+              ...initial.turns,
+              TurnTrace(
+                turn: 3,
+                startSeq: 18,
+                start: at(150000),
+                endSeq: 21,
+                end: at(151100),
+                endReason: const TurnEndReason('completed'),
+                spans: [
+                  TraceSpan(
+                    kind: TraceKind.model,
+                    step: 1,
+                    seq: 20,
+                    start: at(150200),
+                    firstToken: at(150300),
+                    lastToken: at(151000),
+                    end: at(151000),
+                  ),
+                ],
+              ),
+            ],
+            commands: [...initial.commands],
+            title: initial.title,
+            loading: false,
+          );
+          controller.emit(updated);
+          await tester.pump();
+          expect(container.read(chatProvider('s1')), same(updated));
+          expect(model.shareable.map((item) => item.key), contains(addedReply.key));
+          expect(initial.items.map((item) => item.key), isNot(contains(addedReply.key)));
+        }
+        expect(first.share.entries.whereType<ReplyEntry>().map((e) => e.text), isNot(contains(addedReply.text)));
+        await _wholeScopeTap(tester, find.text('整段对话'));
+        expect(
+          tester.widget<SegmentedPill<ShareScope>>(find.byType(SegmentedPill<ShareScope>)).selected,
+          ShareScope.whole,
+        );
+        expect(model.scope, ShareScope.whole);
+        expect(find.byType(MessagePicker), findsNothing);
+        expect(tester.state(find.byType(SharePanel)), same(panelState));
+        expect(SharePanelScope.of(tester.element(find.byType(SharePanelHome))), same(model));
+        expect(model.keys, {for (final item in model.shareable) item.key});
+        await _wholeScopeTap(tester, find.byKey(const ValueKey('share-to-file')));
+        final whole = await model.prepare();
+        await tester.runAsync(() => model.saveFile());
+        expect(model.fileSaved, isTrue);
+        expect(panel.out.saved, hasLength(1));
+        final (saved, format) = panel.out.saved.single;
+        expect(format, ConversationFormat.file);
+        final text = (await tester.runAsync(saved.readAsString))!;
+        final decoded = _decode(text);
+        for (final share in [decoded, whole.share]) {
+          expect(share.range, isNull, reason: 'the whole conversation');
+          final replies = share.entries.whereType<ReplyEntry>();
+          expect(replies.where((entry) => entry.text == _reply(initial, 'a15').text), hasLength(1));
+          expect(replies.where((entry) => entry.text == addedReply.text), hasLength(append ? 1 : 0));
+        }
+        expect(tester.takeException(), isNull);
+      } finally {
+        await tester.pumpWidget(const SizedBox.shrink());
+        await tester.pump();
+      }
+    });
+  }
+}

@@ -13,6 +13,7 @@ import 'package:share_plus/share_plus.dart';
 
 import '../../l10n/l10n.dart';
 import '../../share_code/conversation_html.dart';
+import '../../share_code/conversation_share.dart' show prefixKeepingPairs;
 import '../../share_code/share_codec.dart' show shareFileExtension, shareFileMime;
 import '../../share_hosted/hosted_client.dart' show HostedShareException;
 import '../share_hosted/hosted_link_maker.dart' show hostedConversationLinkMaker;
@@ -106,7 +107,7 @@ final conversationOutProvider = Provider<ConversationOut>(
 String fileStem(String title) {
   final cleaned = title.replaceAll(RegExp(r'[\\/:*?"<>|\x00-\x1f]+'), ' ').replaceAll(RegExp(r'\s+'), ' ').trim();
   if (cleaned.isEmpty) return appL10n.fileChatFallback;
-  return cleaned.length <= 40 ? cleaned : cleaned.substring(0, 40).trim();
+  return cleaned.length <= 40 ? cleaned : prefixKeepingPairs(cleaned, 40).trim();
 }
 
 // ── Hosted links ─────────────────────────────────────────────────────────────
