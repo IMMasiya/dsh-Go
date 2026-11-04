@@ -277,8 +277,13 @@ class _SshHostFormPageState extends ConsumerState<SshHostFormPage> {
     if (config == null) return;
     setState(() => _saving = true);
     try {
-      await ref.read(hostsProvider.notifier).saveSsh(config, secrets: _secrets);
-      if (mounted) Navigator.of(context).pop(config);
+      final saved = await ref.read(hostsProvider.notifier).saveSsh(config, secrets: _secrets);
+      if (!mounted) return;
+      if (!saved) {
+        setState(() => _formError = context.l10n.commonSaveFailed);
+        return;
+      }
+      Navigator.of(context).pop(config);
     } catch (e) {
       if (mounted) setState(() => _formError = context.l10n.commonSaveFailed);
     } finally {
