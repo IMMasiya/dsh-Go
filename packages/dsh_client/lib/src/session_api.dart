@@ -896,9 +896,9 @@ class DshClient {
           break;
         }
         if (stopped) break;
-        final stream = mux.open(endpoint, args);
-        current = stream;
         try {
+          final stream = mux.open(endpoint, args);
+          current = stream;
           await for (final item in stream.items) {
             if (stopped) break;
             controller.add(parse(item));
@@ -1080,6 +1080,9 @@ class _SessionWatch {
   /// Waits for the next ready generation (a new login); false once the client
   /// closes or the watch stops.
   Future<bool> _nextGeneration() async {
+    // History may reject after a successor's non-replay ready event was sent.
+    final current = client.mux.generation;
+    if (current != null && !identical(current, _epochGeneration)) return !_stopped;
     final wake = _wake = Completer<bool>();
     void done(bool ready) {
       if (!wake.isCompleted) wake.complete(ready);
@@ -1127,9 +1130,10 @@ class _SessionWatch {
         break;
       }
       if (_stopped) break;
-      final stream = client.mux.open('session/follow', {'request': _followRequest()});
-      _current = stream;
+      MuxStream? stream;
       try {
+        stream = client.mux.open('session/follow', {'request': _followRequest()});
+        _current = stream;
         var opened = false;
         await for (final item in stream.items) {
           if (_stopped) break;
@@ -1165,7 +1169,7 @@ class _SessionWatch {
       } on _Resync catch (error) {
         epoch.retire();
         _emit(SessionSyncEvent(epoch));
-        await stream.cancel();
+        await stream?.cancel();
         if (_stopped) break;
         // Back-to-back resyncs back off; six without a clean frame end the watch.
         if (++_resyncs >= 6) {
@@ -1176,7 +1180,7 @@ class _SessionWatch {
       } on Object catch (error) {
         epoch.retire();
         _emit(SessionSyncEvent(epoch));
-        await stream.cancel();
+        await stream?.cancel();
         if (_stopped) break;
         // A subagent child opened without its parent route: route it, retry.
         if (await client.adoptSubagentRoute(sessionId, error)) continue;
@@ -1256,10 +1260,11 @@ class _SessionWatch {
       final page = await client.history(sessionId, throughSeq: through, beforeSeq: beforeSeq, maxMessages: 500);
       final usable = page.events.where((e) => e.seq >= from && e.seq < beforeSeq).toList();
       if (usable.isEmpty) break;
-      out.insertAll(0, usable);
+      // Reverse each page now, then the whole result, without shifting the accumulated prefix.
+      out.addAll(usable.reversed);
       beforeSeq = usable.first.seq;
       if (!page.hasMore) break;
     }
-    return out;
+    return out.reversed.toList();
   }
 }
