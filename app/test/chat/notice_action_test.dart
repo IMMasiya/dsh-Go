@@ -264,7 +264,10 @@ void main() {
     testWidgets('the header\'s model sheet, the conversation switched under it: the pick goes nowhere', (tester) async {
       final harness = await refused(tester, 'MODEL_UNSUPPORTED', unsupported);
       final c = ProviderScope.containerOf(tester.element(find.byType(ChatScreen)));
-      await tester.tap(find.byType(ModelChip));
+      await tester.tap(find.byType(TextField));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 500));
+      await tester.tap(find.byKey(const ValueKey('composer-model')));
       await pumpFrames(tester, 4);
       expect(find.text('选择模型'), findsOneWidget);
 

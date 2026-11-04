@@ -7,7 +7,6 @@ import 'dart:math' as math;
 
 import 'package:dsh_client/dsh_client.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -58,10 +57,10 @@ String effortLabel(String id, [String? fallback]) => switch (id) {
   _ => fallback ?? id,
 };
 
-/// The model on a phone: a key beside the composer's +, which opens the same sheet as
-/// the chip does on wider windows. The header says which model it is.
-class ModelKey extends ConsumerWidget {
-  const ModelKey({super.key, required this.selection, required this.onSelected});
+/// The model in a phone's open composer: a plain pill beside the +, the same weight as
+/// it, saying what this message goes out with and a tap from changing it.
+class ComposerModelPill extends ConsumerWidget {
+  const ComposerModelPill({super.key, required this.selection, required this.onSelected});
 
   final ModelSelection? selection;
   final ValueChanged<ModelSelection> onSelected;
@@ -69,29 +68,40 @@ class ModelKey extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final l10n = context.l10n;
-    final scheme = Theme.of(context).colorScheme;
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
     final catalog = ref.watch(currentModelCatalogProvider);
     final effective = selection ?? catalog?.defaultSelection;
-    final label = l10n.viewModelLabel(modelShortName(effective, catalog));
+    final effort = effective?.reasoningEffort;
+    final name = modelShortName(effective, catalog);
     void open() => showModelSheet(context, current: effective, onSelected: onSelected);
     return Semantics(
       button: true,
-      label: label,
+      label: [
+        l10n.viewModelLabel(name),
+        if (effort != null) l10n.viewModelEffortLabel(effortLabel(effort)),
+      ].join(l10n.viewListSeparator),
       excludeSemantics: true,
       onTap: open,
-      child: Tooltip(
-        message: label,
-        child: InkResponse(
-          onTap: () {
-            HapticFeedback.selectionClick();
-            open();
-          },
-          radius: 22,
-          child: Container(
-            width: 40,
-            height: 40,
-            decoration: BoxDecoration(color: scheme.onSurface.withValues(alpha: 0.06), shape: BoxShape.circle),
-            child: Icon(AppIcons.model, size: 20, color: scheme.primary),
+      child: InkResponse(
+        key: const ValueKey('composer-model'),
+        onTap: open,
+        highlightShape: BoxShape.rectangle,
+        borderRadius: BorderRadius.circular(20),
+        child: Container(
+          height: 40,
+          padding: const EdgeInsets.symmetric(horizontal: 14),
+          alignment: Alignment.center,
+          decoration: ShapeDecoration(color: colors.onSurface.withValues(alpha: 0.06), shape: const StadiumBorder()),
+          child: Text(
+            effort == null ? name : '$name ${effortLabel(effort)}',
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: theme.textTheme.labelMedium?.copyWith(
+              fontSize: 13,
+              color: colors.onSurface,
+              fontWeight: FontWeight.w400,
+            ),
           ),
         ),
       ),
@@ -116,11 +126,10 @@ class ModelChip extends ConsumerWidget {
   // the left reads the same as 8 + 4 on the right.
   static const _padStart = 12.0;
   static const _padEnd = 8.0;
-  static const _glyph = 14.0;
   static const _chevron = 16.0;
 
-  /// The narrowest the chip gets: the sparkle and the chevron, no words.
-  static const compactWidth = _padStart + _glyph + _chevron + _padEnd;
+  /// The narrowest the chip gets: the chevron, no words.
+  static const compactWidth = _padStart + _chevron + _padEnd;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -158,7 +167,6 @@ class ModelChip extends ConsumerWidget {
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Icon(AppIcons.model, size: _glyph, color: theme.colorScheme.primary),
                   Flexible(
                     child: AnimatedSwitcher(
                       duration: quick,

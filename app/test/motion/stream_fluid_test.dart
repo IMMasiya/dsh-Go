@@ -367,7 +367,7 @@ void main() {
     testWidgets('the header\'s title and status crossfade, the conversation fades in', (tester) async {
       await open(tester);
       final swaps = find.descendant(of: find.byType(ChatHeader), matching: find.byType(FluidTextSwap));
-      expect(swaps, findsNWidgets(2));
+      expect(swaps, findsNWidgets(3));
       expect(find.byType(FluidFadeIn), findsOneWidget);
     });
 

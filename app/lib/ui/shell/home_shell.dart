@@ -133,12 +133,11 @@ class _HomeShellState extends ConsumerState<HomeShell> with TickerProviderStateM
   );
 
   /// [QuickPanel.width], plus what it covers on a phone on its side.
-  double _quickPanelWidth(BuildContext context) =>
-      math.min(
-        (ref.read(currentSessionProvider) == null ? QuickPanel.width : QuickPanel.conversationWidth) +
-            MediaQuery.paddingOf(context).right,
-        MediaQuery.sizeOf(context).width - 56,
-      );
+  double _quickPanelWidth(BuildContext context) => math.min(
+    (ref.read(currentSessionProvider) == null ? QuickPanel.width : QuickPanel.conversationWidth) +
+        MediaQuery.paddingOf(context).right,
+    MediaQuery.sizeOf(context).width - 56,
+  );
 
   void _slideOpen(AnimationController side) {
     FocusManager.instance.primaryFocus?.unfocus();
@@ -296,8 +295,7 @@ class _HomeShellState extends ConsumerState<HomeShell> with TickerProviderStateM
     final sidebar = layout.left == LeftPane.sidebar;
     // With a conversation open the panel has that to show, whatever shortcuts it lists.
     final quickPanelOn =
-        !sidebar &&
-        ref.watch(quickPanelProvider.select((p) => p.available || (p.swipe && sessionId != null)));
+        !sidebar && ref.watch(quickPanelProvider.select((p) => p.available || (p.swipe && sessionId != null)));
     if (!quickPanelOn && _quickPanel.value > 0) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) _quickPanel.value = 0;
@@ -424,7 +422,11 @@ class _HomeShellState extends ConsumerState<HomeShell> with TickerProviderStateM
                             animation: _quickPanel,
                             width: _quickPanelWidth(context),
                             fromRight: true,
-                            drawer: QuickPanel(motion: _quickPanel, onOpen: _openDestination, sessionId: sessionId),
+                            drawer: QuickPanel(
+                              motion: _quickPanel,
+                              onOpen: _openDestination,
+                              sessionId: _quickPanelOpen ? sessionId : null,
+                            ),
                             onClose: _closeQuickPanel,
                           ),
                         ),

@@ -56,7 +56,10 @@ class ConversationOverview extends ConsumerWidget {
     return ListView(
       padding: const EdgeInsets.fromLTRB(20, 8, 20, 16),
       children: [
-        Text(title?.trim().isNotEmpty ?? false ? title!.trim() : l10n.commonNewChat, style: theme.textTheme.titleMedium),
+        Text(
+          title?.trim().isNotEmpty ?? false ? title!.trim() : l10n.commonNewChat,
+          style: theme.textTheme.titleMedium,
+        ),
         const SizedBox(height: 12),
         SessionHero(sessionId: sessionId, title: null, gutter: 0),
         if (workspace != null) _Row(icon: AppIcons.workspace, label: l10n.shellPanelWorkspace, value: workspace),

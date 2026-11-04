@@ -72,37 +72,37 @@ class QuickPanel extends ConsumerWidget {
         child: switch (sessionId) {
           final sessionId? => ConversationPanel(sessionId: sessionId, onOpen: onOpen),
           null => Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(20, 14, 20, 10),
-              child: Semantics(
-                header: true,
-                child: Text(
-                  l10n.shellQuickPanel,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: theme.textTheme.titleLarge,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 14, 20, 10),
+                child: Semantics(
+                  header: true,
+                  child: Text(
+                    l10n.shellQuickPanel,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: theme.textTheme.titleLarge,
+                  ),
                 ),
               ),
-            ),
-            Expanded(
-              child: ListView(
-                padding: const EdgeInsets.symmetric(horizontal: 10),
-                children: [
-                  for (final destination in items) _Row(destination: destination, onTap: () => onOpen(destination)),
-                ],
+              Expanded(
+                child: ListView(
+                  padding: const EdgeInsets.symmetric(horizontal: 10),
+                  children: [
+                    for (final destination in items) _Row(destination: destination, onTap: () => onOpen(destination)),
+                  ],
+                ),
               ),
-            ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(20, 8, 20, 13),
-              child: Text(
-                l10n.shellQuickPanelHint('${l10n.commonSettings} › ${l10n.hubSettingsInterface}'),
-                style: theme.textTheme.bodySmall?.copyWith(color: DshColors.of(context).textTertiary),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 8, 20, 13),
+                child: Text(
+                  l10n.shellQuickPanelHint('${l10n.commonSettings} › ${l10n.hubSettingsInterface}'),
+                  style: theme.textTheme.bodySmall?.copyWith(color: DshColors.of(context).textTertiary),
+                ),
               ),
-            ),
-          ],
-        ),
+            ],
+          ),
         },
       ),
     );

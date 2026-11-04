@@ -389,8 +389,11 @@ void main() {
         catalog: ModelCatalog.fromJson(const {'groups': <Object?>[]}),
       );
       await pumpChat(tester, harness);
-      expect(find.text('选择模型'), findsOneWidget);
-      await tester.tap(find.byType(ModelChip));
+      expect(find.text(' · 选择模型'), findsOneWidget);
+      await tester.tap(find.byType(TextField));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 500));
+      await tester.tap(find.byKey(const ValueKey('composer-model')));
       await pumpFrames(tester, 8);
       expect(find.text('需要 API Key'), findsOneWidget);
       expect(find.text('填写 API Key'), findsOneWidget);
@@ -452,7 +455,10 @@ void main() {
 
       testWidgets('model sheet', (tester) async {
         await pumpChat(tester, ChatHarness(), brightness: brightness);
-        await tester.tap(find.byType(ModelChip));
+        await tester.tap(find.byType(TextField));
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 500));
+        await tester.tap(find.byKey(const ValueKey('composer-model')));
         await pumpFrames(tester, 10);
         await expectLater(find.byType(MaterialApp), matchesGoldenFile('goldens/model_sheet_$suffix.png'));
       });
@@ -466,7 +472,10 @@ void main() {
           ),
           brightness: brightness,
         );
-        await tester.tap(find.byType(ModelChip));
+        await tester.tap(find.byType(TextField));
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 500));
+        await tester.tap(find.byKey(const ValueKey('composer-model')));
         await pumpFrames(tester, 10);
         await expectLater(find.byType(MaterialApp), matchesGoldenFile('goldens/model_empty_$suffix.png'));
       });

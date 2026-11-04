@@ -354,7 +354,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
       ..addPostFrameCallback((_) {
         if (!mounted) return;
         _composerToastWait?.cancel();
-        _composerToastWait = Timer(AppMotion.of(context, AppMotion.quick), show);
+        _composerToastWait = Timer(AppMotion.of(context, AppMotion.emphasized), show);
       })
       ..ensureVisualUpdate();
   }
@@ -1620,7 +1620,8 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
                                 ?folderLabel(
                                   ref.watch(
                                     sessionsProvider.select(
-                                      (s) => s.value?.where((session) => session.sessionId == sessionId).firstOrNull?.cwd,
+                                      (s) =>
+                                          s.value?.where((session) => session.sessionId == sessionId).firstOrNull?.cwd,
                                     ),
                                   ),
                                 ),
@@ -1629,6 +1630,12 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
                                       ref.watch(currentModelCatalogProvider)?.defaultSelection,
                                   ref.watch(currentModelCatalogProvider),
                                 ),
+                                ?switch (((sessionId == null ? pendingModel : chat?.model) ??
+                                        ref.watch(currentModelCatalogProvider)?.defaultSelection)
+                                    ?.reasoningEffort) {
+                                  final effort? => effortLabel(effort),
+                                  null => null,
+                                },
                               ].join(' · '),
                         onOpenDrawer: widget.onOpenDrawer,
                         onNewChat: sessionId == null || isChild
@@ -1643,7 +1650,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
                             ? null
                             : () => SessionDetailPage.open(context, sessionId, toggle: true),
                         // A phone has no room for it: the model is said under the
-                        // title, and picked with the key beside the composer's +.
+                        // title, and picked from the composer's foot while typing.
                         trailing: narrow
                             ? null
                             : ModelChip(
@@ -1889,19 +1896,14 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
                                     onContentInserted: connected ? _pasteContent : null,
                                     onStop: _stop,
                                     hasAttachments: _drafts.isNotEmpty,
-                                    leading: narrow && !isChild
-                                        ? Row(
-                                            mainAxisSize: MainAxisSize.min,
-                                            children: [
-                                              AttachButton(onPressed: connected ? _attach : null),
-                                              const SizedBox(width: 6),
-                                              ModelKey(
-                                                selection: sessionId == null ? pendingModel : chat?.model,
-                                                onSelected: _modelTarget(),
-                                              ),
-                                            ],
+                                    leading: AttachButton(onPressed: connected ? _attach : null),
+                                    keyboardInset: MediaQuery.viewInsetsOf(context).bottom,
+                                    footer: narrow && !isChild
+                                        ? ComposerModelPill(
+                                            selection: sessionId == null ? pendingModel : chat?.model,
+                                            onSelected: _modelTarget(),
                                           )
-                                        : AttachButton(onPressed: connected ? _attach : null),
+                                        : null,
                                     tray: ComposerTrayStack.maybe(
                                       quote: switch (quote) {
                                         final quote? => QuoteChip(
