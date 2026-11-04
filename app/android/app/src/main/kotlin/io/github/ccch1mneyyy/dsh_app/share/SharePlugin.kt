@@ -16,6 +16,7 @@ import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
 import io.flutter.plugin.common.PluginRegistry
 import java.io.File
+import java.io.IOException
 import java.util.concurrent.Executors
 
 /**
@@ -200,22 +201,27 @@ class SharePlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandle
         } catch (_: Exception) {
             null
         } ?: return Item(null, shown, mime, "unreadable")
-        input.use { stream ->
-            target.outputStream().use { out ->
-                val buffer = ByteArray(64 * 1024)
-                var copied = 0L
-                while (true) {
-                    val read = stream.read(buffer)
-                    if (read < 0) break
-                    copied += read
-                    if (copied > MAX_FILE_BYTES) {
-                        out.close()
-                        target.delete()
-                        return Item(null, shown, mime, "too_large")
+        try {
+            input.use { stream ->
+                target.outputStream().use { out ->
+                    val buffer = ByteArray(64 * 1024)
+                    var copied = 0L
+                    while (true) {
+                        val read = stream.read(buffer)
+                        if (read < 0) break
+                        copied += read
+                        if (copied > MAX_FILE_BYTES) {
+                            out.close()
+                            target.delete()
+                            return Item(null, shown, mime, "too_large")
+                        }
+                        out.write(buffer, 0, read)
                     }
-                    out.write(buffer, 0, read)
                 }
             }
+        } catch (_: IOException) {
+            target.delete()
+            return Item(null, shown, mime, "unreadable")
         }
         return Item(target, shown, mime)
     }
