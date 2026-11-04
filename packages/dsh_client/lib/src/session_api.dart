@@ -1080,6 +1080,9 @@ class _SessionWatch {
   /// Waits for the next ready generation (a new login); false once the client
   /// closes or the watch stops.
   Future<bool> _nextGeneration() async {
+    // History may reject after a successor's non-replay ready event was sent.
+    final current = client.mux.generation;
+    if (current != null && !identical(current, _epochGeneration)) return !_stopped;
     final wake = _wake = Completer<bool>();
     void done(bool ready) {
       if (!wake.isCompleted) wake.complete(ready);
