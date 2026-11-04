@@ -131,6 +131,7 @@ class SessionsController extends AsyncNotifier<List<SessionSummary>> {
 
   /// Bumped by every build and refresh: only the newest load may land.
   int _loadSeq = 0;
+  int _appliedRefreshSeq = 0;
   List<SessionSummary> _all = const [];
   Set<String> _archived = const {};
   ReadListOrigin? _origin;
@@ -233,11 +234,16 @@ class SessionsController extends AsyncNotifier<List<SessionSummary>> {
         if (_applyInPlace(event)) return;
         // Ready alone changes no conversation: it doesn't read the list a
         // second time behind the one a (re)connection is reading.
+        final readyAt = event is HostReadyEvent ? _loadSeq : null;
         _debouncedChange |= event is! HostReadyEvent;
         _debounce?.cancel();
         _debounce = Timer(const Duration(milliseconds: 400), () {
           final change = _debouncedChange;
           _debouncedChange = false;
+          // Only a successful request started after this ready covers it.
+          // A pre-ready response, newer pending/failing read or later change
+          // still needs the existing recovery path.
+          if (!change && readyAt != null && _appliedRefreshSeq == _loadSeq && _appliedRefreshSeq > readyAt) return;
           unawaited(_refresh(afterBuild: change));
         });
       }
@@ -539,6 +545,7 @@ class SessionsController extends AsyncNotifier<List<SessionSummary>> {
       if (r.mounted && seq == _loadSeq) {
         state = AsyncData(sessions);
         cache.finishRefresh(ReadListKind.sessions, activity);
+        _appliedRefreshSeq = seq;
       }
     } catch (error, stack) {
       // A failed background refresh keeps the list it had.
