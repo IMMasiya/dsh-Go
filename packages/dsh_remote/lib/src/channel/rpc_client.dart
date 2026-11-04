@@ -61,6 +61,7 @@ class RemoteRpcClient {
   final Map<String, _Pending> _pending = {};
   final StreamController<RemoteEvent> _events = StreamController.broadcast(sync: true);
   final Completer<SecureChannelClosed> _done = Completer();
+  int _eventDispatchDepth = 0;
   final Stopwatch _sinceInbound = Stopwatch()..start();
 
   /// Events in arrival order (synchronous broadcast: subscribe before the
@@ -148,7 +149,13 @@ class RemoteRpcClient {
         final payload = asMap(message.payload);
         final name = asString(payload?['event']);
         if (name == null || _events.isClosed) return;
-        _events.add(RemoteEvent(name, payload!['data'], seq: asInt(payload['seq'])));
+        _eventDispatchDepth++;
+        try {
+          _events.add(RemoteEvent(name, payload!['data'], seq: asInt(payload['seq'])));
+        } finally {
+          _eventDispatchDepth--;
+          if (_eventDispatchDepth == 0 && _done.isCompleted) unawaited(_events.close());
+        }
       default:
         // rpc.request from the Host is not part of the client contract.
         break;
@@ -182,7 +189,9 @@ class RemoteRpcClient {
         ),
       );
     }
-    unawaited(_events.close());
+    // Synchronous listeners may close the RPC while an event is firing.
+    // The outermost dispatch closes the stream as soon as add returns.
+    if (_eventDispatchDepth == 0) unawaited(_events.close());
   }
 
   Future<void> close() async {
