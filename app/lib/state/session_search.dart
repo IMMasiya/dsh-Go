@@ -277,7 +277,11 @@ bool isContentSearchUnsupported(Object error) {
 }
 
 final sessionContentSearchProvider = Provider<SessionContentSearch?>((ref) {
-  final client = ref.watch(activeConnectionProvider.select((connection) => connection.value?.client));
+  final client = ref.watch(
+    activeConnectionProvider.select(
+      (connection) => connection.isLoading || connection.hasError ? null : connection.value?.client,
+    ),
+  );
   return client == null ? null : HostContentSearch(client);
 });
 
