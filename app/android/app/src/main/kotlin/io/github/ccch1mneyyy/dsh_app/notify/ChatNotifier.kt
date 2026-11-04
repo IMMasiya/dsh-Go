@@ -169,7 +169,9 @@ class ChatNotifier(private val app: Context) {
         unlockReceiver = receiver
         val filter = IntentFilter(Intent.ACTION_USER_PRESENT)
         if (Build.VERSION.SDK_INT >= 33) {
-            app.applicationContext.registerReceiver(receiver, filter, Context.RECEIVER_NOT_EXPORTED)
+            // SystemUI may use its own UID. USER_PRESENT is protected: only the
+            // system can send it, so exporting this single-action receiver is safe.
+            app.applicationContext.registerReceiver(receiver, filter, Context.RECEIVER_EXPORTED)
         } else {
             app.applicationContext.registerReceiver(receiver, filter)
         }
