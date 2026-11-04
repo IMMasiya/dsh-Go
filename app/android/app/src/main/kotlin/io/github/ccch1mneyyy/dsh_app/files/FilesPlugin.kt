@@ -26,6 +26,7 @@ import io.flutter.plugin.common.PluginRegistry
 import io.github.ccch1mneyyy.dsh_app.runtime.PhoneStorage
 import java.io.File
 import java.io.IOException
+import java.security.MessageDigest
 import kotlin.concurrent.thread
 
 /**
@@ -144,9 +145,7 @@ class FilesPlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandle
         return try {
             FileProvider.getUriForFile(context, authority, file)
         } catch (_: IllegalArgumentException) {
-            val dir = File(context.cacheDir, "artifacts/open").apply { mkdirs() }
-            val copy = File(dir, safeName(name))
-            file.copyTo(copy, overwrite = true)
+            val copy = copyForOpen(file, File(context.cacheDir, "artifacts/open"), name)
             FileProvider.getUriForFile(context, authority, copy)
         }
     }
@@ -335,6 +334,15 @@ class FilesPlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandle
         fun safeName(name: String): String {
             val cleaned = name.substringAfterLast('/').replace(Regex("[\\u0000-\\u001f\\\\:*?\"<>|]"), "_").trim()
             return cleaned.ifEmpty { "file" }
+        }
+
+        /** Stable per-source copies: another source cannot replace an already shared URI. */
+        internal fun copyForOpen(file: File, root: File, name: String): File {
+            val source = file.canonicalFile
+            val key = MessageDigest.getInstance("SHA-256")
+                .digest(source.path.toByteArray(Charsets.UTF_8)).joinToString("") { "%02x".format(it) }
+            val target = File(File(root, key), safeName(name))
+            return source.copyTo(target, overwrite = true)
         }
 
         /** [name] in [dir], or `name (2).ext`, `name (3).ext`… when taken. */
