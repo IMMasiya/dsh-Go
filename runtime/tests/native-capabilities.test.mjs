@@ -301,6 +301,55 @@ test('terminal callback signal is deliberately lease-bound across async continua
   await until(() => observed.length === 2, 'terminal callback did not settle'); assert.deepEqual(observed, [false, true]);
 });
 
+for (const mode of ['dispose', 'replace']) {
+  test(`W15 463 media completion rejects its retired registration: ${mode}`, async t => {
+    const f = await fixture(t);
+    const next = () => ({ body: Buffer.from('fresh audio'), contentType: 'audio/wav' });
+    let signal, remove;
+    remove = f.service.media('clip', (scope, event) => {
+      signal = event.signal;
+      // The service's ordinary disposer/re-registration happens before this
+      // callback returns; no private runtime mutation or timer is involved.
+      if (mode === 'dispose') remove();
+      else f.service.media('clip', next);
+      return { body: Buffer.from(`retired audio: ${mode}`), contentType: 'audio/wav' };
+    });
+    f.service.on('go', () => ({ type: 'audio', op: 'play', instance: 'a', src: 'media:clip' }));
+    const w = await f.ws(['audio']);
+    const effect = (await f.invoke(w)).effects[0];
+    const response = await f.request(f.mediaPath(effect));
+    const text = await response.text();
+    assert.equal(response.status, 410, text);
+    assert.equal(JSON.parse(text).error.code, 'cancelled');
+    assert.equal(signal.aborted, true);
+
+    if (mode === 'dispose') f.service.media('clip', next);
+    const fresh = (await f.invoke(w)).effects[0];
+    assert.notEqual(fresh.lease, effect.lease);
+    const good = await f.request(f.mediaPath(fresh));
+    assert.equal(good.status, 200);
+    assert.equal(await good.text(), 'fresh audio');
+  });
+}
+
+test('W15 463 another resource registration does not retire this media result', async t => {
+  const f = await fixture(t);
+  let calls = 0;
+  f.service.media('clip', () => {
+    calls++;
+    const remove = f.service.micro('caption', { data() {} });
+    remove();
+    return { body: Buffer.from('current audio'), contentType: 'audio/wav' };
+  });
+  f.service.on('go', () => ({ type: 'audio', op: 'play', instance: 'a', src: 'media:clip' }));
+  const w = await f.ws(['audio']);
+  const effect = (await f.invoke(w)).effects[0];
+  const response = await f.request(f.mediaPath(effect));
+  assert.equal(response.status, 200);
+  assert.equal(await response.text(), 'current audio');
+  assert.equal(calls, 1);
+});
+
 test('NJS2 duplicate role start is rejected without returning a stale earlier lease', async t => {
   const f = await fixture(t), w = await f.ws(['voice']);
   f.service.on('go', () => [{ type: 'voice', op: 'start', instance: 'one' }, { type: 'voice', op: 'start', instance: 'one' }]);
