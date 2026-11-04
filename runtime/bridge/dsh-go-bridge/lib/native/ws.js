@@ -59,7 +59,7 @@ export class WsConnection extends EventEmitter {
     this.#socket = socket;
     this.#maxMessage = maxMessage;
     socket.on("data", (chunk) => this.#onData(chunk));
-    socket.on("close", () => this.#finish(1006));
+    socket.on("close", () => { clearTimeout(this.#closeTimer); this.#finish(1006); });
     // An upgraded HTTP socket may remain half-open after peer FIN. Release owners now.
     socket.on("end", () => { socket.end(); this.#finish(1006); });
     socket.on("error", () => this.#finish(1006));
