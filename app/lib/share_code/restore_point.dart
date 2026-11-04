@@ -18,6 +18,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'guest_fs.dart';
+import 'share_models.dart';
 
 class RestorePoint {
   RestorePoint(this.fs);
@@ -85,15 +86,25 @@ class RestorePoint {
     return '${GuestFs.dshHome}/backups/share-import-$stamp';
   }
 
-  /// Copies skill [name]'s current files (if any) into [backup].
-  Future<void> backupSkill(String backup, String name) async {
-    final files = fs.readSkill(name);
-    if (files == null) return;
-    for (final MapEntry(key: rel, value: text) in files.entries) {
-      final target = fs.file('$backup/skills/$name/$rel');
-      target.parent.createSync(recursive: true);
-      target.writeAsStringSync(text);
+  /// Rechecks, backs up and replaces a skill without an async handoff.
+  /// A rejected or failed backup must never reach the destructive write.
+  void replaceSkill(String backup, SharedSkill skill) {
+    final files = fs.readSkillForImport(skill.name);
+    if (files != null) {
+      final parent = fs.dir('$backup/skills');
+      parent.createSync(recursive: true);
+      final slot = fs.dir('$backup/skills/${skill.name}');
+      if (parent.listSync(followLinks: false).any((entry) => entry.path == slot.path)) {
+        throw const FileSystemException('skill backup already exists');
+      }
+      slot.createSync();
+      for (final MapEntry(key: rel, value: bytes) in files.entries) {
+        final target = File('${slot.path}/$rel');
+        target.parent.createSync(recursive: true);
+        target.writeAsBytesSync(bytes, flush: true);
+      }
     }
+    fs.writeSkill(skill);
   }
 
   /// Copies the imported-AGENTS.md text into a new directory beside [backup].
