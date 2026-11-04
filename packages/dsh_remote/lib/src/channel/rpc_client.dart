@@ -104,9 +104,17 @@ class RemoteRpcClient {
       );
     });
     _pending[request.id] = _Pending(method, completer, timer);
+    final Uint8List encoded;
+    try {
+      encoded = request.encode();
+    } on Object {
+      // No Future was returned to the caller: retire only this reservation.
+      _take(request.id);
+      rethrow;
+    }
     // Do not await the write: a deadline or close must settle the RPC even
     // when the send never completes.
-    _channel.send(request.encode()).catchError((Object error) {
+    _channel.send(encoded).catchError((Object error) {
       _reject(
         request.id,
         error is SecureChannelException && error.code == 'FRAME_TOO_LARGE'
