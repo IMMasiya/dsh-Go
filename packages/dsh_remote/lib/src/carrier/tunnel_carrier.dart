@@ -541,14 +541,12 @@ class RemoteTunnelCarrier extends DshCarrier implements WorkspaceUploadCarrier {
     final perCall = timeout ?? callTimeout;
     final transferId = uuidV7();
     final totalChunks = (encoded.length + remoteTransferChunkBytes - 1) ~/ remoteTransferChunkBytes;
-    var opened = false;
     try {
       await rpc.call('harness.remote.transfer.open', {
         'transferId': transferId,
         'totalBytes': encoded.length,
         'totalChunks': totalChunks,
       }, timeout: perCall);
-      opened = true;
       for (var index = 0; index < totalChunks; index++) {
         final start = index * remoteTransferChunkBytes;
         final end = start + remoteTransferChunkBytes < encoded.length
@@ -601,13 +599,13 @@ class RemoteTunnelCarrier extends DshCarrier implements WorkspaceUploadCarrier {
       if (decoded == null) throw DshProtocolException('$endpoint: remote transfer is not JSON');
       return decoded;
     } finally {
-      if (opened) {
-        unawaited(
-          rpc
-              .call('harness.remote.transfer.close', {'transferId': transferId}, timeout: const Duration(seconds: 5))
-              .then((_) {}, onError: (Object _) {}),
-        );
-      }
+      // An open timeout can follow allocation on the Host. Closing a missing
+      // UUID is harmless; keep cleanup on this request's original connection.
+      unawaited(
+        rpc
+            .call('harness.remote.transfer.close', {'transferId': transferId}, timeout: const Duration(seconds: 5))
+            .then((_) {}, onError: (Object _) {}),
+      );
     }
   }
 
