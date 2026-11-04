@@ -5,6 +5,7 @@ import 'dart:math';
 import 'package:dsh_client/dsh_client.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../diagnostics/app_error_log.dart';
 import '../l10n/l10n.dart';
 import '../usage/usage_stats.dart';
 import 'attachments.dart';
@@ -768,6 +769,10 @@ class ChatController extends Notifier<ChatState> {
         .listen(
           (event) {
             if (!current()) return;
+            if (event is SessionErrorEvent) {
+              // Remote hosts have no local engine log in the diagnostics ZIP.
+              appErrorLog.record(AppErrorSource.session, event.message, StackTrace.empty);
+            }
             if (event is SessionSyncEvent) {
               _markSyncing(epoch: event.epoch);
               return;
@@ -847,7 +852,7 @@ class ChatController extends Notifier<ChatState> {
               _schedule();
             }
           },
-          onError: (Object e) {
+          onError: (Object e, StackTrace stack) {
             if (!current()) return;
             _watchEnded = true;
             _markSyncing();
@@ -859,6 +864,7 @@ class ChatController extends Notifier<ChatState> {
               }
               return;
             }
+            appErrorLog.record(AppErrorSource.session, e, stack);
             state = state.copyWith(
               error: chatErrorText(e, action: appL10n.stateChatSyncInterrupted),
               streamLost: true,
