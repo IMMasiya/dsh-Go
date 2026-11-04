@@ -468,7 +468,7 @@ export class NativeCore {
   patchFeed(pkg, id, scope, data) {
     for (const feed of this.feeds.values()) {
       if (feed.pkg !== pkg || feed.id !== id || feed.dataFn === undefined || feed.data === undefined) continue;
-      if (JSON.stringify(feed.scope) !== scope.key) continue;
+      if (feed.scopeKey !== scope.key) continue;
       // Merge over the newest value, including an emit still waiting for its 4 Hz slot.
       const current = feed.pending !== undefined ? feed.pending.value : feed.data;
       feed.push(mergeApply(current ?? {}, data));
@@ -504,6 +504,8 @@ export class Feed {
     this.id = id;
     this.kind = kind;
     this.scope = scope;
+    // Canonical scope is private; plugin callbacks receive a copy.
+    this.scopeKey = JSON.stringify(scope);
     this.dataFn = dataFn;
     this.locale = locale;
     this.epoch = randomBytes(3).toString("hex");
