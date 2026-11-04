@@ -59,6 +59,7 @@ class _LaunchScreenSectionState extends ConsumerState<LaunchScreenSection> {
     } finally {
       if (mounted) setState(() => _busy = false);
     }
+    if (!mounted) return;
     final bytes = ref.read(customLaunchProvider).value?.bytes;
     final text = switch (problem) {
       // Once, as it comes in: how much it takes in the app.
