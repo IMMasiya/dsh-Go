@@ -176,28 +176,32 @@ class MentionPickerController extends ChangeNotifier {
   Future<void> _fetch(MentionQuery q, int generation) async {
     final src = source();
     final sid = sessionId();
-    List<MentionSection> sections;
+    ({List<MentionSection> sections, String? cwd}) result;
     try {
-      sections = await _lookup(src, sid, q);
+      result = await _lookup(src, sid, q);
     } catch (_) {
-      sections = const [];
+      result = (sections: const <MentionSection>[], cwd: null);
     }
     if (generation != _generation) return;
-    _sections = sections;
+    _sections = result.sections;
+    _lastCwd = result.cwd;
     _loading = false;
     final count = items.length;
     _highlight = q.query.isEmpty || count == 0 ? -1 : 0;
     notifyListeners();
   }
 
-  Future<List<MentionSection>> _lookup(MentionSource? src, String? sid, MentionQuery q) async {
+  Future<({List<MentionSection> sections, String? cwd})> _lookup(
+    MentionSource? src,
+    String? sid,
+    MentionQuery q,
+  ) async {
     final now = _clock();
-    if (src == null) return const [];
+    if (src == null) return (sections: const <MentionSection>[], cwd: null);
     if (sid == null) {
-      _lastCwd = null;
       // A new chat has no workspace yet: other conversations only, built
       // from the local list.
-      if (q.pathOnly) return const [];
+      if (q.pathOnly) return (sections: const <MentionSection>[], cwd: null);
       final rows = <(MentionItem, double, DateTime)>[];
       for (final s in await _local()) {
         final title = _titleOf(s);
@@ -218,7 +222,17 @@ class MentionPickerController extends ChangeNotifier {
       }
       final conversations = _rank(rows, q.query.isEmpty);
       MentionLabels.addAll(conversations.map((i) => i.label));
-      return _assemble(q, files: const [], subagents: const [], conversations: conversations, cwd: null, sid: null);
+      return (
+        sections: _assemble(
+          q,
+          files: const [],
+          subagents: const [],
+          conversations: conversations,
+          cwd: null,
+          sid: null,
+        ),
+        cwd: null,
+      );
     }
 
     if (_cacheFor != sid) {
@@ -237,7 +251,6 @@ class MentionPickerController extends ChangeNotifier {
 
     final byId = {for (final s in all) s.sessionId: s};
     final cwd = byId[sid]?.cwd;
-    _lastCwd = cwd;
     final visible = {for (final s in await _local()) s.sessionId};
 
     final fileItems = <MentionItem>[
@@ -288,13 +301,16 @@ class MentionPickerController extends ChangeNotifier {
     MentionLabels.addAll([
       for (final i in [...subagents, ...conversations]) i.label,
     ]);
-    return _assemble(
-      q,
-      files: _boost(fileItems),
-      subagents: subagents,
-      conversations: conversations,
+    return (
+      sections: _assemble(
+        q,
+        files: _boost(fileItems),
+        subagents: subagents,
+        conversations: conversations,
+        cwd: cwd,
+        sid: sid,
+      ),
       cwd: cwd,
-      sid: sid,
     );
   }
 
