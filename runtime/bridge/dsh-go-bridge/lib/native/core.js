@@ -540,7 +540,7 @@ export class Feed {
     result.then((cancel) => {
       if (typeof cancel !== "function") return;
       if (this.stopped) {
-        try { cancel(); } catch {}
+        try { Promise.resolve(cancel()).catch(() => {}); } catch {}
       } else this.cancel = cancel;
     }, (error) => {
       if (this.stopped) return;
@@ -665,7 +665,8 @@ export class Feed {
     if (this.core.feeds.get(this.key) === this) this.core.feeds.delete(this.key);
     if (this.cancel) {
       try {
-        this.cancel();
+        // Start cleanup now, but own its rejection without delaying retirement.
+        Promise.resolve(this.cancel()).catch((error) => this.core.ctx.logger?.warn?.(error));
       } catch (error) {
         this.core.ctx.logger?.warn?.(error);
       }

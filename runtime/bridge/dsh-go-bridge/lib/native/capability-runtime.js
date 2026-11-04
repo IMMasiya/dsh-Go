@@ -222,7 +222,7 @@ class MicroFeed {
     if (this.started) return;
     this.started = true;
     call(this.reg.def.data, { ...this.scope }, value => this.emit(value), { protocol: 1, locale: this.locale }).then(cancel => {
-      if (typeof cancel === 'function') { if (this.closed) { try { cancel(); } catch {} } else this.cancel = cancel; }
+      if (typeof cancel === 'function') { if (this.closed) { try { Promise.resolve(cancel()).catch(() => {}); } catch {} } else this.cancel = cancel; }
     }, () => this.stop('error'));
   }
   emit(value) {
@@ -247,7 +247,7 @@ class MicroFeed {
   stop(reason) {
     if (this.closed) return;
     this.closed = true; clearTimeout(this.timer);
-    try { this.cancel?.(); } catch {}
+    try { if (this.cancel) Promise.resolve(this.cancel()).catch(() => {}); } catch {}
     this.runtime.feeds.delete(this.key);
     for (const sub of this.subs) { sub.conn.microSubs?.delete(sub.id); if (reason) sub.conn.send({ t: 'micro.end', sub: sub.id, reason }); }
     this.subs.clear();
