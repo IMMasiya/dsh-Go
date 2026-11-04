@@ -207,6 +207,36 @@ class ChatPluginsSheet extends ConsumerWidget {
   }
 }
 
+/// The web plugins' chat-page parts for the side panel: what the sheet shows of them, with
+/// a way on to the plugin pages it doesn't list (those of plugins with no such part).
+class ChatWebPluginsPane extends ConsumerWidget {
+  const ChatWebPluginsPane({super.key, required this.sessionId, required this.onOtherPages});
+
+  final String sessionId;
+  final VoidCallback onOtherPages;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final web = ref.watch(chatWebPluginsProvider(sessionId));
+    final others = ref
+        .watch(chatSheetPagesProvider(sessionId))
+        .where((item) => !web.packages.contains(item.occupant.package));
+    return ListView(
+      key: const ValueKey('chat-plugins-pane'),
+      padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
+      children: [
+        _WebPlugins(web: web, sessionId: sessionId),
+        if (others.isNotEmpty)
+          ListPageCard(
+            children: [
+              ListPageRow(icon: AppIcons.plugin, title: context.l10n.hubPlugins, chevron: true, onTap: onOtherPages),
+            ],
+          ),
+      ],
+    );
+  }
+}
+
 /// The capsule row's id for the entry (`composer_capsules.dart`).
 const chatPluginsCapsuleId = 'dsh-go:plugins';
 
@@ -313,10 +343,7 @@ class _WebPluginsState extends ConsumerState<_WebPlugins> {
             style: theme.textTheme.bodySmall?.copyWith(color: DshColors.of(context).textTertiary),
           ),
         ),
-        if (islandBody != null) ...[
-          const SizedBox(height: ChatPluginsMetrics.sourcesGap),
-          islandBody,
-        ],
+        if (islandBody != null) ...[const SizedBox(height: ChatPluginsMetrics.sourcesGap), islandBody],
         const SizedBox(height: ChatPluginsMetrics.sourcesGap),
         ListPageCard(
           key: const ValueKey('chat-plugins-ways-in'),

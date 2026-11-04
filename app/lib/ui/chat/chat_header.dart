@@ -51,7 +51,8 @@ class ChatHeader extends ConsumerStatefulWidget {
     super.key,
     required this.title,
     required this.status,
-    required this.trailing,
+    this.detail,
+    this.trailing,
     this.onOpenDrawer,
     this.onTitleTap,
     this.onNewChat,
@@ -61,9 +62,13 @@ class ChatHeader extends ConsumerStatefulWidget {
   final String title;
   final HeaderStatus status;
 
+  /// What follows the status under the title (a phone: the workspace). Shortens first.
+  final String? detail;
+
   /// 右侧件(模型胶囊 [ModelChip])。需要传 `grouped: true` 与顶栏共享一次
   /// 背景采样。顶栏按它的固有宽度(带不带「· 高」)和标题胶囊分地方。
-  final Widget trailing;
+  /// Null: the title has the room.
+  final Widget? trailing;
   final VoidCallback? onOpenDrawer;
   final VoidCallback? onTitleTap;
   final VoidCallback? onNewChat;
@@ -225,6 +230,19 @@ class _ChatHeaderState extends ConsumerState<ChatHeader> {
                                             ),
                                           ),
                                         ),
+                                        if (widget.detail case final detail?)
+                                          Flexible(
+                                            flex: 2,
+                                            child: FluidTextSwap(
+                                              value: detail,
+                                              child: Text(
+                                                ' · $detail',
+                                                maxLines: 1,
+                                                overflow: TextOverflow.ellipsis,
+                                                style: statusStyle?.copyWith(color: dsh.textTertiary),
+                                              ),
+                                            ),
+                                          ),
                                       ],
                                     ),
                                   ],
@@ -241,7 +259,10 @@ class _ChatHeaderState extends ConsumerState<ChatHeader> {
                   // conversation has no model chip). Flexible: the chip
                   // takes the width this row gives it.
                   HeaderTrailingSlot(
-                    trailing: Flexible(child: _ChipSlot(child: widget.trailing)),
+                    trailing: switch (widget.trailing) {
+                      final trailing? => Flexible(child: _ChipSlot(child: trailing)),
+                      null => null,
+                    },
                   ),
                   // Mirrors the menu key; gone on the new-chat screen. On a
                   // wide window the key that unfolds 对话详情 follows it.
