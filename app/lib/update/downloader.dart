@@ -124,6 +124,7 @@ class ApkDownloader {
       target = File('${directory.path}/$fileName');
       part = File('${target.path}.part');
       if (await target.exists()) {
+        if (cancel?.isCancelled ?? false) return const DownloadCancelled();
         onVerifying?.call();
         if (await hasher(target) == sha256) return DownloadDone(target, null);
         await target.delete();
