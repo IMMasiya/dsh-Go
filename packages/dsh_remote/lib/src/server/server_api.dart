@@ -569,7 +569,17 @@ class RemoteServerApi {
         req.add(bytes);
       }
       final response = await req.close();
-      final text = await utf8.decodeStream(response);
+      final String text;
+      try {
+        text = await utf8.decodeStream(response);
+      } on FormatException {
+        if (response.statusCode >= 300) return (response.statusCode, '');
+        throw RemoteApiException(
+          'INVALID_MESSAGE',
+          'The server returned an invalid response body.',
+          status: response.statusCode,
+        );
+      }
       return (response.statusCode, text);
     }
 
