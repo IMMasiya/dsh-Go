@@ -255,7 +255,7 @@ class RemoteConnectionController extends AsyncNotifier<HostConnection?> {
   Future<HostConnection?> build() async {
     final link = ref.watch(hostLinkProvider(host));
     if (link == null) return null;
-    final name = ref.watch(hostNameProvider(host));
+    var name = ref.read(hostNameProvider(host));
 
     HostConnection wrap(DshClient client) => HostConnection(
       client: client,
@@ -265,6 +265,14 @@ class RemoteConnectionController extends AsyncNotifier<HostConnection?> {
       hostId: host.id,
       workingDirectory: link is SshHostLink ? link.resolvedWorkingDirectory : null,
     );
+
+    ref.listen(hostNameProvider(host), (_, next) {
+      name = next;
+      // A label change keeps the current client; it must not revive a previous one.
+      if (!state.isLoading && !state.hasError) {
+        if (state.value case final connection?) state = AsyncData(wrap(connection.client));
+      }
+    });
 
     if (link is SshHostLink) {
       ref.listen(hostsProvider.select((s) => s.sshById(host.id)), (previous, next) {
@@ -396,6 +404,7 @@ final activeConnectionProvider = Provider<AsyncValue<HostConnection?>>((ref) {
   final host = ref.watch(activeHostProvider);
   final connection = _connectionForHost(ref, host);
   ref.read(connectionDiagnosticsProvider)._observe(ref, host, connection);
+  // Rebuilds can retain the previous value after its client has been disposed.
   return connection;
 });
 
