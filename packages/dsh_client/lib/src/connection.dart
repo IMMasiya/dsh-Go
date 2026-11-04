@@ -241,11 +241,19 @@ class DshConnection {
   /// this connection dials or the authority the engine knows itself by; null
   /// for anything else. Only these may carry [cookie]. The result is always on
   /// [baseUri], never the address in [url], and keeps [url]'s query as written.
+  /// Root-relative API paths inside this mount also name the engine; other
+  /// relative paths retain their workspace-file meaning in Markdown.
   Uri? ownUri(String url) {
-    final uri = Uri.tryParse(url);
-    if (uri == null || uri.scheme != baseUri.scheme || uri.userInfo.isNotEmpty) return null;
-    final named = _authorityOf(uri);
-    if (named != authority && named != _authorityOf(baseUri)) return null;
+    var uri = Uri.tryParse(url);
+    if (uri == null || uri.userInfo.isNotEmpty) return null;
+    if (!uri.hasScheme && !uri.hasAuthority) {
+      uri = uri.normalizePath();
+      if (!uri.path.startsWith('${baseUri.path}/api/')) return null;
+    } else {
+      if (uri.scheme != baseUri.scheme) return null;
+      final named = _authorityOf(uri);
+      if (named != authority && named != _authorityOf(baseUri)) return null;
+    }
     if (!uri.path.startsWith('${baseUri.path}/')) return null;
     return baseUri.replace(path: uri.path, query: uri.hasQuery ? uri.query : null);
   }
