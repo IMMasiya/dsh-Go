@@ -269,6 +269,14 @@
           "after": "ff1c3fc024dfc3520c8b3a89cefae95e3e71b38e5437abb42553681eb1d89cc2"
         }
       }
+    },
+    "credentials-decimal-refs.diff": {
+      "0.2.1-rc.4": {
+        "node_modules/@deepseek-ai/dsh-credentials-local/lib/index.js": {
+          "before": "6b4926ef62bfeb95bc3d7687b85303d739a41e813fe05ac06de50111361da069",
+          "after": "4c4c3af9ed5580d9b6105d8c1767a2a58e2e294b001e585032c2fd68b711dd9f"
+        }
+      }
     }
   },
   "schema": 1
