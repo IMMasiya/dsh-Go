@@ -141,12 +141,13 @@ class SharePlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandle
                     skipped += skip(item.name, item.problem ?: "unreadable")
                     continue
                 }
-                total += item.file.length()
-                if (total > MAX_TOTAL_BYTES) {
+                val nextTotal = total + item.file.length()
+                if (nextTotal > MAX_TOTAL_BYTES) {
                     item.file.delete()
                     skipped += skip(item.name, "too_large")
                     continue
                 }
+                total = nextTotal
                 files += mapOf(
                     "path" to item.file.absolutePath,
                     "name" to item.file.name,
