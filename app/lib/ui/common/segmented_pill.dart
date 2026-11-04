@@ -86,12 +86,12 @@ class _SegmentedPillState<T> extends State<SegmentedPill<T>> {
     return i < 0 ? 0 : i;
   }
 
-  void _pick(int index) {
+  void _pick(int index, {bool tick = true}) {
     final onChanged = widget.onChanged;
     if (onChanged == null) return;
     final value = widget.segments[index].value;
     if (value != widget.selected) {
-      HapticFeedback.selectionClick();
+      if (tick) HapticFeedback.selectionClick();
       onChanged(value);
     }
   }
@@ -140,7 +140,8 @@ class _SegmentedPillState<T> extends State<SegmentedPill<T>> {
             ? (_) {
                 final target = current;
                 setState(() => _drag = null);
-                _pick(target);
+                // The fluid tier ticked as the thumb crossed over.
+                _pick(target, tick: !fluid);
               }
             : null,
         onHorizontalDragCancel: () => setState(() => _drag = null),

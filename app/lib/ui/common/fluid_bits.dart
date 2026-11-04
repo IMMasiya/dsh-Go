@@ -164,6 +164,59 @@ class _CheckPainter extends CustomPainter {
   bool shouldRepaint(_CheckPainter old) => old.color != color || old.progress != progress;
 }
 
+/// A short text crossfading to its next [value]. On the standard tier, just [child].
+class FluidTextSwap extends StatelessWidget {
+  const FluidTextSwap({super.key, required this.value, required this.child});
+
+  /// What the text says: when it changes, the old one fades out under the new.
+  final String value;
+  final Widget child;
+
+  static Widget _startAligned(Widget? current, List<Widget> previous) =>
+      Stack(alignment: AlignmentDirectional.centerStart, children: [...previous, ?current]);
+
+  @override
+  Widget build(BuildContext context) {
+    if (!AppMotion.fluid(context)) return child;
+    return AnimatedSwitcher(
+      duration: AppMotion.standard,
+      switchInCurve: AppMotion.std,
+      switchOutCurve: AppMotion.std,
+      layoutBuilder: _startAligned,
+      child: KeyedSubtree(key: ValueKey<String>(value), child: child),
+    );
+  }
+}
+
+/// [child] fading in once as it appears: a whole conversation opening, too large to move.
+/// On the standard tier, just [child].
+class FluidFadeIn extends StatelessWidget {
+  const FluidFadeIn({super.key, required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    if (!AppMotion.fluid(context)) return child;
+    return TweenAnimationBuilder<double>(
+      tween: Tween(begin: 0, end: 1),
+      duration: AppMotion.quick,
+      curve: AppMotion.std,
+      builder: (context, opacity, child) => Opacity(opacity: opacity, child: child),
+      child: child,
+    );
+  }
+}
+
+/// The number [text] stands for; a capped badge's `99+` is more than 99.
+@visibleForTesting
+int? rollingCountValue(String text) => text.endsWith('+')
+    ? switch (int.tryParse(text.substring(0, text.length - 1))) {
+        final n? => n + 1,
+        null => null,
+      }
+    : int.tryParse(text);
+
 /// Text that holds a number: when it changes, the digits that changed roll, up for
 /// more and down for less. At rest, and on the standard tier, it is plain [Text].
 class RollingCount extends StatefulWidget {
@@ -192,8 +245,8 @@ class _RollingCountState extends State<RollingCount> with SingleTickerProviderSt
   void didUpdateWidget(RollingCount old) {
     super.didUpdateWidget(old);
     if (old.text == widget.text || !AppMotion.fluid(context)) return;
-    final before = int.tryParse(old.text);
-    final after = int.tryParse(widget.text);
+    final before = rollingCountValue(old.text);
+    final after = rollingCountValue(widget.text);
     _up = before == null || after == null || after >= before;
     _from = old.text;
     unawaited(_roll.forward(from: 0));

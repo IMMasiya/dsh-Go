@@ -175,7 +175,23 @@ class _ChatListState extends ConsumerState<ChatList> with SingleTickerProviderSt
   /// 解除。
   bool _held = false;
 
-  late final _physics = _FollowPhysics(() => _pinned && !_held, glides: () => _glidable);
+  late final _physics = _FollowPhysics(() => _pinned && !_held && _fingers == 0, glides: () => _glidable);
+
+  /// Fingers on the list. Any `jumpTo` ends the drag under them for good (it goes idle,
+  /// and the rest of that gesture moves nothing), so while one rests here or the list is
+  /// moving on its own, following waits: the list is the user's.
+  int _fingers = 0;
+
+  bool get _userHasList => _fingers > 0 || (_scroll.hasClients && _scroll.position.isScrollingNotifier.value);
+
+  /// Heading up, by finger or fling: however near the bottom, that is not "at the bottom".
+  bool _goingUp = false;
+
+  /// Following waited for the user; it picks up when they let go.
+  bool _followWaiting = false;
+
+  /// The next follow overrides the user: they asked for the bottom, or just sent something.
+  bool _followNow = false;
 
   /// The fluid tier: following glides to a new line instead of snapping to it. Real
   /// scrolling, so everything else about the list is as it was; the new line only starts
@@ -211,6 +227,10 @@ class _ChatListState extends ConsumerState<ChatList> with SingleTickerProviderSt
 
   void _onGlide(Duration elapsed) {
     if (!mounted || !_scroll.hasClients || !_pinned || _held) return _stopGlide();
+    if (_userHasList) {
+      _followWaiting = true;
+      return _stopGlide();
+    }
     final seconds = (elapsed - _glideLast).inMicroseconds / Duration.microsecondsPerSecond;
     _glideLast = elapsed;
     final p = _scroll.position;
@@ -311,6 +331,15 @@ class _ChatListState extends ConsumerState<ChatList> with SingleTickerProviderSt
         return;
       }
       final p = _scroll.position;
+      if (_followNow) {
+        _followNow = false;
+        // Ends a fling or a drag in progress.
+        p.jumpTo(p.pixels);
+      } else if (_userHasList) {
+        _followScheduled = false;
+        _followWaiting = true;
+        return;
+      }
       if (uiTraceEnabled && p.pixels != p.maxScrollExtent) {
         uiTrace('chat-list', 'follow', {'from': p.pixels, 'to': p.maxScrollExtent, 'held': _held, 'attempt': attempts});
       }
@@ -331,10 +360,26 @@ class _ChatListState extends ConsumerState<ChatList> with SingleTickerProviderSt
     }
 
     WidgetsBinding.instance.addPostFrameCallback(step);
+    WidgetsBinding.instance.ensureVisualUpdate();
+  }
+
+  void _resumeFollow() {
+    if (!_followWaiting || _userHasList) return;
+    _followWaiting = false;
+    if (!_pinned) return;
+    _held = false;
+    _follow();
+  }
+
+  void _onFingerUp() {
+    if (_fingers > 0) _fingers--;
+    _resumeFollow();
   }
 
   void jumpToBottom() {
     _pinned = true;
+    _goingUp = false;
+    _followNow = true;
     _snapNext = true;
     _stopGlide();
     _hasNew.value = false;
@@ -375,7 +420,18 @@ class _ChatListState extends ConsumerState<ChatList> with SingleTickerProviderSt
     _reportScrolledUnder(metrics);
     // The reveal grows the reply between state updates.
     if (_glidable && _pinned && !_held && _scroll.hasClients && !_atBottom(0.5) && _atBottom(_glideReach)) {
-      _startGlide();
+      if (_userHasList) {
+        _followWaiting = true;
+      } else {
+        _startGlide();
+      }
+    } else if (_glidable && _pinned && !_held && _scroll.hasClients && !_atBottom(_glideReach)) {
+      // Too far to glide, with no new state to set off a follow: the jump it would do.
+      if (_userHasList) {
+        _followWaiting = true;
+      } else {
+        _follow();
+      }
     }
     // 点开的内容往下长出了视口:不再算贴底,之后的新内容不把它顶走。
     if (_held && _pinned && !_atBottom()) {
@@ -396,9 +452,20 @@ class _ChatListState extends ConsumerState<ChatList> with SingleTickerProviderSt
     if (n is UserScrollNotification && n.direction == ScrollDirection.forward) {
       // 手指往下拖 = 往回看:立刻停止跟随,别和用户抢。
       _pinned = false;
+      _goingUp = true;
+    } else if (n is UserScrollNotification && n.direction == ScrollDirection.reverse) {
+      _goingUp = false;
     } else if (_gliding) {
       // Our own motion: still following, however far behind it is for now.
-    } else if (n is ScrollUpdateNotification || n is ScrollEndNotification) {
+    } else if (n is ScrollEndNotification) {
+      _goingUp = false;
+      // Behind only because following waited: that isn't the user leaving.
+      if (!_followWaiting || !_pinned) _pinned = _atBottom();
+      // The activity that ended is still being replaced.
+      scheduleMicrotask(() {
+        if (mounted) _resumeFollow();
+      });
+    } else if (n is ScrollUpdateNotification && !_goingUp && !_followWaiting) {
       _pinned = _atBottom();
     }
     // Show only after leaving the bottom area; once shown, keep it until
@@ -477,6 +544,8 @@ class _ChatListState extends ConsumerState<ChatList> with SingleTickerProviderSt
     if (s.pending.length > _lastPendingCount) {
       // 自己刚发了消息:无论之前翻到哪,都回到底部。
       _pinned = true;
+      _goingUp = false;
+      _followNow = true;
       _afterFrame(() => _hasNew.value = false);
     }
     _lastPendingCount = s.pending.length;
@@ -612,13 +681,16 @@ class _ChatListState extends ConsumerState<ChatList> with SingleTickerProviderSt
             children: [
               Listener(
                 onPointerDown: (_) {
-                  // The finger lands on where things end up, not on a moving list.
-                  if (_gliding && _scroll.hasClients) {
+                  _fingers++;
+                  // The list stops where it is, under the finger.
+                  if (_gliding) {
                     _stopGlide();
-                    _scroll.position.jumpTo(_scroll.position.maxScrollExtent);
+                    _followWaiting = true;
                   }
                   _held = true;
                 },
+                onPointerUp: (_) => _onFingerUp(),
+                onPointerCancel: (_) => _onFingerUp(),
                 child: NotificationListener<ScrollMetricsNotification>(
                   onNotification: _onMetrics,
                   child: NotificationListener<ScrollNotification>(

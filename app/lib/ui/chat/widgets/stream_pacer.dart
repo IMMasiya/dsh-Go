@@ -6,7 +6,7 @@ import 'dart:math' as math;
 /// It follows the arrival rate (smoothed), and speeds up when it falls behind, so
 /// the backlog stays under [maxLag] and a fast model never leaves it trailing.
 class StreamPacer {
-  StreamPacer({int shown = 0}) : _shown = shown.toDouble();
+  StreamPacer({int shown = 0}) : _shown = shown.toDouble(), _arrived = shown;
 
   /// The longest the text shown may trail what arrived.
   static const maxLag = 0.35;
@@ -20,7 +20,7 @@ class StreamPacer {
 
   double _shown;
   double _rate = minRate * 2;
-  int _arrived = 0;
+  int _arrived;
   double _sinceArrival = 0;
 
   /// Characters to show now.

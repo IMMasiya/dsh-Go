@@ -13625,6 +13625,9 @@ class L10nZh extends L10n {
   String get searchNeedsEngineField => '当前主机提供时可用';
 
   @override
+  String get searchNeedsAnimations => '开启动画时可用';
+
+  @override
   String get searchNeedsChat => '打开对话时可用';
 
   @override

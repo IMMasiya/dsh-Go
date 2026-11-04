@@ -333,6 +333,17 @@ void main() {
       expect(Theme.of(tester.element(fluid)).splashFactory, isNot(AppInkGlow.splashFactory));
     });
 
+    testWidgets('with animations off in the system there is no switch to offer', (tester) async {
+      window(tester);
+      tester.platformDispatcher.accessibilityFeaturesTestValue = const FakeAccessibilityFeatures(
+        disableAnimations: true,
+      );
+      addTearDown(tester.platformDispatcher.clearAccessibilityFeaturesTestValue);
+      await mount(tester, const PerformancePage());
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('performance-fluid')), findsNothing);
+    });
+
     testWidgets('a low device starts without it, and its switch comes with animations', (tester) async {
       window(tester);
       final c = await mount(tester, const PerformancePage(), tier: DeviceTier.low);

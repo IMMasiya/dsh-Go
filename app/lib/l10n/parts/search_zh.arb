@@ -4,6 +4,7 @@
   "searchNeedsPhoneControl": "开启手机操控后可用",
   "searchNeedsNativeUi": "原生界面可用",
   "searchNeedsEngineField": "当前主机提供时可用",
+  "searchNeedsAnimations": "开启动画时可用",
   "searchNeedsChat": "打开对话时可用",
   "searchKwTheme": "外观,配色,颜色,主题色,强调色,图标",
   "searchKwPets": "宠物,小鲸,桌宠,悬浮,鲸鱼",

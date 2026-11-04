@@ -11,6 +11,7 @@ import 'package:dsh_app/ui/shell/page_frame.dart';
 import 'package:dsh_app/ui/theme/theme.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 /// The app's shell, as far as motion goes: the theme and scope `lib/app.dart` puts
@@ -440,6 +441,28 @@ void main() {
       ),
     );
 
+    testWidgets('a drag to the next segment ticks once', (tester) async {
+      var ticks = 0;
+      tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(SystemChannels.platform, (call) async {
+        if (call.method == 'HapticFeedback.vibrate') ticks++;
+        return null;
+      });
+      addTearDown(() => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(SystemChannels.platform, null));
+      var picked = 0;
+      await tester.pumpWidget(shell(pill(0, onChanged: (v) => picked = v), fluid: true));
+      final gesture = await tester.startGesture(
+        tester.getTopLeft(find.byType(SegmentedPill<int>)) + const Offset(40, 15),
+      );
+      for (var i = 0; i < 6; i++) {
+        await gesture.moveBy(const Offset(20, 0));
+        await tester.pump(const Duration(milliseconds: 16));
+      }
+      await gesture.up();
+      await tester.pumpAndSettle();
+      expect(picked, 1);
+      expect(ticks, 1);
+    });
+
     testWidgets('its thumb overshoots on the fluid tier and still lands on the segment', (tester) async {
       await tester.pumpWidget(shell(pill(0, onChanged: (_) {}), fluid: true));
       double leftOf() => tester.getTopLeft(find.byType(DecoratedBox).at(1)).dx;
@@ -564,6 +587,52 @@ void main() {
       expect(tester.takeException(), isNull);
     });
 
+    group('FluidTextSwap', () {
+      Widget swap(String text, {required bool fluid}) => shell(
+        Center(
+          child: FluidTextSwap(value: text, child: Text(text)),
+        ),
+        fluid: fluid,
+      );
+
+      testWidgets('the old text fades out under the new, then is gone', (tester) async {
+        await tester.pumpWidget(swap('本机', fluid: true));
+        await tester.pumpWidget(swap('生成中', fluid: true));
+        await tester.pump(const Duration(milliseconds: 60));
+        expect(find.text('本机'), findsOneWidget);
+        expect(find.text('生成中'), findsOneWidget);
+        await tester.pumpAndSettle();
+        expect(find.text('本机'), findsNothing);
+        expect(find.text('生成中'), findsOneWidget);
+      });
+
+      testWidgets('is the text alone on the standard tier', (tester) async {
+        await tester.pumpWidget(swap('本机', fluid: false));
+        await tester.pumpWidget(swap('生成中', fluid: false));
+        expect(find.text('本机'), findsNothing);
+        expect(find.byType(AnimatedSwitcher), findsNothing);
+      });
+    });
+
+    group('FluidFadeIn', () {
+      Widget fade({required bool fluid}) => shell(const FluidFadeIn(child: Text('对话')), fluid: fluid);
+
+      testWidgets('fades in once and leaves no layer behind', (tester) async {
+        await tester.pumpWidget(fade(fluid: true));
+        await tester.pump(const Duration(milliseconds: 50));
+        final during = tester.widget<Opacity>(find.ancestor(of: find.text('对话'), matching: find.byType(Opacity)).first);
+        expect(during.opacity, inExclusiveRange(0, 1));
+        await tester.pumpAndSettle();
+        final after = tester.widget<Opacity>(find.ancestor(of: find.text('对话'), matching: find.byType(Opacity)).first);
+        expect(after.opacity, 1);
+      });
+
+      testWidgets('is the child alone on the standard tier', (tester) async {
+        await tester.pumpWidget(fade(fluid: false));
+        expect(find.ancestor(of: find.text('对话'), matching: find.byType(TweenAnimationBuilder<double>)), findsNothing);
+      });
+    });
+
     group('RollingCount', () {
       Widget count(String text, {required bool fluid}) => shell(Center(child: RollingCount(text)), fluid: fluid);
 
@@ -589,6 +658,12 @@ void main() {
         await tester.pumpAndSettle();
         expect(find.text('99+'), findsOneWidget);
         expect(tester.takeException(), isNull);
+      });
+
+      test('a capped count is worth more than the digits it shows', () {
+        expect(rollingCountValue('99+'), 100);
+        expect(rollingCountValue('99'), 99);
+        expect(rollingCountValue('新'), isNull);
       });
 
       testWidgets('is plain text at once on the standard tier', (tester) async {
@@ -847,6 +922,36 @@ void main() {
       expect(Theme.of(tester.element(find.text('switch'))).brightness, Brightness.dark, reason: 'new colours below');
       await pumpUntil(tester, () => !ThemeRevealHost.active);
       await tester.pumpAndSettle();
+      expect(ThemeRevealHost.active, isFalse);
+      expect(overlay().evaluate().length, before);
+    });
+
+    testWidgets('a change that fails takes the screenshot away again', (tester) async {
+      Object? caught;
+      await tester.pumpWidget(
+        shell(
+          Builder(
+            builder: (context) => Center(
+              child: TextButton(
+                onPressed: () async {
+                  try {
+                    await ThemeRevealHost.run(context, () async => throw StateError('no'));
+                  } catch (error) {
+                    caught = error;
+                  }
+                },
+                child: const Text('switch'),
+              ),
+            ),
+          ),
+          fluid: true,
+        ),
+      );
+      final before = overlay().evaluate().length;
+      await tester.tap(find.text('switch'));
+      await pumpUntil(tester, () => caught != null);
+      await tester.pump();
+      expect(caught, isStateError);
       expect(ThemeRevealHost.active, isFalse);
       expect(overlay().evaluate().length, before);
     });

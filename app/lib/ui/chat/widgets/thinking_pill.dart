@@ -478,7 +478,8 @@ class _FluidTickerState extends State<_FluidTicker> with SingleTickerProviderSta
   static const _maxSettle = 0.45;
 
   late final Ticker _ticker = createTicker(_tick);
-  late final StreamPacer _pacer = StreamPacer(shown: widget.text.length);
+  // Not lazily: made at the first growth, it would take that growth as already shown.
+  late final StreamPacer _pacer;
 
   /// How far the text still has to rise. Only ever a transform.
   final _behind = ValueNotifier(0.0);
@@ -488,10 +489,17 @@ class _FluidTickerState extends State<_FluidTicker> with SingleTickerProviderSta
   double _sincePublish = 0;
   double _height = -1;
   double _width = -1;
+  double _lineHeight = -1;
   double _sinceLine = 1;
 
   /// How long the last lines took to come: what the rise is paced by.
   double _settle = 0.2;
+
+  @override
+  void initState() {
+    super.initState();
+    _pacer = StreamPacer(shown: widget.text.length);
+  }
 
   @override
   void didUpdateWidget(_FluidTicker old) {
@@ -499,6 +507,8 @@ class _FluidTickerState extends State<_FluidTicker> with SingleTickerProviderSta
     if (!widget.text.startsWith(old.text)) {
       _pacer.reset(widget.text.length);
       _shown = fluidTickerText(widget.text);
+      // Different text, not more of it: nothing to rise.
+      _height = -1;
     }
     if (!_ticker.isActive) {
       _last = Duration.zero;
@@ -525,7 +535,8 @@ class _FluidTickerState extends State<_FluidTicker> with SingleTickerProviderSta
     } else if (behind != 0) {
       _behind.value = 0;
     }
-    if (_sincePublish >= _publishEvery) {
+    // The last of it goes out at once: the ticker is about to stop.
+    if (_sincePublish >= _publishEvery || _pacer.caughtUp(widget.text.length)) {
       _sincePublish = 0;
       final next = fluidTickerText(widget.text.substring(0, _pacer.shown));
       if (next != _shown) setState(() => _shown = next);
@@ -545,17 +556,20 @@ class _FluidTickerState extends State<_FluidTicker> with SingleTickerProviderSta
     // Only what goes past the window has to rise: below that the text grows into the
     // space it has, and any distance saved up would jump when the window fills.
     final past = math.max(_height, window);
-    if (_width == width && _height >= 0 && height > past) {
+    // A wider line or larger type grows the text too, but that isn't a new line.
+    if (_width == width && _lineHeight == lineHeight && _height >= 0 && height > past) {
       final added = height - past;
       if (added < lineHeight * 3) {
         _settle = (0.5 * _settle + 0.5 * _sinceLine * 0.5).clamp(_minSettle, _maxSettle);
         _sinceLine = 0;
-        // Set during build for the transform below it: nothing has painted yet.
-        _behind.value += added;
       }
+      // Set during build for the transform below it: nothing has painted yet. A big lump
+      // rises too, from no further down than the window is tall.
+      _behind.value = math.min(_behind.value + added, window);
     }
     _height = height;
     _width = width;
+    _lineHeight = lineHeight;
     return height;
   }
 

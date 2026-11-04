@@ -520,12 +520,12 @@ class MarkdownBody extends StatefulWidget {
   static const _revealFade = 0.24;
 
   /// [text] for the reveal. Only ever appended to while streaming, as the reveal needs
-  /// (a rewrite far from the end would retype the message): table headers are bolded
-  /// when the reply is done, formulas are left to the library's own hold.
-  static String _prepareRevealed(String text, {required bool streaming, required bool repairBareViews}) {
+  /// (a rewrite far from the end would retype the message): a table's header is bolded
+  /// as its delimiter row arrives, right at the end and for good, so its columns don't
+  /// change when the reply finishes. Formulas are left to the library's own hold.
+  static String _prepareRevealed(String text, {required bool repairBareViews}) {
     final repaired = repairBareViews ? fenceBareDshUiViews(text) : text;
-    final source = blankLineBeforeTables(normalizeMath(repaired));
-    return streaming ? source : boldTableHeaders(source);
+    return boldTableHeaders(blankLineBeforeTables(normalizeMath(repaired)));
   }
 
   static String _prepareSource(
@@ -580,11 +580,7 @@ class _MarkdownBodyState extends State<MarkdownBody> {
 
   String _prepare() {
     if (widget.reveal) {
-      return MarkdownBody._prepareRevealed(
-        widget.text,
-        streaming: widget.streaming,
-        repairBareViews: widget.repairBareViews,
-      );
+      return MarkdownBody._prepareRevealed(widget.text, repairBareViews: widget.repairBareViews);
     }
     _repair = widget.streaming ? (_repair ?? StreamingMarkdownRepair()) : null;
     return MarkdownBody._prepareSource(

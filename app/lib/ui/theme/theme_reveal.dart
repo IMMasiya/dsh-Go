@@ -83,7 +83,17 @@ class _ThemeRevealHostState extends State<ThemeRevealHost> with SingleTickerProv
     _progress.value = 0;
     setState(() => _image = image);
     WidgetsBinding.instance.addPostFrameCallback((_) => replaced?.dispose());
-    await change();
+    try {
+      await change();
+    } catch (_) {
+      // Nothing to reveal, and the screenshot must not stay over the app.
+      if (mounted && run == _run) {
+        _active = false;
+        setState(() => _image = null);
+        WidgetsBinding.instance.addPostFrameCallback((_) => image.dispose());
+      }
+      rethrow;
+    }
     // 新配色画出来之前,盖着的旧画面和屏幕上的一模一样。
     var frames = 0;
     while (mounted && run == _run && Theme.of(context).brightness == before && frames++ < _maxWaitFrames) {

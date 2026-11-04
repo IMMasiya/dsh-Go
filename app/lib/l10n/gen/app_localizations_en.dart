@@ -14336,6 +14336,9 @@ class L10nEn extends L10n {
   String get searchNeedsEngineField => 'Available when the host has it';
 
   @override
+  String get searchNeedsAnimations => 'Available with animations on';
+
+  @override
   String get searchNeedsChat => 'Available with a chat open';
 
   @override

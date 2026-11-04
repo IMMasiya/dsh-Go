@@ -85,6 +85,7 @@ class _AssistantMessageState extends State<AssistantMessage> {
   Widget? _body;
   String? _bodyText;
   bool? _bodyStreaming;
+  bool? _bodyReveal;
 
   /// 这条回复在这里等过(画过三个点)。只有它才包交接动画:打开会话时已有的、
   /// 翻回去重建的回复都不多这一层。
@@ -129,13 +130,14 @@ class _AssistantMessageState extends State<AssistantMessage> {
   /// 没变的消息直接复用同一个 widget 实例,Flutter 不会再往下走。
   Widget _markdown(String text, bool streaming) {
     final reveal = _reveal = _reveal || (streaming && _startedEmpty && AppMotion.fluid(context));
-    if (_body == null || _bodyText != text || _bodyStreaming != streaming) {
+    if (_body == null || _bodyText != text || _bodyStreaming != streaming || _bodyReveal != reveal) {
       // Long-press opens the menu; selecting text is one of its entries.
       // repairBareViews: a model that forgets the ```dsh-ui fence still gets
       // its view drawn instead of a wall of JSON.
       _body = MarkdownBody(text: text, streaming: streaming, reveal: reveal, selectable: false, repairBareViews: true);
       _bodyText = text;
       _bodyStreaming = streaming;
+      _bodyReveal = reveal;
     }
     if (!reveal) return _body!;
     // The reveal has no cursor: a long pause gets a quiet dot under the text instead.

@@ -24908,6 +24908,12 @@ abstract class L10n {
   /// **'当前主机提供时可用'**
   String get searchNeedsEngineField;
 
+  /// No description provided for @searchNeedsAnimations.
+  ///
+  /// In zh, this message translates to:
+  /// **'开启动画时可用'**
+  String get searchNeedsAnimations;
+
   /// No description provided for @searchNeedsChat.
   ///
   /// In zh, this message translates to:

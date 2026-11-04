@@ -4,6 +4,7 @@
 import 'dart:math' as math;
 
 import 'package:dsh_app/state/chat_state.dart';
+import 'package:dsh_app/ui/chat/chat_header.dart';
 import 'package:dsh_app/ui/chat/chat_screen.dart';
 import 'package:dsh_app/ui/chat/empty_state.dart' show chatClock;
 import 'package:dsh_app/ui/chat/render/markdown_body.dart';
@@ -47,6 +48,13 @@ void main() {
   });
 
   group('StreamPacer', () {
+    test('what was already there does not count as arriving fast', () {
+      final pacer = StreamPacer(shown: 1000);
+      pacer.advance(1 / 60, 1000);
+      pacer.advance(1 / 60, 1030);
+      expect(pacer.shown, lessThan(1010));
+    });
+
     test('lumps come out as an even flow', () {
       final pacer = StreamPacer();
       const frame = 1 / 60;
@@ -161,6 +169,24 @@ void main() {
       });
     }
 
+    testWidgets('a table keeps its columns when the reply finishes', (tester) async {
+      usePhoneView(tester);
+      const text = '开头。\n\n| Alpha Header | Beta | Gamma Header |\n|---|---|---|\n| 1 | 2 | 3 |\n\n后面。';
+      Widget body(bool streaming) => fluidApp(
+        Scaffold(
+          body: SingleChildScrollView(
+            child: MarkdownBody(text: text, streaming: streaming, reveal: true, selectable: false),
+          ),
+        ),
+      );
+      await tester.pumpWidget(body(true));
+      await tester.pump(const Duration(seconds: 2));
+      final streaming = tester.getSize(find.byType(Table).first);
+      await tester.pumpWidget(body(false));
+      await tester.pumpAndSettle();
+      expect(tester.getSize(find.byType(Table).first), streaming);
+    });
+
     testWidgets('the state of a reply survives its end, and it has no cursor', (tester) async {
       usePhoneView(tester);
       await tester.pumpWidget(reply(assistant(2, '', rowKey: 'm', streaming: true)));
@@ -269,6 +295,35 @@ void main() {
       expect(tester.hasRunningAnimations, isFalse);
     });
 
+    testWidgets('ends on the last word, even between publishes', (tester) async {
+      usePhoneView(tester);
+      await tester.pumpWidget(window('开始'));
+      await tester.pumpWidget(window('开始想完了'));
+      await tester.pumpAndSettle();
+      expect(find.text('开始想完了'), findsOneWidget);
+    });
+
+    testWidgets('a big lump rises instead of landing at once', (tester) async {
+      usePhoneView(tester);
+      // Inside the length limit, past which the head of the text is what moves.
+      var text = '开始想这个问题，接着往下想一点内容。' * 5;
+      await tester.pumpWidget(window(text));
+      final line = tester.getSize(find.byType(ThinkingTicker)).height / ThinkingTicker.rows;
+      await tester.pumpAndSettle();
+      text += '一下子来了很多内容，一下子来了很多内容。' * 6;
+      await tester.pumpWidget(window(text));
+      var last = top(tester);
+      var largest = 0.0;
+      for (var i = 0; i < 120; i++) {
+        await tester.pump(const Duration(milliseconds: 16));
+        final now = top(tester);
+        largest = math.max(largest, (now - last).abs());
+        last = now;
+      }
+      expect(largest, lessThan(line * 1.5));
+      await tester.pumpAndSettle();
+    });
+
     testWidgets('settles and stops its ticker when the text stops', (tester) async {
       usePhoneView(tester);
       await tester.pumpWidget(window('一行'));
@@ -308,6 +363,13 @@ void main() {
         chat([user(1, '问题'), assistant(2, '${lines(30)}$more', rowKey: 'm', streaming: true)]),
       );
     }
+
+    testWidgets('the header\'s title and status crossfade, the conversation fades in', (tester) async {
+      await open(tester);
+      final swaps = find.descendant(of: find.byType(ChatHeader), matching: find.byType(FluidTextSwap));
+      expect(swaps, findsNWidgets(2));
+      expect(find.byType(FluidFadeIn), findsOneWidget);
+    });
 
     testWidgets('a new line is glided to, and it arrives', (tester) async {
       final harness = await open(tester);
@@ -356,6 +418,86 @@ void main() {
       }
       expect(position(tester).pixels, parked);
     });
+
+    // A reply growing every frame while the finger moves a little at a time: nothing
+    // may take the drag away, in either tier.
+    for (final fluid in [true, false]) {
+      final tier = fluid ? 'fluid' : 'standard';
+
+      testWidgets('$tier: a slow drag up takes hold while the reply grows', (tester) async {
+        final harness = await open(tester, fluid: fluid);
+        final gesture = await tester.startGesture(const Offset(200, 300));
+        var more = '';
+        for (var i = 0; i < 60; i++) {
+          more += '\n\n新的一段新的一段新的一段新的一段新的一段新的一段新的一段新的一段';
+          grow(harness, more);
+          await gesture.moveBy(const Offset(0, 5));
+          await tester.pump(const Duration(milliseconds: 16));
+        }
+        expect(position(tester).extentAfter, greaterThan(200), reason: 'the list went with the finger');
+        final held = position(tester).pixels;
+        await gesture.up();
+        for (var i = 0; i < 120; i++) {
+          await tester.pump(const Duration(milliseconds: 16));
+        }
+        grow(harness, '$more\n\n又来一段又来一段');
+        for (var i = 0; i < 40; i++) {
+          await tester.pump(const Duration(milliseconds: 16));
+        }
+        expect(position(tester).pixels, lessThanOrEqualTo(held + 1), reason: 'and it stays where it was left');
+      });
+
+      testWidgets('$tier: a fling up runs its course while the reply grows', (tester) async {
+        final harness = await open(tester, fluid: fluid);
+        var more = '';
+        await tester.fling(find.byType(Scrollable).first, const Offset(0, 120), 2000, warnIfMissed: false);
+        for (var i = 0; i < 60; i++) {
+          more += '\n\n新的一段新的一段新的一段新的一段新的一段新的一段新的一段新的一段';
+          grow(harness, more);
+          await tester.pump(const Duration(milliseconds: 16));
+        }
+        expect(position(tester).extentAfter, greaterThan(300), reason: 'the fling carried');
+      });
+
+      testWidgets('$tier: a resting finger holds the list, and letting go catches up', (tester) async {
+        final harness = await open(tester, fluid: fluid);
+        final gesture = await tester.startGesture(const Offset(200, 300));
+        await tester.pump(const Duration(milliseconds: 16));
+        final before = position(tester).pixels;
+        var more = '';
+        for (var i = 0; i < 20; i++) {
+          more += '\n\n新的一段新的一段新的一段新的一段';
+          grow(harness, more);
+          await tester.pump(const Duration(milliseconds: 16));
+          expect(position(tester).pixels, before, reason: 'not moving under the finger');
+        }
+        await gesture.up();
+        for (var i = 0; i < 90; i++) {
+          await tester.pump(const Duration(milliseconds: 16));
+        }
+        expect(position(tester).extentAfter, lessThan(1));
+      });
+
+      testWidgets('$tier: dragged back to the bottom, following resumes', (tester) async {
+        final harness = await open(tester, fluid: fluid);
+        final gesture = await tester.startGesture(const Offset(200, 300));
+        for (var i = 0; i < 20; i++) {
+          await gesture.moveBy(const Offset(0, 10));
+          await tester.pump(const Duration(milliseconds: 16));
+        }
+        for (var i = 0; i < 40; i++) {
+          await gesture.moveBy(const Offset(0, -10));
+          await tester.pump(const Duration(milliseconds: 16));
+        }
+        await gesture.up();
+        await tester.pump(const Duration(milliseconds: 500));
+        grow(harness, '\n\n新的一段新的一段新的一段新的一段新的一段新的一段新的一段新的一段');
+        for (var i = 0; i < 60; i++) {
+          await tester.pump(const Duration(milliseconds: 16));
+        }
+        expect(position(tester).extentAfter, lessThan(1));
+      });
+    }
   });
 
   group('tool rows', () {

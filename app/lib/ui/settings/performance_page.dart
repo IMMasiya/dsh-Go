@@ -100,7 +100,7 @@ class PerformancePage extends ConsumerWidget {
               onChanged: (value) => unawaited(notifier.setAnimations(value)),
             ),
             // A finer choice inside animations: with them off there is nothing to choose.
-            if (!defaults.reduceMotion)
+            if (!defaults.reduceMotion && !MediaQuery.disableAnimationsOf(context))
               SettingsSwitchTile(
                 key: const ValueKey('performance-fluid'),
                 spot: Spots.fluidMotion,

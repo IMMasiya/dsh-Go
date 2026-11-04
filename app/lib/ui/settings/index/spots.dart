@@ -40,7 +40,10 @@ enum SpotCondition {
   engineField,
 
   /// Only with a conversation open.
-  openChat;
+  openChat,
+
+  /// Only with animations on.
+  animationsOn;
 
   String label(L10n l10n) => switch (this) {
     localHost => l10n.searchNeedsLocal,
@@ -48,6 +51,7 @@ enum SpotCondition {
     nativeUi => l10n.searchNeedsNativeUi,
     engineField => l10n.searchNeedsEngineField,
     openChat => l10n.searchNeedsChat,
+    animationsOn => l10n.searchNeedsAnimations,
   };
 }
 
@@ -861,6 +865,7 @@ abstract final class Spots {
     page: SettingsPageId.performance,
     title: (l) => l.performanceFluid,
     keywords: (l) => l.searchKwFluidMotion,
+    condition: SpotCondition.animationsOn,
   );
 
   // 通知.
