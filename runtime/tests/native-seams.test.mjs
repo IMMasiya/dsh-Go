@@ -7,7 +7,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 const LIB = new URL("../bridge/dsh-go-bridge/lib/native/", import.meta.url);
-const { checkManifest } = await import(new URL("manifest.js", LIB));
+const { checkManifest, parseManifest, renderPlugin } = await import(new URL("manifest.js", LIB));
 const util = await import(new URL("util.js", LIB));
 const { NativeCore } = await import(new URL("core.js", LIB));
 const { LIMITS, SURFACES } = await import(new URL("limits.js", LIB));
@@ -158,5 +158,63 @@ test("core: turnNote on an id declared elsewhere is reported", () => {
   core.service.turnNote.call({ ctx: host.callerOf(host.entries[0]) }, "p", () => () => {});
   const row = core.contributions({ versions: [1], app: "1.0.0", locale: "zh", surfaces: [], key: "k" }).plugins[0];
   assert.ok(codes(row.issues).includes("undeclared@/runtime/p"));
+  core.dispose();
+});
+
+test("requires holds on the ＋ panel's tools and a conversation's actions too", () => {
+  const effect = { type: "toast", text: "x" };
+  const { dir, pkg } = pkgDir("requires", {
+    v: 1,
+    capabilities: ["audio"],
+    contributes: {
+      "composer.tools": [{ id: "t", label: "T", effect, requires: ["audio"] }, { id: "u", label: "U", effect, requires: ["voice"] }],
+      "session.actions": [{ id: "s", label: "S", effect, requires: ["audio"] }],
+    },
+  });
+  const parsed = parseManifest(pkg, dir);
+  const row = (features) => renderPlugin(parsed, { versions: [1], app: "1.0.0", locale: "zh", features }, {
+    panels: new Map(), strips: new Set(), notes: new Set(), handlers: new Set(), degraded: false, runtimeIssues: [],
+  }).contributes;
+  assert.equal(row([])["composer.tools"][0].ready, false, "the app can't do it");
+  assert.equal(row([])["session.actions"][0].ready, false, "the app can't do it");
+  assert.equal(row(["audio"])["composer.tools"][0].ready, true);
+  assert.equal(row(["audio"])["session.actions"][0].ready, true);
+  assert.equal(row(["audio", "voice"])["composer.tools"][1].ready, false, "not declared: it never comes true");
+});
+
+test("nothing opens a panel that was rejected", () => {
+  const r = check("rejected", {
+    panels: [{ id: "untitled" }, { id: "kept", title: "K" }],
+    "composer.tools": [{ id: "t", label: "T", panel: "untitled" }, { id: "u", label: "U", panel: "kept" }],
+    "composer.actions": [{ id: "a", label: "A", effect: { type: "open", page: "panel:untitled" } }],
+    "composer.strip": [{ id: "s", text: "x", panel: "untitled" }],
+  }, { handlers: [], panels: ["kept"] });
+  const c = r.plugin.contributes;
+  assert.equal(c["composer.tools"][0].effect, undefined);
+  assert.equal(c["composer.tools"][0].ready, false);
+  assert.deepEqual(c["composer.tools"][1].effect, [{ type: "open", page: "panel:kept" }]);
+  assert.equal(c["composer.actions"][0].effect, undefined);
+  assert.equal(c["composer.strip"][0].panel, undefined);
+  for (const at of ["composer.tools/0", "composer.actions/0", "composer.strip/0"]) {
+    assert.ok(codes(r.issues).includes(`invalid-field@/dshGo/contributes/${at}`), at);
+  }
+});
+
+test("core: removing a turn note's registration ends its feed", async (t) => {
+  const alive = setInterval(() => {}, 1000);
+  t.after(() => clearInterval(alive));
+  const a = pkgDir("note-removed", { v: 1, contributes: { "turn.note": [{ id: "cost" }] } });
+  const host = fakeHost([a]);
+  const core = new NativeCore(host.ctx, LIMITS, "test");
+  let cancelled = 0;
+  const remove = core.service.turnNote.call({ ctx: host.callerOf(host.entries[0]) }, "cost", (scope, emit) => {
+    emit({ 1: { text: "x" } });
+    return () => { cancelled++; };
+  });
+  const feed = core.feed("note-removed", "cost", "note", util.normalizeScope({ sessionId: "s" }));
+  await feed.waitFirst(500);
+  remove();
+  assert.equal(feed.stopped, true);
+  assert.equal(cancelled, 1);
   core.dispose();
 });

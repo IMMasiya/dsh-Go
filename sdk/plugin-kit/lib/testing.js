@@ -17,7 +17,7 @@ import { join, resolve } from 'node:path'
 import { normalize as normalizeEffects, splitPending } from './bridge/effects.js'
 import { ICON, ID, LIMITS, PROTOCOL, TONES } from './bridge/limits.js'
 import { parseManifest, renderPlugin } from './bridge/manifest.js'
-import { chars, isPlainObject, toJson, truncateChars, viewStats, withoutNulls } from './bridge/util.js'
+import { chars, cleanLine, isPlainObject, sanitizeNotes, toJson, truncateChars, viewStats, withoutNulls } from './bridge/util.js'
 
 const CONTEXT_FOR = { 'composer.actions': ['draft', 'clipboard'], 'composer.tools': ['draft', 'clipboard'], 'message.actions': ['message'] }
 const SURFACE_OF = { 'composer.actions': 'composer.actions', 'message.actions': 'message.actions', 'composer.strip': 'composer.strip', panel: 'panels', 'composer.tools': 'composer.tools', 'session.actions': 'session.actions' }
@@ -37,25 +37,10 @@ export function defaultCaps(overrides = {}) {
 function stripValue(d) {
   if (d === null) return { text: null }
   if (!isPlainObject(d)) return undefined
-  const text = typeof d.text === 'string' ? d.text.replace(/[\u0000-\u001f\u007f]+/g, ' ').trim() : ''
+  const text = typeof d.text === 'string' ? cleanLine(d.text) : ''
   const out = { text: text === '' ? null : chars(text) > LIMITS.textChars.stripText ? truncateChars(text, LIMITS.textChars.stripText) : text }
   if (typeof d.icon === 'string' && ICON.test(d.icon)) out.icon = d.icon
   if (TONES.includes(d.tone)) out.tone = d.tone
-  return out
-}
-
-/** As the bridge cleans a turn note push: text cut, junk dropped, the newest turns kept. */
-function notesValue(d) {
-  if (d === null) return null
-  if (!isPlainObject(d)) return undefined
-  const out = {}
-  for (const [turn, note] of Object.entries(d).slice(-LIMITS.turnNotesPerFeed)) {
-    if (!isPlainObject(note) || typeof note.text !== 'string' || turn.length > 64) continue
-    const text = note.text.replace(/[\u0000-\u001f\u007f]+/g, ' ').trim()
-    if (text === '') continue
-    out[turn] = { text: chars(text) > LIMITS.textChars.turnNote ? truncateChars(text, LIMITS.textChars.turnNote) : text }
-    if (TONES.includes(note.tone)) out[turn].tone = note.tone
-  }
   return out
 }
 
@@ -384,27 +369,39 @@ export function createTestHost(options = {}) {
       return { view: json.value, stats: { bytes: json.bytes, ...viewStats(json.value) }, source: reg !== undefined ? 'registered' : 'file' }
     },
     /**
-     * Start the data function of panel or strip `id` for `scope`. `feed.data` is the latest
-     * value as the app would hold it (nulls dropped, strip text cut to 24); `feed.history` all
-     * of them. No 4 Hz throttling here: every emit is recorded.
+     * Start the data function of panel, strip or turn note `id` for `scope`. `feed.data` is the
+     * latest value as the app would hold it (nulls dropped, strip text cut to 24); `feed.history`
+     * all of them; `feed.settled` resolves once the data function has finished starting. No 4 Hz
+     * throttling here: every emit is recorded.
      */
     subscribe(id, scope = {}) {
-      const strip = regs.strips.get(id)
-      const panel = regs.panels.get(id)
-      const note = regs.notes.get(id)
-      const dataFn = strip?.data ?? note?.data ?? panel?.data
-      const feed = { id, scope, data: undefined, history: [], stale: 0, errors: [], stop: () => {} }
+      // As the bridge does: the manifest says what this id is, whatever else is registered under it.
+      const kind = parsed.ids.get(id)
+      const reg = { 'composer.strip': regs.strips, 'turn.note': regs.notes, panels: regs.panels }[kind]?.get(id)
+      const dataFn = reg?.data
+      let stopped = false
+      let cancel
+      const feed = {
+        id, scope, data: undefined, history: [], stale: 0, errors: [], settled: Promise.resolve(),
+        stop: () => {
+          stopped = true
+          const fn = cancel
+          cancel = undefined
+          if (typeof fn === 'function') fn()
+        },
+      }
       if (typeof dataFn !== 'function') {
         feed.data = null
         return feed
       }
       const emit = (d) => {
+        if (stopped) return
         let value
-        if (strip !== undefined) {
+        if (kind === 'composer.strip') {
           value = stripValue(d)
           if (value === undefined) return feed.errors.push(`strip(${id}) emitted a non-object`)
-        } else if (note !== undefined) {
-          value = notesValue(d)
+        } else if (kind === 'turn.note') {
+          value = sanitizeNotes(d)
           if (value === undefined) return feed.errors.push(`turnNote(${id}) emitted a non-object`)
         } else {
           if (d !== null && !isPlainObject(d)) return feed.errors.push(`data(${id}) emitted a non-object`)
@@ -416,14 +413,19 @@ export function createTestHost(options = {}) {
         feed.data = value
         feed.history.push(value)
       }
-      let cancel
+      const failed = (error) => { feed.errors.push(String(error?.message ?? error)) }
       try {
-        cancel = dataFn({ ...scope }, emit, { protocol: caps.protocol, locale: caps.locale })
+        const result = dataFn({ ...scope }, emit, { protocol: caps.protocol, locale: caps.locale })
+        if (typeof result === 'function') cancel = result
+        // A cleanup that arrives after stop() still has to run.
+        else feed.settled = Promise.resolve(result).then((fn) => {
+          if (typeof fn !== 'function') return
+          if (stopped) fn()
+          else cancel = fn
+        }).catch(failed)
       } catch (error) {
-        feed.errors.push(String(error?.message ?? error))
+        failed(error)
       }
-      Promise.resolve(cancel).then((c) => { if (typeof c === 'function') feed.stop = c })
-      if (typeof cancel === 'function') feed.stop = cancel
       feeds.add(feed)
       return feed
     },

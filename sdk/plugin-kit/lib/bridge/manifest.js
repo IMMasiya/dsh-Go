@@ -212,8 +212,34 @@ export function parseManifest(pkgJson, pkgDir) {
     });
     out.items[surface] = out.items[surface].filter((x) => x !== null);
   }
+  dropOpensOfRejectedPanels(m, out);
   parseCapabilities(m, out);
   return out;
+}
+
+/**
+ * `panelIds` above is every panel the manifest names, and some of those were then rejected: too
+ * many, no title, a repeated id. Tapping something that opens one could only fail, so it loses that.
+ */
+function dropOpensOfRejectedPanels(m, out) {
+  const kept = new Set(out.items.panels.map((p) => p.id));
+  const opensRejected = (e) => e.type === "open" && e.page.startsWith("panel:") && !kept.has(e.page.slice("panel:".length));
+  const report = (surface, id) => {
+    const i = m.contributes[surface].findIndex((x) => isPlainObject(x) && x.id === id);
+    out.issues.push(issue(ptr("contributes", surface, i), "invalid-field", "error", "opens a panel that was rejected"));
+  };
+  for (const surface of ACTION_SURFACES) {
+    for (const item of out.items[surface] ?? []) {
+      if (!item.effect?.some(opensRejected)) continue;
+      delete item.effect;
+      report(surface, item.id);
+    }
+  }
+  for (const item of out.items["composer.strip"]) {
+    if (item.panel === undefined || kept.has(item.panel)) continue;
+    delete item.panel;
+    report("composer.strip", item.id);
+  }
 }
 
 /**

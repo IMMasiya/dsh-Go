@@ -153,3 +153,44 @@ test('strip and panel data functions get caps with the locale', () => {
   host.ctx.inject(['dshGo'], (ctx) => ctx.dshGo.strip('line', (_s, emit, caps) => emit({ text: caps.locale })))
   assert.deepEqual(host.subscribe('line').data, { text: 'en-US' })
 })
+
+test('turn notes come out as the bridge cleans them', () => {
+  const host = createTestHost({ pkg: pkg({ v: 1, contributes: { 'turn.note': [{ id: 'cost' }] } }), dir: '/nonexistent' })
+  host.ctx.inject(['dshGo'], (ctx) => ctx.dshGo.turnNote('cost', (_s, emit) => {
+    emit({ 1: { text: '  一\u2028二\u0085  三 ' } })
+    return () => {}
+  }))
+  assert.deepEqual(host.subscribe('cost', { sessionId: 's' }).data, { 1: { text: '一 二 三' } })
+})
+
+test('subscribe goes by what the manifest says an id is', () => {
+  const host = createTestHost({ pkg: pkg({ v: 1, contributes: { panels: [{ id: 'main', title: '面板' }] } }), dir: '/nonexistent' })
+  host.ctx.inject(['dshGo'], (ctx) => {
+    ctx.dshGo.panel('main', { view: { type: 'text', text: 'x' }, data: (_s, emit) => { emit({ from: 'panel' }); return () => {} } })
+    ctx.dshGo.turnNote('main', (_s, emit) => { emit({ 1: { text: 'note' } }); return () => {} })
+  })
+  assert.deepEqual(host.subscribe('main').data, { from: 'panel' })
+})
+
+test('an async data function: its late cleanup still runs, its failure is recorded', async () => {
+  const host = createTestHost({ pkg: pkg({ v: 1, contributes: { 'turn.note': [{ id: 'slow' }], 'composer.strip': [{ id: 'bad' }] } }), dir: '/nonexistent' })
+  let cleaned = 0
+  let emitLate
+  host.ctx.inject(['dshGo'], (ctx) => {
+    ctx.dshGo.turnNote('slow', async (_s, emit) => {
+      await null
+      emitLate = emit
+      return () => { cleaned++ }
+    })
+    ctx.dshGo.strip('bad', async () => { throw new Error('boom') })
+  })
+  const slow = host.subscribe('slow', { sessionId: 's' })
+  slow.stop()
+  await slow.settled
+  assert.equal(cleaned, 1)
+  emitLate({ 1: { text: 'x' } })
+  assert.deepEqual(slow.history, [], 'nothing after stop')
+  const bad = host.subscribe('bad')
+  await bad.settled
+  assert.deepEqual(bad.errors, ['boom'])
+})

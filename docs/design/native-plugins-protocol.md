@@ -111,14 +111,14 @@ v1 内新增，规则和取舍见 [plugin-platform.md](plugin-platform.md) §2�
 
 面板另有 `placement: "plugin"`（协商：App 的 `surfaces` 没有列出时，只放这里的面板退回 `session.tab`）和 `presentation: "page" | "sheet"`。
 
-`turn.note` 的数据走 §4.3 的流，`scope` 必须带 `sessionId`，否则 `end(not-found)`。数据是 `{ <回合序号>: { text, tone? } }`，桥接逐条清洗，最多保留最新的 `turnNotesPerFeed`（64）个。宿主注册用 `ctx.dshGo.turnNote(id, dataFn)`。
+`turn.note` 的数据走 §4.3 的流，`scope` 必须带 `sessionId`，否则 `end(not-found)`。数据是 `{ <回合序号>: { text, tone? } }`，桥接逐条清洗，最多保留最新的 `turnNotesPerFeed`（64）个。宿主注册用 `ctx.dshGo.turnNote(id, dataFn)`。App 在一段对话里最多订阅 8 个插件的尾注，给面板和状态条留出流的预算（每条连接 32 个订阅）。
 
 ### 1.3 校验规则
 
 - **逐项校验**：每个条目独立判定，出错的条目丢弃，其余照常；问题记到插件的 `issues`（§3.3）。
 - `severity: "error"` = 该条目或字段被丢弃；`"warn"` = 保留（可能已截断）。
 - 未知顶层键、未知条目字段：忽略，记 `unknown-field`（warn）。
-- 未知 surface（如第二期的 `pets`、`turn.note`）：忽略，记 `unknown-surface`（warn）。
+- 未知 surface（如第二期的 `pets`）：忽略，记 `unknown-surface`（warn）。
 - 超过每插件上限：保留前 N 个，记 `too-many`（warn）。
 - `panel` 指向不存在的面板：去掉该字段，记 `invalid-field`（error）。
 - 没有 `effect`、宿主半侧也没注册处理的 actions，以及既没注册又没静态视图的面板：保留，但 `ready: false`，记 `no-handler`（warn）。App 对 `ready: false` 的条目置灰或不显示（由 App 决定）。

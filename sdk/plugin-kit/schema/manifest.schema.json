@@ -407,6 +407,16 @@
           "$ref": "#/$defs/id",
           "description": "Opens this plugin's panel. Write panel or effect, not both."
         }
+      },
+      "if": {
+        "required": [
+          "panel"
+        ]
+      },
+      "then": {
+        "properties": {
+          "effect": false
+        }
       }
     }
   }
