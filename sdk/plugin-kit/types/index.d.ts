@@ -37,9 +37,9 @@ export type Scope = InvokeScope
 
 /** What an invoke handler receives: the scope plus the content the manifest's `wants` asked for. */
 export interface InvokeScopeWithContext extends Scope {
-  /** composer.actions, with `wants: ["draft"]`: the composer text. */
+  /** composer.actions or composer.tools, with `wants: ["draft"]`: the composer text. */
   draft?: string
-  /** composer.actions, with `wants: ["clipboard"]`: the clipboard text. */
+  /** composer.actions or composer.tools, with `wants: ["clipboard"]`: the clipboard text. */
   clipboard?: string
   /** message.actions, with `wants: ["message"]`: the long-pressed reply's text. */
   message?: string

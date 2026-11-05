@@ -62,6 +62,8 @@ export function parseManifest(pkgJson, pkgDir) {
     assetsDir: undefined,
     items: baseItems(),
     ids: new Map(),
+    // Where each accepted id sits in its manifest list. An id can repeat there, and only this entry passed.
+    rawIndex: new Map(),
     issues,
   };
   const m = pkgJson.dshGo;
@@ -208,11 +210,12 @@ export function parseManifest(pkgJson, pkgDir) {
         }
       }
       out.ids.set(raw.id, surface);
+      out.rawIndex.set(raw.id, i);
       out.items[surface].push(item);
     });
     out.items[surface] = out.items[surface].filter((x) => x !== null);
   }
-  dropOpensOfRejectedPanels(m, out);
+  dropOpensOfRejectedPanels(out);
   parseCapabilities(m, out);
   return out;
 }
@@ -221,12 +224,11 @@ export function parseManifest(pkgJson, pkgDir) {
  * `panelIds` above is every panel the manifest names, and some of those were then rejected: too
  * many, no title, a repeated id. Tapping something that opens one could only fail, so it loses that.
  */
-function dropOpensOfRejectedPanels(m, out) {
+function dropOpensOfRejectedPanels(out) {
   const kept = new Set(out.items.panels.map((p) => p.id));
   const opensRejected = (e) => e.type === "open" && e.page.startsWith("panel:") && !kept.has(e.page.slice("panel:".length));
   const report = (surface, id) => {
-    const i = m.contributes[surface].findIndex((x) => isPlainObject(x) && x.id === id);
-    out.issues.push(issue(ptr("contributes", surface, i), "invalid-field", "error", "opens a panel that was rejected"));
+    out.issues.push(issue(ptr("contributes", surface, out.rawIndex.get(id)), "invalid-field", "error", "opens a panel that was rejected"));
   };
   for (const surface of ACTION_SURFACES) {
     for (const item of out.items[surface] ?? []) {

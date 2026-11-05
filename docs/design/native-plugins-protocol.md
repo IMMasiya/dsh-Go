@@ -128,8 +128,8 @@ v1 内新增，规则和取舍见 [plugin-platform.md](plugin-platform.md) §2�
 
 | want | 附带字段 | 只在哪个 surface 附带 | 上限 |
 |---|---|---|---|
-| `draft` | `context.draft`：输入框当前文字 | `composer.actions` | 16 KiB（UTF-8） |
-| `clipboard` | `context.clipboard`：剪贴板文字 | `composer.actions` | 16 KiB |
+| `draft` | `context.draft`：输入框当前文字 | `composer.actions`、`composer.tools` | 16 KiB（UTF-8） |
+| `clipboard` | `context.clipboard`：剪贴板文字 | `composer.actions`、`composer.tools` | 16 KiB |
 | `message` | `context.message`：被长按的那条助手消息的正文 | `message.actions` | 16 KiB |
 
 - App 在插件首次被点按前提示一次，用户拒绝就不附带。
@@ -160,7 +160,7 @@ export function apply(ctx) {
 |---|---|---|
 | `panel` | `panel(id, { view, data?, actions? }) → dispose` | `view`：视图对象，或 `(scope, caps) => 视图 \| Promise<视图>`。`data`：`(scope, emit, caps) => 取消函数 \| void \| Promise<…>`。`actions`：`{ <action>: handler }`，处理视图里按钮 / options / confirm 的点按 |
 | `strip` | `strip(id, { data })` 或 `strip(id, dataFn) → dispose` | `dataFn` 同面板的 `data`：`(scope, emit, caps)`。数据形状固定为 `{ text, icon?, tone? }`（§4.5） |
-| `on` | `on(id, handler) → dispose` | 处理 `composer.actions` / `message.actions` / strip 的点按；面板没给 `actions` 表时，面板里的点按也落到这里（`event.action` 区分） |
+| `on` | `on(id, handler) → dispose` | 处理 `composer.actions` / `message.actions` / `composer.tools` / `session.actions` / strip 的点按；面板没给 `actions` 表时，面板里的点按也落到这里（`event.action` 区分） |
 | `refresh` | `refresh(id, scope?)` | 声明视图变了：桥接给订阅了该面板（且 scope 匹配）的连接发 `stale`，App 重新 GET 视图 |
 | `v` / `bridge` | 只读属性 | 协议主版本 `1`；桥接版本字符串 |
 
@@ -399,7 +399,7 @@ HTTP 错误（守卫的 401/403/503 除外）的正文：
   "v": 1,
   "pkg": "dsh-go-example-quick",
   "id": "translate",                  // 贡献 id（面板点按时是面板 id）
-  "surface": "composer.actions",      // composer.actions | message.actions | composer.strip | panel
+  "surface": "composer.actions",      // composer.actions | message.actions | composer.tools | session.actions | composer.strip | panel
   "action": "refresh",                // 仅 panel：视图里按钮 / options / confirm 的 action 名（1–64 字符）
   "value": "b",                       // 仅 panel：options 选中的值等，任意 JSON，≤ 4 KiB
   "scope": { "sessionId": "…" },

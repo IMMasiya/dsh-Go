@@ -194,3 +194,68 @@ test('an async data function: its late cleanup still runs, its failure is record
   await bad.settled
   assert.deepEqual(bad.errors, ['boom'])
 })
+
+test('removing a registration ends its feeds, as the bridge does', () => {
+  const host = createTestHost({ pkg: pkg({ v: 1, contributes: { 'turn.note': [{ id: 'note' }], 'composer.strip': [{ id: 'line' }], panels: [{ id: 'main', title: '面板' }] } }), dir: '/nonexistent' })
+  const cleaned = []
+  const emits = {}
+  const data = (id) => (_s, emit) => {
+    emits[id] = emit
+    return () => { cleaned.push(id) }
+  }
+  const dispose = {}
+  host.ctx.inject(['dshGo'], (ctx) => {
+    dispose.note = ctx.dshGo.turnNote('note', data('note'))
+    dispose.line = ctx.dshGo.strip('line', data('line'))
+    dispose.main = ctx.dshGo.panel('main', { view: { type: 'text', text: 'x' }, data: data('main') })
+  })
+  const feeds = { note: host.subscribe('note'), line: host.subscribe('line'), main: host.subscribe('main') }
+  for (const id of ['note', 'line', 'main']) {
+    dispose[id]()
+    assert.ok(cleaned.includes(id), id)
+    emits[id](id === 'note' ? { 1: { text: 'late' } } : { text: 'late' })
+    assert.deepEqual(feeds[id].history, [], `${id}: nothing after removal`)
+  }
+  dispose.note()
+  assert.equal(cleaned.length, 3, 'a second dispose does nothing')
+})
+
+test('replacing a registration ends the old feed; the old disposer leaves the new one alone', () => {
+  const host = createTestHost({ pkg: pkg({ v: 1, contributes: { 'turn.note': [{ id: 'note' }] } }), dir: '/nonexistent' })
+  const cleaned = []
+  const data = (name) => () => () => { cleaned.push(name) }
+  let first
+  host.ctx.inject(['dshGo'], (ctx) => {
+    first = ctx.dshGo.turnNote('note', data('first'))
+    host.subscribe('note')
+    ctx.dshGo.turnNote('note', data('second'))
+    assert.deepEqual(cleaned, ['first'])
+    const second = host.subscribe('note')
+    first()
+    assert.deepEqual(cleaned, ['first'], 'the second registration and its feed are still there')
+    assert.deepEqual(host.registrations().notes, ['note'])
+    second.stop()
+    assert.deepEqual(cleaned, ['first', 'second'])
+  })
+})
+
+test('a cleanup that fails is recorded, however it fails', async () => {
+  const subscribe = (data) => {
+    const host = createTestHost({ pkg: pkg({ v: 1, contributes: { 'turn.note': [{ id: 'note' }] } }), dir: '/nonexistent' })
+    host.ctx.inject(['dshGo'], (ctx) => ctx.dshGo.turnNote('note', data))
+    return host.subscribe('note')
+  }
+  const tick = () => new Promise((done) => setImmediate(done))
+  const throws = subscribe(() => () => { throw new Error('thrown') })
+  throws.stop()
+  assert.deepEqual(throws.errors, ['thrown'])
+  const rejects = subscribe(() => async () => { throw new Error('rejected') })
+  rejects.stop()
+  await tick()
+  assert.deepEqual(rejects.errors, ['rejected'])
+  const late = subscribe(async () => async () => { throw new Error('late') })
+  late.stop()
+  await late.settled
+  await tick()
+  assert.deepEqual(late.errors, ['late'])
+})

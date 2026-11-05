@@ -218,3 +218,31 @@ test("core: removing a turn note's registration ends its feed", async (t) => {
   assert.equal(cancelled, 1);
   core.dispose();
 });
+
+test("requires, micro and reports go by the entry that was accepted, not an earlier one with its id", () => {
+  const effect = { type: "toast", text: "x" };
+  const { dir, pkg } = pkgDir("accepted-entry", {
+    v: 1,
+    capabilities: ["audio", "micro"],
+    contributes: {
+      micro: [{ id: "m" }],
+      // The first entry of each pair has no label or title, so it is rejected.
+      "composer.tools": [{ id: "t" }, { id: "t", label: "T", effect, requires: ["audio"] }, { id: "u" }, { id: "u", label: "U", effect, requires: ["voice"] }],
+      "session.actions": [{ id: "s", requires: ["audio"] }, { id: "s", label: "S", effect }],
+      panels: [{ id: "p" }, { id: "p", title: "P", micro: "m" }, { id: "gone" }],
+      "composer.actions": [{ id: "a" }, { id: "a", label: "A", effect: { type: "open", page: "panel:gone" } }],
+    },
+  });
+  const parsed = parseManifest(pkg, dir);
+  const row = renderPlugin(parsed, { versions: [1], app: "1.0.0", locale: "zh", features: [] }, {
+    panels: new Map(), strips: new Set(), notes: new Set(), handlers: new Set(), degraded: false, runtimeIssues: [],
+  }).contributes;
+  assert.deepEqual(row["composer.tools"][0].requires, ["audio"]);
+  assert.equal(row["composer.tools"][0].ready, false, "the valid tool keeps its requirement");
+  assert.equal(row["session.actions"][0].requires, undefined, "a rejected entry's requirement isn't borrowed");
+  assert.equal(row["session.actions"][0].ready, true);
+  assert.equal(row.panels[0].micro, "m");
+  const found = codes(parsed.issues);
+  assert.ok(found.includes("invalid-field@/dshGo/contributes/composer.tools/3/requires"), found.join());
+  assert.ok(found.includes("invalid-field@/dshGo/contributes/composer.actions/1"), found.join());
+});

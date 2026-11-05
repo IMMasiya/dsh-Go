@@ -34,7 +34,7 @@
           "message"
         ]
       },
-      "description": "Content attached to taps: draft/clipboard on composer.actions, message on message.actions."
+      "description": "Content attached to taps: draft/clipboard on composer.actions and composer.tools, message on message.actions."
     },
     "assets": {
       "$ref": "#/$defs/relativePath",

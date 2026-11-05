@@ -44,6 +44,17 @@ function stripValue(d) {
   return out
 }
 
+const recordFailure = (feed) => (error) => { feed.errors.push(String(error?.message ?? error)) }
+
+/** A feed's cleanup as the bridge runs it: it may be async, and no failure of it escapes. */
+function runCleanup(fn, failed) {
+  try {
+    Promise.resolve(fn()).catch(failed)
+  } catch (error) {
+    failed(error)
+  }
+}
+
 class HostError extends Error {
   constructor(status, code, message) {
     super(`${status} ${code}: ${message}`)
@@ -82,6 +93,26 @@ export function createTestHost(options = {}) {
     }
   }
 
+  const stopFeeds = (id) => {
+    for (const feed of [...feeds]) {
+      if (feed.id !== id) continue
+      feed.stop()
+      feeds.delete(feed)
+    }
+  }
+
+  // As the bridge does: replacing or removing a registration ends its feeds, and the disposer of
+  // one that was replaced leaves its successor alone.
+  const addFeedSource = (map, id, reg) => {
+    if (map.has(id)) stopFeeds(id)
+    map.set(id, reg)
+    return () => {
+      if (map.get(id) !== reg) return
+      map.delete(id)
+      stopFeeds(id)
+    }
+  }
+
   const dshGo = {
     v: PROTOCOL,
     bridge: 'test-host',
@@ -90,25 +121,25 @@ export function createTestHost(options = {}) {
       if (!isPlainObject(def) || !(isPlainObject(def.view) || typeof def.view === 'function')) throw new TypeError('dshGo.panel: { view } is required (an object or a function)')
       if (def.data !== undefined && typeof def.data !== 'function') throw new TypeError('dshGo.panel: data must be a function (scope, emit) => cancel')
       if (def.actions !== undefined && (!isPlainObject(def.actions) || Object.values(def.actions).some((f) => typeof f !== 'function'))) throw new TypeError('dshGo.panel: actions must map names to functions')
-      regs.panels.set(id, { view: def.view, data: def.data, actions: def.actions })
+      const dispose = addFeedSource(regs.panels, id, { view: def.view, data: def.data, actions: def.actions })
       undeclared('panels', id)
-      return () => regs.panels.delete(id)
+      return dispose
     },
     turnNote(id, def) {
       if (typeof id !== 'string' || !ID.test(id)) throw new TypeError(`dshGo.turnNote: id must match ${ID}`)
       const data = typeof def === 'function' ? def : def?.data
       if (typeof data !== 'function') throw new TypeError('dshGo.turnNote: pass (scope, emit) => cancel or { data }')
-      regs.notes.set(id, { data })
+      const dispose = addFeedSource(regs.notes, id, { data })
       undeclared('notes', id)
-      return () => regs.notes.delete(id)
+      return dispose
     },
     strip(id, def) {
       if (typeof id !== 'string' || !ID.test(id)) throw new TypeError(`dshGo.strips: id must match ${ID}`)
       const data = typeof def === 'function' ? def : def?.data
       if (typeof data !== 'function') throw new TypeError('dshGo.strip: pass (scope, emit) => cancel or { data }')
-      regs.strips.set(id, { data })
+      const dispose = addFeedSource(regs.strips, id, { data })
       undeclared('strips', id)
-      return () => regs.strips.delete(id)
+      return dispose
     },
     media(id, handler) {
       if (typeof id !== 'string' || !ID.test(id) || typeof handler !== 'function') throw new TypeError('invalid media registration')
@@ -337,9 +368,14 @@ export function createTestHost(options = {}) {
       const def = regs.micro.get(id)
       if (!caps.features?.includes('micro') || !parsed.capabilities?.includes('micro') || !(parsed.items.micro ?? []).some(x => x.id === id) || !def) throw new HostError(404, 'not-found', 'no micro')
       let closed = false, cancel
-      const feed = { id, scope, data: undefined, history: [], errors: [], stale: 0, stop() { if (closed) return; closed = true; cancel?.() } }
+      const feed = { id, scope, data: undefined, history: [], errors: [], stale: 0, settled: Promise.resolve(), stop() { if (closed) return; closed = true; if (cancel) runCleanup(cancel, failed) } }
+      const failed = recordFailure(feed)
       const emit = value => { if (closed) return; const model = microModel(value); if (!model) { feed.errors.push('invalid micro model'); return } feed.data = model; feed.history.push(model) }
-      Promise.resolve(def.data({ ...scope }, emit, { protocol: 1, locale: caps.locale })).then(fn => { if (typeof fn === 'function') { if (closed) fn(); else cancel = fn } })
+      feed.settled = Promise.resolve(def.data({ ...scope }, emit, { protocol: 1, locale: caps.locale })).then(fn => {
+        if (typeof fn !== 'function') return
+        if (closed) runCleanup(fn, failed)
+        else cancel = fn
+      }).catch(failed)
       feeds.add(feed)
       return feed
     },
@@ -371,8 +407,8 @@ export function createTestHost(options = {}) {
     /**
      * Start the data function of panel, strip or turn note `id` for `scope`. `feed.data` is the
      * latest value as the app would hold it (nulls dropped, strip text cut to 24); `feed.history`
-     * all of them; `feed.settled` resolves once the data function has finished starting. No 4 Hz
-     * throttling here: every emit is recorded.
+     * all of them; `feed.settled` resolves once the data function has finished starting. Removing
+     * or replacing the registration stops the feed. No 4 Hz throttling here: every emit is recorded.
      */
     subscribe(id, scope = {}) {
       // As the bridge does: the manifest says what this id is, whatever else is registered under it.
@@ -387,9 +423,10 @@ export function createTestHost(options = {}) {
           stopped = true
           const fn = cancel
           cancel = undefined
-          if (typeof fn === 'function') fn()
+          if (typeof fn === 'function') runCleanup(fn, failed)
         },
       }
+      const failed = recordFailure(feed)
       if (typeof dataFn !== 'function') {
         feed.data = null
         return feed
@@ -413,14 +450,13 @@ export function createTestHost(options = {}) {
         feed.data = value
         feed.history.push(value)
       }
-      const failed = (error) => { feed.errors.push(String(error?.message ?? error)) }
       try {
         const result = dataFn({ ...scope }, emit, { protocol: caps.protocol, locale: caps.locale })
         if (typeof result === 'function') cancel = result
         // A cleanup that arrives after stop() still has to run.
         else feed.settled = Promise.resolve(result).then((fn) => {
           if (typeof fn !== 'function') return
-          if (stopped) fn()
+          if (stopped) runCleanup(fn, failed)
           else cancel = fn
         }).catch(failed)
       } catch (error) {
