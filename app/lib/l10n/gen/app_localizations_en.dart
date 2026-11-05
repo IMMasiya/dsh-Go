@@ -6587,6 +6587,9 @@ class L10nEn extends L10n {
   String get featuresRepeatAdvanced => 'Advanced';
 
   @override
+  String get featuresRepeatCustom => 'Custom';
+
+  @override
   String get featuresIntervalSeconds => 'Seconds';
 
   @override
