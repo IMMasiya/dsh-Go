@@ -233,6 +233,11 @@ class ApkDownloader {
     }
     if (expectedSize != null && offset == expectedSize && offset > 0) return _Step.complete;
 
+    // A failed cache check or prior source may have left the caller verifying.
+    // Report the actual resume point before waiting for response headers.
+    onProgress?.call(DownloadProgress(received: offset, total: expectedSize, source: url.label));
+    if (cancel?.isCancelled ?? false) return _Step.cancelled;
+
     final UpdateHttpResponse response;
     try {
       response = await http.get(
