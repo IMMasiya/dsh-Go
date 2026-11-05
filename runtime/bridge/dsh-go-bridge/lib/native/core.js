@@ -17,7 +17,7 @@ const TRACKER = Symbol.for("cordis.tracker");
 const SCAN_MAX_AGE_MS = 2000;
 const CHANGED_DEBOUNCE_MS = 300;
 const SELF = "dsh-go-bridge";
-const REG_NAMES = { panels: "panel", strips: "strip", handlers: "on", media: "media", micro: "micro", capability: "onCapability" };
+const REG_NAMES = { panels: "panel", strips: "strip", notes: "turnNote", handlers: "on", media: "media", micro: "micro", capability: "onCapability" };
 
 /** Loader entry owning a fiber (walks up through `ctx.inject` sub-fibers). */
 export function entryOf(fiber) {
@@ -198,6 +198,7 @@ export class NativeCore {
     return {
       panels,
       strips: new Set(regs?.strips.keys() ?? []),
+      notes: new Set(regs?.notes.keys() ?? []),
       handlers: new Set(regs?.handlers.keys() ?? []),
       degraded: h?.degraded === true,
       runtimeIssues: [...(h?.issues.values() ?? [])],
@@ -359,9 +360,9 @@ export class NativeCore {
       if (def.data !== undefined && typeof def.data !== "function") throw new TypeError("dshGo.panel: data must be a function (scope, emit) => cancel");
       if (def.actions !== undefined && (!isPlainObject(def.actions) || Object.values(def.actions).some((f) => typeof f !== "function"))) throw new TypeError("dshGo.panel: actions must map names to functions");
       value = { view: def.view, data: def.data, actions: def.actions };
-    } else if (kind === "strips" || kind === "micro") {
+    } else if (kind === "strips" || kind === "micro" || kind === "notes") {
       const data = typeof def === "function" ? def : def?.data;
-      if (typeof data !== "function") throw new TypeError(`dshGo.${kind === "micro" ? "micro" : "strip"}: pass (scope, emit) => cancel or { data }`);
+      if (typeof data !== "function") throw new TypeError(`dshGo.${REG_NAMES[kind]}: pass (scope, emit) => cancel or { data }`);
       value = { data };
     } else {
       if (typeof def !== "function") throw new TypeError(`dshGo.${REG_NAMES[kind]}: handler must be a function`);
@@ -377,20 +378,20 @@ export class NativeCore {
   #add(pkg, kind, id, def, token) {
     let regs = this.regs.get(pkg);
     if (regs === undefined) {
-      regs = { panels: new Map(), strips: new Map(), handlers: new Map(), media: new Map(), micro: new Map(), capability: new Map() };
+      regs = { panels: new Map(), strips: new Map(), notes: new Map(), handlers: new Map(), media: new Map(), micro: new Map(), capability: new Map() };
       this.regs.set(pkg, regs);
     }
     const count = Object.values(regs).reduce((n, entries) => n + entries.size, 0);
     if (count === 0) this.#resetHealth(pkg);
     const replaced = regs[kind].has(id);
     regs[kind].set(id, { def, token });
-    if (replaced && (kind === "panels" || kind === "strips")) for (const feed of [...this.feeds.values()]) if (feed.pkg === pkg && feed.id === id) feed.stop("not-found");
+    if (replaced && (kind === "panels" || kind === "strips" || kind === "notes")) for (const feed of [...this.feeds.values()]) if (feed.pkg === pkg && feed.id === id) feed.stop("not-found");
     const rec = this.plugin(pkg);
     const declared = rec?.parsed.ids.get(id);
     const ok = kind === "capability" ? (rec?.parsed.capabilities?.length ?? 0) > 0
       : kind === "media" || kind === "micro" ? declared === kind
       : kind === "handlers" ? declared !== undefined
-      : kind === "panels" ? declared === "panels" : declared === "composer.strip";
+      : kind === "panels" ? declared === "panels" : kind === "notes" ? declared === "turn.note" : declared === "composer.strip";
     if (!ok) {
       const what = kind === "capability" ? "onCapability() needs dshGo.capabilities" : `${REG_NAMES[kind]}("${id}") is not declared in dshGo.contributes`;
       this.runtimeIssue(pkg, `undeclared:${kind}:${id}`, { path: `/runtime/${id}`, code: "undeclared", severity: "warn", message: `${what}; ignored` });
@@ -429,6 +430,7 @@ export class NativeCore {
       bridge: this.version,
       panel(id, def) { return core.#register(this?.ctx, "panels", id, def); },
       strip(id, def) { return core.#register(this?.ctx, "strips", id, def); },
+      turnNote(id, def) { return core.#register(this?.ctx, "notes", id, def); },
       media(id, handler) { return core.#register(this?.ctx, "media", id, handler); },
       micro(id, def) { return core.#register(this?.ctx, "micro", id, def); },
       onCapability(handler) { return core.#register(this?.ctx, "capability", "events", handler); },
@@ -457,7 +459,7 @@ export class NativeCore {
       if (idle.length === 0) return undefined;
       idle[0].stop();
     }
-    const reg = this.registration(pkg, kind === "strip" ? "strips" : "panels", id);
+    const reg = this.registration(pkg, kind === "strip" ? "strips" : kind === "note" ? "notes" : "panels", id);
     feed = new Feed(this, key, pkg, id, kind, scope.scope, reg?.def.data, typeof locale === "string" ? locale : "");
     this.feeds.set(key, feed);
     feed.start();
@@ -483,6 +485,21 @@ export class NativeCore {
 }
 
 /** Strip data -> {text, icon?, tone?} | null, or undefined when malformed. */
+/** `{ turnId: { text, tone? } }` → the same, cut to size; the newest turns when there are too many. */
+function sanitizeNotes(d) {
+  if (d === null || d === undefined) return null;
+  if (!isPlainObject(d)) return undefined;
+  const out = {};
+  for (const [turn, note] of Object.entries(d).slice(-LIMITS.turnNotesPerFeed)) {
+    if (!isPlainObject(note) || typeof note.text !== "string" || turn.length > 64) continue;
+    const text = cleanLine(note.text);
+    if (text === "") continue;
+    out[turn] = { text: chars(text) > LIMITS.textChars.turnNote ? truncateChars(text, LIMITS.textChars.turnNote) : text };
+    if (TONES.includes(note.tone)) out[turn].tone = note.tone;
+  }
+  return out;
+}
+
 function sanitizeStrip(d) {
   if (d === null || d === undefined) return null;
   if (!isPlainObject(d)) return undefined;
@@ -555,6 +572,9 @@ export class Feed {
     if (this.kind === "strip") {
       value = sanitizeStrip(d);
       if (value === undefined) return this.core.violation(this.pkg, "bad-data", `strip(${this.id}) emitted a non-object`);
+    } else if (this.kind === "note") {
+      value = sanitizeNotes(d);
+      if (value === undefined) return this.core.violation(this.pkg, "bad-data", `turnNote(${this.id}) emitted a non-object`);
     } else {
       if (d !== null && !isPlainObject(d)) return this.core.violation(this.pkg, "bad-data", `data(${this.id}) emitted a non-object`);
       const json = toJson(d);

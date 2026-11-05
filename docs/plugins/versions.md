@@ -34,6 +34,15 @@ NA 的破坏性变化需要另升主版本。视图 v2 则是明确选择的新�
 
 v1 golden 仍用原基准，不因 v2 更新；v2 的浅深色、窄屏、大字号用独立 golden。工具卡中已有 v1 字段的含义不变。
 
+## 较新的位置
+
+`composer.tools`、`session.actions`、`turn.note`、面板 `placement: "plugin"`、`presentation: "sheet"` 在协议 v1 内增加，不改已有含义。App 在 `caps.surfaces` 里列出自己能画的；视图函数用 `hasSurface(caps, …)` 判断。
+
+| 组合 | 结果 |
+|---|---|
+| 新桥接 + 老 App | 老 App 忽略这些键。只放在 `plugin` 的面板退回 `session.tab`，不会消失；`presentation` 被忽略，仍然推页 |
+| 老桥接 + 新 App | 这些键不存在，也不算错误；清单里写了新位置时老桥接记一条 `unknown-surface` |
+
 ## NA v1.3：选择文件
 
 新增可选能力 `files`、直接点按效果 `pickFile` / `pickImage`、invoke 可选字段 `userGesture`，以及桥接专用的有界上传/一次性读取句柄。协议主版本仍为 `1`，NA 的小版本与视图版本分别演进。

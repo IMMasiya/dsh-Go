@@ -34,6 +34,15 @@ The later `emptyState` and `gallery` follow the same rule: an older app draws a 
 
 Existing v1 golden baselines are unchanged. V2 light, dark, narrow-screen and enlarged-text cases have separate goldens. Old fields in stored tool cards retain their meanings.
 
+## Newer places
+
+`composer.tools`, `session.actions`, `turn.note`, panel `placement: "plugin"` and `presentation: "sheet"` were added within protocol v1 and change no existing meaning. The app lists what it can draw in `caps.surfaces`; view functions check with `hasSurface(caps, …)`.
+
+| Combination | Result |
+|---|---|
+| New bridge + old app | The old app ignores these keys. A panel placed only in `plugin` falls back to `session.tab` and doesn't vanish; `presentation` is ignored and it pushes a page |
+| Old bridge + new app | The keys are absent, which is not an error; a manifest using a new place gets one `unknown-surface` issue from the old bridge |
+
 ## NA v1.3: selected files
 
 Adds the optional `files` capability, direct-tap effects `pickFile` / `pickImage`, optional invoke field `userGesture`, and bounded bridge uploads with one-shot read handles. The protocol major version stays `1`; NA minor revisions and view versions evolve separately.
