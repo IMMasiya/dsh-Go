@@ -11,7 +11,8 @@ import java.util.zip.GZIPInputStream
 import org.tukaani.xz.XZInputStream
 
 /**
- * Streaming tar extractor for the rootfs bundle (.tar.gz / .tar.xz / .tar).
+ * Streaming tar extractor for the rootfs bundle (.tar.gz / .tar.xz / .tar; .tar.zst is
+ * decompressed by RuntimeInstaller's bundled zstd before a plain .tar reaches this class).
  *
  * Handles ustar, GNU long names ('L'/'K') and pax headers ('x'); restores modes and
  * symlinks; turns hardlinks into copies (no hardlinks across app storage needed).

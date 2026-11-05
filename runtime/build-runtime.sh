@@ -5,7 +5,8 @@
 #
 #   runtime/build-runtime.sh                 # both ABIs (x86_64 first)
 #   runtime/build-runtime.sh x86_64          # one ABI
-#   COMPRESS=gz runtime/build-runtime.sh     # .tar.gz instead of .tar.xz
+#   COMPRESS=gz runtime/build-runtime.sh     # .tar.gz instead of .tar.zst (zst is the default)
+#   COMPRESS=xz runtime/build-runtime.sh     # .tar.xz: smaller but ~5-10x slower to unpack on-device
 #   RUNTIME_OUT=/path runtime/build-runtime.sh   # stage outputs outside runtime/out (not packaged)
 #
 # The DSH tree is patched with runtime/patches/*.diff (pinned per DSH version in
@@ -50,9 +51,15 @@ SHMEM_VERSION="0.7"
 UBUNTU_EXTRA="${UBUNTU_EXTRA:-tzdata ca-certificates git}"   # extra noble debs (+ dependency closure)
 PYTHON_VERSION="${PYTHON_VERSION:-3.12.15}"
 PBS_RELEASE="${PBS_RELEASE:-20261021}"    # astral-sh/python-build-standalone release tag
-COMPRESS="${COMPRESS:-xz}"          # xz | gz
+COMPRESS="${COMPRESS:-zst}"          # zst | xz | gz  (zstd decodes ~5-10x faster on-device)
 XZ_PRESET="${XZ_PRESET:-6}"         # 8 MiB dictionary: modest memory for xz-java on phones
 XZ_THREADS="${XZ_THREADS:-4}"       # each xz -6 worker needs ~100 MiB; output does not depend on this
+ZSTD_LEVEL="${ZSTD_LEVEL:-9}"       # zstd -9: good ratio, still decodes far faster than xz
+# Termux zstd CLI + the libraries it links (the app unpacks .tar.zst with this binary).
+ZSTD_VERSION="${ZSTD_VERSION:-1.5.7-1}"      # Termux package version (deb name / pin / jnilibs "version")
+ZSTD_LIB_VERSION="${ZSTD_LIB_VERSION:-1.5.7}"  # upstream library version = the .so filename inside the deb
+ZLIB_VERSION="${ZLIB_VERSION:-1.4}"
+LZMA_VERSION="${LZMA_VERSION:-5.8.4}"
 PRUNE_DEV_METADATA="${PRUNE_DEV_METADATA:-1}"   # drop *.map / *.d.ts from node_modules
 SOURCE_DATE_EPOCH="${SOURCE_DATE_EPOCH:-1767225600}"  # 2026-01-01T00:00:00Z, fixed tar mtimes
 
@@ -78,6 +85,12 @@ declare -A PIN=(
   [libtalloc_2.5.0_x86_64.deb]=b8c6d95f20075dc1f9ec6573575b2444e8d526e48e0d8d6d5cf4e071e6e06530
   [libandroid-shmem_0.7_aarch64.deb]=0da3a24d558b93c92bcf8d611e0826a99ff96e396b148e6cdf33b47c47c57ff6
   [libandroid-shmem_0.7_x86_64.deb]=ffa9e4c87467b158b148d0ff92dda796aa038276c2075af3269cdcdb06f25797
+  [zstd_1.5.7-1_aarch64.deb]=e1b4a5113648da8de189620ba1fce74c48b2d0833d9043391b9a1c91fb606fd3
+  [zstd_1.5.7-1_x86_64.deb]=a76ba6c3d8742819bf4fff7780eb2e022269412700fc8f4471f530cc0d81833f
+  [zlib_1.4_aarch64.deb]=e3027565ae50bcd8ba5113c988b589754ae192c9cc3e6afbe3e4ed7c06b2598e
+  [zlib_1.4_x86_64.deb]=55ab8f16e492d6ed03c2e2bf701af52cf54a313442dd7adedd3d6f3e3eba2e4f
+  [liblzma_5.8.4_aarch64.deb]=44e95e6e60dddb3705e60a344a4f009a1085a210797342b721eaff41b44033c0
+  [liblzma_5.8.4_x86_64.deb]=100ea7503a0b9ecffa45e1f168d035651f2eb7aedbebe71dd21fc0da4a84ef16
   [cpython-3.12.15+20261021-aarch64-unknown-linux-gnu-install_only_stripped.tar.gz]=b4567aa5a11f51b540c4dfd9e082ebf23e554f8ac17b85caa6cea23e83693394
   [cpython-3.12.15+20261021-x86_64-unknown-linux-gnu-install_only_stripped.tar.gz]=6d7521138fd33afddc1ccd08abb007d9a2829e38117c2576f9efdc0ec73ce772
   # GPL-2.0 source of the proot binary (same archive Termux's build recipe pins); used for COPYING.
@@ -88,7 +101,7 @@ log() { printf '\033[1;34m[runtime %s]\033[0m %s\n' "$(date +%H:%M:%S)" "$*" >&2
 die() { printf '\033[1;31m[runtime] error:\033[0m %s\n' "$*" >&2; exit 1; }
 sha256() { sha256sum "$1" | cut -d' ' -f1; }
 
-for tool in curl sha256sum python3 tar xz; do
+for tool in curl sha256sum python3 tar xz zstd; do
   command -v "$tool" >/dev/null || die "missing host tool: $tool"
 done
 
@@ -317,7 +330,7 @@ build_abi() {
   mkdir -p "$work"
   rm -rf "$out"; mkdir -p "$assets/licenses" "$jni"
 
-  local base node proot_deb talloc_deb shmem_deb proot_src
+  local base node proot_deb talloc_deb shmem_deb zstd_deb zlib_deb lzma_deb proot_src
   base="$(ubuntu_base "$ubuntu_arch")"
   node="$(node_dist "$node_arch")"
   ubuntu_extra_debs "$ubuntu_arch" "$base" > "$work/extra-debs.txt"   # set -e aborts on any failure inside
@@ -327,23 +340,39 @@ build_abi() {
   proot_deb="$(termux_deb proot "$PROOT_VERSION" "$termux_arch")"
   talloc_deb="$(termux_deb libtalloc "$TALLOC_VERSION" "$termux_arch")"
   shmem_deb="$(termux_deb libandroid-shmem "$SHMEM_VERSION" "$termux_arch")"
+  zstd_deb="$(termux_deb zstd "$ZSTD_VERSION" "$termux_arch")"
+  zlib_deb="$(termux_deb zlib "$ZLIB_VERSION" "$termux_arch")"
+  lzma_deb="$(termux_deb liblzma "$LZMA_VERSION" "$termux_arch")"
   proot_src="$CACHE/termux/proot-v$PROOT_VERSION.zip"
   fetch "https://github.com/termux/proot/archive/v$PROOT_VERSION.zip" "$proot_src" "$(pin_of "proot-v$PROOT_VERSION.zip")"
 
   # -- jniLibs: Termux binaries, renamed lib*.so so the package manager extracts them --
   local debx="$work/debs"; rm -rf "$debx"
   local d
-  for d in "$proot_deb" "$talloc_deb" "$shmem_deb"; do "${PY[@]}" deb-extract "$d" "$debx"; done
+  for d in "$proot_deb" "$talloc_deb" "$shmem_deb" "$zstd_deb" "$zlib_deb" "$lzma_deb"; do "${PY[@]}" deb-extract "$d" "$debx"; done
   local tprefix="$debx/data/data/com.termux/files/usr"
   cp "$tprefix/bin/proot"                  "$jni/libproot.so"
   cp "$tprefix/libexec/proot/loader"       "$jni/libproot-loader.so"
   cp "$tprefix/lib/libtalloc.so.$TALLOC_VERSION" "$jni/libtalloc.so"
   cp "$tprefix/lib/libandroid-shmem.so"    "$jni/libandroid-shmem.so"
-  local orig_proot orig_talloc
+  # zstd CLI + the shared libraries it links; the app runs it to unpack the rootfs.
+  cp "$tprefix/bin/zstd"                   "$jni/libzstd-cli.so"
+  cp "$tprefix/lib/libzstd.so.$ZSTD_LIB_VERSION" "$jni/libzstd.so"
+  cp "$tprefix/lib/libz.so.$ZLIB_VERSION"  "$jni/libz.so"
+  cp "$tprefix/lib/liblzma.so.$LZMA_VERSION" "$jni/liblzma.so"
+  local orig_proot orig_talloc orig_zstd_cli orig_zstd_lib orig_zlib orig_lzma
   orig_proot="$(sha256 "$jni/libproot.so")"; orig_talloc="$(sha256 "$jni/libtalloc.so")"
+  orig_zstd_cli="$(sha256 "$jni/libzstd-cli.so")"; orig_zstd_lib="$(sha256 "$jni/libzstd.so")"
+  orig_zlib="$(sha256 "$jni/libz.so")"; orig_lzma="$(sha256 "$jni/liblzma.so")"
   # APKs can only carry lib*.so, so the DT_NEEDED/SONAME "libtalloc.so.2" becomes "libtalloc.so".
   "${PY[@]}" patch-dynstr "$jni/libproot.so" libtalloc.so.2 libtalloc.so >&2
   "${PY[@]}" patch-dynstr "$jni/libtalloc.so" libtalloc.so.2 libtalloc.so >&2
+  "${PY[@]}" patch-dynstr "$jni/libzstd-cli.so" libzstd.so.1 libzstd.so >&2
+  "${PY[@]}" patch-dynstr "$jni/libzstd-cli.so" libz.so.1 libz.so >&2
+  "${PY[@]}" patch-dynstr "$jni/libzstd-cli.so" liblzma.so.5 liblzma.so >&2
+  "${PY[@]}" patch-dynstr "$jni/libzstd.so" libzstd.so.1 libzstd.so >&2
+  "${PY[@]}" patch-dynstr "$jni/libz.so" libz.so.1 libz.so >&2
+  "${PY[@]}" patch-dynstr "$jni/liblzma.so" liblzma.so.5 liblzma.so >&2
   chmod 0755 "$jni"/*.so
   "${PY[@]}" elf-info "$jni"/*.so > "$work/jni-elf.json"
 
@@ -358,6 +387,14 @@ src = {
   "libtalloc.so": ("libtalloc", "$TALLOC_VERSION", "$(basename "$talloc_deb")", "usr/lib/libtalloc.so.$TALLOC_VERSION",
                    "DT_SONAME libtalloc.so.2 -> libtalloc.so", "$orig_talloc"),
   "libandroid-shmem.so": ("libandroid-shmem", "$SHMEM_VERSION", "$(basename "$shmem_deb")", "usr/lib/libandroid-shmem.so", None, None),
+  "libzstd-cli.so": ("zstd", "$ZSTD_VERSION", "$(basename "$zstd_deb")", "usr/bin/zstd",
+                     "DT_NEEDED libzstd.so.1 -> libzstd.so, libz.so.1 -> libz.so, liblzma.so.5 -> liblzma.so", "$orig_zstd_cli"),
+  "libzstd.so": ("zstd", "$ZSTD_VERSION", "$(basename "$zstd_deb")", "usr/lib/libzstd.so.$ZSTD_LIB_VERSION",
+                 "DT_SONAME libzstd.so.1 -> libzstd.so", "$orig_zstd_lib"),
+  "libz.so": ("zlib", "$ZLIB_VERSION", "$(basename "$zlib_deb")", "usr/lib/libz.so.$ZLIB_VERSION",
+              "DT_SONAME libz.so.1 -> libz.so", "$orig_zlib"),
+  "liblzma.so": ("liblzma", "$LZMA_VERSION", "$(basename "$lzma_deb")", "usr/lib/liblzma.so.$LZMA_VERSION",
+                 "DT_SONAME liblzma.so.5 -> liblzma.so", "$orig_lzma"),
 }
 res = {}
 for name, (pkg, ver, deb, inner, patch, orig) in src.items():
@@ -382,6 +419,40 @@ open(sys.argv[2], "wb").write(z.read(name))
 PYEOF
   cp "$debx/data/data/com.termux/files/usr/share/doc/libandroid-shmem/copyright" "$assets/licenses/libandroid-shmem-copyright.txt"
   sed -n '1,/\*\//p' "$tprefix/include/talloc.h" > "$assets/licenses/libtalloc-notice.txt"
+  cp "$tprefix/share/doc/zlib/copyright" "$assets/licenses/zlib-copyright.txt"
+  cp "$tprefix/share/doc/liblzma/COPYING" "$assets/licenses/liblzma-COPYING.txt"
+  cat > "$assets/licenses/zstd-LICENSE.txt" <<'ZSTD_LICENSE'
+BSD License
+
+For Zstandard software
+
+Copyright (c) Meta Platforms, Inc. and affiliates. All rights reserved.
+
+Redistribution and use in source and binary forms, with or without modification,
+are permitted provided that the following conditions are met:
+
+ * Redistributions of source code must retain the above copyright notice, this
+   list of conditions and the following disclaimer.
+
+ * Redistributions in binary form must reproduce the above copyright notice,
+   this list of conditions and the following disclaimer in the documentation
+   and/or other materials provided with the distribution.
+
+ * Neither the name Facebook, nor Meta, nor the names of its contributors may
+   be used to endorse or promote products derived from this software without
+   specific prior written permission.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
+ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR
+ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+(INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON
+ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ZSTD_LICENSE
 
   # -- DSH --
   local prefix="$work/dsh-prefix"
@@ -400,16 +471,16 @@ PYEOF
   local pnpm_lockfile="$LOCKS/pnpm-$PNPM_VERSION/package-lock.json"
   local inputs_sha
   inputs_sha="$( {
-      echo "$RUNTIME_REVISION $abi $DSH_VERSION $NODE_VERSION $PNPM_VERSION $UBUNTU_VERSION $COMPRESS $XZ_PRESET $PRUNE_DEV_METADATA $SOURCE_DATE_EPOCH"
+      echo "$RUNTIME_REVISION $abi $DSH_VERSION $NODE_VERSION $PNPM_VERSION $UBUNTU_VERSION $COMPRESS $XZ_PRESET $ZSTD_LEVEL $ZSTD_LIB_VERSION $PRUNE_DEV_METADATA $SOURCE_DATE_EPOCH"
       sha256 "$base"; sha256 "$node"; sha256 "$python"; sha256sum "${extra_debs[@]}" | cut -d' ' -f1
-      sha256 "$proot_deb"; sha256 "$talloc_deb"; sha256 "$shmem_deb"
+      sha256 "$proot_deb"; sha256 "$talloc_deb"; sha256 "$shmem_deb"; sha256 "$zstd_deb"; sha256 "$zlib_deb"; sha256 "$lzma_deb"
       sha256 "$lockfile"; sha256 "$pnpm_lockfile"; sha256 "$HERE/build-runtime.sh"; sha256 "$HERE/lib/rtbuild.py"
       (cd "$HERE" && find patches bridge boot direct -type f -print0 | LC_ALL=C sort -z | xargs -0 sha256sum)
     } | sha256sum | cut -c1-12 )"
   local runtime_version="${RUNTIME_REVISION}-dsh${DSH_VERSION}-node${NODE_VERSION}-ubuntu${UBUNTU_VERSION}-${inputs_sha}"
   local runtime_info
-  runtime_info="$(printf '{"runtimeVersion":"%s","abi":"%s","dshVersion":"%s","nodeVersion":"%s","pnpmVersion":"%s","ubuntuVersion":"%s","prootVersion":"%s","dshPatches":%s,"dshGoBridge":"%s"}' \
-    "$runtime_version" "$abi" "$DSH_VERSION" "$NODE_VERSION" "$PNPM_VERSION" "$UBUNTU_VERSION" "$PROOT_VERSION" \
+  runtime_info="$(printf '{"runtimeVersion":"%s","abi":"%s","dshVersion":"%s","nodeVersion":"%s","pnpmVersion":"%s","ubuntuVersion":"%s","prootVersion":"%s","zstdVersion":"%s","dshPatches":%s,"dshGoBridge":"%s"}' \
+    "$runtime_version" "$abi" "$DSH_VERSION" "$NODE_VERSION" "$PNPM_VERSION" "$UBUNTU_VERSION" "$PROOT_VERSION" "$ZSTD_VERSION" \
     "$(cat "$work/dsh-patches.json")" "$bridge_version")"
 
   # -- rootfs archive --
@@ -418,7 +489,7 @@ PYEOF
   log "assembling rootfs ($COMPRESS)"
   "${PY[@]}" assemble --abi "$abi" --base "$base" --node "$node" --dsh-prefix "$prefix" --pnpm-prefix "$pnpm_prefix" \
     --out "$archive" --report "$out/build-report.json" --runtime-info "$runtime_info" \
-    --compress "$COMPRESS" --xz-preset "$XZ_PRESET" --threads "$XZ_THREADS" --epoch "$SOURCE_DATE_EPOCH" "${prune[@]}" \
+    --compress "$COMPRESS" --xz-preset "$XZ_PRESET" --zstd-level "$ZSTD_LEVEL" --threads "$XZ_THREADS" --epoch "$SOURCE_DATE_EPOCH" "${prune[@]}" \
     "${extra_debs[@]/#/--deb=}" --python "$python" --bridge "$bridge"
 
   local versions

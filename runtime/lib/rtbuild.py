@@ -1255,6 +1255,10 @@ def cmd_assemble(args):
         comp = subprocess.Popen(["xz", "-T%d" % args.threads, "-%s" % args.xz_preset, "-c"],
                                 stdin=subprocess.PIPE, stdout=open(out_tmp, "wb"))
         sink = comp.stdin
+    elif args.compress == "zst":
+        comp = subprocess.Popen(["zstd", "-%s" % args.zstd_level, "-c"],
+                                stdin=subprocess.PIPE, stdout=open(out_tmp, "wb"))
+        sink = comp.stdin
     else:
         comp = None
         raw = open(out_tmp, "wb")
@@ -1286,7 +1290,7 @@ def cmd_assemble(args):
     if comp is not None:
         comp.stdin.close()
         if comp.wait() != 0:
-            raise SystemExit("xz failed")
+            raise SystemExit("%s failed" % args.compress)
     else:
         sink.close()
         raw.close()
@@ -1417,7 +1421,8 @@ def cmd_manifest(args):
         "runtimeVersion": v["runtimeVersion"],
         "abi": args.abi,
         "rootfs": report["archive"],
-        "rootfsFormat": "tar.xz" if report["archive"].endswith(".xz") else "tar.gz",
+        "rootfsFormat": ("tar.xz" if report["archive"].endswith(".xz")
+                         else "tar.zst" if report["archive"].endswith(".zst") else "tar.gz"),
         "rootfsSha256": report["archiveSha256"],
         "rootfsBytes": report["archiveBytes"],
         "tarBytes": report["tarBytes"],
@@ -1517,8 +1522,9 @@ def main():
     p.add_argument("--out", required=True)
     p.add_argument("--report", required=True)
     p.add_argument("--runtime-info", required=True)
-    p.add_argument("--compress", choices=("xz", "gz"), default="xz")
+    p.add_argument("--compress", choices=("xz", "gz", "zst"), default="xz")
     p.add_argument("--xz-preset", default="6")
+    p.add_argument("--zstd-level", default="9")
     p.add_argument("--gzip-level", type=int, default=9)
     p.add_argument("--threads", type=int, default=0)
     p.add_argument("--epoch", type=int, default=1767225600)

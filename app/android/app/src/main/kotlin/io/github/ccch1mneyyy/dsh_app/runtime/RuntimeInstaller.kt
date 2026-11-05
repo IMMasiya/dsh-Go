@@ -5,6 +5,8 @@ import io.github.ccch1mneyyy.dsh_app.R
 import android.content.Context
 import android.content.res.AssetManager
 import java.io.File
+import java.io.FileInputStream
+import java.io.FileOutputStream
 import java.nio.channels.FileChannel
 import java.nio.file.Files
 import java.nio.file.StandardOpenOption
@@ -83,13 +85,15 @@ class RuntimeInstaller(
         }
         timed("extract") {
             val extractor = TarExtractor(staging, progress)
-            if (manifest.rootfsAsset.endsWith(".xz") && assetBytes > 0) {
-                val decoded = ParallelXZInputStream.open(
-                    { AssetSeekableInputStream(context.assets.openFd(assetPath)) }, progress,
-                )
-                extractor.extractDecoded(decoded)
-            } else {
-                context.assets.open(assetPath, AssetManager.ACCESS_STREAMING).use { raw ->
+            when {
+                manifest.rootfsAsset.endsWith(".zst") -> extractZstd(assetPath, progress)
+                manifest.rootfsAsset.endsWith(".xz") && assetBytes > 0 -> {
+                    val decoded = ParallelXZInputStream.open(
+                        { AssetSeekableInputStream(context.assets.openFd(assetPath)) }, progress,
+                    )
+                    extractor.extractDecoded(decoded)
+                }
+                else -> context.assets.open(assetPath, AssetManager.ACCESS_STREAMING).use { raw ->
                     extractor.extract(raw, manifest.rootfsAsset)
                 }
             }
@@ -112,11 +116,57 @@ class RuntimeInstaller(
     }
 
     private fun checkFreeSpace() {
-        val need = (manifest.uncompressedBytes.takeIf { it > 0 } ?: 600L * 1024 * 1024) * 115 / 100
+        val uncompressed = manifest.uncompressedBytes.takeIf { it > 0 } ?: 600L * 1024 * 1024
+        // zstd unpacks to a temp .tar before extraction: needs ~2x the unpacked size (+ the .tar.zst).
+        val zstdOverhead = if (manifest.rootfsAsset.endsWith(".zst")) {
+            uncompressed + (manifest.rootfsBytes.takeIf { it > 0 } ?: 0L)
+        } else 0L
+        val need = (uncompressed + zstdOverhead) * 115 / 100
         val free = context.filesDir.usableSpace
         if (free < need) {
             val mb = { b: Long -> b / (1024 * 1024) }
             throw IllegalStateException(AppStrings.get(context, R.string.service_storage_insufficient, mb(need), mb(free)))
+        }
+    }
+
+    /**
+     * Unpacks a .tar.zst asset: the bundled Termux zstd CLI (libzstd-cli.so, with libzstd.so /
+     * libz.so / liblzma.so beside it in the native library dir) decompresses it to a temp .tar,
+     * which [TarExtractor] then extracts. A missing library or a bad stream fails loudly (non-zero
+     * exit) instead of silently leaving a partial rootfs; the temp files are removed either way.
+     * [progress] reports compressed bytes read while the asset is copied out (the extraction that
+     * follows leaves the bar at its compressed total).
+     */
+    private fun extractZstd(assetPath: String, progress: (Long) -> Unit) {
+        val nativeDir = context.applicationInfo.nativeLibraryDir
+        val zstd = File(nativeDir, "libzstd-cli.so")
+        check(zstd.isFile) { "zstd CLI missing from native library dir" }
+        val zstTmp = File(staging, "rootfs.tar.zst")
+        val tarTmp = File(staging, "rootfs.tar")
+        try {
+            var read = 0L
+            context.assets.open(assetPath, AssetManager.ACCESS_STREAMING).use { input ->
+                FileOutputStream(zstTmp).use { out ->
+                    val buf = ByteArray(1 shl 16)
+                    while (true) {
+                        val n = input.read(buf)
+                        if (n < 0) break
+                        out.write(buf, 0, n)
+                        read += n
+                        progress(read)
+                    }
+                }
+            }
+            val builder = ProcessBuilder(zstd.path, "-d", "-f", "-o", tarTmp.path, zstTmp.path)
+            builder.environment()["LD_LIBRARY_PATH"] = nativeDir
+            val proc = builder.start()
+            val err = proc.errorStream.bufferedReader().use { it.readText() }
+            if (proc.waitFor() != 0) throw IllegalStateException("zstd unpack failed: ${err.trim()}")
+            // Progress already reached the compressed total; extract the .tar without touching it.
+            TarExtractor(staging) { }.extract(FileInputStream(tarTmp), ".tar")
+        } finally {
+            zstTmp.delete()
+            tarTmp.delete()
         }
     }
 
