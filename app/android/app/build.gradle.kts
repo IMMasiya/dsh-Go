@@ -12,6 +12,12 @@ val keyProps = Properties().apply {
     rootProject.file("key.properties").takeIf { it.exists() }?.inputStream()?.use { load(it) }
 }
 
+// Debug builds use the release key only when it is all there; they are never the build
+// that should stop over a half-filled key.properties.
+val hasWholeReleaseKey = listOf("storeFile", "storePassword", "keyAlias", "keyPassword")
+    .all { !keyProps.getProperty(it).isNullOrBlank() } &&
+    file(keyProps.getProperty("storeFile")).exists()
+
 // Per-ABI runtime bundles produced by runtime/build-runtime.sh.
 val runtimeOut = rootProject.file("../../runtime/out")
 
@@ -108,7 +114,7 @@ android {
         debug {
             // tooling/dev-run.sh installs debug over the release build on a phone, data
             // kept: Android only allows that with the same key.
-            if (!keyProps.isEmpty) signingConfig = signingConfigs.getByName("release")
+            if (hasWholeReleaseKey) signingConfig = signingConfigs.getByName("release")
         }
         release {
             // Use the release key when configured; local builds without key.properties fall back to debug.
