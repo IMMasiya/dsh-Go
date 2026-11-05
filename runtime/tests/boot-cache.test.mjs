@@ -6,8 +6,8 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
-import { fileURLToPath } from 'node:url';
-import { install, createBootCache, PASS } from '../boot/boot-cache.mjs';
+import { fileURLToPath, pathToFileURL } from 'node:url';
+import { install, createBootCache, resolveExports, PASS } from '../boot/boot-cache.mjs';
 
 const MODULE = fileURLToPath(new URL('../boot/boot-cache.mjs', import.meta.url));
 
@@ -342,4 +342,78 @@ test('dot segments hidden in link targets preserve JS and native results with su
       }
     }
   } finally { stop(); fs.rmSync(t.base, { recursive: true, force: true }); }
+});
+
+// --- the ESM resolve short-circuit -----------------------------------------
+const IMPORT = ['node', 'import', 'default'];
+const REQUIRE = ['node', 'require', 'default'];
+
+test('resolveExports honors subpath, condition, array, pattern and null shapes', () => {
+  // js-yaml's real dual-package shape.
+  const jsyaml = {
+    '.': { import: './dist/js-yaml.mjs', require: './index.js' },
+    './package.json': './package.json',
+  };
+  assert.equal(resolveExports(jsyaml, '.', IMPORT), './dist/js-yaml.mjs');
+  assert.equal(resolveExports(jsyaml, '.', REQUIRE), './index.js');
+  assert.equal(resolveExports(jsyaml, './package.json', IMPORT), './package.json');
+  assert.equal(resolveExports(jsyaml, './lib/loader', IMPORT), null, 'unknown subpath is not exported');
+  assert.equal(resolveExports('./lib/index.js', '.', IMPORT), './lib/index.js', 'string exports apply to "."');
+  assert.equal(resolveExports('./lib/index.js', './x', IMPORT), null);
+  assert.equal(resolveExports(['./a.mjs', './b.mjs'], '.', IMPORT), './a.mjs', 'array falls back in order');
+  assert.equal(resolveExports([null, './b.mjs'], '.', IMPORT), './b.mjs');
+  const pattern = { './features/*': './src/features/*.js' };
+  assert.equal(resolveExports(pattern, './features/chat', IMPORT), './src/features/chat.js', '* patterns replace the capture');
+  assert.equal(resolveExports(pattern, './other/x', IMPORT), null);
+  assert.equal(resolveExports({ '.': null }, '.', IMPORT), null, 'null blocks the export');
+  assert.equal(resolveExports({ './x': './x.js' }, '.', IMPORT), null, 'no "." means the root is not exported');
+  // A matched condition that is null blocks; `default` is only a fallback when
+  // no earlier condition is a key, matching node:internal resolveExports.
+  assert.equal(resolveExports({ '.': { import: null, default: './fallback.mjs' } }, '.', IMPORT), null);
+  assert.equal(resolveExports({ '.': { default: './fallback.mjs' } }, '.', IMPORT), './fallback.mjs');
+  const nested = { '.': { node: { import: './node.mjs' }, default: './default.mjs' } };
+  assert.equal(resolveExports(nested, '.', IMPORT), './node.mjs', 'nested condition maps resolve recursively');
+});
+
+test('statCached answers Module._stat codes from the component cache', () => {
+  const t = tree();
+  const cache = createBootCache({ roots: t.roots });
+  assert.equal(cache.statCached(path.join(t.nm, 'dep/package.json')), 0, 'file');
+  assert.equal(cache.statCached(path.join(t.nm, 'dep')), 1, 'directory');
+  assert.equal(cache.statCached(path.join(t.nm, 'nope')), -2, 'ENOENT');
+  assert.equal(cache.statCached(path.join(t.nm, 'dep/package.json/x')), -20, 'ENOTDIR through a file');
+  assert.equal(cache.statCached(path.join(t.nm, '.bin/cli')), 0, 'a file link resolves its target kind');
+  assert.equal(cache.statCached(path.join(t.base, 'outside/target.js')), PASS, 'outside the roots');
+  // Kinds are remembered: a second call adds no syscalls.
+  const before = cache.statCached(path.join(t.nm, 'dep'));
+  assert.equal(before, 1);
+});
+
+test('the resolve hook short-circuits package and relative imports under the roots', async () => {
+  const t = tree();
+  const pkg = path.join(t.nm, 'esm-pkg');
+  fs.mkdirSync(path.join(pkg, 'lib'), { recursive: true });
+  fs.writeFileSync(path.join(pkg, 'lib/index.mjs'), 'export const a = 1;');
+  fs.writeFileSync(path.join(pkg, 'lib/index.cjs'), 'module.exports = { a: 2 };');
+  fs.writeFileSync(path.join(pkg, 'package.json'), JSON.stringify({
+    name: 'esm-pkg',
+    exports: { '.': { import: './lib/index.mjs', require: './lib/index.cjs' } },
+  }));
+  const probe = path.join(t.dsh, 'probe.mjs');
+  fs.writeFileSync(probe, "import { a } from 'esm-pkg';\nimport cjs from './node_modules/esm-pkg/lib/index.cjs';\nexport default { a, cjs };\n");
+  const { f, calls } = spyFs();
+  const uninstall = install({ roots: t.roots, fsImpl: f, stdout: fakeStdout() });
+  try {
+    const mod = await import(pathToFileURL(probe).href);
+    // The bare package goes through the "import" condition (esm, a=1), not the
+    // "require" entry (cjs, a=2); the relative .cjs loads as CJS (default).
+    assert.equal(mod.default.a, 1, "the hook resolves the package through its 'import' condition");
+    assert.equal(mod.default.cjs.a, 2, 'a relative .cjs import loads as CommonJS');
+    // Resolution is served from the component cache: canonicalize and exists
+    // were not asked (the hook answers the probes from lstat-cached kinds).
+    assert.equal(calls.realpath + calls.native + calls.exists, 0);
+  } finally {
+    uninstall();
+    fs.rmSync(t.base, { recursive: true, force: true });
+  }
 });
