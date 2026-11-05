@@ -275,8 +275,10 @@ class ChatTranscript {
     _durable = null;
     if (_traces case final traces?) _previousTraces = traces;
     _traces = null;
-    _todos = null;
-    _goal = null;
+    // Only these appended events change the two projections. Snapshots,
+    // history and replacements still invalidate both through appended == null.
+    if (appended == null || appended is TodoWriteEvent || appended is TurnStartedEvent) _todos = null;
+    if (appended == null || appended.type == 'goal/change' || appended.type == 'user/message') _goal = null;
   }
 
   List<ChatItem> get items {
