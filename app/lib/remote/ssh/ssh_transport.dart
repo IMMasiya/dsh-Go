@@ -219,6 +219,15 @@ class DartSshTransport implements SshTransport, RemoteBootstrapShell {
 
   static HostLinkError describeSshError(Object e, SshConnectParams params) {
     if (e is HostLinkError) return e;
+    // The connection went away or timed out before the server answered: nothing was rejected.
+    if (e is SSHAuthAbortError) {
+      return HostLinkError(
+        HostLinkErrorKind.unreachable,
+        appL10n.remoteErrSshInterrupted,
+        detail: '$e',
+        retryable: true,
+      );
+    }
     if (e is SSHAuthError) {
       return HostLinkError(
         HostLinkErrorKind.authFailed,
