@@ -1020,6 +1020,14 @@
         }
       }
     },
+    "zzzzzzzzz-session-live-fingerprint.diff": {
+      "0.2.2-rc.1": {
+        "node_modules/@deepseek-ai/dsh-session-query-sqlite/lib/index.js": {
+          "after": "df611a74e9110af10d2716a09ec8c67ba9f7d4e51d1edddc68e80d12c8d106f3",
+          "before": "f21d9f8742c86c55220ecb5808ef55571c9ad82de16d9efe89d317bb325c7a28"
+        }
+      }
+    },
     "zzzzzzzzz-stats-attempt-token.diff": {
       "0.2.1-rc.4": {
         "node_modules/@deepseek-ai/dsh-session-stats/lib/index.js": {
@@ -1173,6 +1181,14 @@
         "node_modules/@deepseek-ai/dsh-plugin-manager/lib/index.js": {
           "after": "51f9fdceb124cbd17fd6b65322a8a7dff7526738f9696e15db2b2a0e9e739842",
           "before": "4f615be658bc12600986f794b0b399b2c25df0b36dd89bda5dd0666cbf3df726"
+        }
+      }
+    },
+    "zzzzzzzzzzzzzz-plugin-manager-lock-lifetime.diff": {
+      "0.2.2-rc.1": {
+        "node_modules/@deepseek-ai/dsh-plugin-manager/lib/index.js": {
+          "after": "67261e96bd96782e6bdfebb5e5e167ba85ae8b22e9a27023d71d07bb5f248ae0",
+          "before": "51f9fdceb124cbd17fd6b65322a8a7dff7526738f9696e15db2b2a0e9e739842"
         }
       }
     }
