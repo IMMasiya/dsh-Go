@@ -82,8 +82,8 @@ DSH 可以直接运行在这台手机上（本机引擎），也可以运行在�
 
 连接默认自动尝试局域网 / P2P、TURN，最后回落 Relay，无需打开直连开关；相应路径需服务端与主机支持。点击连接卡或主机旁的网络标签，查看实际路径、连接耗时、可测的往返延迟和回落原因；WebRTC 路径还显示所选 ICE 候选的手机／主机 IPv4 或 IPv6、UDP 或 TCP，不显示原始 IP。未测量或无法确认的项目不会冒充已知结果。
 
-<!-- nav: commonSettings,commonRemoteHost,remoteTransferSettings,remoteCompactHistory -->
-`设置 › 远程主机 › 远程传输 › 精简历史`
+<!-- nav: commonSettings,commonRemoteHost,remoteCompactHistory -->
+`设置 › 远程主机 › 精简历史`
 
 **精简历史**默认关闭。开启后，支持的 DSH Remote 主机会把历史工具参数和输出转为摘要，减少历史传输量；正文、实时回复和审批不变，也不会修改主机原始记录。切换到其他主机（或本机）后再连回来，或重启 App 后生效；当前连接及其自动重连保留原模式，避免历史缓存混用。关闭后同样需要重新选择主机，再打开对话获取完整历史。旧主机没有该能力时仍传输完整历史，SSH 不受此设置影响。
 

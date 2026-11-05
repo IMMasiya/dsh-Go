@@ -82,8 +82,8 @@ No network setup, end-to-end encrypted. Good for computers on another network.
 
 Connections automatically try LAN / P2P, then TURN, and finally Relay without a direct-connection switch. Each path requires compatible server and Host support. Tap the route label on the connection card or beside a Host to see the actual route, connection time, available round-trip latency and fallback reason. WebRTC routes also show the selected ICE candidates' phone/Host IPv4 or IPv6 and UDP or TCP, never raw IP addresses. Unmeasured or unconfirmed values are not presented as known results.
 
-<!-- nav: commonSettings,commonRemoteHost,remoteTransferSettings,remoteCompactHistory -->
-`Settings › Remote host › Remote transfer › Compact history`
+<!-- nav: commonSettings,commonRemoteHost,remoteCompactHistory -->
+`Settings › Remote host › Compact history`
 
 **Compact history** is off by default. Supporting DSH Remote Hosts summarize historical tool arguments and output to reduce history transfer; message text, live replies, approvals and original Host records stay unchanged. Switch to another host (or this phone) and back, or restart the app, to apply. The current client and its automatic reconnects retain their original mode to avoid mixing cached history. After turning it off, select the host again and reopen the chat to load full history. Older Hosts continue sending full history; SSH is unaffected.
 
