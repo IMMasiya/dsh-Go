@@ -4,7 +4,7 @@ import { resolve, join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { installMedia, Config } from '../media/dsh-media/src/index.js';
+import { installMedia, Config } from '../src/index.js';
 
 // Actual rc.1 service lifecycle; no GC timing, HTTP supplier or Android action.
 const load = name => import(pathToFileURL(join(resolve(process.env.DSH_PREFIX), 'node_modules/@deepseek-ai', name, 'lib/index.js')));

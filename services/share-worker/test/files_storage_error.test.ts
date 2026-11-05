@@ -62,7 +62,7 @@ describe('download storage failures', () => {
     expect(response.status).toBe(500);
     expect(response.headers.get('Content-Range')).toBeNull();
     expect(await response.json()).toEqual({ error: 'internal' });
-    expect(get).toHaveBeenCalledWith(KEY, range ? { range: { offset: 8 } } : undefined);
+    expect(get).toHaveBeenCalledWith(KEY, range ? { range: { offset: 8 } } : {});
     expect(head).not.toHaveBeenCalled();
     expect(console.error).toHaveBeenCalledWith('unhandled', error.message);
   });
