@@ -95,6 +95,7 @@ class ComposerModelPill extends ConsumerWidget {
           // As wide as its words: the row's free space stays between it and the keys.
           child: Center(
             widthFactor: 1,
+            heightFactor: 1,
             child: Text(
               effort == null ? name : '$name ${effortLabel(effort)}',
               maxLines: 1,

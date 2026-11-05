@@ -347,6 +347,7 @@ void main() {
         ..._web,
         Slots.rightPaneTab: [seats.occupant(Slots.rightPaneTab, seats.probe, 'k4-tab')],
       });
+      expect(find.byKey(ValueKey('chat-plugins-page|${seats.probe}|k4-tab')), findsOneWidget);
       expect(otherPages(), findsNothing);
     });
   });

@@ -32,7 +32,9 @@ class ConversationOverview extends ConsumerWidget {
       onSelected: (selection) {
         if (!identical(ref.read(modelSelectionScopeProvider), scope) ||
             !identical(ref.read(activeConnectionProvider).value?.client, client) ||
-            ref.read(currentSessionProvider) != sessionId) {
+            ref.read(currentSessionProvider) != sessionId ||
+            // The list can learn what kind of subagent this is while the sheet is open.
+            ref.read(subagentParentProvider(sessionId))?.address.mode == SubagentMode.oneShot) {
           return;
         }
         ref.read(chatProvider(sessionId).notifier).setModel(selection);

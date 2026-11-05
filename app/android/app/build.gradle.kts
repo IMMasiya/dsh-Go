@@ -14,8 +14,9 @@ val keyProps = Properties().apply {
 
 // Debug builds use the release key only when it is all there; they are never the build
 // that should stop over a half-filled key.properties.
-val hasWholeReleaseKey = listOf("storeFile", "storePassword", "keyAlias", "keyPassword")
-    .all { !keyProps.getProperty(it).isNullOrBlank() } &&
+// A password may be nothing but spaces; a path or an alias may not.
+val hasWholeReleaseKey = listOf("storeFile", "keyAlias").all { !keyProps.getProperty(it).isNullOrBlank() } &&
+    listOf("storePassword", "keyPassword").all { !keyProps.getProperty(it).isNullOrEmpty() } &&
     file(keyProps.getProperty("storeFile")).exists()
 
 // Per-ABI runtime bundles produced by runtime/build-runtime.sh.

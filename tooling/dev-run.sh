@@ -128,11 +128,13 @@ grep -Eq 'flags=\[.*DEBUGGABLE' <<<"$package" ||
 # is listening: the app restarts a moment after attach is up, not before.
 (
   sleep "${DSH_ATTACH_WAIT:-10}"
+  # Too late to call off: a stop with no launch after it would leave the app closed.
+  trap '' TERM
   phone shell am force-stop "$PKG"
   phone shell monkey -p "$PKG" -c android.intent.category.LAUNCHER 1 >/dev/null 2>&1
 ) &
 restart=$!
-# An attach that gave up leaves the app alone.
+# An attach that gave up during the wait leaves the app alone.
 trap 'kill "$restart" 2>/dev/null || true' EXIT
 
 # --- reload
