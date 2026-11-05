@@ -21338,6 +21338,24 @@ abstract class L10n {
   /// **'请在这台主机上查看引擎日志。'**
   String get pluginsLoadRemoteLogs;
 
+  /// No description provided for @plugslotsSurfaceComposerTools.
+  ///
+  /// In zh, this message translates to:
+  /// **'加号面板'**
+  String get plugslotsSurfaceComposerTools;
+
+  /// No description provided for @plugslotsSurfaceSessionActions.
+  ///
+  /// In zh, this message translates to:
+  /// **'对话操作'**
+  String get plugslotsSurfaceSessionActions;
+
+  /// No description provided for @plugslotsSurfaceTurnNote.
+  ///
+  /// In zh, this message translates to:
+  /// **'回合尾注'**
+  String get plugslotsSurfaceTurnNote;
+
   /// No description provided for @plugslotsSurfaceComposerActions.
   ///
   /// In zh, this message translates to:

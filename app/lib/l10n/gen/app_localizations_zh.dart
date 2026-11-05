@@ -11594,6 +11594,15 @@ class L10nZh extends L10n {
   String get pluginsLoadRemoteLogs => '请在这台主机上查看引擎日志。';
 
   @override
+  String get plugslotsSurfaceComposerTools => '加号面板';
+
+  @override
+  String get plugslotsSurfaceSessionActions => '对话操作';
+
+  @override
+  String get plugslotsSurfaceTurnNote => '回合尾注';
+
+  @override
   String get plugslotsSurfaceComposerActions => '输入框按钮';
 
   @override
