@@ -1191,6 +1191,34 @@
           "before": "51f9fdceb124cbd17fd6b65322a8a7dff7526738f9696e15db2b2a0e9e739842"
         }
       }
+    },
+    "zzzzzzzzzzzzzzz-read-line-surrogate.diff": {
+      "0.2.2-rc.1": {
+        "node_modules/@deepseek-ai/dsh-tool-fs/lib/index.js": {
+          "after": "7146aa67fa9c1df61fc5472f6c52d814ef9e6ee41afcaca5f07c8ed7da175fae",
+          "before": "0e866969b6bf1aa93407ccd9c944b50bc27a1d961b7e4209ed60bd2b73d28805"
+        }
+      }
+    },
+    "zzzzzzzzzzzzzzzz-read-line-cr-truncation.diff": {
+      "0.2.2-rc.1": {
+        "node_modules/@deepseek-ai/dsh-tool-fs/lib/index.js": {
+          "after": "7272a6bfd420207046882ad93de64fd70146965e39b7f9c6ceefc6d1f64cc70e",
+          "before": "7146aa67fa9c1df61fc5472f6c52d814ef9e6ee41afcaca5f07c8ed7da175fae"
+        }
+      }
+    },
+    "zzzzzzzzzzzzzzzzz-web-fetch-unicode.diff": {
+      "0.2.2-rc.1": {
+        "node_modules/@deepseek-ai/dsh-tool-web/lib/index.js": {
+          "after": "08a37554c57a8a1a98b47489cd6a0c53c43b646060bdcc94b2b211bf04c2498c",
+          "before": "129af8e6bf485d47d3f5f562877b5c266fd57f1a5cc14bfebacc2780b2837d46"
+        },
+        "node_modules/@deepseek-ai/dsh-web-fetch-http/lib/index.js": {
+          "after": "4d6ebdc8be0404361aad52f75c4f4b3e264ba068dfaa0ba2a40f955d2337c064",
+          "before": "7dc058bdab2cbbe56cbd56593b4f1a1270fcb066928fc1b05d7541cb18c72937"
+        }
+      }
     }
   },
   "schema": 1
