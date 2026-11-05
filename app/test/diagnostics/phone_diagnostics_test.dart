@@ -11,6 +11,7 @@ import 'package:dsh_app/state/voice_settings.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'support/zip_reader.dart';
 
@@ -53,6 +54,7 @@ void main() {
   final calls = <String>[];
 
   setUp(() {
+    SharedPreferences.setMockInitialValues({});
     calls.clear();
     container = ProviderContainer(
       overrides: [
