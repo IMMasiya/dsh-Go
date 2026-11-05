@@ -1243,6 +1243,38 @@
           "before": "6be4e8f4fb318548f8233eab7f6e494407cd1ae4ea9e868a08177e9bf48a7aa9"
         }
       }
+    },
+    "zzzzzzzzzzzzzzzzzzzz-session-list-isolation.diff": {
+      "0.2.2-rc.1": {
+        "node_modules/@deepseek-ai/dsh-session-persistence-jsonl/lib/index.js": {
+          "after": "828b8e84e5f922d3b3d137ada0be4df3187bc5c82bb51ec3fa3384ca3efbf60b",
+          "before": "cc1902a25ff5e1e4c66cef2ee26f97c0543a35687eac0159c4cb9f0bd5d5c25d"
+        }
+      }
+    },
+    "zzzzzzzzzzzzzzzzzzzzz-turn-outline-unicode.diff": {
+      "0.2.2-rc.1": {
+        "node_modules/@deepseek-ai/dsh-session-turn-outline/lib/index.js": {
+          "after": "8df29b7ad951745340ec6d9a8af4abc77bc9b9a3d570ce4e5b0dba30e60f0e7b",
+          "before": "724f09b4c13de7cfb2b0a5ed5ccf776217e9e7d08ec6f458be8784e65069d78a"
+        }
+      }
+    },
+    "zzzzzzzzzzzzzzzzzzzzzz-context-summary-unicode.diff": {
+      "0.2.2-rc.1": {
+        "node_modules/@deepseek-ai/dsh-llm/lib/index.js": {
+          "after": "2f3e4c549b158136d6355c6e29f25bc09e31c622f31dbbc2e82bab7cd537eda0",
+          "before": "8e541fc98a11897706a122fde1db42f8b2a41b3b354ba3fcb932e9a16929ac6a"
+        }
+      }
+    },
+    "zzzzzzzzzzzzzzzzzzzzzzz-image-display-name-unicode.diff": {
+      "0.2.2-rc.1": {
+        "node_modules/@deepseek-ai/dsh-attachment-local/lib/index.js": {
+          "after": "393dd55f0e5967626b5657c27b88f5eb0383bc54bb8a751a9e5b5d9596fb8202",
+          "before": "ff717f87226b59d6224aff67796b43d5fd72b98d0e74fa91a952affaf3285f9d"
+        }
+      }
     }
   },
   "schema": 1
