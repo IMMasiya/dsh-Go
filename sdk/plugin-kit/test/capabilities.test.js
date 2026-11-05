@@ -46,6 +46,9 @@ test('a micro feed settles like the others, and records what fails', async () =>
   const failing = subscribe(async () => { throw new Error('boom') })
   await failing.settled
   assert.deepEqual(failing.errors, ['boom'])
+  const thrown = subscribe(() => { throw new Error('thrown') })
+  await thrown.settled
+  assert.deepEqual(thrown.errors, ['thrown'])
   const late = subscribe(async () => async () => { throw new Error('late') })
   late.stop()
   await late.settled

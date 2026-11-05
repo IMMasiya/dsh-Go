@@ -371,7 +371,7 @@ export function createTestHost(options = {}) {
       const feed = { id, scope, data: undefined, history: [], errors: [], stale: 0, settled: Promise.resolve(), stop() { if (closed) return; closed = true; if (cancel) runCleanup(cancel, failed) } }
       const failed = recordFailure(feed)
       const emit = value => { if (closed) return; const model = microModel(value); if (!model) { feed.errors.push('invalid micro model'); return } feed.data = model; feed.history.push(model) }
-      feed.settled = Promise.resolve(def.data({ ...scope }, emit, { protocol: 1, locale: caps.locale })).then(fn => {
+      feed.settled = new Promise(resolve => resolve(def.data({ ...scope }, emit, { protocol: 1, locale: caps.locale }))).then(fn => {
         if (typeof fn !== 'function') return
         if (closed) runCleanup(fn, failed)
         else cancel = fn
