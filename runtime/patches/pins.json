@@ -897,7 +897,7 @@
       },
       "0.2.2-rc.1": {
         "node_modules/@deepseek-ai/dsh-schedule/lib/index.js": {
-          "after": "2ee03221a342cad25b24756e05b84e720eb2368573913bceb7cfae6453481c1e",
+          "after": "20151750f92c30f27132212d1911b9ce8036b895e6f28e96f52e0511f80e759c",
           "before": "b9ffc15b37451da7cf4731f6c0d54e93ab63f831fc136000cbdb6a5f3f673b6f"
         },
         "node_modules/@deepseek-ai/dsh-tool-schedule/lib/index.js": {

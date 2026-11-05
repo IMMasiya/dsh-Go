@@ -1,5 +1,5 @@
 // Actual released rc4/rc1 npm implementations and temporary on-disk data.
-// DSH_OLD_PREFIX=<patched 0.2.1-rc.4> DSH_PREFIX=<patched 0.2.2-rc.1> node --test runtime/tests/runtime-upgrade-sessions-schedule.test.mjs
+// DSH_OLD_PREFIX=<patched 0.2.1-rc.4> DSH_PREFIX=<patched 0.2.2-rc.1> node --test runtime/tests/runtime-upgrade-sessions-schedule-live.mjs
 import assert from 'node:assert/strict';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';

@@ -349,14 +349,29 @@ test('Agent edit reviews retargeting, activation and instructions as one immutab
   assert.deepEqual(f.rows.get(original.id), reviewed);
 });
 
-for (const kind of ['new_once', 'new']) test(`Remote ${kind} without a Session question carrier rejects immediately`, async () => {
+for (const target of [undefined, { kind: 'new_once' }, { kind: 'new' }]) test(`Remote create ${target?.kind ?? 'for a Session'} is the person's own action: saved, nothing asked`, async () => {
   const f = fixture({ host: true });
-  await assert.rejects(f.service.remoteCreate({ ...createRequest(), target: { kind } }, signal()), required);
-  assert.equal(f.requests.length, 0, 'do not wait for a Host question that Web cannot forward');
+  await f.service.remoteCreate({ ...createRequest(), ...target && { target } }, signal());
+  assert.equal(f.requests.length, 0);
+  assert.equal(f.writes.length, 1);
+});
+
+test("Remote edit is the person's own action: saved, nothing asked", async () => {
+  const f = fixture({ host: true });
+  const created = await f.service.remoteCreate({ ...createRequest(), target: { kind: 'new_once' } }, signal());
+  await f.service.remoteEdit({ id: created.id, action: 'update', patch: { title: 'New name' } }, signal());
+  assert.equal(f.requests.length, 0);
+  assert.equal(f.rows.get(created.id).record.title, 'New name');
+});
+
+test('Remote create is refused once the service is stopping', async () => {
+  const f = fixture({ host: true });
+  f.service.stopping = true;
+  await assert.rejects(f.service.remoteCreate(createRequest(), signal()), required);
   assert.equal(f.writes.length, 0);
 });
 
-test('real UserQuestionService and api-remotes forward Session consent before Remote create commits', async t => {
+test('real UserQuestionService and api-remotes forward Session consent before a tool create commits', async t => {
   const load = name => import(pathToFileURL(join(resolve(prefix), 'node_modules/@deepseek-ai', name, 'lib/index.js')));
   const { Context } = await load('cordis');
   const { UserQuestionService } = await load('dsh-user-questions');
@@ -376,7 +391,7 @@ test('real UserQuestionService and api-remotes forward Session consent before Re
   const get = f.ctx.get;
   f.ctx.get = name => name === 'userQuestions' ? questions : get(name);
   for (const allowed of [false, true]) {
-    const creating = f.service.remoteCreate(createRequest(), signal());
+    const creating = f.service.create(createRequest(), f.agent.id, signal());
     const frame = (await events.next()).value;
     assert.equal(frame.event, 'user-questions/request');
     assert.equal(frame.context.agentId, f.agent.id);

@@ -122,7 +122,7 @@
  				await tasks.put(request.id, task);
  				this.emitChanged();
  				this.runtime?.requestDrive();
-@@ -2442,6 +2451,68 @@
+@@ -2442,6 +2451,67 @@
  				return this.entry(task);
  			});
  		}
@@ -132,21 +132,20 @@
 +		}
 +		async dshGoAuthorize(task, actorSessionId, operation, signal) {
 +			const denied = () => new RemoteError("schedule-authorization-required", "This task requires a separate, explicit user authorization. Rejection, cancellation, timeout, or an unavailable confirmation interface does not authorize it.");
++			if (this.stopping || signal?.aborted) throw denied();
++			// The Remote form: a person acting on a page, as upstream has it. Whoever can call it as
++			// the owner can answer this question too, so asking would only fail the page.
++			if (actorSessionId === void 0) return;
 +			const questions = this.ctx.get("userQuestions");
-+			if (this.stopping || signal?.aborted || questions === void 0) throw denied();
-+			const sessionId = actorSessionId ?? (task.target.kind === "session" ? task.target.sessionId : void 0);
-+			// Web forwards questions only for an existing Agent carrier. Never silently approve a Host-only task.
-+			if (sessionId === void 0) throw denied();
-+			let agent;
-+			if (sessionId !== void 0) {
-+				this.ctx.sessionPersistence.dshGoDeletion?.assertAdmit(sessionId);
-+				agent = this.ctx.agents.get(sessionId);
-+				if (agent === void 0) {
-+					if (this.resolveWebAgent === void 0) throw denied();
-+					agent = await this.resolveWebAgent(sessionId);
-+				}
-+				if (delegationDepthOf(agent) > 0) throw denied();
++			if (questions === void 0) throw denied();
++			const sessionId = actorSessionId;
++			this.ctx.sessionPersistence.dshGoDeletion?.assertAdmit(sessionId);
++			let agent = this.ctx.agents.get(sessionId);
++			if (agent === void 0) {
++				if (this.resolveWebAgent === void 0) throw denied();
++				agent = await this.resolveWebAgent(sessionId);
 +			}
++			if (delegationDepthOf(agent) > 0) throw denied();
 +			const deadline = new AbortController();
 +			const combined = AbortSignal.any([deadline.signal, this.dshGoAuthorizationAbort.signal, ...signal === void 0 ? [] : [signal]]);
 +			if (combined.aborted) throw denied();

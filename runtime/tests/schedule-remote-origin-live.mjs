@@ -1,5 +1,5 @@
 // Real dsh web HTTP + remote.mux authorization, isolated HOME, no model requests.
-// DSH_PREFIX=<patched prefix> node runtime/tests/schedule-authorization-live.mjs
+// DSH_PREFIX=<patched prefix> node runtime/tests/schedule-remote-origin-live.mjs
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { mkdtemp, rm, mkdir, writeFile } from 'node:fs/promises';
@@ -84,31 +84,20 @@ try {
   const request = { title: 'Synthetic live schedule', prompt: 'Never sent to a model in this test', timing: { kind: 'after', after_seconds: 86400 }, target: { kind: 'session', sessionId: 'schedule-live' } };
   const before = (await rpc('schedule/catalog')).value;
   assert.equal(before.length, 2, 'real Host loaded offline existing-profile fixtures');
+  // The official page's calls: no acting Session, so a person's own action. Nothing is asked.
+  for (const target of [{ kind: 'session', sessionId: 'schedule-live' }, { kind: 'new_once' }, { kind: 'new' }]) {
+    const create = await rpc('schedule/create', { request: { ...request, target } });
+    assert.equal(create.ok, true, JSON.stringify(create));
+  }
   for (const kind of ['new_once', 'new']) {
-    const create = await rpc('schedule/create', { request: { ...request, target: { kind } } });
-    assert.equal(create.ok, false); assert.equal(create.error.code, 'schedule-authorization-required');
-    const edit = await rpc('schedule/edit', { request: { id: `seed-${kind}`, action: 'update', patch: { prompt: 'Must not be saved' } } });
-    assert.equal(edit.ok, false); assert.equal(edit.error.code, 'schedule-authorization-required');
-    assert.deepEqual((await rpc('schedule/catalog')).value, before, 'denied page-form mutations preserve tasks');
+    const edit = await rpc('schedule/edit', { request: { id: `seed-${kind}`, action: 'update', patch: { prompt: 'Saved from the page' } } });
+    assert.equal(edit.ok, true, JSON.stringify(edit));
   }
-  for (const allowed of [false, true]) {
-    const pending = rpc('schedule/create', { request });
-    const question = await next(frame => frame.type === 'waterfall' && frame.event === 'user-questions/request');
-    assert.equal(question.agentId, 'schedule-live');
-    assert.equal(question.request.purpose, 'schedule-authorization');
-    assert.equal((await rpc('schedule/catalog')).value.length, 2, 'no new task exists while the real question is pending');
-    const answer = allowed ? { kind: 'result', value: { answers: [{ id: question.request.questions[0].id, selected: ['授权 / Authorize'] }] } } : { kind: 'rejected', error: { name: 'UserQuestionError', message: 'Synthetic user rejection' } };
-    assert.equal((await rpc('$events/result', { clientId: ready.clientId, eventId: question.eventId, outcome: answer })).ok, true);
-    const result = await pending;
-    assert.equal(result.ok, allowed);
-    if (!allowed) assert.equal(result.error.code, 'schedule-authorization-required');
-    assert.equal((await rpc('schedule/catalog')).value.length, allowed ? 3 : 2);
-  }
-  const noCarrier = await rpc('schedule/create', { request: { ...request, target: { kind: 'new_once' } } });
-  assert.equal(noCarrier.ok, false);
-  assert.equal(noCarrier.error.code, 'schedule-authorization-required');
-  assert.equal((await rpc('schedule/catalog')).value.length, 3);
-  console.log('PASS: page-form new/new_once create and seeded task edit reject unchanged; real dsh web HTTP/mux routes Session authorization; rejection never saves, explicit consent saves once, Host-only task rejects without saving.');
+  const after = (await rpc('schedule/catalog')).value;
+  assert.equal(after.length, 5);
+  for (const kind of ['new_once', 'new']) assert.equal(after.find(task => task.id === `seed-${kind}`).prompt, 'Saved from the page');
+  assert.equal(messages.filter(frame => frame.event === 'user-questions/request').length, 0, 'the page has no card to answer');
+  console.log('PASS: real dsh web HTTP/mux: the official page calls create and edit without asking.');
 } finally {
   socket?.terminate();
   if (processHandle.exitCode === null && processHandle.signalCode === null) {
