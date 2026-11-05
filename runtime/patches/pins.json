@@ -1275,6 +1275,30 @@
           "before": "ff717f87226b59d6224aff67796b43d5fd72b98d0e74fa91a952affaf3285f9d"
         }
       }
+    },
+    "zzzzzzzzzzzzzzzzzzzzzzzz-ralph-result-unicode.diff": {
+      "0.2.2-rc.1": {
+        "node_modules/@deepseek-ai/dsh-tool-ralph/lib/index.js": {
+          "after": "b3fb4b6dc932b3020d22e5d2427e912463a56f92471b21ed9a30ff6d857f7c8a",
+          "before": "ad2f2f60dc65faae99bb1bd10417000e495a6febfb9abb747c4d39cfa80143b7"
+        }
+      }
+    },
+    "zzzzzzzzzzzzzzzzzzzzzzzzz-repeat-json-own-key.diff": {
+      "0.2.2-rc.1": {
+        "node_modules/@deepseek-ai/dsh-repeat-tool-reminder/lib/index.js": {
+          "after": "c27587fc302f45c9ea6863bfaa2f96894a8a67e894ddfd74cf02477a79ab67e5",
+          "before": "6d582ef007597eacd69f81a044424107f564ec3a5ad0b04ebe031d80f14488a8"
+        }
+      }
+    },
+    "zzzzzzzzzzzzzzzzzzzzzzzzzz-repeat-preview-unicode.diff": {
+      "0.2.2-rc.1": {
+        "node_modules/@deepseek-ai/dsh-repeat-tool-reminder/lib/index.js": {
+          "after": "07160bc51a4246d5473a0704e9f3f97cdec1ed70ce0b87d0c1e7f19a542345c6",
+          "before": "c27587fc302f45c9ea6863bfaa2f96894a8a67e894ddfd74cf02477a79ab67e5"
+        }
+      }
     }
   },
   "schema": 1
