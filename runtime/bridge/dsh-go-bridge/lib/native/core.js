@@ -405,7 +405,7 @@ export class NativeCore {
     const regs = this.regs.get(pkg);
     if (regs?.[kind].get(id)?.token !== token) return;
     regs[kind].delete(id);
-    if (kind === "panels" || kind === "strips") for (const feed of [...this.feeds.values()]) if (feed.pkg === pkg && feed.id === id) feed.stop("not-found");
+    if (kind === "panels" || kind === "strips" || kind === "notes") for (const feed of [...this.feeds.values()]) if (feed.pkg === pkg && feed.id === id) feed.stop("not-found");
     this.regsVersion++;
     this.capabilityChanged?.();
     this.#scheduleChanged();

@@ -324,21 +324,21 @@ class SessionsController extends AsyncNotifier<List<SessionSummary>> {
     return true;
   }
 
-  List<SessionSummary> _visible() => ref
-      .read(readListCacheProvider)
-      .derive(
-        _rows()
-            .where(
-              (s) =>
-                  !s.blank &&
-                  !s.isSubagent &&
-                  !_archived.contains(s.sessionId) &&
-                  !_archives.any((pending) => pending.ids.contains(s.sessionId)),
-            )
-            .toList()
-          ..sort((a, b) => b.updatedAt.compareTo(a.updatedAt)),
-        _origin,
-      );
+  List<SessionSummary> _visible() {
+    final pendingIds = {for (final pending in _archives) ...pending.ids};
+    return ref
+        .read(readListCacheProvider)
+        .derive(
+          _rows()
+              .where(
+                (s) =>
+                    !s.blank && !s.isSubagent && !_archived.contains(s.sessionId) && !pendingIds.contains(s.sessionId),
+              )
+              .toList()
+            ..sort((a, b) => b.updatedAt.compareTo(a.updatedAt)),
+          _origin,
+        );
+  }
 
   /// The last `session/list`, with the titles read since ([_readTitles]).
   List<SessionSummary> _rows() => _titles.isEmpty ? _all : [for (final s in _all) _withTitle(s)];
@@ -594,23 +594,27 @@ class SessionsController extends AsyncNotifier<List<SessionSummary>> {
     }
     final conn = ref.read(activeConnectionProvider).value;
     final host = ref.read(activeHostProvider);
-    final ids = sessionIds.toSet().toList();
+    final idsSet = sessionIds.toSet();
+    final ids = idsSet.toList();
     if (conn == null ||
         !identical(ref.read(readListLiveConnectionProvider), conn) ||
         ids.isEmpty ||
         state.isLoading ||
-        ids.any(
-          (id) =>
-              !_all.any((s) => s.sessionId == id && !s.blank && !s.isSubagent) ||
-              _archived.contains(id) ||
-              _deleting.contains(id),
-        )) {
+        ids.any((id) => _archived.contains(id) || _deleting.contains(id))) {
+      throw const DshClosedException('session owner or inventory changed');
+    }
+    final remaining = Set<String>.of(idsSet);
+    for (final row in _all) {
+      if (!row.blank && !row.isSubagent) remaining.remove(row.sessionId);
+      if (remaining.isEmpty) break;
+    }
+    if (remaining.isNotEmpty) {
       throw const DshClosedException('session owner or inventory changed');
     }
     for (final existing in _archives) {
-      if (existing.ids.any(ids.contains)) {
+      if (existing.ids.any(idsSet.contains)) {
         if (existing._committing) throw StateError('archive already committing');
-        if (existing.ids.length == ids.length && existing.ids.every(ids.contains)) return existing;
+        if (existing.ids.length == ids.length && existing.ids.every(idsSet.contains)) return existing;
       }
     }
     final generation = conn.client.mux.generation;
