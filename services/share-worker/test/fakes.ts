@@ -56,7 +56,9 @@ export class FakeBucket {
     };
   }
 
-  async put(key: string, value: Uint8Array | string, options: { customMetadata?: Record<string, string>; httpMetadata?: { contentType?: string; cacheControl?: string } }) {
+  async put(key: string, value: Uint8Array | string, options: { onlyIf?: Headers; customMetadata?: Record<string, string>; httpMetadata?: { contentType?: string; cacheControl?: string } }) {
+    // The create-once condition used by uploads; other R2 conditions are not modeled.
+    if (options.onlyIf?.get('If-None-Match') === '*' && this.objects.has(key)) return null;
     const stored: Stored = {
       bytes: typeof value === 'string' ? new TextEncoder().encode(value) : new Uint8Array(value),
       uploaded: this.now(),
