@@ -142,8 +142,11 @@ class ApkDownloader {
         if (step == _Step.cancelled) return const DownloadCancelled();
         if (step == _Step.storage) return const DownloadFailed(DownloadFailure.storage);
         if (step == _Step.complete) {
+          // The UI can still cancel while the file is closing or being renamed.
+          if (cancel?.isCancelled ?? false) return const DownloadCancelled();
           try {
             await part.rename(target.path);
+            if (cancel?.isCancelled ?? false) return const DownloadCancelled();
             onVerifying?.call();
             if (await hasher(target) == sha256) return DownloadDone(target, url);
             // Corrupt or tampered: start over from the next source.
