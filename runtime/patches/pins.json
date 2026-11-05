@@ -14,14 +14,6 @@
         }
       }
     },
-    "file-upload-resolver-dispose.diff": {
-      "0.2.1-rc.4": {
-        "node_modules/@deepseek-ai/dsh-client-file-upload/lib/index.js": {
-          "after": "b24297ec812d1c21b8038fac94616213da6f030552faf6d138492b244d598050",
-          "before": "5dd5bd2d20656a1edeb1366e6b878afb04db519d2ba400135cb020ef037912fb"
-        }
-      }
-    },
     "fs-create-exclusive.diff": {
       "0.2.1-rc.2": {
         "node_modules/@deepseek-ai/dsh-fs-local/lib/index.js": {
@@ -627,14 +619,6 @@
         "node_modules/@deepseek-ai/dsh-session-persistence-jsonl/lib/index.js": {
           "after": "0c742ac1ed6b17e46e173af8e56abb2829c1ac66cc30b598c7e5a23f15b11e79",
           "before": "a971769ec5ebe42a1bcd214b57b6741fed3b7040943eec3b96a2d7e77806d343"
-        }
-      }
-    },
-    "zzzzzzz-loader-remove-nested.diff": {
-      "0.2.1-rc.4": {
-        "node_modules/@deepseek-ai/cordis-plugin-loader/lib/index.js": {
-          "after": "b2e8fecbdbaaea780b34d0bb2f4b236eac2057e58b07ec90505d5136cdea8c15",
-          "before": "638b9ad360e01236120772323f80a65570c4f3f42f4cfc6243330241025b6d72"
         }
       }
     },
