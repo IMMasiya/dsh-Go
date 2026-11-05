@@ -954,6 +954,14 @@
         }
       }
     },
+    "zzzzzzzzz-plugin-detail-body-cancel.diff": {
+      "0.2.2-rc.1": {
+        "node_modules/@deepseek-ai/dsh-plugin-detail/lib/index.js": {
+          "after": "a82f66cb893c532708890a055c5a7bd4fdf3405381f3d962d7305ee5aa98ef85",
+          "before": "47ee52c67c62b35af811e0fcc337622f835d1eee70ff5e78ef3f521df3849dee"
+        }
+      }
+    },
     "zzzzzzzzz-plugin-manager-metadata-inventory.diff": {
       "0.2.2-rc.1": {
         "node_modules/@deepseek-ai/dsh-plugin-manager/lib/index.js": {
@@ -1120,6 +1128,14 @@
         }
       }
     },
+    "zzzzzzzzzz-plugin-update-selection.diff": {
+      "0.2.2-rc.1": {
+        "node_modules/@deepseek-ai/dsh-plugin-manager/lib/index.js": {
+          "after": "cbc6b8e86046dc66e0c5335236e687050df09cee8f54f2667b202b3666f628f9",
+          "before": "77fbc38fac029b0eae78705fa7e5c37b3de3baeca29a94e2afe6417086fff05f"
+        }
+      }
+    },
     "zzzzzzzzzz-session-export-descendant-refs.diff": {
       "0.2.2-rc.1": {
         "node_modules/@deepseek-ai/dsh-session-log-export/lib/index.js": {
@@ -1133,6 +1149,30 @@
         "node_modules/@deepseek-ai/dsh-api-workspace-files/lib/index.js": {
           "after": "8f0f14f1699e177509f421466ad28a5b84f4274610f58b4ab84b536f1e59439a",
           "before": "1cdd038c3fd7ebc60642280a86ef6eadae43ff05a7bf7eb263a2e47d06676869"
+        }
+      }
+    },
+    "zzzzzzzzzzz-plugin-update-precondition.diff": {
+      "0.2.2-rc.1": {
+        "node_modules/@deepseek-ai/dsh-plugin-manager/lib/index.js": {
+          "after": "98b57a9220fe7620113949927a792006175546b63c5a0917305ac2e821cf984d",
+          "before": "cbc6b8e86046dc66e0c5335236e687050df09cee8f54f2667b202b3666f628f9"
+        }
+      }
+    },
+    "zzzzzzzzzzzz-plugin-update-hmr-selection.diff": {
+      "0.2.2-rc.1": {
+        "node_modules/@deepseek-ai/dsh-plugin-manager/lib/index.js": {
+          "after": "4f615be658bc12600986f794b0b399b2c25df0b36dd89bda5dd0666cbf3df726",
+          "before": "98b57a9220fe7620113949927a792006175546b63c5a0917305ac2e821cf984d"
+        }
+      }
+    },
+    "zzzzzzzzzzzzz-plugin-update-hmr-precondition.diff": {
+      "0.2.2-rc.1": {
+        "node_modules/@deepseek-ai/dsh-plugin-manager/lib/index.js": {
+          "after": "51f9fdceb124cbd17fd6b65322a8a7dff7526738f9696e15db2b2a0e9e739842",
+          "before": "4f615be658bc12600986f794b0b399b2c25df0b36dd89bda5dd0666cbf3df726"
         }
       }
     }
