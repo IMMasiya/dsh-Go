@@ -378,6 +378,74 @@ void main() {
   });
 
   group('unknown outcome', () {
+    test('retry identity keeps an unchanged file selection across list copies', () async {
+      final selected = [file];
+      client.promptError = const DshCarrierLostException('gone');
+      expect(await chat().send('分析', attachments: selected), isFalse);
+      final requestId = client.prompts.single.requestId;
+
+      client.promptError = null;
+      expect(await chat().send('分析', attachments: List.of(selected)), isTrue);
+
+      expect(client.prompts.last.requestId, requestId);
+    });
+
+    test('retry identity distinguishes replacing a file with the same name', () async {
+      final original = DraftAttachment.sniff('notes.md', Uint8List.fromList('old'.codeUnits));
+      final replacement = DraftAttachment.sniff('notes.md', Uint8List.fromList('new'.codeUnits));
+      expect(replacement.id, isNot(original.id));
+      client.promptError = const DshTransportException('gone');
+      expect(await chat().send('分析', attachments: [original]), isFalse);
+      final requestId = client.prompts.single.requestId;
+
+      client.promptError = null;
+      expect(await chat().send('分析', attachments: [replacement]), isTrue);
+
+      expect(client.uploads, ['notes.md', 'notes.md']);
+      expect(client.prompts.last.requestId, isNot(requestId));
+    });
+
+    test('retry identity distinguishes a newly selected image with the same name', () async {
+      final original = DraftAttachment.sniff('cat.png', tinyPng);
+      final replacement = DraftAttachment.sniff('cat.png', Uint8List.fromList(tinyPng));
+      expect(original.isImage, isTrue);
+      expect(replacement.id, isNot(original.id));
+      client.promptError = const DshCarrierLostException('gone');
+      expect(await chat().send('看看', attachments: [original]), isFalse);
+      final requestId = client.prompts.single.requestId;
+
+      client.promptError = null;
+      expect(await chat().send('看看', attachments: [replacement]), isTrue);
+
+      expect(client.prompts.last.images, 1);
+      expect(client.prompts.last.requestId, isNot(requestId));
+    });
+
+    test('retry identity separates text lines from attachment names', () async {
+      client.promptError = const DshCarrierLostException('gone');
+      expect(await chat().send('分析\nnotes.md'), isFalse);
+      final requestId = client.prompts.single.requestId;
+
+      client.promptError = null;
+      expect(await chat().send('分析', attachments: [file]), isTrue);
+
+      expect(client.uploads, ['notes.md']);
+      expect(client.prompts.last.requestId, isNot(requestId));
+    });
+
+    test('retry identity preserves the order of same-named selections', () async {
+      final first = DraftAttachment.sniff('notes.md', Uint8List.fromList([1]));
+      final second = DraftAttachment.sniff('notes.md', Uint8List.fromList([2]));
+      client.promptError = const DshCarrierLostException('gone');
+      expect(await chat().send('按顺序分析', attachments: [first, second]), isFalse);
+      final requestId = client.prompts.single.requestId;
+
+      client.promptError = null;
+      expect(await chat().send('按顺序分析', attachments: [second, first]), isTrue);
+
+      expect(client.prompts.last.requestId, isNot(requestId));
+    });
+
     test('sending the same content again reuses the request id', () async {
       client.promptError = const DshCarrierLostException('gone');
       expect(await chat().send('  你好  ', attachments: [image]), isFalse);

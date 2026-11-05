@@ -968,6 +968,14 @@
         }
       }
     },
+    "zzzzzzzzz-schedule-run-cancel.diff": {
+      "0.2.2-rc.1": {
+        "node_modules/@deepseek-ai/dsh-schedule/lib/index.js": {
+          "after": "91b8796478bcd83d98ebfa7bb0ec4ea6c0110649a1dcf835cc3e3d868aea001c",
+          "before": "20151750f92c30f27132212d1911b9ce8036b895e6f28e96f52e0511f80e759c"
+        }
+      }
+    },
     "zzzzzzzzz-session-event-admission.diff": {
       "0.2.1-rc.4": {
         "node_modules/@deepseek-ai/dsh-session/lib/index.js": {
@@ -1010,6 +1018,30 @@
         }
       }
     },
+    "zzzzzzzzz-subprocess-idle-read.diff": {
+      "0.2.2-rc.1": {
+        "node_modules/@deepseek-ai/dsh-subprocess-local/lib/output.js": {
+          "after": "759d7894e3865c09121d729e72d32ef1cdf76c72004646e9164348d58db635b9",
+          "before": "4f77ef6da608d36df168c99177e9b527e7145df1418845eba567635e64a4c2a3"
+        }
+      }
+    },
+    "zzzzzzzzz-subprocess-utf8-cursor.diff": {
+      "0.2.2-rc.1": {
+        "node_modules/@deepseek-ai/dsh-subprocess-local/lib/output.js": {
+          "after": "8b37d86dbfc0b3ac3e47dc77e6a62ccea4307f08b57538c85a2aff5a30e6e724",
+          "before": "759d7894e3865c09121d729e72d32ef1cdf76c72004646e9164348d58db635b9"
+        }
+      }
+    },
+    "zzzzzzzzz-subprocess-zsingle-read.diff": {
+      "0.2.2-rc.1": {
+        "node_modules/@deepseek-ai/dsh-subprocess-local/lib/output.js": {
+          "after": "7becaaeca0f06e39eccb6cd35c059554da862589ef6526c40a3efaef67c63aa4",
+          "before": "8b37d86dbfc0b3ac3e47dc77e6a62ccea4307f08b57538c85a2aff5a30e6e724"
+        }
+      }
+    },
     "zzzzzzzzz-terminal-tail.diff": {
       "0.2.1-rc.4": {
         "node_modules/@deepseek-ai/dsh-terminal-bash/lib/index.js": {
@@ -1049,6 +1081,14 @@
         "node_modules/@deepseek-ai/dsh-workspace/lib/index.js": {
           "after": "97d891ee0bc2ee8a1867a3c2420cf3ea8787b8000293771244f923de3b362658",
           "before": "a26b396baee3c353b5bd55c932e30f2653b083a136e7a8f9f596e9fe4c1222b0"
+        }
+      }
+    },
+    "zzzzzzzzzz-workspace-watch-error.diff": {
+      "0.2.2-rc.1": {
+        "node_modules/@deepseek-ai/dsh-api-workspace-files/lib/index.js": {
+          "after": "8f0f14f1699e177509f421466ad28a5b84f4274610f58b4ab84b536f1e59439a",
+          "before": "1cdd038c3fd7ebc60642280a86ef6eadae43ff05a7bf7eb263a2e47d06676869"
         }
       }
     }

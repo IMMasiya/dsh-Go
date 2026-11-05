@@ -1354,9 +1354,12 @@ class ChatController extends Notifier<ChatState> {
     if (ref.mounted) ref.read(usageStatsProvider.notifier).count(UsageCount.turns);
   }
 
-  /// What a send is matched on when it is tried again ([_unsettled]).
-  static String _contentKey(String text, List<DraftAttachment> attachments) =>
-      [text, for (final a in attachments) a.name].join('\n');
+  /// Retry the same text and attachment selections. Picking again is a new
+  /// intent even if the name matches; encoding preserves text boundaries.
+  static String _contentKey(String text, List<DraftAttachment> attachments) => jsonEncode([
+    text,
+    [for (final a in attachments) a.id],
+  ]);
 
   /// Stages attachment receipts locally/over SSH, or publishes Remote files
   /// into the current workspace. Images stay inline unless [images] is set.
