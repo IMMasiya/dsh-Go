@@ -18115,6 +18115,9 @@ class L10nEn extends L10n {
   String get viewEmptySwitchWorkspace => 'Switch workspace';
 
   @override
+  String get viewEmptyHostDefaultDirectory => 'Host default folder';
+
+  @override
   String get viewScheduleTitle => 'Automations';
 
   @override

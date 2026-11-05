@@ -17137,6 +17137,9 @@ class L10nZh extends L10n {
   String get viewEmptySwitchWorkspace => '切换工作区';
 
   @override
+  String get viewEmptyHostDefaultDirectory => '主机默认目录';
+
+  @override
   String get viewScheduleTitle => '自动化任务';
 
   @override
