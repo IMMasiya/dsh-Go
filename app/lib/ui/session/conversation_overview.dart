@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../l10n/l10n.dart';
+import '../../state/agents_state.dart' show subagentParentProvider;
 import '../../state/chat_state.dart';
 import '../../state/connection_state.dart';
 import '../../state/models_state.dart';
@@ -46,7 +47,15 @@ class ConversationOverview extends ConsumerWidget {
     final summary = ref.watch(
       sessionsProvider.select((s) => s.value?.where((session) => session.sessionId == sessionId).firstOrNull),
     );
-    final title = ref.watch(chatProvider(sessionId).select((s) => s.title));
+    // The list knows the title before the conversation has loaded.
+    final title = [
+      ref.watch(chatProvider(sessionId).select((s) => s.title)),
+      summary?.title,
+    ].map((t) => t?.trim()).firstWhere((t) => t?.isNotEmpty ?? false, orElse: () => null);
+    // A one-shot subagent takes no messages, nor another model.
+    final readOnly = ref.watch(
+      subagentParentProvider(sessionId).select((p) => p?.address.mode == SubagentMode.oneShot),
+    );
     final model = ref.watch(chatProvider(sessionId).select((s) => s.model));
     final catalog = ref.watch(currentModelCatalogProvider);
     final effective = model ?? catalog?.defaultSelection;
@@ -56,10 +65,7 @@ class ConversationOverview extends ConsumerWidget {
     return ListView(
       padding: const EdgeInsets.fromLTRB(20, 8, 20, 16),
       children: [
-        Text(
-          title?.trim().isNotEmpty ?? false ? title!.trim() : l10n.commonNewChat,
-          style: theme.textTheme.titleMedium,
-        ),
+        Text(title ?? l10n.commonNewChat, style: theme.textTheme.titleMedium),
         const SizedBox(height: 12),
         SessionHero(sessionId: sessionId, title: null, gutter: 0),
         if (workspace != null) _Row(icon: AppIcons.workspace, label: l10n.shellPanelWorkspace, value: workspace),
@@ -68,7 +74,7 @@ class ConversationOverview extends ConsumerWidget {
           icon: AppIcons.model,
           label: l10n.shellPanelModel,
           value: [modelShortName(effective, catalog), if (effort != null) effortLabel(effort)].join(' · '),
-          onTap: () => _pickModel(context, ref, effective),
+          onTap: readOnly ? null : () => _pickModel(context, ref, effective),
         ),
         _Row(icon: AppIcons.remoteHosts, label: l10n.shellPanelHost, value: host ?? l10n.commonThisPhone),
       ],

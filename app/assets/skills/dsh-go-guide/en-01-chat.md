@@ -15,7 +15,7 @@ With a hardware keyboard, Enter adds a line break and Ctrl+Enter or ⌘+Enter se
 
 ## Choose a model
 
-Tap the model capsule at the top right to open **Choose model**. Tap a model to switch right away; if it supports levels, pick one under **Thinking effort**. Typing `/model` in the composer opens it too. **Manage models** at the bottom goes straight to the models page in Settings; to add and manage models, see [Models and providers](02-models.md).
+On a phone, tap into the composer, then tap the model under it. On a tablet or wider screen, tap the model capsule at the top right. Either way opens **Choose model**. Tap a model to switch right away; if it supports levels, pick one under **Thinking effort**. Typing `/model` in the composer opens it too. **Manage models** at the bottom goes straight to the models page in Settings; to add and manage models, see [Models and providers](02-models.md).
 
 ## Images, files and voice
 
