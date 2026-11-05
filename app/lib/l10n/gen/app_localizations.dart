@@ -11450,6 +11450,12 @@ abstract class L10n {
   /// **'高级'**
   String get featuresRepeatAdvanced;
 
+  /// No description provided for @featuresRepeatCustom.
+  ///
+  /// In zh, this message translates to:
+  /// **'自定义'**
+  String get featuresRepeatCustom;
+
   /// No description provided for @featuresIntervalSeconds.
   ///
   /// In zh, this message translates to:
