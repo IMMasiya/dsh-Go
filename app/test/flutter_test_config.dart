@@ -9,6 +9,7 @@ import 'package:dsh_app/l10n/l10n.dart';
 import 'package:dsh_app/performance/performance_state.dart';
 import 'package:dsh_app/pets/pet_sheets.dart';
 import 'package:dsh_app/state/locale_state.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'support/english_preview.dart';
 import 'support/quiet_performance.dart';
@@ -22,6 +23,9 @@ Future<void> testExecutable(FutureOr<void> Function() testMain) async {
   PetSheets.enabled = false;
   // No device facts in tests: the app reads "unavailable" at once.
   PerformanceChannel.create = QuietPerformanceChannel.new;
+  // No platform prefs in tests either: a read that outlives its test would
+  // otherwise report the missing plugin against whichever test just ended.
+  SharedPreferences.setMockInitialValues({});
   // Tests run in Chinese (goldens and finders were made in it); English
   // tests opt in with AppLocale.use(AppLocale.en) + an English MaterialApp.
   AppLanguageController.initial = AppLanguage.zh;
