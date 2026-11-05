@@ -1200,6 +1200,14 @@
         }
       }
     },
+    "zzzzzzzzzzzzzzz-workflow-result-unicode.diff": {
+      "0.2.2-rc.1": {
+        "node_modules/@deepseek-ai/dsh-tool-workflow/lib/index.js": {
+          "after": "e8f701007332dbd36ce764608a434db6a4ab5387c71570b05e221a8daac3adc3",
+          "before": "9d7ccb5238318aae82cbf6ae497f00c2b45e4afa29ed430c7b5c7e7e2cd409e4"
+        }
+      }
+    },
     "zzzzzzzzzzzzzzzz-read-line-cr-truncation.diff": {
       "0.2.2-rc.1": {
         "node_modules/@deepseek-ai/dsh-tool-fs/lib/index.js": {
@@ -1217,6 +1225,22 @@
         "node_modules/@deepseek-ai/dsh-web-fetch-http/lib/index.js": {
           "after": "4d6ebdc8be0404361aad52f75c4f4b3e264ba068dfaa0ba2a40f955d2337c064",
           "before": "7dc058bdab2cbbe56cbd56593b4f1a1270fcb066928fc1b05d7541cb18c72937"
+        }
+      }
+    },
+    "zzzzzzzzzzzzzzzzzz-skill-catalog-unicode.diff": {
+      "0.2.2-rc.1": {
+        "node_modules/@deepseek-ai/dsh-tool-skill/lib/index.js": {
+          "after": "2cb9d675b941690582dde93c810c6c269d7413e9d21c810a4f3fe560e89467e2",
+          "before": "c41b4ea6843d7987927593a872777a7eddb348f66512c20209ab871ebf02a8b7"
+        }
+      }
+    },
+    "zzzzzzzzzzzzzzzzzzz-fs-text-bom.diff": {
+      "0.2.2-rc.1": {
+        "node_modules/@deepseek-ai/dsh-fs-local/lib/index.js": {
+          "after": "35ae78eb238828d528ef5c191961120924fbf34155c577e8b3a2ade4ed50e010",
+          "before": "6be4e8f4fb318548f8233eab7f6e494407cd1ae4ea9e868a08177e9bf48a7aa9"
         }
       }
     }
