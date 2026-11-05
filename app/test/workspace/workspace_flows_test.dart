@@ -15,6 +15,7 @@ import 'package:dsh_app/ui/shell/sessions_drawer.dart';
 import 'package:dsh_app/ui/workspace/directory_picker.dart';
 import 'package:dsh_app/ui/workspace/workspace_switcher.dart';
 import 'package:dsh_app/ui/workspace/workspaces_page.dart';
+import 'package:dsh_client/dsh_client.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_riverpod/misc.dart' show Override;
@@ -35,6 +36,17 @@ Future<ProviderContainer> _pump(WidgetTester tester, Widget home, List<Override>
   await tester.pumpWidget(goldenApp(home: home, brightness: Brightness.light, overrides: overrides));
   await _settle(tester);
   return ProviderScope.containerOf(tester.element(find.byType(home.runtimeType).first));
+}
+
+/// A registry whose first baseline arrives only when the test says so.
+class _LateWorkspaces extends WorkspacesController {
+  @override
+  WorkspacesState build() => const WorkspacesState(status: WorkspacesStatus.loading);
+
+  void arrive(FakeWorkspaceHost host) => state = WorkspacesState(
+    status: WorkspacesStatus.ready,
+    workspaces: host.workspaces.map(Workspace.fromJson).toList(),
+  );
 }
 
 class _RemoteHost extends ActiveHostController {
@@ -326,13 +338,19 @@ void main() {
   });
 
   group('a new conversation with no workspace selected', () {
-    Future<ProviderContainer> pumpOn(WidgetTester tester, FakeWorkspaceHost host, HostConnection connection) async {
+    Future<ProviderContainer> pumpOn(
+      WidgetTester tester,
+      FakeWorkspaceHost host,
+      HostConnection connection, [
+      List<Override> more = const [],
+    ]) async {
       final container = await _pump(
         tester,
         HomeShell(chatBuilder: (_) => const SizedBox.expand(), initiallyOpen: true),
         [
           ...workspaceOverrides(host, livePrefs: true, connection: connection),
           if (!connection.isLocal) activeHostProvider.overrideWith(() => _RemoteHost(connection.hostId!)),
+          ...more,
         ],
       );
       await container.read(sessionsProvider.future);
@@ -349,6 +367,38 @@ void main() {
       expect(host.argsOf('session/create').last, {
         'request': {'workspaceId': 'ws-3'},
       });
+    });
+
+    testWidgets('a send that beats the lists waits for them', (tester) async {
+      final host = sampleWorkspaceHost();
+      final late = _LateWorkspaces();
+      final container = await pumpOn(tester, host, workspaceHost(host, local: false), [
+        workspacesProvider.overrideWith(() => late),
+      ]);
+
+      final created = container.read(sessionsProvider.notifier).create();
+      await _settle(tester);
+      expect(host.argsOf('session/create'), isEmpty);
+
+      late.arrive(host);
+      await _settle(tester);
+      await created;
+      expect(host.argsOf('session/create').last, {
+        'request': {'workspaceId': 'ws-3'},
+      });
+    });
+
+    testWidgets('lists that never arrive still let the conversation start', (tester) async {
+      final host = sampleWorkspaceHost();
+      final container = await pumpOn(tester, host, workspaceHost(host, local: false), [
+        workspacesProvider.overrideWith(_LateWorkspaces.new),
+      ]);
+
+      final created = container.read(sessionsProvider.notifier).create();
+      await tester.pump(const Duration(seconds: 3));
+      await _settle(tester);
+      await created;
+      expect(host.argsOf('session/create').last, {'request': <String, Object?>{}});
     });
 
     testWidgets('a remote host with its own directory keeps it', (tester) async {

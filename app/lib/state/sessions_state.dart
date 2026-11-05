@@ -556,6 +556,26 @@ class SessionsController extends AsyncNotifier<List<SessionSummary>> {
     }
   }
 
+  /// A send right after connecting can beat the lists the fallback reads. Give
+  /// them a moment; a host that never answers still gets to start the chat.
+  Future<void> _listsForNewChat() async {
+    ProviderSubscription<WorkspacesState>? listening;
+    final registry = Completer<void>();
+    void check(WorkspacesState workspaces) {
+      if (workspaces.status != WorkspacesStatus.loading && !registry.isCompleted) registry.complete();
+    }
+
+    try {
+      check(ref.read(workspacesProvider));
+      if (!registry.isCompleted) listening = ref.listen(workspacesProvider, (_, next) => check(next));
+      await Future.wait([future, registry.future]).timeout(const Duration(seconds: 3));
+    } catch (_) {
+      // Too slow or failed: nothing to pick from, so the host picks.
+    } finally {
+      listening?.close();
+    }
+  }
+
   /// Creates a session in the workspace the drawer shows (else the default
   /// directory) and returns its id.
   Future<String> create() async {
@@ -564,10 +584,15 @@ class SessionsController extends AsyncNotifier<List<SessionSummary>> {
     // Remote hosts: the working directory configured for that host, else the
     // workspace used last (as the official client does), else the remote DSH's
     // own default.
+    var workspaceId = await workspaceForNewSession(ref);
+    if (workspaceId == null && _hostPicksNewChatDirectory(conn)) {
+      await _listsForNewChat();
+      final sameHost = identical(ref.read(activeConnectionProvider).value?.client, conn.client);
+      if (sameHost) workspaceId = _recentForNewChat(conn, ref.read(workspacesProvider), state.value)?.workspaceId;
+    }
     final created = await createSessionInWorkspace(
       conn.client,
-      await workspaceForNewSession(ref) ??
-          _recentForNewChat(conn, ref.read(workspacesProvider), state.value)?.workspaceId,
+      workspaceId,
       cwd: conn.isLocal ? localWorkspaceDir : conn.workingDirectory,
     );
     // Safe mode keeps the default preset: the agent there repairs the engine
