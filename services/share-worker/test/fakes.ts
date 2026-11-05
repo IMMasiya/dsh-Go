@@ -41,7 +41,7 @@ export class FakeBucket {
       if (r.suffix !== undefined) bytes = bytes.slice(Math.max(0, bytes.byteLength - r.suffix));
       else {
         const start = r.offset ?? 0;
-        if (start >= o.bytes.byteLength) throw new Error('range not satisfiable');
+        if (start >= o.bytes.byteLength) throw new Error('get: The requested range is not satisfiable. (10039)');
         bytes = bytes.slice(start, r.length !== undefined ? start + r.length : undefined);
       }
     }

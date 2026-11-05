@@ -162,7 +162,8 @@ export async function serveObject(request: Request, env: Env, ctx: Ctx, options:
   try {
     object = await env.BUCKET.get(key, { ...(range ? { range } : {}), ...(onlyIf ? { onlyIf } : {}) });
   } catch (error) {
-    if (!range) throw error;
+    // Only R2 InvalidRange (10039) belongs to the 416/reset path.
+    if (!range || !(error instanceof Error) || !error.message.endsWith('(10039)')) throw error;
     const meta = await env.BUCKET.head(key);
     if (!meta) return plain(404, 'Not found');
     return plain(416, 'Range not satisfiable', { 'Content-Range': `bytes */${meta.size}` });
