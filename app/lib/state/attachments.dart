@@ -36,8 +36,8 @@ class DraftAttachment {
   int get size => bytes.length;
 }
 
-/// Valid file picks plus the first rejected item, so one large file does not
-/// discard the rest of a multi-selection.
+/// Valid file picks plus the first rejected item, so an unreadable or oversized
+/// file does not discard the rest of a multi-selection.
 class PickedAttachments {
   const PickedAttachments(this.attachments, {this.problem});
 
@@ -198,24 +198,30 @@ class DeviceAttachmentPicker implements AttachmentPicker {
       String? mediaType;
       var tooLarge = false;
       var overMessageBudget = false;
-      await for (final chunk in file.readAsByteStream()) {
-        // Signatures may span chunks. Inspect only the small prefix before
-        // retaining a chunk, and use image limits even with a misleading name.
-        final take = (prefix.length - prefixLength).clamp(0, chunk.length);
-        prefix.setRange(prefixLength, prefixLength + take, chunk);
-        prefixLength += take;
-        mediaType = inlineImageType(Uint8List.sublistView(prefix, 0, prefixLength));
-        final budget = mediaType == null ? maxFileBytes : maxImageBytes;
-        if ((length != null && length > budget) || chunk.length > budget - bytes.length) {
-          tooLarge = true;
-          break; // Cancels the stream without retaining the excess chunk.
+      try {
+        await for (final chunk in file.readAsByteStream()) {
+          // Signatures may span chunks. Inspect only the small prefix before
+          // retaining a chunk, and use image limits even with a misleading name.
+          final take = (prefix.length - prefixLength).clamp(0, chunk.length);
+          prefix.setRange(prefixLength, prefixLength + take, chunk);
+          prefixLength += take;
+          mediaType = inlineImageType(Uint8List.sublistView(prefix, 0, prefixLength));
+          final budget = mediaType == null ? maxFileBytes : maxImageBytes;
+          if ((length != null && length > budget) || chunk.length > budget - bytes.length) {
+            tooLarge = true;
+            break; // Cancels the stream without retaining the excess chunk.
+          }
+          if (chunk.length > maxMessageBytes - usedBytes - bytes.length) {
+            tooLarge = true;
+            overMessageBudget = true;
+            break;
+          }
+          bytes.add(chunk);
         }
-        if (chunk.length > maxMessageBytes - usedBytes - bytes.length) {
-          tooLarge = true;
-          overMessageBudget = true;
-          break;
-        }
-        bytes.add(chunk);
+      } on Exception {
+        // Partial bytes are not an attachment and have not consumed usedBytes.
+        problem ??= appL10n.stateShareReadFailed(file.name);
+        continue;
       }
       if (tooLarge) {
         problem ??= overMessageBudget
