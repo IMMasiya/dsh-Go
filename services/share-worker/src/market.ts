@@ -117,8 +117,15 @@ class MarketError extends Error {
   }
 }
 async function body(response: Response): Promise<string> {
-  if (!response.ok) throw new MarketError('upstream-http', response.status);
-  if (Number(response.headers.get('content-length')) > MAX) throw new MarketError('too-large');
+  if (!response.ok) {
+    // Initiate cancellation without waiting for a possible tee sibling.
+    void response.body?.cancel().catch(() => {});
+    throw new MarketError('upstream-http', response.status);
+  }
+  if (Number(response.headers.get('content-length')) > MAX) {
+    void response.body?.cancel().catch(() => {});
+    throw new MarketError('too-large');
+  }
   const reader = response.body?.getReader();
   if (!reader) throw new MarketError('empty');
   const chunks: Uint8Array[] = [];
