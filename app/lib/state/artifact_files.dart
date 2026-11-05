@@ -234,6 +234,8 @@ class ArtifactFiles {
 
 String _safeName(String name) {
   final cleaned = name.replaceAll(RegExp(r'[\x00-\x1f/\\:*?"<>|]'), '_').trim();
+  // Keep downloaded content separate from the cache's version marker.
+  if (cleaned == '.version') return 'file.version';
   return cleaned.isEmpty ? 'file' : cleaned;
 }
 
