@@ -24,7 +24,9 @@ const LABEL_LIMIT = {
   "session.actions": LIMITS.textChars.sessionAction,
 };
 const ACTION_SURFACES = Object.keys(LABEL_LIMIT);
-const emptyItems = () => Object.fromEntries(SURFACES.map((s) => [s, []]));
+// Only these four are always there. A later surface appears when a plugin declares it, so a plugin
+// that uses none of them gets exactly the row it always did.
+const baseItems = () => ({ "composer.actions": [], "message.actions": [], "composer.strip": [], panels: [] });
 
 const issue = (path, code, severity, message) => ({ path, code, severity, message });
 const ptr = (...parts) => `/dshGo${parts.map((p) => `/${String(p).replaceAll("~", "~0").replaceAll("/", "~1")}`).join("")}`;
@@ -58,7 +60,7 @@ export function parseManifest(pkgJson, pkgDir) {
     icon: undefined,
     wants: [],
     assetsDir: undefined,
-    items: emptyItems(),
+    items: baseItems(),
     ids: new Map(),
     issues,
   };
@@ -129,6 +131,7 @@ export function parseManifest(pkgJson, pkgDir) {
       issues.push(issue(ptr("contributes", surface), "invalid-field", "error", `${surface} must be an array`));
       continue;
     }
+    out.items[surface] ??= [];
     const cap = LIMITS.perPlugin[surface];
     list.forEach((raw, i) => {
       const at = (...p) => ptr("contributes", surface, i, ...p);
@@ -256,17 +259,17 @@ export function renderPlugin(parsed, caps, live) {
     wants: parsed.wants,
     state,
     native: state === "ok",
-    contributes: emptyItems(),
+    contributes: baseItems(),
     issues,
   };
   if (state === "ok") {
     for (const surface of ACTION_SURFACES) {
-      parsed.items[surface].forEach((it, i) => {
+      parsed.items[surface]?.forEach((it, i) => {
         const handled = it.effect !== undefined || live.handlers.has(it.id);
         const supported = (it.requires ?? []).every((x) => (caps.features ?? []).includes(x));
         const ready = handled && supported;
         if (!handled) issues.push(issue(ptr("contributes", surface, i), "no-handler", "warn", `${it.id} has no effect and no on("${it.id}") handler`));
-        row.contributes[surface].push({
+        (row.contributes[surface] ??= []).push({
           id: it.id,
           ...(it.requires === undefined ? {} : { requires: it.requires }),
           label: text(it.label, LABEL_LIMIT[surface], ptr("contributes", surface, i, "label")),
@@ -306,10 +309,10 @@ export function renderPlugin(parsed, caps, live) {
         live: reg?.data === true,
       });
     });
-    parsed.items["turn.note"].forEach((it, i) => {
+    parsed.items["turn.note"]?.forEach((it, i) => {
       const ready = live.notes?.has(it.id) === true;
       if (!ready) issues.push(issue(ptr("contributes", "turn.note", i), "no-handler", "warn", `${it.id} has no turnNote("${it.id}") registration`));
-      row.contributes["turn.note"].push({ id: it.id, ready });
+      (row.contributes["turn.note"] ??= []).push({ id: it.id, ready });
     });
   }
   // v1.2 (only for plugins that declare capabilities): kept even when this app negotiated none.
@@ -342,7 +345,7 @@ export function checkManifest(pkgJson, pkgDir, opts = {}) {
   const parsed = parseManifest(pkgJson, pkgDir);
   const caps = { versions: opts.versions ?? [PROTOCOL], app: opts.app ?? "999.0.0", locale: opts.locale ?? "zh", surfaces: opts.surfaces ?? [...SURFACES, ...PLACEMENTS] };
   const assume = opts.handlers === undefined || opts.handlers === "assume";
-  const all = (surfaces) => surfaces.flatMap((k) => parsed.items[k].map((it) => it.id));
+  const all = (surfaces) => surfaces.flatMap((k) => (parsed.items[k] ?? []).map((it) => it.id));
   const dataPanels = new Set(opts.dataPanels ?? []);
   const panelIds = assume ? all(["panels"]) : [...(opts.panels ?? [])];
   const live = {

@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { test } from 'node:test'
 import { fileURLToPath } from 'node:url'
+import { checkPlugin } from '../../../../sdk/plugin-kit/lib/check.js'
 import { createTestHost } from '../../../../sdk/plugin-kit/lib/testing.js'
 import { apply } from '../lib/index.js'
 
@@ -34,4 +35,9 @@ test('turn notes cover a conversation', () => {
   const feed = host().subscribe('turn', { sessionId: 's' })
   assert.equal(feed.data['3'].text, '第 3 轮')
   feed.stop()
+})
+
+test('check --load has nothing to say about it', async () => {
+  const report = await checkPlugin(fileURLToPath(new URL('..', import.meta.url)), { load: true, lang: 'en' })
+  assert.deepEqual(report.manifest.issues, [])
 })

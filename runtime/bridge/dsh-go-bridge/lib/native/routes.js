@@ -286,7 +286,7 @@ export function createNativeRoutes(core) {
     if (body.userGesture !== undefined && typeof body.userGesture !== "boolean") fail(400, "bad-request", "userGesture must be a boolean");
 
     const rec = pluginOrFail(body.pkg);
-    const item = rec.parsed.items[surfaceKey].find((x) => x.id === body.id);
+    const item = rec.parsed.items[surfaceKey]?.find((x) => x.id === body.id);
     if (item === undefined) fail(404, "not-found", `${body.pkg} declares no ${body.surface} ${body.id}`);
     const capabilityConn = connById.get(body.stream);
     if (!(item.requires ?? []).every(x => capabilityConn?.features?.includes(x))) fail(409, "unsupported", "action requires negotiated capabilities");

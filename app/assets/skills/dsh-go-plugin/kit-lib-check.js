@@ -146,7 +146,7 @@ export function checkManifest(pkgJson, options = {}) {
     const r = bridgeCheckManifest(pkgJson, dir, {
       locale,
       app: options.app,
-      ...(regs === undefined ? { handlers: 'assume' } : { handlers: [...regs.handlers, ...regs.panels], panels: regs.panels, strips: regs.strips, dataPanels: regs.dataPanels }),
+      ...(regs === undefined ? { handlers: 'assume' } : { handlers: [...regs.handlers, ...regs.panels], panels: regs.panels, strips: regs.strips, notes: regs.notes, dataPanels: regs.dataPanels }),
     })
     first ??= r
     for (const i of r.issues) {
@@ -294,7 +294,7 @@ async function loadIn(pkgJson, dir, w) {
       }
     }
   }
-  for (const strip of [...host.parsed.items['composer.strip'], ...host.parsed.items['turn.note']]) {
+  for (const strip of [...host.parsed.items['composer.strip'], ...(host.parsed.items['turn.note'] ?? [])]) {
     const feed = host.subscribe(strip.id, { sessionId: 'check-session' })
     for (const e of feed.errors) notes.push({ path: `/runtime/${strip.id}`, code: 'load', severity: 'error', message: w.stripEmit(strip.id, e) })
     feed.stop()

@@ -104,9 +104,16 @@ test("presentation: sheet is kept, anything else is an error and stays a page", 
   assert.ok(codes(r.issues).includes("invalid-field@/dshGo/contributes/panels/1/presentation"));
 });
 
-test("older manifests render every surface key, empty", () => {
-  const r = check("old", { "composer.actions": [{ id: "a", label: "A" }] });
-  assert.deepEqual(Object.keys(r.plugin.contributes).sort(), [...SURFACES].sort());
+test("a plugin using none of them gets the row it always did; one using them gets only those", () => {
+  const base = ["composer.actions", "message.actions", "composer.strip", "panels"];
+  const old = check("old", { "composer.actions": [{ id: "a", label: "A" }] });
+  assert.deepEqual(Object.keys(old.plugin.contributes), base);
+  const some = check("some", { "session.actions": [{ id: "a", label: "A" }] });
+  assert.deepEqual(Object.keys(some.plugin.contributes), [...base, "session.actions"]);
+});
+
+test("every surface has its limits", () => {
+  for (const surface of SURFACES) assert.equal(typeof LIMITS.perPlugin[surface], "number", surface);
 });
 
 test("core: a turn note feed cuts text, drops junk and keeps the newest turns", async (t) => {
