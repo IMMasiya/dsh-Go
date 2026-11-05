@@ -20,6 +20,7 @@ import 'package:dsh_app/ui/shell/drawer/drawer_destination.dart';
 import 'package:dsh_app/ui/theme/theme.dart';
 import 'package:dsh_client/dsh_client.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart' show ProviderScope;
 import 'package:flutter_riverpod/misc.dart' show Override;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -162,6 +163,7 @@ void main() {
       final pill = tester.getRect(find.byKey(const ValueKey('composer-model')));
       final words = tester.getRect(find.byType(RichText).last);
       expect(pill.height, greaterThan(36));
+      expect(pill.height, words.height, reason: 'as tall as its words, whatever room it is given');
       expect(pill.top, lessThanOrEqualTo(words.top));
       expect(pill.bottom, greaterThanOrEqualTo(words.bottom));
     });
@@ -350,6 +352,37 @@ void main() {
         await tester.tap(find.byKey(const ValueKey('overview-model')), warnIfMissed: false);
         await tester.pumpAndSettle();
         expect(find.text('思考深度'), opens ? findsOneWidget : findsNothing);
+      });
+    }
+
+    for (final (turnsOneShot, picks) in [(false, 1), (true, 0)]) {
+      testWidgets('a model picked after the conversation ${turnsOneShot ? 'turned out' : 'did not turn out'} '
+          'one-shot: $picks set', (tester) async {
+        var mode = SubagentMode.continuable;
+        final harness = _harness(
+          extra: [
+            subagentParentProvider.overrideWith(
+              (ref, id) => SubagentParent(
+                address: SubagentAddress(parentSessionId: 'p', childSessionId: id, mode: mode),
+                label: '子代理',
+                parentTitle: '上级',
+              ),
+            ),
+          ],
+        );
+        await panel(tester, harness: harness);
+        await tester.tap(find.byKey(const ValueKey('overview-model')));
+        await tester.pumpAndSettle();
+        if (turnsOneShot) {
+          mode = SubagentMode.oneShot;
+          ProviderScope.containerOf(
+            tester.element(find.byType(ConversationOverview)),
+          ).invalidate(subagentParentProvider);
+          await tester.pump();
+        }
+        await tester.tap(find.text('V41 Flash'));
+        await tester.pumpAndSettle();
+        expect(harness.controllers['s1']!.models, hasLength(picks));
       });
     }
 
