@@ -1,9 +1,10 @@
-// Which conversation is the companion's on each host. It is an ordinary session
-// on that host, opened with the `dsh-go-companion` Agent preset (persona only, no
-// tools); this file remembers its id, keeps it out of the chat drawer and out of
-// chat alerts. Hosts whose engine lacks the preset (an older runtime, a remote DSH
-// without an updated bridge) still get a conversation: the persona then travels
-// in the first message, on the engine's default preset.
+// Which conversation is the companion's on each host (full mode). It is an
+// ordinary session on that host, opened with the `dsh-go-companion-full` Agent
+// preset: her persona with the host's standard tools, and the phone's when phone
+// control is on. This file remembers its id, keeps it out of the chat drawer and
+// out of chat alerts. Hosts whose engine lacks the preset (an older runtime, a
+// remote DSH without an updated bridge) still get a conversation: the persona
+// then travels in the first message, on the engine's default preset.
 
 import 'dart:async';
 import 'dart:convert';
@@ -18,25 +19,30 @@ import '../state/connection_state.dart';
 import '../state/hosts_state.dart';
 import '../state/sessions_state.dart';
 
-/// Declared in runtime/bridge/dsh-go-bridge/cordis.patch.yml.
-const companionPresetId = 'dsh-go-companion';
+/// Full mode's preset, declared in runtime/bridge/dsh-go-bridge/cordis.patch.yml.
+const companionPresetId = 'dsh-go-companion-full';
 
 const _sessionsKey = 'companion_sessions';
 const _lastSeenKey = 'companion_last_seen';
 
 @immutable
 class CompanionBinding {
-  const CompanionBinding(this.sessionId, {this.inlinePersona = false});
+  const CompanionBinding(this.sessionId, {this.inlinePersona = false, this.full = true});
 
   factory CompanionBinding.fromJson(Map<String, Object?> json) =>
-      CompanionBinding(json['id']! as String, inlinePersona: json['inline'] == true);
+      CompanionBinding(json['id']! as String, inlinePersona: json['inline'] == true, full: json['full'] == true);
 
   final String sessionId;
 
   /// The host has no preset: the persona goes in this session's first message.
   final bool inlinePersona;
 
-  Map<String, Object?> toJson() => {'id': sessionId, if (inlinePersona) 'inline': true};
+  /// Opened for full mode (tools, normal approvals). An older binding is the
+  /// persona-only, read-only conversation: it is left on the host as it is and
+  /// a new one is opened, never widened in the background.
+  final bool full;
+
+  Map<String, Object?> toJson() => {'id': sessionId, if (inlinePersona) 'inline': true, if (full) 'full': true};
 }
 
 String _hostKey(HostRef host) => '${host.kind.name}:${host.id}';
@@ -102,22 +108,16 @@ class CompanionSessions extends Notifier<Map<String, CompanionBinding>> {
     await _loaded.future;
     checkCurrent();
     final existing = of(host);
-    if (existing != null) {
+    if (existing != null && existing.full) {
       final gone = await _gone(conn.client, existing.sessionId);
       checkCurrent();
       if (!gone) return existing;
     }
 
     final sessions = owner.read(sessionsProvider.notifier);
+    // The host's default permissions: what needs approval asks for a real tap.
+    // Never auto-approved, whatever the app does for ordinary chats.
     final id = await sessions.createForConnection(conn, autoApprove: false, isCurrent: current);
-    checkCurrent();
-    // The preset declares no tools, but an engine can still lend an agent the
-    // host's global ones. Whatever reaches her asks first and writes nothing.
-    try {
-      await conn.client.setPermissionPreset(id, 'read-only');
-    } on Object {
-      // An engine without the preset keeps its default (it asks for writes).
-    }
     checkCurrent();
     // Before the first message, so it never shows in the drawer.
     final selected = await _selectPreset(conn.client, id, current);

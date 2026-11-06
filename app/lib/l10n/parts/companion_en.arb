@@ -100,7 +100,7 @@
   "companionModeLight": "Light",
   "companionModeLightHint": "Chat only. The phone talks to the model; no engine",
   "companionModeFull": "Full",
-  "companionModeFullHint": "The DSH engine on the current host; tools come next",
+  "companionModeFullHint": "DSH on the host, with tools and phone control",
   "companionLightNoKey": "Light mode needs a DeepSeek API key. Add one in Settings and we can talk.",
   "companionLightBadKey": "The API key seems wrong, or it is no longer valid.",
   "companionLightBusy": "It is busy over there. Tell me again in a bit?",

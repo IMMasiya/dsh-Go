@@ -2981,7 +2981,7 @@
   "companionModeLight": "轻量",
   "companionModeLightHint": "只聊天。手机直连模型，不用启动引擎",
   "companionModeFull": "完整",
-  "companionModeFullHint": "用当前主机的 DSH 引擎，之后接上工具",
+  "companionModeFullHint": "主机上的 DSH 引擎，带工具和手机操控",
   "companionLightNoKey": "轻量模式要用 DeepSeek API Key，在设置里填上就能和我聊啦。",
   "companionLightBadKey": "API Key 好像不对，或者已经失效了。",
   "companionLightBusy": "那边有点忙，等一下再和我说吧。",

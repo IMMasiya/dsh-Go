@@ -4773,7 +4773,7 @@ class L10nZh extends L10n {
   String get companionModeFull => '完整';
 
   @override
-  String get companionModeFullHint => '用当前主机的 DSH 引擎，之后接上工具';
+  String get companionModeFullHint => '主机上的 DSH 引擎，带工具和手机操控';
 
   @override
   String get companionLightNoKey => '轻量模式要用 DeepSeek API Key，在设置里填上就能和我聊啦。';

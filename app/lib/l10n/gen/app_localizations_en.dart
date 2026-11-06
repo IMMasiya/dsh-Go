@@ -5069,7 +5069,7 @@ class L10nEn extends L10n {
   String get companionModeFull => 'Full';
 
   @override
-  String get companionModeFullHint => 'The DSH engine on the current host; tools come next';
+  String get companionModeFullHint => 'DSH on the host, with tools and phone control';
 
   @override
   String get companionLightNoKey => 'Light mode needs a DeepSeek API key. Add one in Settings and we can talk.';

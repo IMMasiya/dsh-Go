@@ -8825,7 +8825,7 @@ abstract class L10n {
   /// No description provided for @companionModeFullHint.
   ///
   /// In zh, this message translates to:
-  /// **'用当前主机的 DSH 引擎，之后接上工具'**
+  /// **'主机上的 DSH 引擎，带工具和手机操控'**
   String get companionModeFullHint;
 
   /// No description provided for @companionLightNoKey.

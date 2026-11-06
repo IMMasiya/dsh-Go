@@ -145,7 +145,7 @@ Future<Object> _outcome(Future<CompanionBinding> future) =>
 
 void _savedA() => SharedPreferences.setMockInitialValues({
   'companion_sessions': jsonEncode({
-    'local:local': {'id': 'a-existing'},
+    'local:local': {'id': 'a-existing', 'full': true},
   }),
 });
 
@@ -308,19 +308,15 @@ void main() {
     expect(room.a.argsOf('commands/execute'), isEmpty);
   });
 
-  test('a new session retains permission, persona selection and persistence order', () async {
+  test('a new session gets the full preset, keeps the host permissions, then persists', () async {
     final room = _Room();
     await room.loaded();
     final binding = await room.sessions.ensure();
     expect(binding.sessionId, 'a-created');
     expect(binding.inlinePersona, false);
-    expect(room.a.calls.map((c) => c.$1), [
-      'session/create',
-      'commands/execute',
-      'agentPresets/list',
-      'agentPresets/select',
-    ]);
-    expect(room.a.argsOf('commands/execute').single['line'], '/permission read-only');
+    expect(binding.full, true);
+    expect(room.a.calls.map((c) => c.$1), ['session/create', 'agentPresets/list', 'agentPresets/select']);
+    expect(room.a.argsOf('commands/execute'), isEmpty);
     final prefs = await SharedPreferences.getInstance();
     final saved = jsonDecode(prefs.getString('companion_sessions')!) as Map;
     expect((saved['local:local'] as Map)['id'], 'a-created');
@@ -333,6 +329,20 @@ void main() {
     final binding = await room.sessions.ensure();
     expect(binding.inlinePersona, true);
     expect(room.a.argsOf('agentPresets/select'), isEmpty);
-    expect(room.a.argsOf('commands/execute').single['line'], '/permission read-only');
+    expect(room.a.argsOf('commands/execute'), isEmpty);
+  });
+
+  test('a persona-only conversation from before is left alone and a full one opened', () async {
+    SharedPreferences.setMockInitialValues({
+      'companion_sessions': jsonEncode({
+        'local:local': {'id': 'old-read-only'},
+      }),
+    });
+    final room = _Room();
+    await room.loaded();
+    final binding = await room.sessions.ensure();
+    expect(binding.sessionId, 'a-created');
+    expect(binding.full, true);
+    expect(room.a.argsOf('commands/execute'), isEmpty);
   });
 }
