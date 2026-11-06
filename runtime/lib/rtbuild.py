@@ -837,6 +837,7 @@ def overlay_entries(runtime_info, with_python=False, with_pnpm=False, with_bridg
       "export TERM=\"${TERM:-xterm-256color}\"\n"
       "export TMPDIR=\"${TMPDIR:-/tmp}\"\n"
       "export DSH_HOME=\"${DSH_HOME:-/root/.dsh}\"\n"
+      "export XDG_DATA_DIRS=\"${XDG_DATA_DIRS-/usr/local/share:/usr/share:/system}\"\n"
       + ("export pnpm_config_registry=\"${pnpm_config_registry:-%s}\"\n" % NPMMIRROR if with_pnpm else ""))
     f("etc/apt/apt.conf.d/99dsh-app-proot",
       "// proot fakes root; apt's privilege drop to _apt only causes setgroups/permission noise.\n"
@@ -1315,6 +1316,8 @@ def launch_template():
         "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
         "LANG=C.UTF-8", "TERM=xterm-256color", "TMPDIR=/tmp",
         "DSH_HOME=/root/.dsh",
+        # Linux font discovery appends /fonts; Android's fonts are in the bound /system.
+        "XDG_DATA_DIRS=/usr/local/share:/usr/share:/system",
         # pnpm 11 reads its registry from here (not from any npmrc outside $HOME); see DSH_WEB_PATCH
         "pnpm_config_registry=" + NPMMIRROR,
         "UV_USE_IO_URING=0",

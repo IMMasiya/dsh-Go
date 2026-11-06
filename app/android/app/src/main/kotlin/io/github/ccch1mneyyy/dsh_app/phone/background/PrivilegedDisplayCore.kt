@@ -1,7 +1,7 @@
 // Portions derived from Phase (https://github.com/CikeSeven/phase), used with the author's permission. See THIRD_PARTY_NOTICES.md.
 // Local changes: blocking, one owner per task (the bridge serialises calls on one worker
 // thread); a UiAutomation control-tree read rendered to the screen text format, so text-only
-// models can use 不打扰模式 too; IME policy HIDE; JPEG capture with black-frame → secure; display
+// models can use 不打扰模式 too; IME policy HIDE; JPEG capture with bounded first-frame readiness; display
 // sized to the phone's aspect (short side 720). No commands, paths or display ids are accepted
 // from callers.
 package io.github.ccch1mneyyy.dsh_app.phone.background
@@ -294,18 +294,32 @@ class PrivilegedDisplayCore(private val context: Context) {
         response.putInt(Proto.DISPLAY_ID, id)
         response.putString(Proto.FG_PKG, pkg)
         response.putBoolean(Proto.PORTRAIT, height >= width)
-        val shot = runCatching { capture() }.getOrNull()
-        var secure = shot?.black == true
+        val captureResult = runCatching { capture() }
+        val captureFailure = captureResult.exceptionOrNull()
+        if (captureFailure is InterruptedException ||
+            captureFailure is Fault && captureFailure.code == "cancelled") throw captureFailure
+        // Other capture faults retain the existing tree-only observation path.
+        val shot = captureResult.getOrNull()
         val label = runCatching { appLabel(pkg) }.getOrNull()
         label?.let { response.putString(Proto.APP_LABEL, it) }
         val treeResult = runCatching { readTree(id, pkg) }
         val failure = treeResult.exceptionOrNull()
-        if (failure is Fault && failure.code == "secureWindow") secure = true
+        if (failure is InterruptedException || failure is Fault && failure.code == "cancelled") throw failure
+        // Pixels alone never identify FLAG_SECURE. Keep an explicit secure failure authoritative.
+        val secure = failure is Fault && failure.code == "secureWindow"
         response.putBoolean(Proto.SECURE, secure)
         if (secure) { response.putBoolean(Proto.POOR, false); response.putInt(Proto.COUNT, 0); return }
         // A read must report its failure; observation after an already-dispatched write
         // must not turn that write into a failed action that a caller might replay.
         val tree = if (requireTree) treeResult.getOrThrow() else treeResult.getOrNull()
+        if (captureResult.isSuccess && shot == null) {
+            if (requireTree) throw Fault("frameNotReady")
+            // The action already happened. Never make the caller replay it for an absent frame.
+            response.putBoolean(Proto.FRAME_NOT_READY, true)
+            response.putBoolean(Proto.POOR, true)
+            response.putInt(Proto.COUNT, 0)
+            return
+        }
         // The screenshot contains the whole viewport, including nodes beyond the 120-line
         // text limit. Never attach it when secrets were found or the scan was incomplete.
         // The typing unlock changes permission to write, never permission to reveal a secret.
@@ -349,9 +363,10 @@ class PrivilegedDisplayCore(private val context: Context) {
         return runCatching { pm.getApplicationLabel(pm.getApplicationInfo(pkg, 0)).toString() }.getOrNull()
     }
 
-    private class CaptureResult(val jpeg: ByteArray, val black: Boolean)
+    private class CaptureResult(val jpeg: ByteArray)
 
-    private fun capture(): CaptureResult {
+    /** Null means only absent/black frames; other capture failures remain distinguishable. */
+    private fun capture(): CaptureResult? {
         val ir = ImageReader.newInstance(width, height, PixelFormat.RGBA_8888, 2)
         try {
             synchronized(lock) {
@@ -361,33 +376,47 @@ class PrivilegedDisplayCore(private val context: Context) {
                 reader = ir
                 previous?.close()
             }
-            val deadline = SystemClock.uptimeMillis() + 2500
-            var image = ir.acquireLatestImage()
-            while (image == null) {
-                if (SystemClock.uptimeMillis() >= deadline) throw Fault("screenshotFailed")
-                sleepChecked(40)
-                image = ir.acquireLatestImage()
-            }
-            try {
-                val plane = image.planes.singleOrNull() ?: throw Fault("screenshotFailed")
-                if (plane.pixelStride != 4 || plane.rowStride < width * 4) throw Fault("screenshotFailed")
-                val pixels = ByteBuffer.allocate(width * height * 4)
-                val src = plane.buffer.duplicate()
-                for (row in 0 until height) {
-                    val start = row * plane.rowStride
-                    src.limit(start + width * 4); src.position(start)
-                    pixels.put(src)
+            val deadline = SystemClock.uptimeMillis() + BackgroundFrameReadiness.CAPTURE_TIMEOUT_MS
+            for (attempt in 0..1) {
+                if (released.get() || Thread.currentThread().isInterrupted) throw Fault("cancelled")
+                if (attempt > 0 && SystemClock.uptimeMillis() >= deadline) return null
+                var image = ir.acquireLatestImage()
+                while (image == null) {
+                    val remaining = deadline - SystemClock.uptimeMillis()
+                    if (remaining <= 0) return null
+                    sleepChecked(minOf(40L, remaining))
+                    image = ir.acquireLatestImage()
                 }
-                pixels.flip()
-                val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
                 try {
-                    bitmap.copyPixelsFromBuffer(pixels)
-                    val black = isMostlyBlack(bitmap)
-                    val buffer = ByteArrayOutputStream()
-                    bitmap.compress(Bitmap.CompressFormat.JPEG, 80, buffer)
-                    return CaptureResult(buffer.toByteArray(), black)
-                } finally { bitmap.recycle() }
-            } finally { image.close() }
+                    val plane = image.planes.singleOrNull() ?: throw Fault("screenshotFailed")
+                    if (plane.pixelStride != 4 || plane.rowStride < width * 4) throw Fault("screenshotFailed")
+                    val pixels = ByteBuffer.allocate(width * height * 4)
+                    val src = plane.buffer.duplicate()
+                    for (row in 0 until height) {
+                        val start = row * plane.rowStride
+                        src.limit(start + width * 4); src.position(start)
+                        pixels.put(src)
+                    }
+                    pixels.flip()
+                    val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+                    try {
+                        bitmap.copyPixelsFromBuffer(pixels)
+                        val remaining = deadline - SystemClock.uptimeMillis()
+                        when (BackgroundFrameReadiness.next(isMostlyBlack(bitmap), attempt, remaining)) {
+                            BackgroundFrameReadiness.Next.NOT_READY -> return null
+                            BackgroundFrameReadiness.Next.RETRY -> Unit
+                            BackgroundFrameReadiness.Next.READY -> {
+                                val buffer = ByteArrayOutputStream()
+                                bitmap.compress(Bitmap.CompressFormat.JPEG, 80, buffer)
+                                return CaptureResult(buffer.toByteArray())
+                            }
+                        }
+                    } finally { bitmap.recycle() }
+                } finally { image.close() }
+                // Release the first Image before taking one more from this same reader/surface.
+                sleepChecked(BackgroundFrameReadiness.retryWaitMs(deadline - SystemClock.uptimeMillis()))
+            }
+            return null
         } finally { /* reader kept for next frame; closed on release */ }
     }
 

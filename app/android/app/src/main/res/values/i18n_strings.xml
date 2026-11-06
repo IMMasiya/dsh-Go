@@ -302,6 +302,9 @@
     <!-- tile -->
     <string name="tile_new_chat_label">New chat</string>
     <string name="a11y_keeper_grant_failed">Authorization failed. You can use the computer command instead.</string>
+    <string name="a11y_keeper_grant_unavailable">The authorization request could not be completed. Check the authorization channel status.</string>
+    <string name="a11y_keeper_grant_denied">The system denied this request to grant the permission needed to restore accessibility automatically.</string>
+    <string name="a11y_keeper_grant_not_acquired">The authorization request was acknowledged, but the permission needed to restore accessibility automatically is still not granted.</string>
     <string name="a11y_keeper_needs_setup">Set up Shizuku or wireless debugging first.</string>
     <string name="background_root_legacy_client">Root was selected. Use an updated interface to manage it, or turn phone control off.</string>
     <string name="background_root_starting">Waiting for root authorization</string>
