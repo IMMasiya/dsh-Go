@@ -319,6 +319,44 @@ class CompanionPill extends StatelessWidget {
   }
 }
 
+/// How well she knows the person: four small pearls, lit up to the step, and its name.
+class CompanionBondMeter extends StatelessWidget {
+  const CompanionBondMeter({super.key, required this.step, required this.label});
+
+  final int step;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colors = DshColors.of(context);
+    return Semantics(
+      label: label,
+      child: ExcludeSemantics(
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(label, style: theme.textTheme.bodyMedium?.copyWith(color: colors.textTertiary)),
+            const SizedBox(width: 8),
+            for (var i = 0; i < 4; i++)
+              Padding(
+                padding: const EdgeInsets.only(left: 3),
+                child: Container(
+                  width: 6,
+                  height: 6,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: i <= step ? const Color(0xFFFF9DB5) : colors.textTertiary.withValues(alpha: 0.3),
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 /// The seaweed green her cushion and the resting dot share.
 const _seaweed = Color(0xFF6EB5A8);
 

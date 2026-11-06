@@ -117,11 +117,24 @@
   const IDLE_FLOURISHES = ['tilt', 'tiltLeft', 'sway', 'nodSmall', 'lookUp', 'tail', 'hum'];
 
   /** What she does when nothing is going on depends a little on the hour. */
+  /** Where closeness starts to show, in steps: same lines as companion_bond.dart. */
+  const BOND_STEPS = [0.03, 0.1, 0.3];
+  const bondStep = () => BOND_STEPS.filter((s) => life.vitals.closeness >= s).length;
+
   function idleChoices() {
     const tod = document.documentElement.dataset.tod;
-    if (tod === 'night') return [...IDLE_FLOURISHES, 'yawn', 'yawn', 'tilt'];
-    if (tod === 'dawn') return [...IDLE_FLOURISHES, 'stretch', 'yawn'];
-    return IDLE_FLOURISHES;
+    const choices =
+      tod === 'night'
+        ? [...IDLE_FLOURISHES, 'yawn', 'yawn', 'tilt']
+        : tod === 'dawn'
+          ? [...IDLE_FLOURISHES, 'stretch', 'yawn']
+          : [...IDLE_FLOURISHES];
+    // The better she knows you, the more she hums to herself, and in time
+    // blows you a little heart now and then.
+    const step = bondStep();
+    if (step >= 2) choices.push('hum');
+    if (step >= 3) choices.push('heart', 'heart');
+    return choices;
   }
 
   /** A character's own curves (arms differ from model to model). */
@@ -359,6 +372,10 @@
     // A snack carried toward her: her mouth opens a little as it comes close.
     expect: 0,
     expecting: 0,
+    // Her day: drowsy late at night (heavier lids, slower), and the flourishes
+    // queued for the first morning visit.
+    drowsy: 0,
+    waking: [],
     tailKick: 0,
     speech: 0, // seconds of mouth movement still owed
     syllable: 0,
@@ -543,7 +560,7 @@
 
       const vitals = life.vitals;
       // Livelier when rested, calmer when not; never frozen.
-      const drift = REDUCED ? 0 : 0.65 + vitals.energy * 0.55;
+      const drift = REDUCED ? 0 : (0.65 + vitals.energy * 0.55) * (1 - 0.3 * life.drowsy);
       const asleep = life.sleep;
       const thinking = life.mood === 'thinking' ? 1 : 0;
 
@@ -587,7 +604,8 @@
       }
 
       // Eyes: blink, emotions, a pat, sleep.
-      const lid = eyelid(now) * lidFromFace * (1 - 0.92 * life.pat) * (1 - asleep);
+      const heavy = life.mood === 'idle' ? 1 - 0.2 * life.drowsy : 1;
+      const lid = eyelid(now) * lidFromFace * (1 - 0.92 * life.pat) * (1 - asleep) * heavy;
       m.set('ParamEyeLOpen', lid);
       m.set('ParamEyeROpen', lid);
       if (life.pat > 0.02) {
@@ -609,16 +627,23 @@
 
       // Idle flourishes, only when nothing else is going on.
       if (!REDUCED && life.mood === 'idle' && !life.pointer && now > life.flourishAt && life.emotion === 'calm') {
-        const name = pick(idleChoices());
+        // The first morning visit: a stretch, then a yawn, before anything else.
+        const name = life.waking.length ? life.waking.shift() : pick(idleChoices());
         if (name === 'tail') {
           life.tailKick = 1;
+        } else if (name === 'heart') {
+          playAction('nodSmall');
+          const [mx, my] = mouthOnScreen();
+          scene.marks.hearts(mx + 18, my - 10, 1);
         } else if (name === 'hum') {
           playAction('sway');
           humNotes(3);
         } else {
           playAction(name);
         }
-        life.flourishAt = now + rand(11000, 28000) / (0.6 + life.vitals.energy * 0.8);
+        life.flourishAt = life.waking.length
+          ? now + 2600
+          : now + rand(11000, 28000) / (0.6 + life.vitals.energy * 0.8);
       }
 
       // Mouth: real audio levels when given (later), else the rhythm of the text.
@@ -1045,7 +1070,8 @@
     life.hugging = true;
     const [cx] = toScreen(0, 0.4);
     life.hugSide = held.x < cx ? 1 : -1;
-    setEmotion('happy', 30000);
+    // Shy the first times; glad once she knows you.
+    setEmotion(bondStep() === 0 ? 'shy' : 'happy', 30000);
     scene.marks.hearts(held.x, held.y - 18, 2);
     post({ type: 'touch', zone: held.zone, kind: 'hug' });
   }
@@ -1407,8 +1433,11 @@
   const TINTS = { dawn: [1, 0.98, 0.96], day: [1, 1, 1], dusk: [1, 0.95, 0.93], night: [0.92, 0.94, 1] };
 
   function applyTimeOfDay() {
-    const tod = query.get('tod') ?? timeOfDay(new Date().getHours());
+    const hour = Number(query.get('hour') ?? new Date().getHours());
+    const tod = query.get('tod') ?? timeOfDay(hour);
     document.documentElement.dataset.tod = tod;
+    // Past eleven and before five she's drowsy.
+    life.drowsy = tod === 'night' && (hour >= 23 || hour < 5) ? 1 : 0;
     scene.configure({ night: tod === 'night', reducedMotion: REDUCED });
     const [r, g, b] = TINTS[tod] ?? TINTS.day;
     model?.getRenderer().setModelColor(r, g, b, 1);
@@ -1450,6 +1479,12 @@
       if (document.hidden) pause();
       if (!paused) frame = requestAnimationFrame(render);
       document.documentElement.dataset.ready = '1';
+      // Early morning: she's only just up. A stretch, then a yawn, once the
+      // greeting has settled.
+      if (document.documentElement.dataset.tod === 'dawn' && !REDUCED) {
+        life.waking = ['stretch', 'yawn'];
+        life.flourishAt = performance.now() + 6000;
+      }
       post({ type: 'ready', ms: Math.round(performance.now() - started), name: character.name ?? null, expressions: [...model.expressions.keys()] });
     } catch (error) {
       post({ type: 'error', message: String(error?.message ?? error) });
@@ -1484,6 +1519,10 @@
       expect: life.expect,
       mouthAt: model ? mouthPoint() : null,
       tilt: [tilt.sx, tilt.sy],
+      drowsy: life.drowsy,
+      waking: [...life.waking],
+      bond: bondStep(),
+      choices: idleChoices(),
       zoom: camera.zoom,
       paused,
       drawables: model?.core.getDrawableCount() ?? 0,

@@ -17,6 +17,7 @@ import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../../companion/companion_bond.dart';
 import '../../companion/companion_initiative.dart';
 import '../../companion/companion_initiative_owner.dart';
 import '../../companion/companion_keeper.dart';
@@ -310,10 +311,30 @@ class _CompanionPageState extends ConsumerState<CompanionPage> implements Compan
   }
 
   void _applyVitals(CompanionSnapshot snapshot) {
+    final before = _vitals;
     _vitals = snapshot;
     final v = snapshot.vitals;
     _stage.command('vitals', {'valence': v.valence, 'energy': v.energy, 'closeness': v.closeness});
     _stage.command('activity', {'name': v.activity, 'remainingMs': snapshot.activityLeft.inMilliseconds});
+    // A step closer while the person is here: a small moment, once, as it
+    // happens. Arriving with it already reached is not news.
+    if (before != null && before.storeId == snapshot.storeId) {
+      final step = companionBond(v.closeness);
+      if (step > companionBond(before.vitals.closeness)) _closer(step);
+    }
+  }
+
+  void _closer(int step) {
+    _stage.command('emotion', {'name': 'happy', 'hold': 3200});
+    _stage.command('action', {'name': 'hop'});
+    _remember('你觉得和对方又亲近了一些');
+    if (!mounted || _running || _sending) return;
+    final l10n = context.l10n;
+    _say(switch (step) {
+      1 => l10n.companionCloser1,
+      2 => l10n.companionCloser2,
+      _ => l10n.companionCloser3,
+    });
   }
 
   /// One event at a time, against the state last read. A conflict reads again;
@@ -382,10 +403,12 @@ class _CompanionPageState extends ConsumerState<CompanionPage> implements Compan
       unawaited(SharedPreferences.getInstance().then((p) => p.setBool(_hintDoneKey, true)));
     }
     final l10n = context.l10n;
+    // Once they're close she has a fonder word too.
+    final close = companionBond(_vitals?.vitals.closeness ?? 0) >= 2;
     final lines = switch ((zone, kind)) {
-      (_, 'hug') => [l10n.companionHug1, l10n.companionHug2, l10n.companionHug3],
+      (_, 'hug') => [l10n.companionHug1, l10n.companionHug2, l10n.companionHug3, if (close) l10n.companionHugClose],
       (_, 'tease') => [l10n.companionTease1, l10n.companionTease2, l10n.companionTease3],
-      (_, 'pat') => [l10n.companionPat1, l10n.companionPat2, l10n.companionPat3],
+      (_, 'pat') => [l10n.companionPat1, l10n.companionPat2, l10n.companionPat3, if (close) l10n.companionPatClose],
       ('head', _) => [l10n.companionTapHead1, l10n.companionTapHead2],
       ('face', _) => [l10n.companionTapFace1, l10n.companionTapFace2, l10n.companionTapFace3],
       ('tail', _) => [l10n.companionTapTail1, l10n.companionTapTail2, l10n.companionTapTail3],
@@ -1212,6 +1235,22 @@ class _CompanionPageState extends ConsumerState<CompanionPage> implements Compan
                 SheetGroup(
                   margin: const EdgeInsets.fromLTRB(SheetTitleBar.inset, 0, SheetTitleBar.inset, 12),
                   children: [
+                    // Only where her state is kept: otherwise there is nothing to show.
+                    if (_vitals case final vitals?)
+                      SettingsTile(
+                        icon: AppIcons.postLike,
+                        tinted: false,
+                        title: l10n.companionBondTitle,
+                        value: CompanionBondMeter(
+                          step: companionBond(vitals.vitals.closeness),
+                          label: switch (companionBond(vitals.vitals.closeness)) {
+                            0 => l10n.companionBond0,
+                            1 => l10n.companionBond1,
+                            2 => l10n.companionBond2,
+                            _ => l10n.companionBond3,
+                          },
+                        ),
+                      ),
                     SettingsTile(
                       icon: light ? AppIcons.engineStarting : AppIcons.engine,
                       tinted: false,

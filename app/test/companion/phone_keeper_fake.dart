@@ -5,26 +5,33 @@ import 'package:dsh_client/dsh_client.dart';
 /// on the test clock (the file store has its own tests in dsh_client). With no
 /// [state] it keeps nothing, as a phone that can't keep her state would.
 class FakePhoneKeeper implements CompanionKeeper {
-  FakePhoneKeeper({this.state});
+  FakePhoneKeeper({this.state, this.closenessAfter});
 
   CompanionSnapshot? state;
   final events = <String>[];
 
-  static CompanionSnapshot snapshotOf({int revision = 0, String activity = 'idle', int? activityUntil}) =>
-      CompanionSnapshot.fromJson({
-        'storeId': 'd0a90d66-ff37-4f2a-b31c-194c791ec651',
-        'revision': revision,
-        'memoryRevision': 0,
-        'capabilities': {'persistence': 'local', 'memories': true, 'automaticRecall': false},
-        'asOf': 1793899800000,
-        'state': {
-          'valence': 0.35,
-          'energy': 0.75,
-          'closeness': 0.01,
-          'activity': activity,
-          'activityUntil': activityUntil,
-        },
-      })!;
+  /// Her closeness after the next event, to cross a step on purpose.
+  double? closenessAfter;
+
+  static CompanionSnapshot snapshotOf({
+    int revision = 0,
+    String activity = 'idle',
+    int? activityUntil,
+    double closeness = 0.01,
+  }) => CompanionSnapshot.fromJson({
+    'storeId': 'd0a90d66-ff37-4f2a-b31c-194c791ec651',
+    'revision': revision,
+    'memoryRevision': 0,
+    'capabilities': {'persistence': 'local', 'memories': true, 'automaticRecall': false},
+    'asOf': 1793899800000,
+    'state': {
+      'valence': 0.35,
+      'energy': 0.75,
+      'closeness': closeness,
+      'activity': activity,
+      'activityUntil': activityUntil,
+    },
+  })!;
 
   @override
   Future<CompanionSnapshot?> snapshot() async => state;
@@ -34,6 +41,7 @@ class FakePhoneKeeper implements CompanionKeeper {
     events.add(type);
     final next = snapshotOf(
       revision: read.revision + 1,
+      closeness: closenessAfter ?? read.vitals.closeness,
       activity: const {'snack', 'play', 'rest'}.contains(type) ? type : 'idle',
       activityUntil: const {'snack', 'play', 'rest'}.contains(type) ? 1793899800000 + 45000 : null,
     );

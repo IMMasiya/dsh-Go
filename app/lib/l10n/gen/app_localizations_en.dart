@@ -5136,6 +5136,36 @@ class L10nEn extends L10n {
   String get companionHug3 => 'A little longer, just a little.';
 
   @override
+  String get companionBondTitle => 'You two';
+
+  @override
+  String get companionBond0 => 'Just met';
+
+  @override
+  String get companionBond1 => 'Getting to know each other';
+
+  @override
+  String get companionBond2 => 'Close';
+
+  @override
+  String get companionBond3 => 'Very close';
+
+  @override
+  String get companionCloser1 => 'I think... I\'m not so nervous anymore.';
+
+  @override
+  String get companionCloser2 => 'Being with you feels easier and easier.';
+
+  @override
+  String get companionCloser3 => 'Keep coming back, okay? I\'ll miss you.';
+
+  @override
+  String get companionPatClose => 'I love it when you pat my head.';
+
+  @override
+  String get companionHugClose => 'You can hold me tighter, you know.';
+
+  @override
   String get engineNewChatDefaultsLast => 'New chat defaults (last choice)';
 
   @override

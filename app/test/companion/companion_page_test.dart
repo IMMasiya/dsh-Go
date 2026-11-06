@@ -265,6 +265,48 @@ void main() {
       await tester.pump(const Duration(seconds: 10));
     });
 
+    testWidgets('a step closer while you are here: a hop and a word, once; the menu shows where you are', (
+      tester,
+    ) async {
+      SharedPreferences.setMockInitialValues({'companion_touch_hint_done': true, 'companion_home_hint_done': true});
+      final phone = FakePhoneKeeper(state: FakePhoneKeeper.snapshotOf(closeness: 0.025));
+      final commands = <(String, Map<String, Object?>)>[];
+      CompanionStageEvents? stageEvents;
+      await tester.pumpWidget(
+        _app(
+          CompanionPage(
+            storeOverride: installedStore(),
+            stageBuilder: (controller, events) {
+              stageEvents = events;
+              return const SizedBox.expand();
+            },
+            stageController: CompanionStageController(sink: (type, args) => commands.add((type, args))),
+          ),
+          phone: phone,
+        ),
+      );
+      (await _stageUp(tester, () => stageEvents)).onReady();
+      await _settle(tester);
+      // Arriving already at a step is not news.
+      expect(commands.where((c) => c.$1 == 'action' && c.$2['name'] == 'hop'), isEmpty);
+      await tester.pump(const Duration(seconds: 8));
+
+      phone.closenessAfter = 0.035;
+      stageEvents!.onTouch('head', 'pat');
+      await _settle(tester);
+      expect(commands.where((c) => c.$1 == 'action' && c.$2['name'] == 'hop'), hasLength(1));
+      expect(find.text('好像……没那么紧张了。'), findsOneWidget);
+
+      await tester.pump(const Duration(seconds: 8));
+      await tester.tap(find.byIcon(AppIcons.more));
+      await tester.pumpAndSettle();
+      expect(find.text('你们的关系'), findsOneWidget);
+      expect(find.text('渐渐熟悉'), findsOneWidget);
+
+      await tester.pumpWidget(const SizedBox());
+      await tester.pump(const Duration(seconds: 10));
+    });
+
     testWidgets('her things answer without a host: activity, a line, the status', (tester) async {
       SharedPreferences.setMockInitialValues({'companion_touch_hint_done': true});
       final commands = <(String, Map<String, Object?>)>[];
@@ -287,7 +329,7 @@ void main() {
       // The greeting first; then the hint for her things.
       await tester.pump(const Duration(seconds: 8));
       await _settle(tester);
-      expect(find.text('点点贝壳、泡泡和软垫试试'), findsOneWidget);
+      expect(find.text('点点贝壳、泡泡和软垫，点心还能拖到她嘴边'), findsOneWidget);
 
       commands.clear();
       stageEvents!.onObject('snack');
@@ -295,7 +337,7 @@ void main() {
       final activity = commands.where((c) => c.$1 == 'activity').single.$2;
       expect(activity['name'], 'snack');
       expect(activity['remainingMs'], 45000);
-      expect(find.text('点点贝壳、泡泡和软垫试试'), findsNothing);
+      expect(find.text('点点贝壳、泡泡和软垫，点心还能拖到她嘴边'), findsNothing);
       // Her line waits for the snack to reach her.
       expect(commands.where((c) => c.$1 == 'say'), isEmpty);
       await tester.pump(const Duration(milliseconds: 1800));

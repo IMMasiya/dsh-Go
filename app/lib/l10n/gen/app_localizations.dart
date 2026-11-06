@@ -8948,6 +8948,66 @@ abstract class L10n {
   /// **'再抱一会儿，就一会儿。'**
   String get companionHug3;
 
+  /// No description provided for @companionBondTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'你们的关系'**
+  String get companionBondTitle;
+
+  /// No description provided for @companionBond0.
+  ///
+  /// In zh, this message translates to:
+  /// **'刚认识'**
+  String get companionBond0;
+
+  /// No description provided for @companionBond1.
+  ///
+  /// In zh, this message translates to:
+  /// **'渐渐熟悉'**
+  String get companionBond1;
+
+  /// No description provided for @companionBond2.
+  ///
+  /// In zh, this message translates to:
+  /// **'熟起来了'**
+  String get companionBond2;
+
+  /// No description provided for @companionBond3.
+  ///
+  /// In zh, this message translates to:
+  /// **'很亲近'**
+  String get companionBond3;
+
+  /// No description provided for @companionCloser1.
+  ///
+  /// In zh, this message translates to:
+  /// **'好像……没那么紧张了。'**
+  String get companionCloser1;
+
+  /// No description provided for @companionCloser2.
+  ///
+  /// In zh, this message translates to:
+  /// **'和你待着，越来越自在了。'**
+  String get companionCloser2;
+
+  /// No description provided for @companionCloser3.
+  ///
+  /// In zh, this message translates to:
+  /// **'以后也要常来哦，我会想你的。'**
+  String get companionCloser3;
+
+  /// No description provided for @companionPatClose.
+  ///
+  /// In zh, this message translates to:
+  /// **'最喜欢被你摸头了。'**
+  String get companionPatClose;
+
+  /// No description provided for @companionHugClose.
+  ///
+  /// In zh, this message translates to:
+  /// **'抱紧一点也没关系哦。'**
+  String get companionHugClose;
+
   /// No description provided for @engineNewChatDefaultsLast.
   ///
   /// In zh, this message translates to:

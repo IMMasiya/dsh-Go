@@ -148,5 +148,15 @@
   "companionMenuRemoveConfirmBundled": "这台手机上解压出来的角色素材会被删除，聊天记录不受影响。之后随时可以再接她回来。",
   "companionHug1": "唔……抱抱。",
   "companionHug2": "被你这样抱着，好安心。",
-  "companionHug3": "再抱一会儿，就一会儿。"
+  "companionHug3": "再抱一会儿，就一会儿。",
+  "companionBondTitle": "你们的关系",
+  "companionBond0": "刚认识",
+  "companionBond1": "渐渐熟悉",
+  "companionBond2": "熟起来了",
+  "companionBond3": "很亲近",
+  "companionCloser1": "好像……没那么紧张了。",
+  "companionCloser2": "和你待着，越来越自在了。",
+  "companionCloser3": "以后也要常来哦，我会想你的。",
+  "companionPatClose": "最喜欢被你摸头了。",
+  "companionHugClose": "抱紧一点也没关系哦。"
 }

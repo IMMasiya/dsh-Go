@@ -4836,6 +4836,36 @@ class L10nZh extends L10n {
   String get companionHug3 => '再抱一会儿，就一会儿。';
 
   @override
+  String get companionBondTitle => '你们的关系';
+
+  @override
+  String get companionBond0 => '刚认识';
+
+  @override
+  String get companionBond1 => '渐渐熟悉';
+
+  @override
+  String get companionBond2 => '熟起来了';
+
+  @override
+  String get companionBond3 => '很亲近';
+
+  @override
+  String get companionCloser1 => '好像……没那么紧张了。';
+
+  @override
+  String get companionCloser2 => '和你待着，越来越自在了。';
+
+  @override
+  String get companionCloser3 => '以后也要常来哦，我会想你的。';
+
+  @override
+  String get companionPatClose => '最喜欢被你摸头了。';
+
+  @override
+  String get companionHugClose => '抱紧一点也没关系哦。';
+
+  @override
   String get engineNewChatDefaultsLast => '新对话默认（上次选择）';
 
   @override
