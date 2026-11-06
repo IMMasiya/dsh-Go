@@ -319,6 +319,192 @@ class CompanionPill extends StatelessWidget {
   }
 }
 
+/// The seaweed green her cushion and the resting dot share.
+const _seaweed = Color(0xFF6EB5A8);
+
+/// Her invitation to rest on the cushion, above the input (Pro C452 §6): a quiet
+/// card, never spoken, never announced, never focused. A thin line runs down
+/// while it waits; with a screen reader it waits until answered, and no line.
+class CompanionInvite extends StatelessWidget {
+  const CompanionInvite({
+    super.key,
+    required this.ticket,
+    required this.text,
+    required this.accept,
+    required this.decline,
+    required this.onAccept,
+    required this.onDecline,
+    this.remaining,
+    this.total = const Duration(seconds: 8),
+  });
+
+  /// The invitation shown, or null for none.
+  final String? ticket;
+  final String text;
+  final String accept;
+  final String decline;
+  final VoidCallback onAccept;
+  final VoidCallback onDecline;
+
+  /// Until it goes by itself; null while it is held.
+  final Duration? remaining;
+  final Duration total;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final id = ticket;
+    final left = remaining;
+    final card = id == null
+        ? null
+        : Padding(
+            key: ValueKey('invite-$id'),
+            padding: const EdgeInsets.only(bottom: 8),
+            child: Semantics(
+              container: true,
+              explicitChildNodes: true,
+              child: GlassSurface(
+                tier: GlassTier.card,
+                style: _deepGlass(context),
+                borderRadius: BorderRadius.circular(22),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 14, 16, 0),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Padding(
+                            padding: EdgeInsets.only(top: 3),
+                            child: ExcludeSemantics(child: CompanionCushionMark()),
+                          ),
+                          const SizedBox(width: 11),
+                          Expanded(child: Text(text, style: theme.textTheme.bodyLarge?.copyWith(height: 1.45))),
+                        ],
+                      ),
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(12, 6, 10, 8),
+                      // Side by side while they fit, one above the other in large type.
+                      child: OverflowBar(
+                        alignment: MainAxisAlignment.end,
+                        overflowAlignment: OverflowBarAlignment.end,
+                        spacing: 6,
+                        overflowSpacing: 4,
+                        children: [
+                          TextButton(
+                            style: TextButton.styleFrom(
+                              foregroundColor: theme.colorScheme.onSurfaceVariant,
+                              shape: const StadiumBorder(),
+                              padding: const EdgeInsets.symmetric(horizontal: 16),
+                            ),
+                            onPressed: onDecline,
+                            child: Text(decline),
+                          ),
+                          FilledButton(
+                            style: FilledButton.styleFrom(
+                              shape: const StadiumBorder(),
+                              padding: const EdgeInsets.symmetric(horizontal: 20),
+                            ),
+                            onPressed: onAccept,
+                            child: Text(accept),
+                          ),
+                        ],
+                      ),
+                    ),
+                    if (left != null && !AppMotion.reduced(context))
+                      _Fuse(
+                        key: ValueKey('fuse-$id-${left.inMilliseconds ~/ 250}'),
+                        from: (left.inMilliseconds / total.inMilliseconds).clamp(0.0, 1.0),
+                        duration: left,
+                      ),
+                  ],
+                ),
+              ),
+            ),
+          );
+    return _Rise(child: card);
+  }
+}
+
+/// How long the invitation still waits: a hairline closing in from both ends.
+class _Fuse extends StatelessWidget {
+  const _Fuse({super.key, required this.from, required this.duration});
+
+  final double from;
+  final Duration duration;
+
+  @override
+  Widget build(BuildContext context) => TweenAnimationBuilder<double>(
+    tween: Tween(begin: from, end: 0),
+    duration: duration,
+    builder: (context, t, _) => Padding(
+      padding: const EdgeInsets.fromLTRB(24, 0, 24, 6),
+      child: Center(
+        child: FractionallySizedBox(
+          widthFactor: t,
+          child: Container(
+            height: 2,
+            decoration: BoxDecoration(color: _seaweed.withValues(alpha: 0.55), borderRadius: BorderRadius.circular(1)),
+          ),
+        ),
+      ),
+    ),
+  );
+}
+
+/// Her seaweed cushion, small: what the invitation is about, at a glance.
+class CompanionCushionMark extends StatelessWidget {
+  const CompanionCushionMark({super.key});
+
+  @override
+  Widget build(BuildContext context) => const CustomPaint(size: Size(26, 18), painter: _CushionPainter());
+}
+
+class _CushionPainter extends CustomPainter {
+  const _CushionPainter();
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final w = size.width;
+    final h = size.height;
+    const shade = Color(0xFF3F8C7F);
+    const light = Color(0xFF8ED2C3);
+    // Leaf blades behind it on the right, like the one in her room.
+    Path leaf(double baseX, double tipX, double tipY, double lean) => Path()
+      ..moveTo(baseX - w * 0.05, h * 0.56)
+      ..quadraticBezierTo(baseX - w * 0.06 + lean, h * 0.2, tipX, tipY)
+      ..quadraticBezierTo(baseX + w * 0.07 + lean, h * 0.26, baseX + w * 0.05, h * 0.56)
+      ..close();
+    final blade = Paint()..color = _seaweed;
+    canvas
+      ..drawPath(leaf(w * 0.74, w * 0.78, 0, -w * 0.02), blade)
+      ..drawPath(leaf(w * 0.86, w * 0.99, h * 0.1, w * 0.05), blade)
+      ..drawRRect(
+        RRect.fromLTRBR(0, h * 0.4, w, h, Radius.elliptical(w / 2, h * 0.32)),
+        Paint()..color = shade,
+      )
+      ..drawOval(Rect.fromLTRB(w * 0.04, h * 0.34, w * 0.96, h * 0.78), Paint()..color = light)
+      // The quilting across the top.
+      ..drawPath(
+        Path()
+          ..moveTo(w * 0.18, h * 0.58)
+          ..quadraticBezierTo(w * 0.34, h * 0.48, w * 0.5, h * 0.57)
+          ..quadraticBezierTo(w * 0.66, h * 0.66, w * 0.82, h * 0.56),
+        Paint()
+          ..color = _seaweed
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 1.3
+          ..strokeCap = StrokeCap.round,
+      );
+  }
+
+  @override
+  bool shouldRepaint(_CushionPainter oldDelegate) => false;
+}
+
 class CompanionComposer extends StatelessWidget {
   const CompanionComposer({
     super.key,
@@ -332,7 +518,11 @@ class CompanionComposer extends StatelessWidget {
     required this.onSend,
     required this.onStop,
     required this.onVoice,
+    this.onUserInput,
   });
+
+  /// The person tapped into the field or typed: not text set by the page.
+  final VoidCallback? onUserInput;
 
   final TextEditingController input;
   final FocusNode focus;
@@ -402,6 +592,8 @@ class CompanionComposer extends StatelessWidget {
                   child: TextField(
                     controller: input,
                     focusNode: focus,
+                    onTap: onUserInput,
+                    onChanged: onUserInput == null ? null : (_) => onUserInput!(),
                     minLines: 1,
                     maxLines: 4,
                     textInputAction: TextInputAction.newline,

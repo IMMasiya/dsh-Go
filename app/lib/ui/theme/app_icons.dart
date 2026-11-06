@@ -361,6 +361,9 @@ abstract final class AppIcons {
   static const tool = DshGlyphs.wrench;
   static const tip = DshGlyphs.lightbulb;
 
+  /// 伙伴小屋: she now and then asks you to rest with her (companion_page.dart).
+  static const companionInvite = DshGlyphs.chatTeardropText;
+
   /// 「问 AI」: a question about the app for the agent (ui/common/ask_ai.dart).
   static const askAi = DshGlyphs.sparkle;
 

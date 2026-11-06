@@ -17,6 +17,8 @@ import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../../companion/companion_initiative.dart';
+import '../../companion/companion_initiative_owner.dart';
 import '../../companion/companion_keeper.dart';
 import '../../companion/companion_light.dart';
 import '../../companion/companion_pack.dart';
@@ -68,7 +70,7 @@ class CompanionPage extends ConsumerStatefulWidget {
   ConsumerState<CompanionPage> createState() => _CompanionPageState();
 }
 
-class _CompanionPageState extends ConsumerState<CompanionPage> {
+class _CompanionPageState extends ConsumerState<CompanionPage> implements CompanionInitiativeRoom {
   late final _stage = widget.stageController ?? CompanionStageController();
   final _input = TextEditingController();
   final _focus = FocusNode();
@@ -140,9 +142,29 @@ class _CompanionPageState extends ConsumerState<CompanionPage> {
   Timer? _settleTimer;
   Timer? _objectTimer;
 
+  // Her invitation to rest (Pro C451/C452): the installation's owner decides,
+  // this page shows it and says what the person really does.
+  static int _pages = 0;
+  final int _page = ++_pages;
+  late final CompanionInitiative _initiative;
+  late final AppLifecycleListener _lifecycle;
+  int _stageEpoch = 0;
+  CompanionInitiativeDisplay? _invite;
+  int? _inviteEnds;
+
+  /// The invitation shown, until it is answered or the page moves on.
+  String? _inviteOpen;
+  bool _routeShown = true;
+  bool _accessible = false;
+  bool _entered = false;
+  bool _leaving = false;
+  bool _observeQueued = false;
+
   @override
   void initState() {
     super.initState();
+    _initiative = ref.read(companionInitiativeProvider);
+    _lifecycle = AppLifecycleListener(onStateChange: (_) => _observeInitiative());
     _bindingHost = ref.read(activeHostProvider);
     _bindingClient = ref.read(activeConnectionProvider).value?.client;
     _boundLight = _light;
@@ -184,6 +206,10 @@ class _CompanionPageState extends ConsumerState<CompanionPage> {
 
   @override
   void dispose() {
+    // Leaving her: no invitation follows, and nothing comes back to this page.
+    _leaving = true;
+    _initiative.leave(this);
+    _lifecycle.dispose();
     unawaited(companionMarkSeen(DateTime.now()));
     // Leaving: drop the light request without touching the page any more.
     _lightClient?.close();
@@ -202,7 +228,11 @@ class _CompanionPageState extends ConsumerState<CompanionPage> {
   // ── Stage events ─────────────────────────────────────────────────────────
 
   void _onReady() {
-    setState(() => _stageReady = true);
+    setState(() {
+      _stageReady = true;
+      // A new view of her: nothing shown on the last one carries over.
+      _stageEpoch++;
+    });
     unawaited(_arrive());
     unawaited(_loadHint());
     if (!_light) {
@@ -316,6 +346,7 @@ class _CompanionPageState extends ConsumerState<CompanionPage> {
   }
 
   void _onTouch(String zone, String kind) {
+    _initiative.activate(this);
     _retireGreeting();
     if (_showTouchHint) {
       setState(() {
@@ -357,7 +388,15 @@ class _CompanionPageState extends ConsumerState<CompanionPage> {
     'rest': Duration(minutes: 15),
   };
 
+  /// A tap on one of her things.
   void _onObject(String id) {
+    _initiative.activate(this);
+    _useObject(id);
+  }
+
+  /// One of her things, from a tap or because she asked and the person said
+  /// yes ([invited]): the same entry, so the cushion is the cushion either way.
+  void _useObject(String id, {bool invited = false}) {
     _retireGreeting();
     if (!_homeHintDone) {
       _homeHintDone = true;
@@ -371,6 +410,7 @@ class _CompanionPageState extends ConsumerState<CompanionPage> {
       _stage.command('activity', {'name': id, 'remainingMs': _localActivity[id]!.inMilliseconds});
     }
     _remember(switch (id) {
+      _ when invited => '你邀请对方陪你在海草软垫上歇一会儿，对方答应了',
       'snack' => '对方刚才给你吃了一块点心',
       'play' => '对方刚才陪你玩了泡泡球',
       _ => '对方刚才让你在海草软垫上歇一会儿',
@@ -378,6 +418,7 @@ class _CompanionPageState extends ConsumerState<CompanionPage> {
     if (_running || _sending) return;
     final l10n = context.l10n;
     final lines = switch (id) {
+      _ when invited => [l10n.companionInviteYes1, l10n.companionInviteYes2],
       'snack' => [l10n.companionSnack1, l10n.companionSnack2, l10n.companionSnack3],
       'play' => [l10n.companionPlay1, l10n.companionPlay2, l10n.companionPlay3],
       _ => [l10n.companionRest1, l10n.companionRest2],
@@ -459,6 +500,114 @@ class _CompanionPageState extends ConsumerState<CompanionPage> {
       'rest' => CompanionActivity.resting,
       _ => CompanionActivity.idle,
     };
+  }
+
+  // ── Invitations (Pro C451/C452) ──────────────────────────────────────────
+
+  /// This page, this mode and binding, this view of her. A change retires
+  /// whatever was shown for the one before (C452 §3).
+  String get _initiativeContext => '$_page/${_boundLight ? 'light' : 'full'}/$_bindingEpoch/$_stageEpoch';
+
+  /// Everything that decides whether she may ask now. Anything unsure blocks.
+  CompanionInitiativeView _initiativeView() => CompanionInitiativeView.room(
+    routeVisible: _routeShown,
+    stageReady: _stageReady && _phase == _Phase.stage,
+    resumed: WidgetsBinding.instance.lifecycleState == AppLifecycleState.resumed,
+    inputBusy: _focus.hasFocus || _input.text.trim().isNotEmpty,
+    generating: _sending || _running || _lightReply != null,
+    // Her mouth still settling counts: the words may still be on their way out.
+    audioBusy: _voice.active || (_settleTimer?.isActive ?? false),
+    activityBusy: _home != 'idle' || _asleep || (_objectTimer?.isActive ?? false),
+    approvalPending: _needsAttention,
+    externalPromptBusy: _bubble != null || _myLine != null,
+    quietHoursBlocked: false,
+    enabled: ref.read(companionInitiativeEnabledProvider) ?? false,
+    accessible: _accessible,
+    contextKey: _initiativeContext,
+  );
+
+  bool _presentable(CompanionInitiativeView view) => view.visible && view.resumed && !view.blocked && view.enabled;
+
+  /// After this frame: the owner hears what the page now looks like.
+  void _queueObserve() {
+    if (_observeQueued) return;
+    _observeQueued = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _observeQueued = false;
+      _observeInitiative();
+    });
+  }
+
+  void _observeInitiative() {
+    if (!mounted || _leaving) return;
+    final view = _initiativeView();
+    if (_entered) {
+      _initiative.observe(this, view);
+    } else {
+      _entered = true;
+      _initiative.enter(this, view);
+    }
+  }
+
+  /// Something the person really did here: no invitation this visit.
+  void _acted() => _initiative.activate(this);
+
+  @override
+  bool canPresent(CompanionInitiativeTicket ticket) =>
+      mounted &&
+      !_leaving &&
+      // She greets in her own words when the person arrives; only invitations come here.
+      ticket.kind == CompanionPromptKind.invite &&
+      ticket.contextKey == _initiativeContext &&
+      _presentable(_initiativeView());
+
+  @override
+  void show(CompanionInitiativeDisplay display) {
+    if (!mounted || _leaving) return;
+    setState(() {
+      _invite = display;
+      _inviteEnds = display.expiresAtMono;
+      _inviteOpen = display.ticket.id;
+    });
+    // She looks over at the cushion, and a few bubbles rise from it. No words.
+    _stage.command('glance', {'prop': 'rest', 'ms': 1800});
+    _stage.command('beckon', {'prop': 'rest'});
+  }
+
+  @override
+  void hide(String ticketId) {
+    if (!mounted || _leaving || _invite?.ticket.id != ticketId) return;
+    setState(() => _invite = null);
+    _stage.command('beckon', {'prop': null});
+  }
+
+  @override
+  void retime(String ticketId, int? expiresAtMono) {
+    if (!mounted || _leaving || _invite?.ticket.id != ticketId) return;
+    setState(() => _inviteEnds = expiresAtMono);
+  }
+
+  @override
+  void rest(CompanionInitiativeEffect intent) {
+    // Only the invitation this page showed, in the room it showed it in, once.
+    if (!mounted || _leaving || intent.ticketId != _inviteOpen || intent.contextKey != _initiativeContext) return;
+    _inviteOpen = null;
+    // The cushion gives under her as if tapped; what lasts is the rest itself.
+    _stage.command('prop', {'name': 'rest'});
+    _useObject('rest', invited: true);
+  }
+
+  void _answerInvite({required bool yes}) {
+    final invite = _invite;
+    if (invite == null) return;
+    final view = _initiativeView();
+    final id = invite.ticket.id;
+    if (yes) {
+      _initiative.accept(this, id, view);
+    } else if (_initiative.decline(this, id, view) && mounted) {
+      // Fine by her: a small nod, nothing said.
+      _stage.command('action', {'name': 'nodSmall'});
+    }
   }
 
   // ── Talking ──────────────────────────────────────────────────────────────
@@ -705,6 +854,7 @@ class _CompanionPageState extends ConsumerState<CompanionPage> {
   Future<void> _send() async {
     final text = _input.text.trim();
     if (text.isEmpty || _sending || _lightReply != null) return;
+    _acted();
     _retireGreeting();
     if (_voice.active) unawaited(_voice.cancel());
     final current = _currentRoom();
@@ -839,6 +989,7 @@ class _CompanionPageState extends ConsumerState<CompanionPage> {
   }
 
   Future<void> _stop() async {
+    _acted();
     if (_lightReply != null) {
       _retireLight();
       return;
@@ -975,6 +1126,7 @@ class _CompanionPageState extends ConsumerState<CompanionPage> {
   }
 
   void _openMenu() {
+    _acted();
     final l10n = context.l10n;
     final light = _light;
     final credit = [
@@ -1021,6 +1173,16 @@ class _CompanionPageState extends ConsumerState<CompanionPage> {
                           ),
                         );
                       },
+                    ),
+                    Consumer(
+                      builder: (context, ref, _) => SettingsSwitchTile(
+                        icon: AppIcons.companionInvite,
+                        tinted: false,
+                        title: l10n.companionMenuInvite,
+                        subtitle: l10n.companionMenuInviteHint,
+                        value: ref.watch(companionInitiativeEnabledProvider) ?? false,
+                        onChanged: (on) => unawaited(ref.read(companionInitiativeEnabledProvider.notifier).set(on)),
+                      ),
                     ),
                     if (light && (_lightHistory?.lines.isNotEmpty ?? false))
                       SettingsTile(
@@ -1139,6 +1301,12 @@ class _CompanionPageState extends ConsumerState<CompanionPage> {
           mode == CompanionMode.light || (mode == null && ref.read(activeConnectionProvider).value == null);
       if (light(before) != light(now)) _modeChanged();
     });
+    // What her invitation depends on that only a build can see: this page in
+    // front (a sheet or another page over her isn't), a screen reader, the switch.
+    _routeShown = TickerMode.valuesOf(context).enabled && (ModalRoute.isCurrentOf(context) ?? true);
+    _accessible = MediaQuery.accessibleNavigationOf(context);
+    ref.watch(companionInitiativeEnabledProvider);
+    _queueObserve();
     final surfaces = DshSurfaces.of(context);
     return AnnotatedRegion<SystemUiOverlayStyle>(
       value: const SystemUiOverlayStyle(
@@ -1163,6 +1331,17 @@ class _CompanionPageState extends ConsumerState<CompanionPage> {
     final store = _store;
     final showStage = _phase == _Phase.stage && store != null;
     final name = _character.name ?? l10n.companionDefaultName;
+    // Shown only while it still belongs here and nothing else has the floor,
+    // in this very frame (the owner hears about it right after).
+    final invite = _invite;
+    final inviting =
+        invite != null && invite.ticket.contextKey == _initiativeContext && _presentable(_initiativeView());
+    final inviteLeft = switch (_inviteEnds) {
+      final ends? when inviting => Duration(
+        milliseconds: max(0, ends - ref.read(companionInitiativeClockProvider)().monoMs),
+      ),
+      _ => null,
+    };
     final events = CompanionStageEvents(
       onReady: _onReady,
       onFailed: (why) {
@@ -1185,10 +1364,15 @@ class _CompanionPageState extends ConsumerState<CompanionPage> {
         fit: StackFit.expand,
         children: [
           if (showStage)
-            ExcludeSemantics(
-              child:
-                  widget.stageBuilder?.call(_stage, events) ??
-                  CompanionStage(store: store, controller: _stage, events: events),
+            // A finger landing on her already counts, before the stage knows
+            // whether it was a tap, a pat or nothing (C452 §5.1).
+            Listener(
+              onPointerDown: (_) => _acted(),
+              child: ExcludeSemantics(
+                child:
+                    widget.stageBuilder?.call(_stage, events) ??
+                    CompanionStage(store: store, controller: _stage, events: events),
+              ),
             ),
           if (showStage && !_stageReady) const CompanionWater(child: CompanionArriving()),
           if (_phase == _Phase.setup)
@@ -1219,7 +1403,10 @@ class _CompanionPageState extends ConsumerState<CompanionPage> {
                 CompanionRoundButton(
                   icon: AppIcons.back,
                   label: MaterialLocalizations.of(context).backButtonTooltip,
-                  onTap: () => Navigator.of(context).maybePop(),
+                  onTap: () {
+                    _acted();
+                    unawaited(Navigator.of(context).maybePop());
+                  },
                 ),
                 Expanded(
                   child: Center(
@@ -1242,16 +1429,20 @@ class _CompanionPageState extends ConsumerState<CompanionPage> {
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  if (_showTouchHint && _bubble == null)
+                  // Her invitation takes the hint's place while it's there.
+                  if (_showTouchHint && _bubble == null && !inviting)
                     CompanionPill(icon: AppIcons.tip, label: l10n.companionTouchHint)
-                  else if (_showHomeHint && _bubble == null)
+                  else if (_showHomeHint && _bubble == null && !inviting)
                     CompanionPill(icon: AppIcons.tip, label: l10n.companionTouchHintHome),
                   if (_needsAttention)
                     CompanionPill(
                       icon: AppIcons.toConfirm,
                       label: l10n.companionNeedsAttention,
                       tone: const Color(0xFFFFD27A),
-                      onTap: _openFullChat,
+                      onTap: () {
+                        _acted();
+                        _openFullChat();
+                      },
                     ),
                   CompanionMyLine(text: _myLine),
                   CompanionSpeech(
@@ -1259,8 +1450,19 @@ class _CompanionPageState extends ConsumerState<CompanionPage> {
                     error: _bubbleIsError,
                     thinking: _sending || (_running && _bubble == null),
                   ),
+                  CompanionInvite(
+                    ticket: inviting ? invite.ticket.id : null,
+                    text: l10n.companionInviteRest,
+                    accept: l10n.companionInviteAccept,
+                    decline: l10n.companionInviteDecline,
+                    remaining: inviteLeft,
+                    total: const Duration(milliseconds: CompanionInitiativeRules.promptMs),
+                    onAccept: () => _answerInvite(yes: true),
+                    onDecline: () => _answerInvite(yes: false),
+                  ),
                   const SizedBox(height: 10),
                   CompanionComposer(
+                    onUserInput: _acted,
                     input: _input,
                     focus: _focus,
                     hint: l10n.companionInputHint(name),
@@ -1270,7 +1472,11 @@ class _CompanionPageState extends ConsumerState<CompanionPage> {
                     voiceAvailable: _voice.available,
                     onSend: _send,
                     onStop: _stop,
-                    onVoice: () => _voice.active ? _voice.stop() : _voice.start(),
+                    onVoice: () {
+                      // Reaching for the microphone is already doing something.
+                      _acted();
+                      _voice.active ? _voice.stop() : _voice.start();
+                    },
                   ),
                 ],
               ),

@@ -8864,6 +8864,48 @@ abstract class L10n {
   /// **'她会忘记这段对话，这台手机上的聊天记录会被删掉。'**
   String get companionMenuRestartLightConfirm;
 
+  /// No description provided for @companionInviteRest.
+  ///
+  /// In zh, this message translates to:
+  /// **'要不要陪我在软垫上歇一会儿？'**
+  String get companionInviteRest;
+
+  /// No description provided for @companionInviteAccept.
+  ///
+  /// In zh, this message translates to:
+  /// **'好呀'**
+  String get companionInviteAccept;
+
+  /// No description provided for @companionInviteDecline.
+  ///
+  /// In zh, this message translates to:
+  /// **'等会儿'**
+  String get companionInviteDecline;
+
+  /// No description provided for @companionInviteYes1.
+  ///
+  /// In zh, this message translates to:
+  /// **'嘿嘿，就歇一小会儿。'**
+  String get companionInviteYes1;
+
+  /// No description provided for @companionInviteYes2.
+  ///
+  /// In zh, this message translates to:
+  /// **'那我先躺好啦，你也放松点。'**
+  String get companionInviteYes2;
+
+  /// No description provided for @companionMenuInvite.
+  ///
+  /// In zh, this message translates to:
+  /// **'主动邀请'**
+  String get companionMenuInvite;
+
+  /// No description provided for @companionMenuInviteHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'你安静陪着她时，她偶尔会邀你一起歇一会儿'**
+  String get companionMenuInviteHint;
+
   /// No description provided for @engineNewChatDefaultsLast.
   ///
   /// In zh, this message translates to:

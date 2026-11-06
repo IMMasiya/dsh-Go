@@ -333,6 +333,7 @@
     emotion: 'calm',
     emotionUntil: 0,
     gazeHold: null, // [x, y] an emotion or mood looks at
+    glance: null, // { at: [x, y], until } a short look at one of her things
     pointer: null, // [x, y] a finger, in stage units
     wander: [0, 0.05],
     wanderAt: 0,
@@ -448,6 +449,10 @@
   function gazeTarget(now) {
     if (life.pointer) return life.pointer;
     if (home.gaze) return home.gaze;
+    if (life.glance) {
+      if (now < life.glance.until) return life.glance.at;
+      life.glance = null;
+    }
     if (life.gazeHold) return life.gazeHold;
     switch (life.mood) {
       case 'thinking':
@@ -653,6 +658,7 @@
     activity: 'idle',
     until: 0,
     show: null, // { kind, start, familiar }
+    beckon: null, // { prop, next }: bubbles rise from it while she invites
     gaze: null,
     rest: 0, // 0–1, eased
     reach: 0, // model units she leans toward the dish
@@ -682,11 +688,33 @@
   }
 
   function useProp(name) {
-    squash(name);
     post({ type: 'object', id: name });
+    showProp(name);
+  }
+
+  /** The short show alone, telling Flutter nothing: for a yes to her invitation. */
+  function showProp(name) {
+    if (!props[name]) return;
+    squash(name);
     // One show at a time: another tap meanwhile is only acknowledged.
     if (home.show || REDUCED) return;
     home.show = { kind: name, start: performance.now(), familiar: life.vitals.closeness };
+  }
+
+  function glanceAt(name, ms) {
+    const r = propRect(name);
+    if (!r) return;
+    const hold = clamp(Number.isFinite(ms) ? ms : 1400, 200, 4000);
+    life.glance = { at: toGazeFromClient(...center(r)), until: performance.now() + hold };
+  }
+
+  /** While she invites: two small bubbles from the thing every 1.5 s. */
+  function beckonFrame(now) {
+    const beckon = home.beckon;
+    if (!beckon || REDUCED || now < beckon.next) return;
+    beckon.next = now + 1500;
+    const r = propRect(beckon.prop);
+    if (r) scene.marks.bubbles(r.left + r.width * 0.5, r.top + r.height * 0.36, 2);
   }
 
   function setActivity(name, remainingMs) {
@@ -715,6 +743,7 @@
 
   function homePose(m, now, dt) {
     if (home.activity !== 'idle' && home.until && now > home.until) setActivity('idle', 0);
+    beckonFrame(now);
     home.rest = ease(home.rest, home.activity === 'rest' ? 1 : 0, home.activity === 'rest' ? 1.6 : 3, dt);
     if (home.rest > 0.01) {
       // Leaning back on the cushion: a little to the right, head a little low.
@@ -1085,6 +1114,14 @@
       };
     },
     activity: ({ name, remainingMs }) => setActivity(name, remainingMs),
+    // Her invitation (shown in Flutter): a look at the cushion, bubbles from it
+    // while she waits, and the cushion's short show on a yes. None of these
+    // posts anything back; the rest itself comes as an activity.
+    glance: ({ prop, ms }) => glanceAt(prop, ms),
+    beckon: ({ prop }) => {
+      home.beckon = prop && props[prop] ? { prop, next: 0 } : null;
+    },
+    prop: ({ name }) => showProp(name),
     pause: () => {
       nativePaused = true;
       pause();
@@ -1198,7 +1235,9 @@
     life.mouth = 0;
     life.mouthOverride = null;
     life.actions.clear();
+    life.glance = null;
     home.show = null;
+    home.beckon = null;
     home.gaze = null;
     home.reach = 0;
     resetBall();

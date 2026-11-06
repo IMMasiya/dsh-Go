@@ -5092,6 +5092,27 @@ class L10nEn extends L10n {
       'She will forget this conversation, and the chat on this phone is deleted.';
 
   @override
+  String get companionInviteRest => 'Rest on the cushion with me for a bit?';
+
+  @override
+  String get companionInviteAccept => 'Sure';
+
+  @override
+  String get companionInviteDecline => 'Not now';
+
+  @override
+  String get companionInviteYes1 => 'Hehe, just for a little while.';
+
+  @override
+  String get companionInviteYes2 => 'I\'ll get comfy. You relax too.';
+
+  @override
+  String get companionMenuInvite => 'Invitations';
+
+  @override
+  String get companionMenuInviteHint => 'When you sit quietly with her, she may now and then ask you to rest together';
+
+  @override
   String get engineNewChatDefaultsLast => 'New chat defaults (last choice)';
 
   @override

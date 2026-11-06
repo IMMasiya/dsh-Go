@@ -4794,6 +4794,27 @@ class L10nZh extends L10n {
   String get companionMenuRestartLightConfirm => '她会忘记这段对话，这台手机上的聊天记录会被删掉。';
 
   @override
+  String get companionInviteRest => '要不要陪我在软垫上歇一会儿？';
+
+  @override
+  String get companionInviteAccept => '好呀';
+
+  @override
+  String get companionInviteDecline => '等会儿';
+
+  @override
+  String get companionInviteYes1 => '嘿嘿，就歇一小会儿。';
+
+  @override
+  String get companionInviteYes2 => '那我先躺好啦，你也放松点。';
+
+  @override
+  String get companionMenuInvite => '主动邀请';
+
+  @override
+  String get companionMenuInviteHint => '你安静陪着她时，她偶尔会邀你一起歇一会儿';
+
+  @override
   String get engineNewChatDefaultsLast => '新对话默认（上次选择）';
 
   @override
