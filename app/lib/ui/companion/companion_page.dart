@@ -51,6 +51,7 @@ final _sentenceEnd = RegExp(r'[。！？!?…~～]');
 enum _Phase { checking, setup, stage, failed }
 
 typedef CompanionStageBuilder = Widget Function(CompanionStageController controller, CompanionStageEvents events);
+typedef _ReplyPart = ({AssistantChatItem item, int? retry});
 
 class CompanionPage extends ConsumerStatefulWidget {
   const CompanionPage({super.key, this.storeOverride, this.stageBuilder, this.stageController});
@@ -106,6 +107,8 @@ class _CompanionPageState extends ConsumerState<CompanionPage> {
   bool _baselineSet = false;
   int _marksHandled = 0;
   int _wordsSpoken = 0;
+  List<_ReplyPart> _replyParts = const [];
+  String _replyWords = '';
   final List<String> _notes = [];
 
   // Light mode: her conversation on this phone, and the reply on its way.
@@ -502,6 +505,8 @@ class _CompanionPageState extends ConsumerState<CompanionPage> {
     _baselineSet = false;
     _marksHandled = 0;
     _wordsSpoken = 0;
+    _replyParts = const [];
+    _replyWords = '';
     _notes.clear();
     _bubble = null;
     _myLine = null;
@@ -514,30 +519,85 @@ class _CompanionPageState extends ConsumerState<CompanionPage> {
   }
 
   /// The words after the latest thing the person said.
-  (String?, String) _latestReply(ChatState state) {
-    final parts = <String>[];
+  (String?, List<_ReplyPart>) _latestReply(ChatState state) {
+    final tail = <ChatItem>[];
     String? user;
     for (final item in state.items.reversed) {
       if (item is UserChatItem) {
         user = item.key;
         break;
       }
-      if (item is AssistantChatItem && item.text.isNotEmpty) parts.add(item.text);
+      tail.add(item);
     }
-    return (user, parts.reversed.join('\n'));
+    final parts = <_ReplyPart>[];
+    int? retry;
+    for (final item in tail.reversed) {
+      if (item is NoticeChatItem && item.kind == 'retry') retry = item.seq;
+      if (item is AssistantChatItem && item.text.isNotEmpty) parts.add((item: item, retry: retry));
+    }
+    return (user, parts);
   }
 
   void _onChat(ChatState state) {
     if (!mounted) return;
-    final (user, text) = _latestReply(state);
+    final (user, parts) = _latestReply(state);
     _onReply(
       user,
-      text,
+      parts.map((part) => part.item.text).join('\n'),
+      parts: parts,
       running: state.running || state.pending.isNotEmpty,
       attention: state.openApproval != null || state.questions.isNotEmpty,
       error: state.error,
       loading: state.loading,
     );
+  }
+
+  /// Keep progress only for the same full-mode assistant segments. A retry
+  /// can replace a draft without publishing its empty interval to this page.
+  void _retainReplyProgress(List<_ReplyPart> next) {
+    final prefix = <String>[];
+    for (var i = 0; i < min(_replyParts.length, next.length); i++) {
+      final old = _replyParts[i];
+      final current = next[i];
+      // FinishChunk makes a draft nonstreaming too; only seq identifies a
+      // durable message. Its row key is shared with the draft it commits.
+      final commitsDraft = old.item.seq == null && current.item.seq != null && old.item.key == current.item.key;
+      if (old.retry != current.retry || (old.item.id != current.item.id && !commitsDraft)) break;
+      final before = old.item.text;
+      final after = current.item.text;
+      if (before == after) {
+        prefix.add(before);
+        continue;
+      }
+      var end = 0;
+      while (end < min(before.length, after.length) && before.codeUnitAt(end) == after.codeUnitAt(end)) {
+        end++;
+      }
+      prefix.add(before.substring(0, end));
+      break;
+    }
+    final retainedText = prefix.join('\n');
+    if (retainedText != _replyParts.map((part) => part.item.text).join('\n')) {
+      final retained = parseCompanionReply(retainedText, streaming: true);
+      _marksHandled = min(_marksHandled, retained.marks.length);
+      _wordsSpoken = min(_wordsSpoken, retained.words.length);
+    }
+    _replyParts = next;
+  }
+
+  /// The current text owns the subtitle, even when a failed attempt is
+  /// replaced by fewer words. Fresh progress also permits a later identical line.
+  void _showReplyWords(String words, int fresh) {
+    if (fresh <= 0 && words == _replyWords) return;
+    _replyWords = words;
+    if (words.isEmpty) {
+      _bubbleTimer?.cancel();
+      _bubble = null;
+      _bubbleIsError = false;
+    } else {
+      _myLine = null;
+      _showBubble(words);
+    }
   }
 
   /// Her reply so far to the person's latest line [user] (any key that changes
@@ -550,6 +610,7 @@ class _CompanionPageState extends ConsumerState<CompanionPage> {
     bool attention = false,
     String? error,
     bool loading = false,
+    List<_ReplyPart>? parts,
   }) {
     if (!_baselineSet) {
       // What's already in the conversation has been said; only news moves her.
@@ -559,6 +620,8 @@ class _CompanionPageState extends ConsumerState<CompanionPage> {
       final old = parseCompanionReply(text);
       _marksHandled = old.marks.length;
       _wordsSpoken = old.words.length;
+      _replyParts = parts ?? const [];
+      _replyWords = old.words;
       if (!running) {
         setState(() => _needsAttention = attention);
         return;
@@ -569,8 +632,10 @@ class _CompanionPageState extends ConsumerState<CompanionPage> {
       _baselineUser = user;
       _marksHandled = 0;
       _wordsSpoken = 0;
+      _replyParts = const [];
     }
 
+    if (parts != null) _retainReplyProgress(parts);
     final reply = parseCompanionReply(text, streaming: running);
     for (final mark in reply.marks.skip(_marksHandled)) {
       switch (mark.kind) {
@@ -580,16 +645,15 @@ class _CompanionPageState extends ConsumerState<CompanionPage> {
           _stage.command('action', {'name': mark.name});
       }
     }
-    _marksHandled = max(_marksHandled, reply.marks.length);
+    _marksHandled = reply.marks.length;
 
     final fresh = reply.words.length - _wordsSpoken;
     if (fresh > 0) {
       _stage.command('say', {'chars': fresh});
       if (_sentenceEnd.hasMatch(reply.words.substring(_wordsSpoken))) _stage.command('beat');
-      _wordsSpoken = reply.words.length;
-      _myLine = null;
-      _showBubble(reply.words);
     }
+    _wordsSpoken = reply.words.length;
+    _showReplyWords(reply.words, fresh);
 
     if (running) {
       _settleTimer?.cancel();
