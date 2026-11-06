@@ -7,6 +7,7 @@ import 'dart:typed_data';
 
 import 'package:dartssh2/dartssh2.dart';
 
+import '../../diagnostics/redact.dart';
 import '../../l10n/l10n.dart';
 import '../link_status.dart';
 import 'remote_shell.dart';
@@ -222,9 +223,12 @@ class DartSshTransport implements SshTransport, RemoteBootstrapShell {
     if (e is SSHAuthAbortError) {
       final reason = e.reason;
       if (reason is SSHHostkeyError) return describeSshError(reason, params);
-      // dartssh2 uses a null reason for EOF and authentication deadlines.
+      // dartssh2 uses a null reason for EOF and authentication deadlines, and a
+      // peer can report the loss itself (RFC 4253 reason 10).
       // The link owns cancellation; explicit peer refusals stay terminal below.
-      if (reason == null || reason is SSHSocketError) {
+      if (reason == null ||
+          reason is SSHSocketError ||
+          (reason is SSHDisconnectError && reason.reasonCode == _disconnectConnectionLost)) {
         return HostLinkError(
           HostLinkErrorKind.unreachable,
           appL10n.remoteErrSshInterrupted,
@@ -509,8 +513,11 @@ class _BootstrapOutput implements Sink<String> {
   }
 }
 
+/// SSH_DISCONNECT_CONNECTION_LOST.
+const _disconnectConnectionLost = 10;
+
 String _bootstrapDiagnostic(String text) {
-  final redacted = redactRemoteTokens(text).trim();
+  final redacted = redactDiagnostics(redactRemoteTokens(text)).trim();
   const limit = 4096;
   return redacted.length <= limit ? redacted : '…\n${redacted.substring(redacted.length - limit)}';
 }

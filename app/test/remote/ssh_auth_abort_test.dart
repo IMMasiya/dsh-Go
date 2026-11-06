@@ -116,6 +116,12 @@ void main() {
   for (final (label, error, kind, retryable) in [
     ('auth deadline', SSHAuthAbortError('Authentication timed out'), HostLinkErrorKind.unreachable, true),
     (
+      'a peer reporting the connection lost',
+      SSHAuthAbortError('Connection closed before authentication', SSHDisconnectError(10, 'connection lost')),
+      HostLinkErrorKind.unreachable,
+      true,
+    ),
+    (
       'credentials rejected',
       SSHAuthFailError('All authentication methods failed'),
       HostLinkErrorKind.authFailed,

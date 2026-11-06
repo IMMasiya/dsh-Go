@@ -306,6 +306,7 @@ void main() {
       h.execution.channel.text('partial http://127.0.0.1:43123/?token=ab+SECRET/');
       h.execution.channel.text('TAIL%2B&next=safe\n');
       h.execution.channel.text('stderr failure token=cd/SECRET+TAIL\n', stderr: true);
+      h.execution.channel.text('DEEPSEEK_API_KEY=sk-synthetic-key-value\n', stderr: true);
       await tester.pump();
       await tester.pump(const Duration(seconds: 25));
       expect(result.error, isA<HostLinkError>());
@@ -317,6 +318,7 @@ void main() {
       expect(error.detail, contains('next=safe'));
       expect(error.detail, isNot(contains('SECRET')));
       expect(error.detail, isNot(contains('TAIL')));
+      expect(error.detail, isNot(contains('sk-synthetic-key-value')));
       expect(h.execution.channel.closeRequests, 1);
       expect(h.client.isClosed, isFalse);
     });
@@ -326,7 +328,7 @@ void main() {
     await _using(tester, (h) async {
       final result = _Outcome(h.bootstrap.start());
       await tester.pump();
-      h.execution.channel.text('old header\n${'ordinary-' * 700}\n');
+      h.execution.channel.text('old header\n${List.filled(20, 'ordinary-' * 70).join('\n')}\n');
       h.execution.channel.text('token=${'SYNTHETIC_SECRET_' * 700}\nlast useful failure\n');
       await tester.pump();
       await tester.pump(const Duration(seconds: 25));
@@ -392,44 +394,48 @@ void main() {
   });
 
   for (final exitCode in [0, 70]) {
-    test('the real POSIX trap preserves exit $exitCode and follows both outputs', () async {
-      final home = Directory.systemTemp.createTempSync('dsh-start-completion-');
-      final h = _Harness();
-      try {
-        final badHome = File('${home.path}/not-a-directory')..writeAsStringSync('synthetic');
-        // The synthetic launch writes its URL synchronously before the
-        // background no-op. Neither path needs the script's sleep loop.
-        final bootstrap = RemoteDshBootstrap(
-          h.transport,
-          launchCommand:
-              "printf '%s\\n' ${shQuote('dsh web: http://127.0.0.1:43123/?token=synthetic-shell-token')} "
-              r'> "$D/web.log"; :',
-          environment: {'HOME': exitCode == 0 ? home.path : badHome.path},
-          startTimeout: const Duration(seconds: 5),
-        );
-        final result = _Outcome(bootstrap.start());
-        // Let POSIX sh itself remove the outer login-shell quoting. Running
-        // the resulting script directly avoids reading this machine's profile.
-        final unquoted = await Process.run('/bin/sh', ['-c', 'set -- ${h.execution.command}; printf %s "\$3"']);
-        expect(unquoted.exitCode, 0);
-        final outerTrap = shQuote(r'_outer_status=$?; printf "OUTER_EXIT %s\n" "$_outer_status"');
-        final ran = await Process.run('/bin/sh', ['-c', 'trap $outerTrap 0\n${unquoted.stdout}']);
-        expect(ran.exitCode, exitCode);
-        expect(ran.stdout, contains(h.execution.frame(status: exitCode)));
-        expect(ran.stdout, endsWith('OUTER_EXIT $exitCode\n'));
-        expect(ran.stderr, endsWith(h.execution.frame(stderr: true, status: exitCode)));
-        if (exitCode == 0) {
-          expect(ran.stdout, contains('DSHAPP url dsh web: http://127.0.0.1:43123/?token=synthetic-shell-token\n'));
-        } else {
-          expect(ran.stdout, contains('DSHAPP nodir\n'));
-          expect(ran.stderr, contains('mkdir'));
+    test(
+      'the real POSIX trap preserves exit $exitCode and follows both outputs',
+      skip: Platform.isWindows ? 'needs /bin/sh' : false,
+      () async {
+        final home = Directory.systemTemp.createTempSync('dsh-start-completion-');
+        final h = _Harness();
+        try {
+          final badHome = File('${home.path}/not-a-directory')..writeAsStringSync('synthetic');
+          // The synthetic launch writes its URL synchronously before the
+          // background no-op. Neither path needs the script's sleep loop.
+          final bootstrap = RemoteDshBootstrap(
+            h.transport,
+            launchCommand:
+                "printf '%s\\n' ${shQuote('dsh web: http://127.0.0.1:43123/?token=synthetic-shell-token')} "
+                r'> "$D/web.log"; :',
+            environment: {'HOME': exitCode == 0 ? home.path : badHome.path},
+            startTimeout: const Duration(seconds: 5),
+          );
+          final result = _Outcome(bootstrap.start());
+          // Let POSIX sh itself remove the outer login-shell quoting. Running
+          // the resulting script directly avoids reading this machine's profile.
+          final unquoted = await Process.run('/bin/sh', ['-c', 'set -- ${h.execution.command}; printf %s "\$3"']);
+          expect(unquoted.exitCode, 0);
+          final outerTrap = shQuote(r'_outer_status=$?; printf "OUTER_EXIT %s\n" "$_outer_status"');
+          final ran = await Process.run('/bin/sh', ['-c', 'trap $outerTrap 0\n${unquoted.stdout}']);
+          expect(ran.exitCode, exitCode);
+          expect(ran.stdout, contains(h.execution.frame(status: exitCode)));
+          expect(ran.stdout, endsWith('OUTER_EXIT $exitCode\n'));
+          expect(ran.stderr, endsWith(h.execution.frame(stderr: true, status: exitCode)));
+          if (exitCode == 0) {
+            expect(ran.stdout, contains('DSHAPP url dsh web: http://127.0.0.1:43123/?token=synthetic-shell-token\n'));
+          } else {
+            expect(ran.stdout, contains('DSHAPP nodir\n'));
+            expect(ran.stderr, contains('mkdir'));
+          }
+          expect(result.settled, isFalse);
+        } finally {
+          await h.dispose();
+          home.deleteSync(recursive: true);
         }
-        expect(result.settled, isFalse);
-      } finally {
-        await h.dispose();
-        home.deleteSync(recursive: true);
-      }
-    });
+      },
+    );
   }
 
   testWidgets('ordinary run keeps waiting for EOF and retains exact output', (tester) async {
