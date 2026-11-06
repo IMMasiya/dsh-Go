@@ -4761,6 +4761,39 @@ class L10nZh extends L10n {
   String get companionTouchHintHome => '点点贝壳、泡泡和软垫试试';
 
   @override
+  String get companionMenuMode => '对话方式';
+
+  @override
+  String get companionModeLight => '轻量';
+
+  @override
+  String get companionModeLightHint => '只聊天。手机直连模型，不用启动引擎';
+
+  @override
+  String get companionModeFull => '完整';
+
+  @override
+  String get companionModeFullHint => '用当前主机的 DSH 引擎，之后接上工具';
+
+  @override
+  String get companionLightNoKey => '轻量模式要用 DeepSeek API Key，在设置里填上就能和我聊啦。';
+
+  @override
+  String get companionLightBadKey => 'API Key 好像不对，或者已经失效了。';
+
+  @override
+  String get companionLightBusy => '那边有点忙，等一下再和我说吧。';
+
+  @override
+  String get companionNotConnectedTryLight => '现在连不上主机。只想聊天的话，可以在右上角菜单换成轻量模式。';
+
+  @override
+  String get companionMenuRestartLightHint => '清掉这台手机上的聊天记录';
+
+  @override
+  String get companionMenuRestartLightConfirm => '她会忘记这段对话，这台手机上的聊天记录会被删掉。';
+
+  @override
   String get engineNewChatDefaultsLast => '新对话默认（上次选择）';
 
   @override

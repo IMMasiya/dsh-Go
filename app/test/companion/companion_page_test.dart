@@ -1,20 +1,27 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:dsh_app/companion/companion_pack.dart';
+import 'package:dsh_app/companion/companion_state.dart';
+import 'package:dsh_app/state/settings_state.dart';
+import 'package:http/http.dart' as http;
+import 'package:http/testing.dart';
 import 'package:dsh_app/l10n/gen/app_localizations.dart';
 import 'package:dsh_app/state/connection_state.dart';
 import 'package:dsh_app/ui/companion/companion_chrome.dart';
 import 'package:dsh_app/ui/companion/companion_page.dart';
 import 'package:dsh_app/ui/companion/companion_stage.dart';
+import 'package:dsh_app/ui/theme/app_icons.dart';
 import 'package:dsh_app/ui/theme/app_theme.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_riverpod/misc.dart' show Override;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-Widget _app(Widget child) => ProviderScope(
+Widget _app(Widget child, {List<Override> extra = const []}) => ProviderScope(
   // No host here: the page must stand on its own without one.
-  overrides: [activeConnectionProvider.overrideWithValue(const AsyncData<HostConnection?>(null))],
+  overrides: [activeConnectionProvider.overrideWithValue(const AsyncData<HostConnection?>(null)), ...extra],
   child: MaterialApp(
     theme: buildDarkTheme(),
     localizationsDelegates: L10n.localizationsDelegates,
@@ -42,6 +49,25 @@ Future<CompanionStageEvents> _stageUp(WidgetTester tester, CompanionStageEvents?
   expect(up, isNotNull, reason: 'the stage was never built');
   return up!;
 }
+
+class _Settings extends SettingsController {
+  _Settings(this.apiKey);
+
+  final String apiKey;
+
+  @override
+  AppSettings build() => AppSettings(loaded: true, apiKey: apiKey);
+}
+
+String _sse(List<String> words) => [
+  for (final text in words)
+    'event: content_block_delta\ndata: ${jsonEncode({
+      'type': 'content_block_delta',
+      'index': 0,
+      'delta': {'type': 'text_delta', 'text': text},
+    })}\n\n',
+  'event: message_stop\ndata: {"type":"message_stop"}\n\n',
+].join();
 
 void main() {
   setUp(() => SharedPreferences.setMockInitialValues({}));
@@ -236,6 +262,109 @@ void main() {
 
       await tester.pumpWidget(_app(const SizedBox()));
       await tester.pump(const Duration(seconds: 10));
+    });
+
+    group('light mode', () {
+      Future<List<(String, Map<String, Object?>)>> openLight(
+        WidgetTester tester, {
+        required String apiKey,
+        required http.Client client,
+      }) async {
+        SharedPreferences.setMockInitialValues({'companion_touch_hint_done': true, 'companion_home_hint_done': true});
+        final commands = <(String, Map<String, Object?>)>[];
+        CompanionStageEvents? stageEvents;
+        await tester.pumpWidget(
+          _app(
+            CompanionPage(
+              storeOverride: installedStore(),
+              stageBuilder: (controller, events) {
+                stageEvents = events;
+                return const SizedBox.expand();
+              },
+              stageController: CompanionStageController(sink: (type, args) => commands.add((type, args))),
+            ),
+            extra: [
+              settingsProvider.overrideWith(() => _Settings(apiKey)),
+              companionLightClientProvider.overrideWithValue(() => client),
+            ],
+          ),
+        );
+        (await _stageUp(tester, () => stageEvents)).onReady();
+        await _settle(tester);
+        await tester.pump(const Duration(seconds: 8)); // The greeting goes.
+        await _settle(tester);
+        return commands;
+      }
+
+      Future<void> say(WidgetTester tester, String text) async {
+        await tester.enterText(find.byType(TextField), text);
+        await tester.pump();
+        await tester.tap(find.byIcon(AppIcons.send).last);
+        for (var i = 0; i < 4; i++) {
+          await _settle(tester);
+        }
+      }
+
+      testWidgets('with no host she answers straight from the model and keeps the chat here', (tester) async {
+        final asked = <Map<String, Object?>>[];
+        final client = MockClient.streaming((request, body) async {
+          asked.add(jsonDecode(await body.bytesToString()) as Map<String, Object?>);
+          return http.StreamedResponse(Stream.value(utf8.encode(_sse(['[表情:开心]', '你来啦。', '我在这儿。']))), 200);
+        });
+        final commands = await openLight(tester, apiKey: 'sk-test', client: client);
+        commands.clear();
+
+        await say(tester, '你好');
+        expect(asked, hasLength(1));
+        expect(asked.single['system'], contains('鲸鱼娘'));
+        final lines = asked.single['messages']! as List;
+        expect((lines.single as Map)['content'], endsWith('你好'));
+        expect(find.text('你来啦。我在这儿。'), findsOneWidget);
+        expect(commands.map((c) => c.$1), containsAll(['emotion', 'say']));
+
+        await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 200)));
+        final saved = File('${root.path}/light-chat.json').readAsStringSync();
+        expect(saved, contains('你来啦。我在这儿。'));
+
+        // The next line goes with what came before.
+        await tester.pump(const Duration(seconds: 12));
+        await say(tester, '今天好累');
+        expect(asked, hasLength(2));
+        expect((asked.last['messages']! as List).map((m) => (m as Map)['role']), ['user', 'assistant', 'user']);
+
+        await tester.pumpWidget(const SizedBox());
+        await tester.pump(const Duration(seconds: 20));
+      });
+
+      testWidgets('without a key she says where to add one, and the line comes back', (tester) async {
+        var calls = 0;
+        final client = MockClient((_) async {
+          calls++;
+          return http.Response('', 500);
+        });
+        await openLight(tester, apiKey: '', client: client);
+        await say(tester, '你好');
+        expect(calls, 0);
+        expect(find.textContaining('API Key'), findsOneWidget);
+        expect(find.text('你好'), findsOneWidget); // Back in the input.
+
+        await tester.pumpWidget(const SizedBox());
+        await tester.pump(const Duration(seconds: 20));
+      });
+
+      testWidgets('a refused key: nothing kept, the line back in the input', (tester) async {
+        final client = MockClient((_) async => http.Response('{"error":"bad key"}', 401));
+        await openLight(tester, apiKey: 'sk-wrong', client: client);
+        await say(tester, '你好');
+        expect(find.textContaining('API Key 好像不对'), findsOneWidget);
+        expect(find.text('你好'), findsOneWidget);
+        await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 200)));
+        final file = File('${root.path}/light-chat.json');
+        expect(file.existsSync() ? file.readAsStringSync() : '', isNot(contains('你好')));
+
+        await tester.pumpWidget(const SizedBox());
+        await tester.pump(const Duration(seconds: 20));
+      });
     });
   });
 }

@@ -5057,6 +5057,41 @@ class L10nEn extends L10n {
   String get companionTouchHintHome => 'Try tapping the shell, the bubble and the cushion';
 
   @override
+  String get companionMenuMode => 'How she talks';
+
+  @override
+  String get companionModeLight => 'Light';
+
+  @override
+  String get companionModeLightHint => 'Chat only. The phone talks to the model; no engine';
+
+  @override
+  String get companionModeFull => 'Full';
+
+  @override
+  String get companionModeFullHint => 'The DSH engine on the current host; tools come next';
+
+  @override
+  String get companionLightNoKey => 'Light mode needs a DeepSeek API key. Add one in Settings and we can talk.';
+
+  @override
+  String get companionLightBadKey => 'The API key seems wrong, or it is no longer valid.';
+
+  @override
+  String get companionLightBusy => 'It is busy over there. Tell me again in a bit?';
+
+  @override
+  String get companionNotConnectedTryLight =>
+      'I can\'t reach the host right now. If you just want to chat, switch to Light in the menu at the top right.';
+
+  @override
+  String get companionMenuRestartLightHint => 'Clear the chat on this phone';
+
+  @override
+  String get companionMenuRestartLightConfirm =>
+      'She will forget this conversation, and the chat on this phone is deleted.';
+
+  @override
   String get engineNewChatDefaultsLast => 'New chat defaults (last choice)';
 
   @override

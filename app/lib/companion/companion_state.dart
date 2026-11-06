@@ -11,6 +11,7 @@ import 'dart:convert';
 import 'package:dsh_client/dsh_client.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../state/connection_state.dart';
@@ -141,6 +142,43 @@ final companionSessionFilterProvider = Provider<bool Function(HostRef host, Stri
   final bindings = ref.watch(companionSessionsProvider);
   return (host, sessionId) => bindings[_hostKey(host)]?.sessionId == sessionId;
 });
+
+/// How she talks (docs/design/companion.md §7).
+enum CompanionMode {
+  /// The phone calls the model itself: chat only, no engine, no host.
+  light,
+
+  /// A conversation on the active host's DSH engine.
+  full,
+}
+
+const _modeKey = 'companion_mode';
+
+/// The person's pick; null until they make one.
+class CompanionModeSetting extends Notifier<CompanionMode?> {
+  @override
+  CompanionMode? build() {
+    unawaited(_load());
+    return null;
+  }
+
+  Future<void> _load() async {
+    final prefs = await SharedPreferences.getInstance();
+    final saved = CompanionMode.values.asNameMap()[prefs.getString(_modeKey)];
+    if (saved != null && ref.mounted && state == null) state = saved;
+  }
+
+  Future<void> choose(CompanionMode mode) async {
+    state = mode;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_modeKey, mode.name);
+  }
+}
+
+final companionModeProvider = NotifierProvider<CompanionModeSetting, CompanionMode?>(CompanionModeSetting.new);
+
+/// Where light-mode requests go out; tests answer them here.
+final companionLightClientProvider = Provider<http.Client Function()>((ref) => http.Client.new);
 
 Future<DateTime?> companionLastSeen() async {
   final prefs = await SharedPreferences.getInstance();

@@ -8798,6 +8798,72 @@ abstract class L10n {
   /// **'点点贝壳、泡泡和软垫试试'**
   String get companionTouchHintHome;
 
+  /// No description provided for @companionMenuMode.
+  ///
+  /// In zh, this message translates to:
+  /// **'对话方式'**
+  String get companionMenuMode;
+
+  /// No description provided for @companionModeLight.
+  ///
+  /// In zh, this message translates to:
+  /// **'轻量'**
+  String get companionModeLight;
+
+  /// No description provided for @companionModeLightHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'只聊天。手机直连模型，不用启动引擎'**
+  String get companionModeLightHint;
+
+  /// No description provided for @companionModeFull.
+  ///
+  /// In zh, this message translates to:
+  /// **'完整'**
+  String get companionModeFull;
+
+  /// No description provided for @companionModeFullHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'用当前主机的 DSH 引擎，之后接上工具'**
+  String get companionModeFullHint;
+
+  /// No description provided for @companionLightNoKey.
+  ///
+  /// In zh, this message translates to:
+  /// **'轻量模式要用 DeepSeek API Key，在设置里填上就能和我聊啦。'**
+  String get companionLightNoKey;
+
+  /// No description provided for @companionLightBadKey.
+  ///
+  /// In zh, this message translates to:
+  /// **'API Key 好像不对，或者已经失效了。'**
+  String get companionLightBadKey;
+
+  /// No description provided for @companionLightBusy.
+  ///
+  /// In zh, this message translates to:
+  /// **'那边有点忙，等一下再和我说吧。'**
+  String get companionLightBusy;
+
+  /// No description provided for @companionNotConnectedTryLight.
+  ///
+  /// In zh, this message translates to:
+  /// **'现在连不上主机。只想聊天的话，可以在右上角菜单换成轻量模式。'**
+  String get companionNotConnectedTryLight;
+
+  /// No description provided for @companionMenuRestartLightHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'清掉这台手机上的聊天记录'**
+  String get companionMenuRestartLightHint;
+
+  /// No description provided for @companionMenuRestartLightConfirm.
+  ///
+  /// In zh, this message translates to:
+  /// **'她会忘记这段对话，这台手机上的聊天记录会被删掉。'**
+  String get companionMenuRestartLightConfirm;
+
   /// No description provided for @engineNewChatDefaultsLast.
   ///
   /// In zh, this message translates to:
