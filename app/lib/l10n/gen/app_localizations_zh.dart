@@ -4815,6 +4815,18 @@ class L10nZh extends L10n {
   String get companionMenuInviteHint => '你安静陪着她时，她偶尔会邀你一起歇一会儿';
 
   @override
+  String get companionSetupBundled => '接她回家';
+
+  @override
+  String get companionSetupBodyBundled => '她就在 App 里，点一下就到，素材只解压到这台手机上。也可以导入别的素材包（zip）。';
+
+  @override
+  String get companionSetupImportOther => '导入别的素材包';
+
+  @override
+  String get companionMenuRemoveConfirmBundled => '这台手机上解压出来的角色素材会被删除，聊天记录不受影响。之后随时可以再接她回来。';
+
+  @override
   String get engineNewChatDefaultsLast => '新对话默认（上次选择）';
 
   @override

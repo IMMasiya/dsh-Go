@@ -52,6 +52,8 @@ Flutter CompanionPage
 
 ## 3. 素材包
 
+**随包带一份**（owner 2026-11-06 的决定）：把 zip 放在 `app/assets/companion/whale-girl.zip` 再打包，App 里就带着它。第一次进小屋时自动解压（走和导入一样的校验，她「游过来」的画面里完成）；用户在菜单里移除后不再自己回来，设置页的主按钮变成「接她回家」，「导入别的素材包」退到第二。这个 zip 被 `.gitignore` 挡在仓库外：模型授权没确认前，只有本机打的包带它，CI 打的公开包没有。要让公开包也带，得先确认授权，再决定提交进仓库还是在 CI 里放进去。
+
 ```
 pack.zip
 ├─ runtime/                      代码，摘要写死在 companionRuntimeDigest

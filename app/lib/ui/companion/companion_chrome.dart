@@ -482,10 +482,7 @@ class _CushionPainter extends CustomPainter {
     canvas
       ..drawPath(leaf(w * 0.74, w * 0.78, 0, -w * 0.02), blade)
       ..drawPath(leaf(w * 0.86, w * 0.99, h * 0.1, w * 0.05), blade)
-      ..drawRRect(
-        RRect.fromLTRBR(0, h * 0.4, w, h, Radius.elliptical(w / 2, h * 0.32)),
-        Paint()..color = shade,
-      )
+      ..drawRRect(RRect.fromLTRBR(0, h * 0.4, w, h, Radius.elliptical(w / 2, h * 0.32)), Paint()..color = shade)
       ..drawOval(Rect.fromLTRB(w * 0.04, h * 0.34, w * 0.96, h * 0.78), Paint()..color = light)
       // The quilting across the top.
       ..drawPath(
@@ -727,6 +724,8 @@ class CompanionWelcome extends StatelessWidget {
     required this.onAction,
     this.state = PetStateName.idle,
     this.error,
+    this.secondary,
+    this.onSecondary,
   });
 
   final String title;
@@ -734,6 +733,10 @@ class CompanionWelcome extends StatelessWidget {
   final String action;
   final bool busy;
   final VoidCallback onAction;
+
+  /// A quieter second way, under the button.
+  final String? secondary;
+  final VoidCallback? onSecondary;
   final PetStateName state;
   final String? error;
 
@@ -791,6 +794,18 @@ class CompanionWelcome extends StatelessWidget {
                             ),
                           ),
                   ),
+                  if (secondary case final label? when !busy)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 6),
+                      child: TextButton(
+                        style: TextButton.styleFrom(
+                          foregroundColor: theme.colorScheme.onSurfaceVariant,
+                          shape: const StadiumBorder(),
+                        ),
+                        onPressed: onSecondary,
+                        child: Text(label),
+                      ),
+                    ),
                   if (error != null) ...[
                     const SizedBox(height: 16),
                     Text(

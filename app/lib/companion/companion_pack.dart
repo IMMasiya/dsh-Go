@@ -1,6 +1,6 @@
 // The companion's downloaded assets (docs/design/companion.md): a zip with the
-// Live2D runtime (`runtime/`) and one character (`character/`). Neither ships in
-// the APK or the repository.
+// Live2D runtime (`runtime/`) and one character (`character/`). Neither is in
+// the repository; a build may carry one inside (companionBundledPack below).
 //
 // What's checked on the way in, because the page runs this content in a WebView:
 //  - `runtime/` is code, so it must match the digest pinned below, whoever made
@@ -14,6 +14,7 @@ import 'dart:io';
 import 'package:archive/archive.dart';
 import 'package:crypto/crypto.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 
 /// `runtime digest` printed by tooling/companion/build-pack.mjs.
 const companionRuntimeDigest = '20e4e35ce1de09bd9017197363a96afdb4d9fc045d574fb669ebf21b4bc92e81';
@@ -21,6 +22,33 @@ const companionRuntimeDigest = '20e4e35ce1de09bd9017197363a96afdb4d9fc045d574fb6
 /// Where the pack downloads from. Null until one is published: import works
 /// without it. (url, bytes, sha256)
 const CompanionPackSource? companionPackSource = null;
+
+/// A pack that comes inside the app, unpacked the first time the room opens.
+/// It isn't in the repository (its model's terms aren't settled for that):
+/// builds made with the zip in place carry it, the others simply have none.
+const companionBundledPack = 'assets/companion/whale-girl.zip';
+
+/// Whether this build carries the pack, without reading it.
+Future<bool> hasBundledCompanionPack([AssetBundle? bundle]) async {
+  try {
+    final manifest = await AssetManifest.loadFromAssetBundle(bundle ?? rootBundle);
+    return manifest.listAssets().contains(companionBundledPack);
+  } on Object {
+    return false;
+  }
+}
+
+/// The bundled pack's bytes, or null when this build has none.
+Future<Uint8List?> loadBundledCompanionPack([AssetBundle? bundle]) async {
+  final assets = bundle ?? rootBundle;
+  try {
+    if (!await hasBundledCompanionPack(assets)) return null;
+    final data = await assets.load(companionBundledPack);
+    return data.buffer.asUint8List(data.offsetInBytes, data.lengthInBytes);
+  } on Object {
+    return null;
+  }
+}
 
 @immutable
 class CompanionPackSource {

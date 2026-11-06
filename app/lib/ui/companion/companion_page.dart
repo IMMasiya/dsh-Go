@@ -46,6 +46,8 @@ import 'companion_chrome.dart';
 import 'companion_memory_page.dart';
 import 'companion_stage.dart';
 
+/// The person removed her pack: the one inside the app waits to be asked for.
+const _packRemovedKey = 'companion_pack_removed';
 const _hintDoneKey = 'companion_touch_hint_done';
 const _homeHintDoneKey = 'companion_home_hint_done';
 
@@ -57,10 +59,14 @@ typedef CompanionStageBuilder = Widget Function(CompanionStageController control
 typedef _ReplyPart = ({AssistantChatItem item, int? retry});
 
 class CompanionPage extends ConsumerStatefulWidget {
-  const CompanionPage({super.key, this.storeOverride, this.stageBuilder, this.stageController});
+  const CompanionPage({super.key, this.storeOverride, this.stageBuilder, this.stageController, this.bundledPack});
 
   /// Tests point this at a temporary folder.
   final CompanionPackStore? storeOverride;
+
+  /// The pack inside the app. Tests bring their own; with a test folder and
+  /// none given, there is none.
+  final Future<Uint8List?> Function()? bundledPack;
 
   /// Tests have no WebView.
   final CompanionStageBuilder? stageBuilder;
@@ -84,6 +90,10 @@ class _CompanionPageState extends ConsumerState<CompanionPage> implements Compan
   bool _stageReady = false;
   bool _greetingPending = true;
   bool _installing = false;
+
+  /// This app carries a pack, and the first one is unpacking while she arrives.
+  bool _bundledHere = false;
+  bool _arriving = false;
   String? _installError;
   bool _showTouchHint = false;
 
@@ -196,13 +206,29 @@ class _CompanionPageState extends ConsumerState<CompanionPage> implements Compan
         CompanionPackStore(Directory('${(await getApplicationSupportDirectory()).path}/companion'));
     final installed = await store.installed();
     final character = installed ? await store.character() : const CompanionCharacter();
+    final bundled = await _hasBundled();
+    final removed = (await SharedPreferences.getInstance()).getBool(_packRemovedKey) ?? false;
     if (!mounted) return;
     setState(() {
       _store = store;
       _character = character;
+      _bundledHere = bundled;
       _phase = installed ? _Phase.stage : _Phase.setup;
     });
+    // The first time, the pack inside the app is unpacked while she swims over.
+    // After the person removed it, it waits on the setup screen to be asked for.
+    if (!installed && bundled && !removed) await _installBundled(arriving: true);
   }
+
+  Future<bool> _hasBundled() async {
+    final own = widget.bundledPack;
+    if (own != null) return await own() != null;
+    return widget.storeOverride == null && await hasBundledCompanionPack();
+  }
+
+  Future<Uint8List?> _bundled() =>
+      widget.bundledPack?.call() ??
+      (widget.storeOverride == null ? loadBundledCompanionPack() : Future<Uint8List?>.value());
 
   @override
   void dispose() {
@@ -1023,26 +1049,46 @@ class _CompanionPageState extends ConsumerState<CompanionPage> implements Compan
 
   // ── Setup ────────────────────────────────────────────────────────────────
 
-  Future<void> _import() async {
+  /// A pack the person picks.
+  Future<void> _import() => _installFrom(() async {
+    final picked = await FilePicker.pickFile();
+    if (picked == null) return null;
+    // Picks may be content URIs: bring it somewhere the unzipper can seek.
+    final temp = File(
+      '${(await getTemporaryDirectory()).path}/companion-import-${DateTime.now().microsecondsSinceEpoch}.zip',
+    );
+    final sink = temp.openWrite();
+    await sink.addStream(picked.readAsByteStream());
+    await sink.close();
+    return temp;
+  });
+
+  /// The pack inside the app, through the same checks as any other.
+  /// [arriving]: the first time, she swims over while it unpacks.
+  Future<void> _installBundled({bool arriving = false}) => _installFrom(() async {
+    final bytes = await _bundled();
+    if (bytes == null) throw const CompanionPackException(CompanionPackProblem.notAPack);
+    final zip = File('${_store!.root.parent.path}/companion-bundled-${DateTime.now().microsecondsSinceEpoch}.zip');
+    await zip.writeAsBytes(bytes, flush: true);
+    return zip;
+  }, arriving: arriving);
+
+  Future<void> _installFrom(Future<File?> Function() bring, {bool arriving = false}) async {
     final store = _store;
     if (store == null || _installing) return;
     setState(() {
       _installing = true;
+      _arriving = arriving;
       _installError = null;
     });
     File? temp;
     try {
-      final picked = await FilePicker.pickFile();
-      if (picked == null) return;
-      // Picks may be content URIs: bring it somewhere the unzipper can seek.
-      temp = File(
-        '${(await getTemporaryDirectory()).path}/companion-import-${DateTime.now().microsecondsSinceEpoch}.zip',
-      );
-      final sink = temp.openWrite();
-      await sink.addStream(picked.readAsByteStream());
-      await sink.close();
+      temp = await bring();
+      if (temp == null) return;
       await store.install(temp.path);
       final character = await store.character();
+      // She's back: the pack inside the app may come by itself again.
+      unawaited(SharedPreferences.getInstance().then((p) => p.remove(_packRemovedKey)));
       if (!mounted) return;
       setState(() {
         _character = character;
@@ -1060,7 +1106,12 @@ class _CompanionPageState extends ConsumerState<CompanionPage> implements Compan
       } on FileSystemException {
         // Temp folder; the system clears it.
       }
-      if (mounted) setState(() => _installing = false);
+      if (mounted) {
+        setState(() {
+          _installing = false;
+          _arriving = false;
+        });
+      }
     }
   }
 
@@ -1279,8 +1330,13 @@ class _CompanionPageState extends ConsumerState<CompanionPage> implements Compan
 
   Future<void> _removePack() async {
     final l10n = context.l10n;
-    final ok = await _confirm(l10n.companionMenuRemovePack, l10n.companionMenuRemoveConfirm);
+    final ok = await _confirm(
+      l10n.companionMenuRemovePack,
+      _bundledHere ? l10n.companionMenuRemoveConfirmBundled : l10n.companionMenuRemoveConfirm,
+    );
     if (!ok || !mounted) return;
+    // Removed on purpose: the pack inside the app doesn't come back by itself.
+    unawaited(SharedPreferences.getInstance().then((p) => p.setBool(_packRemovedKey, true)));
     setState(() {
       _phase = _Phase.setup;
       _stageReady = false;
@@ -1374,15 +1430,18 @@ class _CompanionPageState extends ConsumerState<CompanionPage> implements Compan
                     CompanionStage(store: store, controller: _stage, events: events),
               ),
             ),
-          if (showStage && !_stageReady) const CompanionWater(child: CompanionArriving()),
-          if (_phase == _Phase.setup)
+          if ((showStage && !_stageReady) || (_phase == _Phase.setup && _arriving))
+            const CompanionWater(child: CompanionArriving())
+          else if (_phase == _Phase.setup)
             CompanionWelcome(
               title: l10n.companionSetupTitle,
-              message: l10n.companionSetupBody,
-              action: l10n.companionSetupImport,
+              message: _bundledHere ? l10n.companionSetupBodyBundled : l10n.companionSetupBody,
+              action: _bundledHere ? l10n.companionSetupBundled : l10n.companionSetupImport,
               busy: _installing,
               error: _installError,
-              onAction: _import,
+              onAction: _bundledHere ? _installBundled : _import,
+              secondary: _bundledHere ? l10n.companionSetupImportOther : null,
+              onSecondary: _import,
             ),
           if (_phase == _Phase.failed)
             CompanionWelcome(

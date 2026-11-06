@@ -5113,6 +5113,20 @@ class L10nEn extends L10n {
   String get companionMenuInviteHint => 'When you sit quietly with her, she may now and then ask you to rest together';
 
   @override
+  String get companionSetupBundled => 'Bring her home';
+
+  @override
+  String get companionSetupBodyBundled =>
+      'She comes with the app: one tap and she\'s here, unpacked only on this phone. You can also import another asset pack (zip).';
+
+  @override
+  String get companionSetupImportOther => 'Import another pack';
+
+  @override
+  String get companionMenuRemoveConfirmBundled =>
+      'The character assets unpacked on this phone will be deleted. Chats aren\'t affected. You can bring her back anytime.';
+
+  @override
   String get engineNewChatDefaultsLast => 'New chat defaults (last choice)';
 
   @override

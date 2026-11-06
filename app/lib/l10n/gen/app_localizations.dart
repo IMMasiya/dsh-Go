@@ -8906,6 +8906,30 @@ abstract class L10n {
   /// **'你安静陪着她时，她偶尔会邀你一起歇一会儿'**
   String get companionMenuInviteHint;
 
+  /// No description provided for @companionSetupBundled.
+  ///
+  /// In zh, this message translates to:
+  /// **'接她回家'**
+  String get companionSetupBundled;
+
+  /// No description provided for @companionSetupBodyBundled.
+  ///
+  /// In zh, this message translates to:
+  /// **'她就在 App 里，点一下就到，素材只解压到这台手机上。也可以导入别的素材包（zip）。'**
+  String get companionSetupBodyBundled;
+
+  /// No description provided for @companionSetupImportOther.
+  ///
+  /// In zh, this message translates to:
+  /// **'导入别的素材包'**
+  String get companionSetupImportOther;
+
+  /// No description provided for @companionMenuRemoveConfirmBundled.
+  ///
+  /// In zh, this message translates to:
+  /// **'这台手机上解压出来的角色素材会被删除，聊天记录不受影响。之后随时可以再接她回来。'**
+  String get companionMenuRemoveConfirmBundled;
+
   /// No description provided for @engineNewChatDefaultsLast.
   ///
   /// In zh, this message translates to:
