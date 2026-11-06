@@ -201,7 +201,7 @@ export class CapabilityRuntime {
     if (!reg) { end('no-handler'); return true; }
     const key = JSON.stringify([msg.pkg, msg.id, scope.key, conn.locale]);
     let feed = this.feeds.get(key);
-    if (feed && feed.token !== reg.token) { feed.stop('not-found'); feed = undefined; }
+    if (feed && (!this.alive(feed) || feed.token !== reg.token)) { feed.stop('not-found'); feed = undefined; }
     if (!feed) {
       feed = new MicroFeed(this, key, rec, msg.id, scope.scope, conn.locale, reg);
       this.feeds.set(key, feed);
