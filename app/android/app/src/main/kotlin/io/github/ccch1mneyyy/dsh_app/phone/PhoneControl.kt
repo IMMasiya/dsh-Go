@@ -481,12 +481,12 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
         return when (val path = background.grantPath(A11yKeeper.granted(app))) {
             SecureSettingsGrant.GRANTED -> mapOf("ok" to true)
             SecureSettingsGrant.SHIZUKU, SecureSettingsGrant.ADB -> {
-                background.grantSecureSettings(path, mayStart)
+                val attempt = background.grantSecureSettings(path, mayStart)
                 val ok = A11yKeeper.granted(app)
                 if (ok) ticker.execute(::keep)
                 emitStatus()
-                val failed = if (path == SecureSettingsGrant.ADB) R.string.background_adb_disconnected else R.string.a11y_keeper_grant_failed
-                mapOf("ok" to ok, "reason" to if (ok) null else AppStrings.get(app, failed))
+                val failed = SecureSettingsGrant.failureReason(ok, attempt)
+                mapOf("ok" to ok, "reason" to failed?.let { AppStrings.get(app, it) })
             }
             SecureSettingsGrant.SHIZUKU_PERMISSION -> {
                 // Permission may arrive after a new mode/off intent. Keep the original UI lease

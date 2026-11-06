@@ -295,6 +295,9 @@
     <!-- tile -->
     <string name="tile_new_chat_label">新对话</string>
     <string name="a11y_keeper_grant_failed">授权失败，可改用电脑命令授权。</string>
+    <string name="a11y_keeper_grant_unavailable">未能完成授权请求，请检查授权通道状态。</string>
+    <string name="a11y_keeper_grant_denied">系统拒绝了本次授予自动恢复无障碍所需权限的请求。</string>
+    <string name="a11y_keeper_grant_not_acquired">授权请求已得到响应，但仍未取得自动恢复无障碍所需权限。</string>
     <string name="a11y_keeper_needs_setup">请先配置 Shizuku 或无线调试。</string>
     <string name="background_root_legacy_client">已选择 root；请使用新版界面管理，或关闭手机操控。</string>
     <string name="background_root_starting">正在等待 root 授权</string>
