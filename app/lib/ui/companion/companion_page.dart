@@ -974,6 +974,14 @@ class _CompanionPageState extends ConsumerState<CompanionPage> implements Compan
     if (key.isEmpty) throw const CompanionLightError(CompanionLightFailure.noKey);
     final history = _lightHistory ??= CompanionLightHistory.at(_store!.root);
     await history.load();
+    // What she has been asked to remember, kept on this phone. Unreadable
+    // memories only mean she talks without them this time.
+    var memories = const <CompanionMemory>[];
+    try {
+      memories = (await _phoneKeeper.memories().timeout(const Duration(seconds: 2))).memories;
+    } on Object {
+      // Nothing to bring up this time.
+    }
     // Switched to full (or away) while the history was read: this line is not
     // light mode's any more.
     if (!current()) return;
@@ -990,7 +998,7 @@ class _CompanionPageState extends ConsumerState<CompanionPage> implements Compan
         streamCompanionReply(
           client: client,
           apiKey: key,
-          system: companionPersonaCore,
+          system: companionLightSystem(memories),
           lines: history.context(),
         ).listen(
           (delta) {

@@ -5,13 +5,16 @@ import 'package:dsh_client/dsh_client.dart';
 /// on the test clock (the file store has its own tests in dsh_client). With no
 /// [state] it keeps nothing, as a phone that can't keep her state would.
 class FakePhoneKeeper implements CompanionKeeper {
-  FakePhoneKeeper({this.state, this.closenessAfter});
+  FakePhoneKeeper({this.state, this.closenessAfter, this.remembered});
 
   CompanionSnapshot? state;
   final events = <String>[];
 
   /// Her closeness after the next event, to cross a step on purpose.
   double? closenessAfter;
+
+  /// What she has been asked to remember; null for a keeper without memories.
+  List<CompanionMemory>? remembered;
 
   static CompanionSnapshot snapshotOf({
     int revision = 0,
@@ -50,7 +53,10 @@ class FakePhoneKeeper implements CompanionKeeper {
   }
 
   @override
-  Future<CompanionMemories> memories() async => throw UnsupportedError('no memories in this fake');
+  Future<CompanionMemories> memories() async => switch (remembered) {
+    final list? => CompanionMemories(storeId: 'd0a90d66-ff37-4f2a-b31c-194c791ec651', revision: 0, memories: list),
+    null => throw UnsupportedError('no memories in this fake'),
+  };
 
   @override
   Future<int> saveMemory(String storeId, int revision, CompanionMemory memory) async => revision + 1;

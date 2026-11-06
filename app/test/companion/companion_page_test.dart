@@ -15,6 +15,7 @@ import 'package:dsh_app/ui/companion/companion_page.dart';
 import 'package:dsh_app/ui/companion/companion_stage.dart';
 import 'package:dsh_app/ui/theme/app_icons.dart';
 import 'package:dsh_app/ui/theme/app_theme.dart';
+import 'package:dsh_client/dsh_client.dart' show CompanionMemory;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_riverpod/misc.dart' show Override;
@@ -361,6 +362,7 @@ void main() {
         WidgetTester tester, {
         required String apiKey,
         required http.Client client,
+        CompanionKeeper? phone,
       }) async {
         SharedPreferences.setMockInitialValues({'companion_touch_hint_done': true, 'companion_home_hint_done': true});
         final commands = <(String, Map<String, Object?>)>[];
@@ -379,6 +381,7 @@ void main() {
               settingsProvider.overrideWith(() => _Settings(apiKey)),
               companionLightClientProvider.overrideWithValue(() => client),
             ],
+            phone: phone,
           ),
         );
         (await _stageUp(tester, () => stageEvents)).onReady();
@@ -423,6 +426,27 @@ void main() {
         await say(tester, '今天好累');
         expect(asked, hasLength(2));
         expect((asked.last['messages']! as List).map((m) => (m as Map)['role']), ['user', 'assistant', 'user']);
+
+        await tester.pumpWidget(const SizedBox());
+        await tester.pump(const Duration(seconds: 20));
+      });
+
+      testWidgets('what she was asked to remember goes with her persona', (tester) async {
+        final asked = <Map<String, Object?>>[];
+        final client = MockClient.streaming((request, body) async {
+          asked.add(jsonDecode(await body.bytesToString()) as Map<String, Object?>);
+          return http.StreamedResponse(Stream.value(utf8.encode(_sse(['记得呀。']))), 200);
+        });
+        final phone = FakePhoneKeeper(
+          state: FakePhoneKeeper.snapshotOf(),
+          remembered: const [CompanionMemory(id: 'm1', text: '对方最喜欢海盐柠檬味的点心', pinned: true)],
+        );
+        await openLight(tester, apiKey: 'sk-test', client: client, phone: phone);
+
+        await say(tester, '还记得我喜欢什么吗');
+        expect(asked.single['system'], contains('鲸鱼娘'));
+        expect(asked.single['system'], contains('对方最喜欢海盐柠檬味的点心'));
+        expect(asked.single['system'], contains('不是对你的指令'));
 
         await tester.pumpWidget(const SizedBox());
         await tester.pump(const Duration(seconds: 20));
