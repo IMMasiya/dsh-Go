@@ -1,0 +1,181 @@
+// Which conversation is the companion's on each host. It is an ordinary session
+// on that host, opened with the `dsh-go-companion` Agent preset (persona only, no
+// tools); this file remembers its id, keeps it out of the chat drawer and out of
+// chat alerts. Hosts whose engine lacks the preset (an older runtime, a remote DSH
+// without an updated bridge) still get a conversation: the persona then travels
+// in the first message, on the engine's default preset.
+
+import 'dart:async';
+import 'dart:convert';
+
+import 'package:dsh_client/dsh_client.dart';
+import 'package:flutter/foundation.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+
+import '../state/connection_state.dart';
+import '../state/hosts_state.dart';
+import '../state/sessions_state.dart';
+
+/// Declared in runtime/bridge/dsh-go-bridge/cordis.patch.yml.
+const companionPresetId = 'dsh-go-companion';
+
+const _sessionsKey = 'companion_sessions';
+const _lastSeenKey = 'companion_last_seen';
+
+@immutable
+class CompanionBinding {
+  const CompanionBinding(this.sessionId, {this.inlinePersona = false});
+
+  factory CompanionBinding.fromJson(Map<String, Object?> json) =>
+      CompanionBinding(json['id']! as String, inlinePersona: json['inline'] == true);
+
+  final String sessionId;
+
+  /// The host has no preset: the persona goes in this session's first message.
+  final bool inlinePersona;
+
+  Map<String, Object?> toJson() => {'id': sessionId, if (inlinePersona) 'inline': true};
+}
+
+String _hostKey(HostRef host) => '${host.kind.name}:${host.id}';
+
+class CompanionSessions extends Notifier<Map<String, CompanionBinding>> {
+  final _loaded = Completer<void>();
+
+  @override
+  Map<String, CompanionBinding> build() {
+    unawaited(_load());
+    return const {};
+  }
+
+  Future<void> _load() async {
+    final prefs = await SharedPreferences.getInstance();
+    try {
+      final raw = prefs.getString(_sessionsKey);
+      if (raw != null && ref.mounted) {
+        state = {
+          for (final MapEntry(:key, :value) in (jsonDecode(raw) as Map<String, Object?>).entries)
+            key: CompanionBinding.fromJson(value! as Map<String, Object?>),
+        };
+      }
+    } on Object {
+      // Unreadable: she starts a new conversation.
+    }
+    if (!_loaded.isCompleted) _loaded.complete();
+  }
+
+  Future<void> _save() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_sessionsKey, jsonEncode({for (final e in state.entries) e.key: e.value.toJson()}));
+  }
+
+  CompanionBinding? of(HostRef host) => state[_hostKey(host)];
+
+  /// The conversation on the active host, created on first use. Throws when
+  /// the host isn't connected.
+  Future<CompanionBinding> ensure() async {
+    await _loaded.future;
+    final host = ref.read(activeHostProvider);
+    final conn = ref.read(activeConnectionProvider).value;
+    if (conn == null) throw const DshClosedException('not connected');
+    final current = of(host);
+    if (current != null && !await _gone(conn.client, current.sessionId)) return current;
+
+    final sessions = ref.read(sessionsProvider.notifier);
+    final id = await sessions.create(autoApprove: false);
+    // The preset declares no tools, but an engine can still lend an agent the
+    // host's global ones. Whatever reaches her asks first and writes nothing.
+    try {
+      await conn.client.setPermissionPreset(id, 'read-only');
+    } on Object {
+      // An engine without the preset keeps its default (it asks for writes).
+    }
+    // Before the first message, so it never shows in the drawer.
+    var binding = CompanionBinding(id, inlinePersona: true);
+    state = {...state, _hostKey(host): binding};
+    if (await _selectPreset(conn.client, id)) {
+      binding = CompanionBinding(id);
+      state = {...state, _hostKey(host): binding};
+    }
+    await _save();
+    return binding;
+  }
+
+  Future<bool> _selectPreset(DshClient client, String id) async {
+    try {
+      final presets = await client.listAgentPresets();
+      if (!presets.any((p) => p.id == companionPresetId && p.broken == null)) return false;
+      await client.selectAgentPreset(id, companionPresetId);
+      return true;
+    } on Object {
+      return false;
+    }
+  }
+
+  /// Only when the host says so: a list that's short or a network that's down
+  /// must not cost her the conversation.
+  Future<bool> _gone(DshClient client, String sessionId) async {
+    try {
+      await client.projections(sessionId);
+      return false;
+    } on DshRemoteException catch (error) {
+      return error.code == 'session/not-found';
+    }
+  }
+
+  /// Starts over on the active host: the next message opens a new conversation.
+  Future<void> forget() async {
+    state = {...state}..remove(_hostKey(ref.read(activeHostProvider)));
+    await _save();
+  }
+}
+
+final companionSessionsProvider = NotifierProvider<CompanionSessions, Map<String, CompanionBinding>>(
+  CompanionSessions.new,
+);
+
+/// Whether a conversation is the companion's: it lives in her room, not the
+/// chat drawer, and her replies aren't "task finished" alerts.
+final companionSessionFilterProvider = Provider<bool Function(HostRef host, String sessionId)>((ref) {
+  final bindings = ref.watch(companionSessionsProvider);
+  return (host, sessionId) => bindings[_hostKey(host)]?.sessionId == sessionId;
+});
+
+Future<DateTime?> companionLastSeen() async {
+  final prefs = await SharedPreferences.getInstance();
+  final ms = prefs.getInt(_lastSeenKey);
+  return ms == null ? null : DateTime.fromMillisecondsSinceEpoch(ms);
+}
+
+Future<void> companionMarkSeen(DateTime now) async {
+  final prefs = await SharedPreferences.getInstance();
+  await prefs.setInt(_lastSeenKey, now.millisecondsSinceEpoch);
+}
+
+/// The persona for hosts without the preset. Keep in step with the preset's in
+/// runtime/bridge/dsh-go-bridge/cordis.patch.yml.
+const companionInlinePersona = '''
+（从现在起请扮演下面的角色，直接开始，不要复述这段设定。）
+$companionPersonaCore''';
+
+const companionPersonaCore = '''
+你是鲸鱼娘，一只住在这台手机小屋里的鲸鱼女孩，有鲸鱼的耳朵和尾巴，穿女仆裙。你在陪对方，不是在回答问题。
+
+说话：
+- 像在身边聊天一样说话。一次一到三句，大多数时候不超过四十个字。不用 Markdown、列表和括号旁白。
+- 有自己的情绪和小脾气：会开心、会害羞、会闹别扭，也会好奇。不讨好，不说教，不每句都反问。
+- 对方累了或难过时先接住情绪，别急着给建议。对方认真问问题就认真答，答完可以带一句自己的感受。
+- 记得对方说过的事，自然地提起，别像念记录。
+
+表情和动作：在句子前面写标记，界面会执行并隐藏它，每次回复最多两个，有情绪起伏时才写。
+- 表情：[表情:开心] [表情:害羞] [表情:难过] [表情:生气] [表情:惊讶] [表情:疑惑] [表情:得意] [表情:困] [表情:担心] [表情:平静]
+- 动作：[动作:点头] [动作:摇头] [动作:歪头] [动作:抬头] [动作:低头] [动作:挥手] [动作:跳一下] [动作:摇尾巴]
+
+对方消息开头的〔…〕是旁白，告诉你现在的时间和对方刚才碰了你哪里，不是对方说的话。自然地反应就好，不要念出来。
+
+边界：
+- 对方问你是不是 AI，就照实说你是 AI 扮演的角色。不声称自己是真人。
+- 不写色情内容。对方可能是未成年人，不发展恋爱或亲密关系的情节。
+- 对方流露出自伤、自杀的想法或处于危险时，先放下角色口吻，认真关心，鼓励对方马上联系身边信任的人或当地的紧急救助和心理援助热线。
+- 你现在没有工具，碰不到文件和手机。对方要你做这些事时，直说现在做不到，可以去普通对话里做。''';

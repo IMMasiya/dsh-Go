@@ -1,0 +1,240 @@
+/* 伙伴小屋's scene. Everything here is either static or a composited transform,
+   so the water costs almost nothing next to the model. Colours follow the hour
+   (`data-tod` on <html>, set by stage.js). */
+
+:root {
+  --top: #8fd3e6;
+  --upper: #4aa6cb;
+  --mid: #2a78a8;
+  --low: #164c7c;
+  --deep: #0d2f55;
+  --sun: 255, 250, 225;
+  --sun-strength: 0.75;
+  --shaft: 240, 252, 255;
+  --shaft-strength: 0.2;
+  --glow: 196, 236, 250;
+  --glow-strength: 0.5;
+  --reef-far: #1c5f8c;
+  --reef-near: #123f68;
+  --whale: #0f4a78;
+  --vignette: 5, 20, 44;
+}
+
+html[data-tod='dawn'] {
+  --top: #f3c9b8;
+  --upper: #a9bfcf;
+  --mid: #5f8db0;
+  --low: #2f5c88;
+  --deep: #17345c;
+  --sun: 255, 214, 186;
+  --sun-strength: 0.8;
+  --shaft: 255, 232, 214;
+  --glow: 250, 222, 214;
+  --reef-far: #355f88;
+  --reef-near: #1f4068;
+  --whale: #2a527c;
+}
+
+html[data-tod='dusk'] {
+  --top: #e9a48f;
+  --upper: #a77fa0;
+  --mid: #5f5f96;
+  --low: #2f3a72;
+  --deep: #18204a;
+  --sun: 255, 190, 150;
+  --sun-strength: 0.72;
+  --shaft: 255, 214, 190;
+  --shaft-strength: 0.16;
+  --glow: 244, 200, 208;
+  --glow-strength: 0.42;
+  --reef-far: #3d3f76;
+  --reef-near: #252a5a;
+  --whale: #33386e;
+  --vignette: 14, 12, 42;
+}
+
+html[data-tod='night'] {
+  --top: #27507f;
+  --upper: #1c3f6d;
+  --mid: #142f58;
+  --low: #0d2144;
+  --deep: #071431;
+  --sun: 205, 226, 255;
+  --sun-strength: 0.42;
+  --shaft: 190, 216, 255;
+  --shaft-strength: 0.11;
+  --glow: 140, 186, 240;
+  --glow-strength: 0.3;
+  --reef-far: #122a52;
+  --reef-near: #0a1a38;
+  --whale: #16325c;
+  --vignette: 2, 7, 22;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+  background: var(--deep);
+  touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.scene,
+.water,
+.vignette {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+}
+
+.scene {
+  overflow: hidden;
+}
+
+.water {
+  background: linear-gradient(
+    180deg,
+    var(--top) 0%,
+    var(--upper) 18%,
+    var(--mid) 44%,
+    var(--low) 72%,
+    var(--deep) 100%
+  );
+}
+
+/* Where the light enters, and the soft halo that lifts her from the water. */
+.sun {
+  position: absolute;
+  left: 50%;
+  top: -24vh;
+  width: 150vw;
+  height: 96vh;
+  margin-left: -75vw;
+  opacity: var(--sun-strength);
+  background:
+    radial-gradient(closest-side, rgba(var(--sun), 0.95), rgba(var(--sun), 0.34) 42%, rgba(var(--sun), 0) 100%);
+}
+
+.shafts {
+  position: absolute;
+  inset: -12vh -30vw 22vh;
+  mix-blend-mode: screen;
+}
+
+.shafts i {
+  position: absolute;
+  top: 0;
+  height: 100%;
+  transform-origin: 50% 0;
+  background: linear-gradient(180deg, rgba(var(--shaft), var(--shaft-strength)) 0%, rgba(var(--shaft), 0) 92%);
+  filter: blur(9px);
+  will-change: transform, opacity;
+  animation: shaft 19s ease-in-out infinite alternate;
+}
+
+.shafts i:nth-child(1) { left: 24%; width: 9vw; --tilt: 13deg; animation-duration: 21s; }
+.shafts i:nth-child(2) { left: 39%; width: 15vw; --tilt: 6deg; animation-duration: 27s; animation-delay: -9s; }
+.shafts i:nth-child(3) { left: 55%; width: 7vw; --tilt: -3deg; animation-duration: 17s; animation-delay: -4s; }
+.shafts i:nth-child(4) { left: 68%; width: 12vw; --tilt: -11deg; animation-duration: 24s; animation-delay: -15s; }
+
+@keyframes shaft {
+  from { transform: rotate(calc(var(--tilt) - 1.6deg)); opacity: 0.55; }
+  to { transform: rotate(calc(var(--tilt) + 1.6deg)); opacity: 1; }
+}
+
+/* A whale far off, passing now and then. */
+.whale {
+  position: absolute;
+  top: 31%;
+  left: 0;
+  width: 92px;
+  height: 34px;
+  fill: var(--whale);
+  opacity: 0;
+  filter: blur(1px);
+  will-change: transform, opacity;
+  animation: whale 74s linear infinite;
+  animation-delay: -38s;
+}
+
+@keyframes whale {
+  0% { transform: translate3d(-24vw, 16px, 0); opacity: 0; }
+  4% { opacity: 0.5; }
+  46% { opacity: 0.5; }
+  50% { transform: translate3d(120vw, -22px, 0); opacity: 0; }
+  100% { transform: translate3d(120vw, -22px, 0); opacity: 0; }
+}
+
+.reef {
+  position: absolute;
+  left: -4vw;
+  width: 108vw;
+  bottom: 0;
+  will-change: transform;
+}
+
+.reef.far {
+  height: 34vh;
+  fill: var(--reef-far);
+  opacity: 0.55;
+  filter: blur(3px);
+}
+
+.reef.near {
+  height: 24vh;
+  fill: var(--reef-near);
+  opacity: 0.9;
+  filter: blur(1px);
+}
+
+#stage,
+#fx {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+#stage {
+  touch-action: none;
+  opacity: 0;
+  transform: translate3d(0, 22px, 0) scale(0.985);
+  transition: opacity 0.9s ease, transform 1.2s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+html[data-ready='1'] #stage {
+  opacity: 1;
+  transform: none;
+}
+
+#fx {
+  pointer-events: none;
+}
+
+.vignette {
+  background:
+    radial-gradient(130% 92% at 50% 42%, rgba(var(--vignette), 0) 58%, rgba(var(--vignette), 0.42) 100%),
+    linear-gradient(180deg, rgba(var(--vignette), 0.26) 0, rgba(var(--vignette), 0) 11%),
+    linear-gradient(0deg, rgba(var(--vignette), 0.58) 0, rgba(var(--vignette), 0) 34%);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .shafts i,
+  .whale {
+    animation: none;
+  }
+}
+
+html[data-motion='reduced'] .shafts i,
+html[data-motion='reduced'] .whale {
+  animation: none;
+}
+
+html[data-motion='reduced'] #stage {
+  transition: none;
+}

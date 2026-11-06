@@ -2852,6 +2852,119 @@
       }
     }
   },
+  "companionTitle": "伙伴小屋",
+  "companionEntrySubtitle": "和她待一会儿",
+  "companionDefaultName": "她",
+  "companionInputHint": "和{name}说点什么",
+  "@companionInputHint": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "companionMenu": "更多",
+  "companionVoice": "语音",
+  "companionStop": "让她停下",
+  "companionSend": "发送",
+  "companionNotConnected": "现在连不上引擎，等一下再和我说吧。",
+  "companionSendFailed": "这句话没送出去，要不要再说一次？",
+  "companionNeedsAttention": "有件事要你确认，点这里去看",
+  "companionMenuHistory": "查看聊天记录",
+  "companionMenuRestart": "重新认识",
+  "companionMenuRestartHint": "开始一段新对话",
+  "companionMenuRestartConfirm": "她会忘记这段对话。旧的记录还留在主机上，不会被删除。",
+  "companionMenuRemovePack": "移除素材",
+  "companionMenuRemoveConfirm": "这台手机上的角色素材会被删除，聊天记录不受影响。下次进来时要重新导入。",
+  "companionCreditAuthor": "作者：{name}",
+  "@companionCreditAuthor": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "companionSetupTitle": "把她接回家",
+  "companionSetupBody": "角色素材不在 App 里，要用时才放进手机。选择素材包（zip）导入后就能见到她。",
+  "companionSetupImport": "导入素材包",
+  "companionFailedTitle": "她没能出来",
+  "companionFailedBody": "这台手机上加载失败了（{reason}）。可以重新导入素材包再试一次。",
+  "@companionFailedBody": {
+    "placeholders": {
+      "reason": {
+        "type": "String"
+      }
+    }
+  },
+  "companionPackBroken": "这个文件打不开，可能不是素材包或已经损坏。",
+  "companionPackRuntimeMismatch": "素材包里的运行库和这个版本的 App 对不上。",
+  "companionPackNoRuntime": "这个包只有角色，手机上还没有运行库。先导入完整的素材包。",
+  "companionPackNoModel": "包里没有找到 Live2D 模型（.model3.json）。",
+  "companionPackUnsafe": "包里有不允许的文件或路径，没有导入。",
+  "companionPackTooLarge": "素材包太大了。",
+  "companionPackStorage": "写入失败，看看手机存储空间够不够。",
+  "companionGreetFirst": "你好呀，我是鲸鱼娘。以后就住在这里了，请多指教。",
+  "companionGreetMorning": "早呀，今天也要好好吃早饭。",
+  "companionGreetNoon": "中午啦，吃过饭了吗？",
+  "companionGreetAfternoon": "下午好，我刚才在发呆。",
+  "companionGreetEvening": "晚上好，今天过得怎么样？",
+  "companionGreetLate": "这么晚还没睡呀？",
+  "companionGreetLong": "好久不见，我还以为你把我忘啦。",
+  "companionGreetBack": "嗯？又回来啦。",
+  "companionWake": "嗯……我没睡着，就是眯了一下。",
+  "companionPat1": "嘿嘿……再摸一会儿也可以。",
+  "companionPat2": "唔，好舒服。",
+  "companionPat3": "头发要被你弄乱啦。",
+  "companionTapHead1": "怎么啦？",
+  "companionTapHead2": "嗯？",
+  "companionTapFace1": "别戳脸啦。",
+  "companionTapFace2": "哇，手好凉。",
+  "companionTapFace3": "我脸上有东西吗？",
+  "companionTapBody1": "哎，吓我一跳。",
+  "companionTapBody2": "干嘛呀？",
+  "companionTapBody3": "围裙刚洗过的！",
+  "companionTapTail1": "尾巴不可以随便碰！",
+  "companionTapTail2": "呀，好痒。",
+  "companionTapTail3": "这可是很重要的尾巴。",
+  "companionTapLegs1": "地上有什么吗？",
+  "companionTapLegs2": "你在看哪里呀。",
+  "companionTease1": "别闹了，头都晕了。",
+  "companionTease2": "再戳就不理你了！",
+  "companionTease3": "你是不是很闲？",
+  "companionStatusIdle": "在发呆",
+  "companionStatusListening": "在听你说",
+  "companionStatusThinking": "在想",
+  "companionStatusSpeaking": "在说话",
+  "companionStatusSleeping": "睡着了",
+  "companionStatusAway": "不在",
+  "companionListening": "在听…",
+  "companionTouchHint": "摸摸她的头试试",
+  "companionArriving": "她正在游过来…",
+  "companionPrivacyLine": "素材只存在这台手机上，聊天走当前主机。",
+  "companionMemoryTitle": "她记得的事",
+  "companionMemoryScope": "保存在{host}上。她现在还不会自己想起这些，之后的版本会接上。",
+  "@companionMemoryScope": {
+    "placeholders": {
+      "host": {
+        "type": "String"
+      }
+    }
+  },
+  "companionMemoryAdd": "添加",
+  "companionMemoryEdit": "修改",
+  "companionMemorySave": "保存",
+  "companionMemoryHint": "比如：我喜欢无糖的茶，不喝咖啡",
+  "companionMemoryForget": "忘掉",
+  "companionMemoryForgetTitle": "让她忘掉这件事？",
+  "companionMemoryEmpty": "还没有记下什么",
+  "companionMemoryEmptyHint": "想让她记住的事，可以在这里写下来。只存在当前主机上，随时能改能删。",
+  "companionMemoryUnsupported": "这台主机还不能保存她的记忆",
+  "companionMemoryUnsupportedHint": "经 DSH Remote 中继连接时用不了，或者这台主机的 dsh-go 桥接比较旧。",
+  "companionMemoryLoadFailed": "没读到",
+  "companionMemoryRetry": "重试",
+  "companionMemoryConflict": "刚才另一处改过了，已经刷新",
+  "companionMemoryFull": "记满了，先删掉一些吧",
+  "companionMemorySaveFailed": "没保存上，再试一次吧",
   "engineNewChatDefaultsLast": "新对话默认（上次选择）",
   "engineNewChatDefaultsFixed": "新对话默认（固定）",
   "engineNewChatUseLast": "沿用上次",

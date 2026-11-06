@@ -1,0 +1,239 @@
+// 她记得的事: the companion's confirmed memories on the active host
+// (packages/dsh_client/lib/src/companion_api.dart). Every change shows only
+// once the Host has answered; a conflict reads the list again instead of
+// writing over someone else's change.
+
+import 'dart:async';
+import 'dart:math';
+
+import 'package:dsh_client/dsh_client.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+
+import '../../l10n/l10n.dart';
+import '../../state/connection_state.dart';
+import '../../state/hosts_state.dart';
+import '../common/app_dialog.dart';
+import '../common/app_sheet.dart';
+import '../common/brief_notice.dart';
+import '../common/empty_view.dart';
+import '../settings/settings_widgets.dart';
+import '../shell/page_frame.dart';
+import '../theme/app_icons.dart';
+import '../theme/semantic_colors.dart';
+
+/// The bridge's limit for one memory, in code points.
+const _maxLength = 512;
+
+/// A v4 UUID: memories are named by the client so a retried save can't add two.
+String companionMemoryId() {
+  final random = Random.secure();
+  final bytes = List<int>.generate(16, (_) => random.nextInt(256));
+  bytes[6] = (bytes[6] & 0x0f) | 0x40;
+  bytes[8] = (bytes[8] & 0x3f) | 0x80;
+  final hex = bytes.map((b) => b.toRadixString(16).padLeft(2, '0')).join();
+  return '${hex.substring(0, 8)}-${hex.substring(8, 12)}-${hex.substring(12, 16)}-'
+      '${hex.substring(16, 20)}-${hex.substring(20)}';
+}
+
+class CompanionMemoryPage extends ConsumerStatefulWidget {
+  const CompanionMemoryPage({super.key});
+
+  @override
+  ConsumerState<CompanionMemoryPage> createState() => _CompanionMemoryPageState();
+}
+
+enum _Load { loading, ready, unsupported, failed }
+
+class _CompanionMemoryPageState extends ConsumerState<CompanionMemoryPage> {
+  _Load _load = _Load.loading;
+  CompanionMemories? _list;
+  DshClient? _client;
+  bool _busy = false;
+
+  @override
+  void initState() {
+    super.initState();
+    unawaited(_read());
+  }
+
+  Future<void> _read() async {
+    final client = ref.read(activeConnectionProvider).value?.client;
+    if (client == null) {
+      setState(() => _load = _Load.failed);
+      return;
+    }
+    try {
+      final snapshot = await client.companionSnapshot();
+      if (snapshot == null || !snapshot.memories) {
+        if (mounted) setState(() => _load = _Load.unsupported);
+        return;
+      }
+      final list = await client.companionMemories();
+      if (!mounted) return;
+      setState(() {
+        _client = client;
+        _list = list;
+        _load = _Load.ready;
+      });
+    } on Object {
+      if (mounted) setState(() => _load = _Load.failed);
+    }
+  }
+
+  /// One write, then the list as the Host now has it.
+  Future<void> _write(Future<int> Function(DshClient client, CompanionMemories list) write) async {
+    final client = _client;
+    final list = _list;
+    if (client == null || list == null || _busy) return;
+    final l10n = context.l10n;
+    setState(() => _busy = true);
+    try {
+      await write(client, list);
+      await _read();
+    } on DshRemoteException catch (error) {
+      if (!mounted) return;
+      showBriefNotice(
+        context,
+        error.code.endsWith('conflict') || error.code.endsWith('store-changed')
+            ? l10n.companionMemoryConflict
+            : error.code.endsWith('limit-reached')
+            ? l10n.companionMemoryFull
+            : l10n.companionMemorySaveFailed,
+      );
+      await _read();
+    } on Object {
+      if (mounted) showBriefNotice(context, l10n.companionMemorySaveFailed);
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _edit([CompanionMemory? memory]) async {
+    final l10n = context.l10n;
+    final input = TextEditingController(text: memory?.text ?? '');
+    final text = await showAppDialog<String>(
+      context: context,
+      builder: (dialog) => AlertDialog(
+        title: Text(memory == null ? l10n.companionMemoryAdd : l10n.companionMemoryEdit),
+        content: TextField(
+          controller: input,
+          autofocus: true,
+          minLines: 2,
+          maxLines: 5,
+          maxLength: _maxLength,
+          decoration: InputDecoration(hintText: l10n.companionMemoryHint),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(dialog), child: Text(dialog.l10n.commonCancel)),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialog, input.text.trim()),
+            child: Text(dialog.l10n.companionMemorySave),
+          ),
+        ],
+      ),
+    );
+    input.dispose();
+    if (text == null || text.isEmpty || text == memory?.text) return;
+    final next = CompanionMemory(
+      id: memory?.id ?? companionMemoryId(),
+      text: text,
+      kind: memory?.kind ?? 'fact',
+      keywords: memory?.keywords ?? const [],
+      pinned: memory?.pinned ?? false,
+    );
+    await _write((client, list) => client.saveCompanionMemory(list.storeId, list.revision, next));
+  }
+
+  Future<void> _delete(CompanionMemory memory) async {
+    final l10n = context.l10n;
+    final ok = await showAppDialog<bool>(
+      context: context,
+      builder: (dialog) => AlertDialog(
+        title: Text(l10n.companionMemoryForgetTitle),
+        content: Text(memory.text),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(dialog, false), child: Text(dialog.l10n.commonCancel)),
+          FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: DshColors.of(dialog).danger,
+              foregroundColor: DshColors.of(dialog).onDanger,
+            ),
+            onPressed: () => Navigator.pop(dialog, true),
+            child: Text(dialog.l10n.companionMemoryForget),
+          ),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    await _write((client, list) => client.deleteCompanionMemory(list.storeId, list.revision, memory.id));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = context.l10n;
+    final theme = Theme.of(context);
+    final host = ref.watch(activeHostProvider);
+    final hostName = ref.watch(hostNameProvider(host)) ?? (host.isLocal ? l10n.commonThisPhone : l10n.commonRemoteHost);
+    final list = _list;
+    final Widget body;
+    switch (_load) {
+      case _Load.loading:
+        body = const Padding(
+          padding: EdgeInsets.only(top: 64),
+          child: Center(child: SizedBox.square(dimension: 22, child: CircularProgressIndicator(strokeWidth: 2.2))),
+        );
+      case _Load.unsupported:
+        body = EmptyView(
+          icon: AppIcons.unsupported,
+          title: l10n.companionMemoryUnsupported,
+          message: l10n.companionMemoryUnsupportedHint,
+        );
+      case _Load.failed:
+        body = EmptyView(
+          icon: AppIcons.offline,
+          title: l10n.companionMemoryLoadFailed,
+          onAction: _read,
+          actionLabel: l10n.companionMemoryRetry,
+        );
+      case _Load.ready when list!.memories.isEmpty:
+        body = EmptyView(
+          icon: AppIcons.bookmark,
+          title: l10n.companionMemoryEmpty,
+          message: l10n.companionMemoryEmptyHint,
+          onAction: _edit,
+          actionLabel: l10n.companionMemoryAdd,
+        );
+      case _Load.ready:
+        body = SheetGroup(
+          margin: const EdgeInsets.fromLTRB(16, 4, 16, 12),
+          children: [
+            for (final memory in list!.memories)
+              SettingsTile(
+                icon: memory.pinned ? AppIcons.pinActive : AppIcons.bookmark,
+                tinted: false,
+                title: memory.text,
+                onTap: _busy ? null : () => _edit(memory),
+                trailing: IconButton(
+                  tooltip: l10n.companionMemoryForget,
+                  icon: const Icon(AppIcons.delete, size: 20),
+                  onPressed: _busy ? null : () => _delete(memory),
+                ),
+              ),
+          ],
+        );
+    }
+    return AppPage(
+      title: l10n.companionMemoryTitle,
+      subtitle: Text(
+        l10n.companionMemoryScope(hostName),
+        style: theme.textTheme.bodySmall?.copyWith(color: DshColors.of(context).textTertiary),
+      ),
+      actions: [
+        if (_load == _Load.ready)
+          IconButton(tooltip: l10n.companionMemoryAdd, icon: const Icon(AppIcons.add), onPressed: _busy ? null : _edit),
+      ],
+      slivers: [SliverToBoxAdapter(child: body)],
+    );
+  }
+}

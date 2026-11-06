@@ -4462,6 +4462,269 @@ class L10nZh extends L10n {
   }
 
   @override
+  String get companionTitle => '伙伴小屋';
+
+  @override
+  String get companionEntrySubtitle => '和她待一会儿';
+
+  @override
+  String get companionDefaultName => '她';
+
+  @override
+  String companionInputHint(String name) {
+    return '和$name说点什么';
+  }
+
+  @override
+  String get companionMenu => '更多';
+
+  @override
+  String get companionVoice => '语音';
+
+  @override
+  String get companionStop => '让她停下';
+
+  @override
+  String get companionSend => '发送';
+
+  @override
+  String get companionNotConnected => '现在连不上引擎，等一下再和我说吧。';
+
+  @override
+  String get companionSendFailed => '这句话没送出去，要不要再说一次？';
+
+  @override
+  String get companionNeedsAttention => '有件事要你确认，点这里去看';
+
+  @override
+  String get companionMenuHistory => '查看聊天记录';
+
+  @override
+  String get companionMenuRestart => '重新认识';
+
+  @override
+  String get companionMenuRestartHint => '开始一段新对话';
+
+  @override
+  String get companionMenuRestartConfirm => '她会忘记这段对话。旧的记录还留在主机上，不会被删除。';
+
+  @override
+  String get companionMenuRemovePack => '移除素材';
+
+  @override
+  String get companionMenuRemoveConfirm => '这台手机上的角色素材会被删除，聊天记录不受影响。下次进来时要重新导入。';
+
+  @override
+  String companionCreditAuthor(String name) {
+    return '作者：$name';
+  }
+
+  @override
+  String get companionSetupTitle => '把她接回家';
+
+  @override
+  String get companionSetupBody => '角色素材不在 App 里，要用时才放进手机。选择素材包（zip）导入后就能见到她。';
+
+  @override
+  String get companionSetupImport => '导入素材包';
+
+  @override
+  String get companionFailedTitle => '她没能出来';
+
+  @override
+  String companionFailedBody(String reason) {
+    return '这台手机上加载失败了（$reason）。可以重新导入素材包再试一次。';
+  }
+
+  @override
+  String get companionPackBroken => '这个文件打不开，可能不是素材包或已经损坏。';
+
+  @override
+  String get companionPackRuntimeMismatch => '素材包里的运行库和这个版本的 App 对不上。';
+
+  @override
+  String get companionPackNoRuntime => '这个包只有角色，手机上还没有运行库。先导入完整的素材包。';
+
+  @override
+  String get companionPackNoModel => '包里没有找到 Live2D 模型（.model3.json）。';
+
+  @override
+  String get companionPackUnsafe => '包里有不允许的文件或路径，没有导入。';
+
+  @override
+  String get companionPackTooLarge => '素材包太大了。';
+
+  @override
+  String get companionPackStorage => '写入失败，看看手机存储空间够不够。';
+
+  @override
+  String get companionGreetFirst => '你好呀，我是鲸鱼娘。以后就住在这里了，请多指教。';
+
+  @override
+  String get companionGreetMorning => '早呀，今天也要好好吃早饭。';
+
+  @override
+  String get companionGreetNoon => '中午啦，吃过饭了吗？';
+
+  @override
+  String get companionGreetAfternoon => '下午好，我刚才在发呆。';
+
+  @override
+  String get companionGreetEvening => '晚上好，今天过得怎么样？';
+
+  @override
+  String get companionGreetLate => '这么晚还没睡呀？';
+
+  @override
+  String get companionGreetLong => '好久不见，我还以为你把我忘啦。';
+
+  @override
+  String get companionGreetBack => '嗯？又回来啦。';
+
+  @override
+  String get companionWake => '嗯……我没睡着，就是眯了一下。';
+
+  @override
+  String get companionPat1 => '嘿嘿……再摸一会儿也可以。';
+
+  @override
+  String get companionPat2 => '唔，好舒服。';
+
+  @override
+  String get companionPat3 => '头发要被你弄乱啦。';
+
+  @override
+  String get companionTapHead1 => '怎么啦？';
+
+  @override
+  String get companionTapHead2 => '嗯？';
+
+  @override
+  String get companionTapFace1 => '别戳脸啦。';
+
+  @override
+  String get companionTapFace2 => '哇，手好凉。';
+
+  @override
+  String get companionTapFace3 => '我脸上有东西吗？';
+
+  @override
+  String get companionTapBody1 => '哎，吓我一跳。';
+
+  @override
+  String get companionTapBody2 => '干嘛呀？';
+
+  @override
+  String get companionTapBody3 => '围裙刚洗过的！';
+
+  @override
+  String get companionTapTail1 => '尾巴不可以随便碰！';
+
+  @override
+  String get companionTapTail2 => '呀，好痒。';
+
+  @override
+  String get companionTapTail3 => '这可是很重要的尾巴。';
+
+  @override
+  String get companionTapLegs1 => '地上有什么吗？';
+
+  @override
+  String get companionTapLegs2 => '你在看哪里呀。';
+
+  @override
+  String get companionTease1 => '别闹了，头都晕了。';
+
+  @override
+  String get companionTease2 => '再戳就不理你了！';
+
+  @override
+  String get companionTease3 => '你是不是很闲？';
+
+  @override
+  String get companionStatusIdle => '在发呆';
+
+  @override
+  String get companionStatusListening => '在听你说';
+
+  @override
+  String get companionStatusThinking => '在想';
+
+  @override
+  String get companionStatusSpeaking => '在说话';
+
+  @override
+  String get companionStatusSleeping => '睡着了';
+
+  @override
+  String get companionStatusAway => '不在';
+
+  @override
+  String get companionListening => '在听…';
+
+  @override
+  String get companionTouchHint => '摸摸她的头试试';
+
+  @override
+  String get companionArriving => '她正在游过来…';
+
+  @override
+  String get companionPrivacyLine => '素材只存在这台手机上，聊天走当前主机。';
+
+  @override
+  String get companionMemoryTitle => '她记得的事';
+
+  @override
+  String companionMemoryScope(String host) {
+    return '保存在$host上。她现在还不会自己想起这些，之后的版本会接上。';
+  }
+
+  @override
+  String get companionMemoryAdd => '添加';
+
+  @override
+  String get companionMemoryEdit => '修改';
+
+  @override
+  String get companionMemorySave => '保存';
+
+  @override
+  String get companionMemoryHint => '比如：我喜欢无糖的茶，不喝咖啡';
+
+  @override
+  String get companionMemoryForget => '忘掉';
+
+  @override
+  String get companionMemoryForgetTitle => '让她忘掉这件事？';
+
+  @override
+  String get companionMemoryEmpty => '还没有记下什么';
+
+  @override
+  String get companionMemoryEmptyHint => '想让她记住的事，可以在这里写下来。只存在当前主机上，随时能改能删。';
+
+  @override
+  String get companionMemoryUnsupported => '这台主机还不能保存她的记忆';
+
+  @override
+  String get companionMemoryUnsupportedHint => '经 DSH Remote 中继连接时用不了，或者这台主机的 dsh-go 桥接比较旧。';
+
+  @override
+  String get companionMemoryLoadFailed => '没读到';
+
+  @override
+  String get companionMemoryRetry => '重试';
+
+  @override
+  String get companionMemoryConflict => '刚才另一处改过了，已经刷新';
+
+  @override
+  String get companionMemoryFull => '记满了，先删掉一些吧';
+
+  @override
+  String get companionMemorySaveFailed => '没保存上，再试一次吧';
+
+  @override
   String get engineNewChatDefaultsLast => '新对话默认（上次选择）';
 
   @override

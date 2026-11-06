@@ -1,0 +1,813 @@
+// 伙伴小屋: a whole page for the companion (docs/design/companion.md). She fills
+// the screen in a WebView; on top of it, in Flutter, her words and a small input.
+// Touches are answered on the spot without a model call; talking goes through an
+// ordinary session on the active host (companion_state.dart).
+
+import 'dart:async';
+import 'dart:io';
+import 'dart:math';
+
+import 'package:dsh_client/dsh_client.dart';
+import 'package:file_picker/file_picker.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+
+import '../../companion/companion_pack.dart';
+import '../../companion/companion_reply.dart';
+import '../../companion/companion_state.dart';
+import '../../l10n/l10n.dart';
+import '../../pets/pet_state.dart';
+import '../../state/chat_state.dart';
+import '../../state/connection_state.dart';
+import '../../state/hosts_state.dart';
+import '../../state/sessions_state.dart';
+import '../../state/voice_model_state.dart';
+import '../../state/voice_settings.dart';
+import '../../state/voice_state.dart';
+import '../chat/voice/voice_controller.dart';
+import '../common/app_dialog.dart';
+import '../common/app_sheet.dart';
+import '../common/sheet_title_bar.dart';
+import '../settings/settings_widgets.dart';
+import '../theme/app_icons.dart';
+import '../theme/app_theme.dart';
+import '../theme/surfaces.dart';
+import 'companion_chrome.dart';
+import 'companion_memory_page.dart';
+import 'companion_stage.dart';
+
+const _hintDoneKey = 'companion_touch_hint_done';
+
+final _sentenceEnd = RegExp(r'[。！？!?…~～]');
+
+enum _Phase { checking, setup, stage, failed }
+
+typedef CompanionStageBuilder = Widget Function(CompanionStageController controller, CompanionStageEvents events);
+
+class CompanionPage extends ConsumerStatefulWidget {
+  const CompanionPage({super.key, this.storeOverride, this.stageBuilder, this.stageController});
+
+  /// Tests point this at a temporary folder.
+  final CompanionPackStore? storeOverride;
+
+  /// Tests have no WebView.
+  final CompanionStageBuilder? stageBuilder;
+  final CompanionStageController? stageController;
+
+  @override
+  ConsumerState<CompanionPage> createState() => _CompanionPageState();
+}
+
+class _CompanionPageState extends ConsumerState<CompanionPage> {
+  late final _stage = widget.stageController ?? CompanionStageController();
+  final _input = TextEditingController();
+  final _focus = FocusNode();
+  final _random = Random();
+  late final VoiceInputController _voice;
+
+  CompanionPackStore? _store;
+  CompanionCharacter _character = const CompanionCharacter();
+  _Phase _phase = _Phase.checking;
+  String? _failure;
+  bool _stageReady = false;
+  bool _installing = false;
+  String? _installError;
+  bool _showTouchHint = false;
+
+  // The conversation.
+  String? _sessionId;
+  ProviderSubscription<ChatState>? _chat;
+  bool _sending = false;
+  bool _running = false;
+  bool _needsAttention = false;
+  bool _asleep = false;
+  String? _baselineUser;
+  bool _baselineSet = false;
+  int _marksHandled = 0;
+  int _wordsSpoken = 0;
+  final List<String> _notes = [];
+
+  // Her state on the Host (null: this host can't keep it).
+  CompanionSnapshot? _vitals;
+  DshClient? _vitalsClient;
+  Future<void> _vitalsQueue = Future.value();
+
+  // What's on screen.
+  String? _bubble;
+  bool _bubbleIsError = false;
+  String? _myLine;
+  String? _lastLine;
+  Timer? _bubbleTimer;
+  Timer? _settleTimer;
+
+  @override
+  void initState() {
+    super.initState();
+    _voice = VoiceInputController(
+      input: _input,
+      bridge: ref.read(voiceBridgeProvider),
+      mode: () => ref.read(voiceSettingsProvider.notifier).ready(),
+      modelReady: () =>
+          mounted &&
+          (ref.read(activeConnectionProvider).value?.isLocal ?? false) &&
+          ref.read(voiceModelProvider).status == VoiceModelStatus.ready,
+      client: () => mounted ? ref.read(activeConnectionProvider).value?.client : null,
+      onRecognized: () => scheduleMicrotask(() {
+        if (mounted && _input.text.trim().isNotEmpty) unawaited(_send());
+      }),
+    );
+    _voice.addListener(_voiceChanged);
+    _focus.addListener(_refreshMood);
+    _input.addListener(_inputChanged);
+    unawaited(_prepare());
+  }
+
+  Future<void> _prepare() async {
+    final store =
+        widget.storeOverride ??
+        CompanionPackStore(Directory('${(await getApplicationSupportDirectory()).path}/companion'));
+    final installed = await store.installed();
+    final character = installed ? await store.character() : const CompanionCharacter();
+    if (!mounted) return;
+    setState(() {
+      _store = store;
+      _character = character;
+      _phase = installed ? _Phase.stage : _Phase.setup;
+    });
+  }
+
+  @override
+  void dispose() {
+    unawaited(companionMarkSeen(DateTime.now()));
+    _chat?.close();
+    _bubbleTimer?.cancel();
+    _settleTimer?.cancel();
+    _voice.removeListener(_voiceChanged);
+    _voice.dispose();
+    _focus.dispose();
+    _input.dispose();
+    super.dispose();
+  }
+
+  // ── Stage events ─────────────────────────────────────────────────────────
+
+  void _onReady() {
+    setState(() => _stageReady = true);
+    unawaited(_arrive());
+    unawaited(_loadHint());
+    final binding = ref.read(companionSessionsProvider.notifier).of(ref.read(activeHostProvider));
+    if (binding != null) _bind(binding.sessionId);
+  }
+
+  Future<void> _loadHint() async {
+    final prefs = await SharedPreferences.getInstance();
+    if (mounted && prefs.getBool(_hintDoneKey) != true) setState(() => _showTouchHint = true);
+  }
+
+  /// Her state first (it knows when the person was last here, on any phone),
+  /// then the greeting, then this visit.
+  Future<void> _arrive() async {
+    final client = ref.read(activeConnectionProvider).value?.client;
+    CompanionSnapshot? snapshot;
+    if (client != null) {
+      try {
+        snapshot = await client.companionSnapshot().timeout(const Duration(seconds: 3));
+      } on Object {
+        // Not this host, or not now: she's still here, just without memory of it.
+      }
+    }
+    if (!mounted) return;
+    if (snapshot != null) {
+      _vitalsClient = client;
+      _applyVitals(snapshot);
+    }
+    await _greet(snapshot?.vitals.lastVisitAt);
+    if (snapshot != null) _event('visit');
+  }
+
+  void _applyVitals(CompanionSnapshot snapshot) {
+    _vitals = snapshot;
+    final v = snapshot.vitals;
+    _stage.command('vitals', {'valence': v.valence, 'energy': v.energy, 'closeness': v.closeness});
+  }
+
+  /// One event at a time, against the state last read. A conflict reads again;
+  /// it never sends the same event twice.
+  void _event(String type) {
+    _vitalsQueue = _vitalsQueue.then((_) async {
+      final read = _vitals;
+      final client = _vitalsClient;
+      if (read == null || client == null || !identical(client, ref.read(activeConnectionProvider).value?.client)) {
+        return;
+      }
+      try {
+        final next = await client.companionEvent(read, type);
+        if (mounted) _applyVitals(next);
+      } on DshRemoteException catch (error) {
+        if (!error.code.endsWith('conflict') && !error.code.endsWith('store-changed')) return;
+        final again = await client.companionSnapshot();
+        if (mounted && again != null) _applyVitals(again);
+      } on Object {
+        // A lost event costs nothing: absence and silence are never penalised.
+      }
+    });
+  }
+
+  Future<void> _greet(DateTime? lastVisit) async {
+    final now = DateTime.now();
+    final greeting = companionGreeting(now, lastVisit ?? await companionLastSeen());
+    unawaited(companionMarkSeen(now));
+    if (!mounted) return;
+    final l10n = context.l10n;
+    final (line, emotion, action) = switch (greeting) {
+      CompanionGreeting.firstTime => (l10n.companionGreetFirst, 'shy', 'wave'),
+      CompanionGreeting.morning => (l10n.companionGreetMorning, 'happy', 'wave'),
+      CompanionGreeting.noon => (l10n.companionGreetNoon, 'calm', 'tilt'),
+      CompanionGreeting.afternoon => (l10n.companionGreetAfternoon, 'calm', 'nodSmall'),
+      CompanionGreeting.evening => (l10n.companionGreetEvening, 'happy', 'wave'),
+      CompanionGreeting.lateNight => (l10n.companionGreetLate, 'worried', 'tilt'),
+      CompanionGreeting.longAbsence => (l10n.companionGreetLong, 'surprised', 'hop'),
+      CompanionGreeting.justNow => (l10n.companionGreetBack, 'calm', 'nodSmall'),
+    };
+    _stage.command('emotion', {'name': emotion, 'hold': 3200});
+    _stage.command('action', {'name': action});
+    _say(line);
+  }
+
+  void _onTouch(String zone, String kind) {
+    if (_showTouchHint) {
+      setState(() => _showTouchHint = false);
+      unawaited(SharedPreferences.getInstance().then((p) => p.setBool(_hintDoneKey, true)));
+    }
+    final l10n = context.l10n;
+    final lines = switch ((zone, kind)) {
+      (_, 'tease') => [l10n.companionTease1, l10n.companionTease2, l10n.companionTease3],
+      (_, 'pat') => [l10n.companionPat1, l10n.companionPat2, l10n.companionPat3],
+      ('head', _) => [l10n.companionTapHead1, l10n.companionTapHead2],
+      ('face', _) => [l10n.companionTapFace1, l10n.companionTapFace2, l10n.companionTapFace3],
+      ('tail', _) => [l10n.companionTapTail1, l10n.companionTapTail2, l10n.companionTapTail3],
+      ('legs', _) => [l10n.companionTapLegs1, l10n.companionTapLegs2],
+      _ => [l10n.companionTapBody1, l10n.companionTapBody2, l10n.companionTapBody3],
+    };
+    if (kind == 'pat') _event('pet');
+    _remember(switch ((zone, kind)) {
+      (_, 'tease') => '对方刚才连着戳你',
+      (_, 'pat') => '对方刚才摸了摸你的头',
+      ('tail', _) => '对方刚才碰了你的尾巴',
+      ('face', _) => '对方刚才戳了戳你的脸',
+      _ => null,
+    });
+    if (_running || _sending) return; // Her words first.
+    final choices = lines.where((l) => l != _lastLine).toList();
+    final line = choices[_random.nextInt(choices.length)];
+    _lastLine = line;
+    _say(line);
+  }
+
+  void _onMood(String mood) {
+    final asleep = mood == 'sleeping';
+    if (asleep != _asleep && mounted) setState(() => _asleep = asleep);
+  }
+
+  void _remember(String? note) {
+    if (note == null) return;
+    _notes
+      ..remove(note)
+      ..add(note);
+    if (_notes.length > 3) _notes.removeAt(0);
+  }
+
+  /// A short line without the model.
+  void _say(String line) {
+    _stage.command('say', {'chars': line.length});
+    _showBubble(line, hold: Duration(milliseconds: 2400 + line.length * 90));
+  }
+
+  void _showBubble(String text, {Duration? hold, bool error = false}) {
+    _bubbleTimer?.cancel();
+    setState(() {
+      _bubble = text;
+      _bubbleIsError = error;
+    });
+    if (hold != null) {
+      _bubbleTimer = Timer(hold, () {
+        if (mounted) setState(() => _bubble = null);
+      });
+    }
+  }
+
+  // ── Mood ─────────────────────────────────────────────────────────────────
+
+  void _refreshMood() {
+    if (_running || _sending) return;
+    _stage.command('mood', {'mood': _focus.hasFocus || _voice.active ? 'listening' : 'idle'});
+    if (mounted) setState(() {});
+  }
+
+  void _voiceChanged() {
+    if (!mounted) return;
+    setState(() {});
+    _refreshMood();
+  }
+
+  void _inputChanged() {
+    if (mounted) setState(() {});
+  }
+
+  CompanionActivity get _activity {
+    if (_asleep) return CompanionActivity.sleeping;
+    if (_sending || (_running && _bubble == null)) return CompanionActivity.thinking;
+    if (_running) return CompanionActivity.speaking;
+    if (_focus.hasFocus || _voice.active) return CompanionActivity.listening;
+    return CompanionActivity.idle;
+  }
+
+  // ── Talking ──────────────────────────────────────────────────────────────
+
+  void _bind(String sessionId) {
+    if (_sessionId == sessionId && _chat != null) return;
+    _chat?.close();
+    _sessionId = sessionId;
+    _baselineSet = false;
+    _chat = ref.listenManual(chatProvider(sessionId), (_, next) => _onChat(next), fireImmediately: true);
+  }
+
+  void _unbind() {
+    _vitals = null;
+    _vitalsClient = null;
+    _chat?.close();
+    _chat = null;
+    _sessionId = null;
+    _running = false;
+    _needsAttention = false;
+    _baselineSet = false;
+    _marksHandled = 0;
+    _wordsSpoken = 0;
+  }
+
+  /// The words after the latest thing the person said.
+  (String?, String) _latestReply(ChatState state) {
+    final parts = <String>[];
+    String? user;
+    for (final item in state.items.reversed) {
+      if (item is UserChatItem) {
+        user = item.key;
+        break;
+      }
+      if (item is AssistantChatItem && item.text.isNotEmpty) parts.add(item.text);
+    }
+    return (user, parts.reversed.join('\n'));
+  }
+
+  void _onChat(ChatState state) {
+    if (!mounted) return;
+    final (user, text) = _latestReply(state);
+    final attention = state.openApproval != null || state.questions.isNotEmpty;
+    final running = state.running || state.pending.isNotEmpty;
+
+    if (!_baselineSet) {
+      // What's already in the conversation has been said; only news moves her.
+      if (state.loading) return;
+      _baselineSet = true;
+      _baselineUser = user;
+      final old = parseCompanionReply(text);
+      _marksHandled = old.marks.length;
+      _wordsSpoken = old.words.length;
+      if (!running) {
+        setState(() => _needsAttention = attention);
+        return;
+      }
+    }
+
+    if (user != _baselineUser) {
+      _baselineUser = user;
+      _marksHandled = 0;
+      _wordsSpoken = 0;
+    }
+
+    final reply = parseCompanionReply(text, streaming: running);
+    for (final mark in reply.marks.skip(_marksHandled)) {
+      switch (mark.kind) {
+        case CompanionMarkKind.emotion:
+          _stage.command('emotion', {'name': mark.name});
+        case CompanionMarkKind.action:
+          _stage.command('action', {'name': mark.name});
+      }
+    }
+    _marksHandled = max(_marksHandled, reply.marks.length);
+
+    final fresh = reply.words.length - _wordsSpoken;
+    if (fresh > 0) {
+      _stage.command('say', {'chars': fresh});
+      if (_sentenceEnd.hasMatch(reply.words.substring(_wordsSpoken))) _stage.command('beat');
+      _wordsSpoken = reply.words.length;
+      _myLine = null;
+      _showBubble(reply.words);
+    }
+
+    if (running) {
+      _settleTimer?.cancel();
+      _stage.command('mood', {'mood': reply.words.isEmpty ? 'thinking' : 'speaking'});
+    } else if (_running) {
+      // Her mouth keeps going for a moment after the text is in.
+      _settleTimer?.cancel();
+      _settleTimer = Timer(Duration(milliseconds: min(4000, 600 + max(fresh, 0) * 90)), _refreshMood);
+      _myLine = null;
+      if (state.error != null) {
+        _showBubble(state.error!, hold: const Duration(seconds: 6), error: true);
+      } else if (reply.words.isNotEmpty) {
+        _bubbleTimer?.cancel();
+        _bubbleTimer = Timer(Duration(milliseconds: 9000 + reply.words.length * 60), () {
+          if (mounted) setState(() => _bubble = null);
+        });
+      }
+    }
+
+    setState(() {
+      _running = running;
+      _needsAttention = attention;
+    });
+  }
+
+  Future<void> _send() async {
+    final l10n = context.l10n;
+    final text = _input.text.trim();
+    if (text.isEmpty || _sending) return;
+    if (_voice.active) unawaited(_voice.cancel());
+    final host = ref.read(activeHostProvider);
+    _input.clear();
+    _bubbleTimer?.cancel();
+    setState(() {
+      _sending = true;
+      _bubble = null;
+      _myLine = text;
+    });
+    _stage.command('mood', {'mood': 'thinking'});
+    try {
+      final binding = await ref.read(companionSessionsProvider.notifier).ensure();
+      if (!mounted) return;
+      if (ref.read(activeHostProvider) != host) throw const DshClosedException('host changed');
+      _bind(binding.sessionId);
+      final chat = ref.read(chatProvider(binding.sessionId).notifier);
+      if (!await chat.waitForSync()) throw const DshClosedException('not synced');
+      if (!mounted) return;
+      final firstInline = binding.inlinePersona && ref.read(chatProvider(binding.sessionId)).items.isEmpty;
+      final aside = companionAside(now: DateTime.now(), notes: List.of(_notes));
+      final message = [if (firstInline) companionInlinePersona, ?aside, text].join('\n');
+      if (await chat.send(message)) {
+        _notes.clear();
+      } else {
+        throw StateError(ref.read(chatProvider(binding.sessionId)).error ?? 'send');
+      }
+    } on Object catch (error) {
+      if (!mounted) return;
+      if (_input.text.isEmpty) _input.text = text;
+      _stage.command('emotion', {'name': 'worried', 'hold': 3000});
+      setState(() => _myLine = null);
+      _showBubble(
+        error is DshClosedException ? l10n.companionNotConnected : l10n.companionSendFailed,
+        hold: const Duration(seconds: 6),
+        error: true,
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _sending = false);
+        _refreshMood();
+      }
+    }
+  }
+
+  Future<void> _stop() async {
+    final id = _sessionId;
+    if (id == null) return;
+    await ref.read(chatProvider(id).notifier).cancel();
+  }
+
+  void _openFullChat() {
+    final id = _sessionId;
+    if (id == null) return;
+    ref.read(currentSessionProvider.notifier).select(id);
+    Navigator.of(context).popUntil((route) => route.isFirst);
+  }
+
+  // ── Setup ────────────────────────────────────────────────────────────────
+
+  Future<void> _import() async {
+    final store = _store;
+    if (store == null || _installing) return;
+    setState(() {
+      _installing = true;
+      _installError = null;
+    });
+    File? temp;
+    try {
+      final picked = await FilePicker.pickFile();
+      if (picked == null) return;
+      // Picks may be content URIs: bring it somewhere the unzipper can seek.
+      temp = File(
+        '${(await getTemporaryDirectory()).path}/companion-import-${DateTime.now().microsecondsSinceEpoch}.zip',
+      );
+      final sink = temp.openWrite();
+      await sink.addStream(picked.readAsByteStream());
+      await sink.close();
+      await store.install(temp.path);
+      final character = await store.character();
+      if (!mounted) return;
+      setState(() {
+        _character = character;
+        _failure = null;
+        _stageReady = false;
+        _phase = _Phase.stage;
+      });
+    } on CompanionPackException catch (error) {
+      if (mounted) setState(() => _installError = _problemText(error.problem));
+    } on Object {
+      if (mounted) setState(() => _installError = context.l10n.companionPackBroken);
+    } finally {
+      try {
+        await temp?.delete();
+      } on FileSystemException {
+        // Temp folder; the system clears it.
+      }
+      if (mounted) setState(() => _installing = false);
+    }
+  }
+
+  String _problemText(CompanionPackProblem problem) {
+    final l10n = context.l10n;
+    return switch (problem) {
+      CompanionPackProblem.runtimeMismatch => l10n.companionPackRuntimeMismatch,
+      CompanionPackProblem.noRuntime => l10n.companionPackNoRuntime,
+      CompanionPackProblem.noModel => l10n.companionPackNoModel,
+      CompanionPackProblem.forbiddenFile || CompanionPackProblem.unsafePath => l10n.companionPackUnsafe,
+      CompanionPackProblem.tooLarge => l10n.companionPackTooLarge,
+      CompanionPackProblem.storage => l10n.companionPackStorage,
+      CompanionPackProblem.notAPack => l10n.companionPackBroken,
+    };
+  }
+
+  // ── Menu ─────────────────────────────────────────────────────────────────
+
+  void _openMenu() {
+    final l10n = context.l10n;
+    final credit = [
+      if (_character.author case final author?) l10n.companionCreditAuthor(author),
+      ?_character.license,
+      ?_character.source,
+    ].join(' · ');
+    unawaited(
+      showAppSheet<void>(
+        context,
+        builder: (sheet) => SafeArea(
+          top: false,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              SheetTitleBar(_character.name ?? l10n.companionTitle),
+              SheetGroup(
+                margin: const EdgeInsets.fromLTRB(SheetTitleBar.inset, 0, SheetTitleBar.inset, 12),
+                children: [
+                  SettingsTile(
+                    icon: AppIcons.bookmark,
+                    tinted: false,
+                    title: l10n.companionMemoryTitle,
+                    onTap: () {
+                      Navigator.of(sheet).pop();
+                      unawaited(
+                        Navigator.of(context)
+                            .push(MaterialPageRoute<void>(builder: (_) => const CompanionMemoryPage())),
+                      );
+                    },
+                  ),
+                  if (_sessionId != null)
+                    SettingsTile(
+                      icon: AppIcons.conversations,
+                      tinted: false,
+                      title: l10n.companionMenuHistory,
+                      onTap: () {
+                        Navigator.of(sheet).pop();
+                        _openFullChat();
+                      },
+                    ),
+                  if (_sessionId != null)
+                    SettingsTile(
+                      icon: AppIcons.newChat,
+                      tinted: false,
+                      title: l10n.companionMenuRestart,
+                      subtitle: l10n.companionMenuRestartHint,
+                      onTap: () {
+                        Navigator.of(sheet).pop();
+                        unawaited(_restart());
+                      },
+                    ),
+                  SettingsTile(
+                    icon: AppIcons.delete,
+                    tinted: false,
+                    title: l10n.companionMenuRemovePack,
+                    onTap: () {
+                      Navigator.of(sheet).pop();
+                      unawaited(_removePack());
+                    },
+                  ),
+                ],
+              ),
+              if (credit.isNotEmpty)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(SheetTitleBar.inset + 8, 0, SheetTitleBar.inset + 8, 12),
+                  child: Text(credit, style: Theme.of(sheet).textTheme.bodySmall),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<bool> _confirm(String action, String message) async {
+    final ok = await showAppDialog<bool>(
+      context: context,
+      builder: (dialog) => AlertDialog(
+        title: Text(action),
+        content: Text(message),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(dialog, false), child: Text(dialog.l10n.commonCancel)),
+          FilledButton(onPressed: () => Navigator.pop(dialog, true), child: Text(action)),
+        ],
+      ),
+    );
+    return ok ?? false;
+  }
+
+  Future<void> _restart() async {
+    final l10n = context.l10n;
+    final ok = await _confirm(l10n.companionMenuRestart, l10n.companionMenuRestartConfirm);
+    if (!ok || !mounted) return;
+    await ref.read(companionSessionsProvider.notifier).forget();
+    if (!mounted) return;
+    setState(_unbind);
+    _say(l10n.companionGreetFirst);
+  }
+
+  Future<void> _removePack() async {
+    final l10n = context.l10n;
+    final ok = await _confirm(l10n.companionMenuRemovePack, l10n.companionMenuRemoveConfirm);
+    if (!ok || !mounted) return;
+    setState(() {
+      _phase = _Phase.setup;
+      _stageReady = false;
+    });
+    await _store?.remove();
+  }
+
+  // ── Build ────────────────────────────────────────────────────────────────
+
+  @override
+  Widget build(BuildContext context) {
+    // Changing host while here: her conversation is per host.
+    ref.listen(activeHostProvider, (_, _) {
+      setState(_unbind);
+      final binding = ref.read(companionSessionsProvider.notifier).of(ref.read(activeHostProvider));
+      if (binding != null && _stageReady) _bind(binding.sessionId);
+      if (_stageReady) unawaited(_arrive());
+    });
+    final surfaces = DshSurfaces.of(context);
+    return AnnotatedRegion<SystemUiOverlayStyle>(
+      value: const SystemUiOverlayStyle(
+        statusBarColor: Colors.transparent,
+        statusBarIconBrightness: Brightness.light,
+        statusBarBrightness: Brightness.dark,
+        systemNavigationBarColor: Colors.transparent,
+        systemNavigationBarIconBrightness: Brightness.light,
+      ),
+      // The water is dark at every hour, whatever the app's own theme.
+      child: Theme(
+        data: buildDarkTheme(accent: surfaces.accent, glassBlur: surfaces.blurEnabled),
+        child: Builder(builder: _buildPage),
+      ),
+    );
+  }
+
+  Widget _buildPage(BuildContext context) {
+    final l10n = context.l10n;
+    final insets = MediaQuery.viewInsetsOf(context).bottom;
+    final padding = MediaQuery.paddingOf(context);
+    final store = _store;
+    final showStage = _phase == _Phase.stage && store != null;
+    final name = _character.name ?? l10n.companionDefaultName;
+    final events = CompanionStageEvents(
+      onReady: _onReady,
+      onFailed: (why) {
+        if (!mounted) return;
+        setState(() {
+          _phase = _Phase.failed;
+          _failure = why;
+        });
+      },
+      onTouch: _onTouch,
+      onWake: () => _say(l10n.companionWake),
+      onMood: _onMood,
+    );
+    return Scaffold(
+      backgroundColor: const Color(0xFF0D2F55),
+      resizeToAvoidBottomInset: false,
+      body: Stack(
+        fit: StackFit.expand,
+        children: [
+          if (showStage)
+            ExcludeSemantics(
+              child:
+                  widget.stageBuilder?.call(_stage, events) ??
+                  CompanionStage(store: store, controller: _stage, events: events),
+            ),
+          if (showStage && !_stageReady) const CompanionWater(child: CompanionArriving()),
+          if (_phase == _Phase.setup)
+            CompanionWelcome(
+              title: l10n.companionSetupTitle,
+              message: l10n.companionSetupBody,
+              action: l10n.companionSetupImport,
+              busy: _installing,
+              error: _installError,
+              onAction: _import,
+            ),
+          if (_phase == _Phase.failed)
+            CompanionWelcome(
+              title: l10n.companionFailedTitle,
+              message: l10n.companionFailedBody(_failure ?? ''),
+              action: l10n.companionSetupImport,
+              state: PetStateName.error,
+              busy: _installing,
+              error: _installError,
+              onAction: _import,
+            ),
+          Positioned(
+            top: padding.top + 8,
+            left: companionEdge,
+            right: companionEdge,
+            child: Row(
+              children: [
+                CompanionRoundButton(
+                  icon: AppIcons.back,
+                  label: MaterialLocalizations.of(context).backButtonTooltip,
+                  onTap: () => Navigator.of(context).maybePop(),
+                ),
+                Expanded(
+                  child: Center(
+                    child: _stageReady ? CompanionNamePlate(name: name, activity: _activity) : const SizedBox.shrink(),
+                  ),
+                ),
+                if (_stageReady)
+                  CompanionRoundButton(icon: AppIcons.more, label: l10n.companionMenu, onTap: _openMenu)
+                else
+                  const SizedBox(width: 44),
+              ],
+            ),
+          ),
+          if (showStage && _stageReady)
+            Positioned(
+              left: companionEdge,
+              right: companionEdge,
+              bottom: max(insets, padding.bottom) + companionEdge,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  if (_showTouchHint && _bubble == null)
+                    CompanionPill(icon: AppIcons.tip, label: l10n.companionTouchHint),
+                  if (_needsAttention)
+                    CompanionPill(
+                      icon: AppIcons.toConfirm,
+                      label: l10n.companionNeedsAttention,
+                      tone: const Color(0xFFFFD27A),
+                      onTap: _openFullChat,
+                    ),
+                  CompanionMyLine(text: _myLine),
+                  CompanionSpeech(
+                    text: _bubble,
+                    error: _bubbleIsError,
+                    thinking: _sending || (_running && _bubble == null),
+                  ),
+                  const SizedBox(height: 10),
+                  CompanionComposer(
+                    input: _input,
+                    focus: _focus,
+                    hint: l10n.companionInputHint(name),
+                    running: _running,
+                    busy: _sending,
+                    listening: _voice.active,
+                    voiceAvailable: _voice.available,
+                    onSend: _send,
+                    onStop: _stop,
+                    onVoice: () => _voice.active ? _voice.stop() : _voice.start(),
+                  ),
+                ],
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}

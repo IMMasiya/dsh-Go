@@ -1,0 +1,1061 @@
+// The companion's stage: draws one Live2D character and makes it feel alive.
+// Runs inside CompanionStage's WebView (lib/ui/companion/companion_stage.dart),
+// on Cubism Core and the Cubism Web Framework from the downloaded runtime pack.
+// Design: docs/design/companion.md.
+//
+// The framework's sample drives a model with recorded motions; most community
+// models ship without any, so here everything alive is computed each frame, in
+// layers, on top of the model's own expressions and physics:
+//
+//   gaze springs → idle drift → mood pose → emotion face → action curves
+//   → touch (pat, poke, tail) → mouth → expressions → physics → tail
+//
+// To Flutter: `DshCompanion.postMessage(json)`, see `post` calls.
+// From Flutter: `stage.command({type, ...})`, see `commands` below.
+(() => {
+  'use strict';
+
+  const Fw = window.CubismFw;
+  const query = new URLSearchParams(location.search);
+  const PACK = new URL('../pack/', location.href).href;
+  const CHARACTER = `${PACK}character/`;
+  const SHADERS = `${PACK}runtime/shaders/`;
+  const MAX_TEXTURE = Number(query.get('maxTexture')) || 4096;
+  const REDUCED = query.get('reduceMotion') === '1';
+  const DPR_CAP = 2;
+  const SLEEP_AFTER_MS = 3 * 60 * 1000;
+
+  const canvas = document.getElementById('stage');
+  const scene = window.companionScene;
+  const reefFar = document.querySelector('.reef.far');
+  const reefNear = document.querySelector('.reef.near');
+  const sun = document.querySelector('.sun');
+
+  const post = (message) => {
+    try {
+      window.DshCompanion?.postMessage(JSON.stringify(message));
+    } catch (_) {
+      // No bridge: running in a test harness.
+    }
+  };
+
+  const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
+  const lerp = (a, b, t) => a + (b - a) * t;
+  const rand = (lo, hi) => lo + Math.random() * (hi - lo);
+  const pick = (list) => list[Math.floor(Math.random() * list.length)];
+  /** Eases toward a target at a rate that doesn't depend on the frame rate. */
+  const ease = (from, to, rate, dt) => from + (to - from) * (1 - Math.exp(-rate * dt));
+
+  class Spring {
+    constructor(k, d, x = 0) {
+      this.k = k;
+      this.d = d;
+      this.x = x;
+      this.v = 0;
+    }
+
+    step(target, dt) {
+      this.v += (this.k * (target - this.x) - this.d * this.v) * dt;
+      this.x += this.v * dt;
+      return this.x;
+    }
+  }
+
+  // ── Character description (character.json, all optional) ────────────────
+
+  const DEFAULT_ZONES = [
+    { id: 'head', from: 0, to: 0.17 },
+    { id: 'face', from: 0.17, to: 0.3 },
+    { id: 'body', from: 0.3, to: 0.72 },
+    { id: 'tail', from: 0.72, to: 1 },
+  ];
+
+  /** Standard Cubism parameters only, so any model gets a usable face. */
+  const DEFAULT_EMOTIONS = {
+    calm: {},
+    happy: { face: { ParamMouthForm: 1, ParamEyeSmile: 1 } },
+    shy: { face: { ParamMouthForm: 0.4, ParamEyeSmile: 0.4 }, gaze: [0.5, -0.4] },
+    sad: { face: { ParamMouthForm: -1, ParamBrowLY: -0.6, ParamBrowRY: -0.6 }, gaze: [0, -0.5] },
+    angry: { face: { ParamMouthForm: -0.8, ParamBrowLAngle: -1, ParamBrowRAngle: -1 } },
+    surprised: { face: { ParamMouthOpenY: 0.6, ParamBrowLY: 1, ParamBrowRY: 1 } },
+    confused: { face: { ParamBrowLY: 0.6, ParamBrowRY: -0.4, ParamMouthForm: -0.3 }, gaze: [0.4, 0.4] },
+    smug: { face: { ParamMouthForm: 1, ParamBrowLY: 0.5, ParamBrowRY: 0.5 }, gaze: [-0.3, 0.1] },
+    sleepy: { face: { eyelid: 0.45, ParamBrowLY: -0.3, ParamBrowRY: -0.3 } },
+    worried: { face: { ParamMouthForm: -0.5, ParamBrowLAngle: 0.8, ParamBrowRAngle: 0.8 } },
+    dizzy: { face: { ParamEyeSmile: -0.5, ParamMouthForm: -0.5 } },
+  };
+
+  /** Additive curves, [time 0–1, value] pairs. */
+  const ACTIONS = {
+    nod: { ms: 1100, tracks: { ParamAngleY: [[0, 0], [0.18, -11], [0.42, 1], [0.62, -7], [1, 0]] } },
+    nodSmall: { ms: 700, tracks: { ParamAngleY: [[0, 0], [0.3, -5], [1, 0]] } },
+    shake: { ms: 1200, tracks: { ParamAngleX: [[0, 0], [0.14, 13], [0.36, -13], [0.58, 9], [0.8, -5], [1, 0]] } },
+    tilt: { ms: 1500, tracks: { ParamAngleZ: [[0, 0], [0.2, 13], [0.65, 13], [1, 0]], ParamEyeBallY: [[0, 0], [0.2, 0.25], [0.65, 0.25], [1, 0]] } },
+    tiltLeft: { ms: 1500, tracks: { ParamAngleZ: [[0, 0], [0.2, -13], [0.65, -13], [1, 0]], ParamEyeBallY: [[0, 0], [0.2, 0.25], [0.65, 0.25], [1, 0]] } },
+    lookUp: { ms: 1500, tracks: { ParamAngleY: [[0, 0], [0.25, 11], [0.65, 11], [1, 0]] } },
+    recoil: { ms: 800, tracks: { ParamBodyAngleX: [[0, 0], [0.14, -7], [1, 0]], ParamAngleY: [[0, 0], [0.14, 8], [1, 0]] } },
+    duck: { ms: 1500, tracks: { ParamAngleY: [[0, 0], [0.2, -12], [0.7, -12], [1, 0]], ParamBodyAngleY: [[0, 0], [0.2, -4], [0.7, -4], [1, 0]] } },
+    sway: { ms: 2600, tracks: { ParamBodyAngleZ: [[0, 0], [0.25, 5], [0.75, -5], [1, 0]], ParamAngleZ: [[0, 0], [0.25, -3], [0.75, 3], [1, 0]] } },
+    stretch: { ms: 1900, tracks: { ParamAngleY: [[0, 0], [0.35, 10], [0.7, 10], [1, 0]], ParamBodyAngleY: [[0, 0], [0.35, 6], [0.7, 6], [1, 0]] } },
+    yawn: {
+      ms: 2400,
+      tracks: {
+        ParamMouthOpenY: [[0, 0], [0.2, 0.85], [0.62, 0.9], [0.85, 0], [1, 0]],
+        ParamEyeLOpen: [[0, 0], [0.2, -0.55], [0.7, -0.6], [0.9, 0], [1, 0]],
+        ParamEyeROpen: [[0, 0], [0.2, -0.55], [0.7, -0.6], [0.9, 0], [1, 0]],
+        ParamAngleY: [[0, 0], [0.25, 8], [0.7, 8], [1, 0]],
+        ParamAngleZ: [[0, 0], [0.3, -4], [0.75, -4], [1, 0]],
+      },
+    },
+  };
+
+  const IDLE_FLOURISHES = ['tilt', 'tiltLeft', 'sway', 'nodSmall', 'lookUp', 'tail', 'hum'];
+
+  /** What she does when nothing is going on depends a little on the hour. */
+  function idleChoices() {
+    const tod = document.documentElement.dataset.tod;
+    if (tod === 'night') return [...IDLE_FLOURISHES, 'yawn', 'yawn', 'tilt'];
+    if (tod === 'dawn') return [...IDLE_FLOURISHES, 'stretch', 'yawn'];
+    return IDLE_FLOURISHES;
+  }
+
+  /** A character's own curves (arms differ from model to model). */
+  let actions = ACTIONS;
+
+  /** How long each emotion holds before the face relaxes, ms. */
+  const EMOTION_HOLD = 5200;
+
+  /** What a touch does on the stage. The line she says, if any, is Flutter's. */
+  const TAPS = {
+    head: { emotion: 'happy', hold: 1800, action: 'nodSmall' },
+    face: { emotion: 'shy', hold: 1800, action: 'recoil' },
+    body: { emotion: 'surprised', hold: 1500, action: 'duck' },
+    tail: { emotion: 'surprised', hold: 1500, action: 'recoil', tail: true },
+    legs: { emotion: 'confused', hold: 1500, action: 'tilt' },
+  };
+
+  // ── Live2D model ────────────────────────────────────────────────────────
+
+  class StageModel extends Fw.CubismUserModel {
+    constructor() {
+      super();
+      this.expressions = new Map();
+      this.ids = new Map();
+      this.tailIds = [];
+    }
+
+    id(name) {
+      let handle = this.ids.get(name);
+      if (!handle) {
+        handle = Fw.CubismFramework.getIdManager().getId(name);
+        this.ids.set(name, handle);
+      }
+      return handle;
+    }
+
+    set(name, value, weight = 1) {
+      this._model.setParameterValueById(this.id(name), value, weight);
+    }
+
+    add(name, value) {
+      this._model.addParameterValueById(this.id(name), value);
+    }
+
+    get core() {
+      return this._model;
+    }
+
+    get matrix() {
+      return this._modelMatrix;
+    }
+
+    async load(gl, config) {
+      const file = await resolveModelFile(config);
+      const home = new URL('.', new URL(encodePath(file), CHARACTER)).href;
+      const bytes = (name) => fetchBytes(new URL(encodePath(name), home).href);
+
+      const settingBytes = await fetchBytes(new URL(encodePath(file), CHARACTER).href);
+      const setting = new Fw.CubismModelSettingJson(settingBytes, settingBytes.byteLength);
+
+      this.loadModel(await bytes(setting.getModelFileName()), true);
+      if (!this._model) throw new Error('moc');
+      // The model matrix already fits the canvas to y −1…1, centred.
+
+      const expressions = [];
+      for (let i = 0; i < setting.getExpressionCount(); i++) {
+        expressions.push(
+          bytes(setting.getExpressionFileName(i)).then((buffer) => {
+            const motion = this.loadExpression(buffer, buffer.byteLength, setting.getExpressionName(i));
+            if (motion) {
+              motion.setFadeInTime(0.25);
+              motion.setFadeOutTime(0.4);
+              this.expressions.set(setting.getExpressionName(i), motion);
+            }
+          }),
+        );
+      }
+      await Promise.all(expressions);
+      // Relaxing a face is fading to an expression with nothing in it.
+      const empty = new TextEncoder().encode('{"Type":"Live2D Expression","Parameters":[]}').buffer;
+      this.neutral = this.loadExpression(empty, empty.byteLength, 'neutral');
+      this.neutral?.setFadeInTime(0.5);
+
+      if (setting.getPhysicsFileName()) {
+        const buffer = await bytes(setting.getPhysicsFileName());
+        this.loadPhysics(buffer, buffer.byteLength);
+      }
+      if (setting.getPoseFileName()) {
+        const buffer = await bytes(setting.getPoseFileName());
+        this.loadPose(buffer, buffer.byteLength);
+      }
+
+      this.createRenderer(canvas.width, canvas.height);
+      const renderer = this.getRenderer();
+      renderer.startUp(gl);
+      renderer.loadShaders(SHADERS);
+      renderer.setIsPremultipliedAlpha(true);
+      for (let i = 0; i < setting.getTextureCount(); i++) {
+        renderer.bindTexture(i, await loadTexture(gl, new URL(encodePath(setting.getTextureFileName(i)), home).href));
+      }
+
+      // getParameterIndex makes up an index for a name the model doesn't have.
+      const real = (name) => this._model.getParameterIndex(this.id(name)) < this._model.getParameterCount();
+      this.tailIds = Array.isArray(config.tail) ? config.tail.filter((v) => typeof v === 'string' && real(v)) : [];
+      for (const [name, value] of Object.entries(config.pose ?? {})) this.set(name, value);
+      this._model.saveParameters();
+    }
+
+    /** One frame. [animate] writes everything that isn't saved between frames. */
+    tick(dt, animate) {
+      const core = this._model;
+      core.loadParameters();
+      core.saveParameters();
+      animate.before(this, dt);
+      this._expressionManager.updateMotion(core, dt);
+      this._physics?.evaluate(core, dt);
+      this._pose?.updateParameters(core, dt);
+      animate.after(this, dt);
+      core.update();
+    }
+
+    draw(projection, viewport) {
+      const renderer = this.getRenderer();
+      projection.multiplyByMatrix(this._modelMatrix);
+      renderer.setMvpMatrix(projection);
+      renderer.setRenderState(null, viewport);
+      renderer.drawModel(SHADERS);
+    }
+
+    /** Whether the point, in model-matrix space, lands on something drawn. */
+    hit(x, y) {
+      const core = this._model;
+      const lx = this._modelMatrix.invertTransformX(x);
+      const ly = this._modelMatrix.invertTransformY(y);
+      for (let i = 0; i < core.getDrawableCount(); i++) {
+        if (core.getDrawableOpacity(i) < 0.1 || !core.getDrawableDynamicFlagIsVisible(i)) continue;
+        const v = core.getDrawableVertices(i);
+        const tris = core.getDrawableVertexIndices(i);
+        const n = core.getDrawableVertexIndexCount(i);
+        for (let t = 0; t + 2 < n; t += 3) {
+          const a = tris[t] * 2;
+          const b = tris[t + 1] * 2;
+          const c = tris[t + 2] * 2;
+          const d1 = (lx - v[b]) * (v[a + 1] - v[b + 1]) - (v[a] - v[b]) * (ly - v[b + 1]);
+          const d2 = (lx - v[c]) * (v[b + 1] - v[c + 1]) - (v[b] - v[c]) * (ly - v[c + 1]);
+          const d3 = (lx - v[a]) * (v[c + 1] - v[a + 1]) - (v[c] - v[a]) * (ly - v[a + 1]);
+          const negative = d1 < 0 || d2 < 0 || d3 < 0;
+          const positive = d1 > 0 || d2 > 0 || d3 > 0;
+          if (!(negative && positive)) return true;
+        }
+      }
+      return false;
+    }
+
+    startExpression(name) {
+      const motion = name ? this.expressions.get(name) : this.neutral;
+      if (motion) this._expressionManager.startMotion(motion, false);
+    }
+  }
+
+  const encodePath = (path) => path.split('/').map(encodeURIComponent).join('/');
+
+  async function fetchBytes(url) {
+    const response = await fetch(url);
+    if (!response.ok) throw new Error(`${response.status} ${url}`);
+    return response.arrayBuffer();
+  }
+
+  /** The configured model file, else the first `*.model3.json` the app lists. */
+  async function resolveModelFile(config) {
+    if (typeof config.model === 'string') return config.model;
+    const response = await fetch(`${CHARACTER}index.json`);
+    const files = response.ok ? await response.json() : [];
+    const found = files.find((f) => f.endsWith('.model3.json'));
+    if (!found) throw new Error('model3');
+    return found;
+  }
+
+  async function loadTexture(gl, url) {
+    const blob = await (await fetch(url)).blob();
+    const size = await createImageBitmap(blob);
+    const limit = Math.min(MAX_TEXTURE, gl.getParameter(gl.MAX_TEXTURE_SIZE));
+    const scale = Math.min(1, limit / Math.max(size.width, size.height));
+    const width = Math.round(size.width * scale);
+    const height = Math.round(size.height * scale);
+    size.close();
+    const bitmap = await createImageBitmap(blob, {
+      resizeWidth: width,
+      resizeHeight: height,
+      resizeQuality: 'high',
+      premultiplyAlpha: 'premultiply',
+      colorSpaceConversion: 'none',
+    });
+    const texture = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, texture);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, bitmap);
+    gl.generateMipmap(gl.TEXTURE_2D);
+    gl.bindTexture(gl.TEXTURE_2D, null);
+    bitmap.close();
+    return texture;
+  }
+
+  // ── What she is doing ───────────────────────────────────────────────────
+
+  const life = {
+    mood: 'idle', // idle | listening | thinking | speaking | sleeping
+    emotion: 'calm',
+    emotionUntil: 0,
+    gazeHold: null, // [x, y] an emotion or mood looks at
+    pointer: null, // [x, y] a finger, in stage units
+    wander: [0, 0.05],
+    wanderAt: 0,
+    flourishAt: performance.now() + rand(9000, 20000),
+    lastTouch: performance.now(),
+    eye: { x: new Spring(170, 22), y: new Spring(170, 22) },
+    head: { x: new Spring(34, 9), y: new Spring(34, 9) },
+    body: { x: new Spring(14, 6.5), y: new Spring(14, 6.5) },
+    poke: { x: new Spring(70, 7), z: new Spring(70, 7) },
+    hop: new Spring(95, 11),
+    face: new Map(),
+    actions: new Map(),
+    blink: { next: performance.now() + 1500, start: 0, second: false },
+    pat: 0,
+    patting: false,
+    patX: 0,
+    patHeartAt: 0,
+    tailKick: 0,
+    speech: 0, // seconds of mouth movement still owed
+    syllable: 0,
+    mouth: 0,
+    mouthOverride: null,
+    sleep: 0,
+    time: 0,
+    // From the Host: how pleased, how lively, how familiar (0–1).
+    vitals: { valence: 0.25, energy: 0.75, closeness: 0 },
+  };
+
+  let character = {};
+  let emotions = DEFAULT_EMOTIONS;
+  let zones = DEFAULT_ZONES;
+
+  function setEmotion(name, hold = EMOTION_HOLD) {
+    const def = emotions[name];
+    if (!def) return;
+    const changed = life.emotion !== name;
+    life.emotion = name;
+    life.emotionUntil = name === 'calm' ? 0 : performance.now() + hold;
+    life.gazeHold = def.gaze ?? null;
+    model?.startExpression(def.expression ?? null);
+    if (changed && model) emotionMark(name);
+  }
+
+  /** A few notes, one after another, while she hums. */
+  function humNotes(count) {
+    for (let i = 0; i < count; i++) {
+      setTimeout(() => {
+        if (!paused && model) {
+          const [x, y] = headOnScreen();
+          scene.marks.note(x, y);
+        }
+      }, i * 520);
+    }
+  }
+
+  /** The little sign over her head that goes with a feeling. */
+  function emotionMark(name) {
+    const [x, y] = headOnScreen();
+    switch (name) {
+      case 'happy':
+        scene.marks.sparkles(x, y);
+        break;
+      case 'shy':
+        scene.marks.hearts(x, y, 1);
+        break;
+      case 'surprised':
+        scene.marks.exclaim(x, y);
+        break;
+      case 'confused':
+        scene.marks.question(x, y);
+        break;
+      case 'angry':
+      case 'dizzy':
+        scene.marks.anger(x, y);
+        break;
+      case 'worried':
+        scene.marks.sweat(x, y);
+        break;
+      case 'sad':
+        scene.marks.tear(x, y);
+        break;
+      default:
+        break;
+    }
+  }
+
+  function playAction(name) {
+    const action = actions[name];
+    if (!action) return;
+    if (REDUCED) return;
+    life.actions.set(name, { action, start: performance.now() });
+  }
+
+  function hop(strength = 1) {
+    if (!REDUCED) life.hop.v += 1.15 * strength;
+  }
+
+  /** Curve value at t in 0–1, smooth between keys. */
+  function sample(keys, t) {
+    for (let i = 1; i < keys.length; i++) {
+      if (t <= keys[i][0]) {
+        const [t0, v0] = keys[i - 1];
+        const [t1, v1] = keys[i];
+        const k = (t - t0) / (t1 - t0 || 1);
+        return lerp(v0, v1, k * k * (3 - 2 * k));
+      }
+    }
+    return keys[keys.length - 1][1];
+  }
+
+  function gazeTarget(now) {
+    if (life.pointer) return life.pointer;
+    if (life.gazeHold) return life.gazeHold;
+    switch (life.mood) {
+      case 'thinking':
+        return [0.5 + Math.sin(now / 1900) * 0.12, 0.55 + Math.sin(now / 1300) * 0.08];
+      case 'listening':
+        return [0, -0.32];
+      case 'speaking':
+        return [Math.sin(now / 2300) * 0.08, 0.03];
+      case 'sleeping':
+        return [0, -0.5];
+      default:
+        break;
+    }
+    if (now > life.wanderAt) {
+      // The better she knows you, the more she looks at you instead of away.
+      const glance = Math.random() < 0.22 * (1 - life.vitals.closeness * 0.6);
+      life.wander = glance ? [rand(-0.7, 0.7), rand(-0.3, 0.45)] : [rand(-0.1, 0.1), rand(-0.02, 0.1)];
+      life.wanderAt = now + (glance ? rand(900, 1800) : rand(2600, 7000));
+      if (glance && now > life.blink.next - 2500) life.blink.next = now; // eyes blink as they jump
+    }
+    return life.wander;
+  }
+
+  function eyelid(now) {
+    const b = life.blink;
+    let open = 1;
+    if (now >= b.next) {
+      if (b.start === 0) b.start = now;
+      const p = now - b.start;
+      if (p < 80) {
+        const k = p / 80;
+        open = 1 - k * k;
+      } else if (p < 240) {
+        const k = (p - 80) / 160;
+        open = 1 - (1 - k) * (1 - k);
+      } else {
+        b.start = 0;
+        b.second = !b.second && Math.random() < 0.18;
+        b.next = now + (b.second ? 120 : rand(2400, 6200));
+      }
+    }
+    return open;
+  }
+
+  const animate = {
+    before(m, dt) {
+      const now = performance.now();
+      life.time += dt;
+      const t = life.time;
+
+      // Falling asleep and waking.
+      // Late at night she drifts off sooner.
+      const sleepAfter = document.documentElement.dataset.tod === 'night' ? SLEEP_AFTER_MS / 2 : SLEEP_AFTER_MS;
+      if (life.mood === 'idle' && now - life.lastTouch > sleepAfter) setMood('sleeping');
+      life.sleep = ease(life.sleep, life.mood === 'sleeping' ? 1 : 0, 1.6, dt);
+
+      // Emotions relax on their own.
+      if (life.emotionUntil && now > life.emotionUntil) setEmotion('calm');
+
+      const [gx, gy] = gazeTarget(now);
+      const eyeX = life.eye.x.step(gx, dt);
+      const eyeY = life.eye.y.step(gy, dt);
+      const headX = life.head.x.step(gx * 0.8, dt);
+      const headY = life.head.y.step(gy * 0.8, dt);
+      const bodyX = life.body.x.step(gx * 0.5, dt);
+      const bodyY = life.body.y.step(gy * 0.3, dt);
+
+      const pokeX = life.poke.x.step(0, dt);
+      const pokeZ = life.poke.z.step(0, dt);
+
+      // Head pat: she leans into the hand and melts a little.
+      life.pat = ease(life.pat, life.patting ? 1 : 0, life.patting ? 3.5 : 1.8, dt);
+
+      const vitals = life.vitals;
+      // Livelier when rested, calmer when not; never frozen.
+      const drift = REDUCED ? 0 : 0.65 + vitals.energy * 0.55;
+      const asleep = life.sleep;
+      const thinking = life.mood === 'thinking' ? 1 : 0;
+
+      m.set('ParamAngleX', headX * 26 + Math.sin(t * 0.43) * 2.2 * drift + Math.sin(t * 0.17) * 1.6 * drift + pokeX + life.pat * life.patX * 10);
+      m.set('ParamAngleY', headY * 22 + Math.cos(t * 0.61) * 1.6 * drift - asleep * 17 - life.pat * 7);
+      m.set('ParamAngleZ', headX * -7 + Math.sin(t * 0.29) * 1.8 * drift + pokeZ + thinking * 4 + asleep * 8 + life.pat * life.patX * 7);
+      m.set('ParamBodyAngleX', bodyX * 9 + Math.sin(t * 0.37) * 1.1 * drift);
+      m.set('ParamBodyAngleY', bodyY * 7 - asleep * 4);
+      m.set('ParamBodyAngleZ', bodyX * -3 + Math.sin(t * 0.41 + 1) * 1.3 * drift);
+      m.set('ParamEyeBallX', Math.tanh(eyeX * 1.25) * (1 - asleep));
+      m.set('ParamEyeBallY', Math.tanh(eyeY * 1.25) * (1 - asleep));
+      // Slow breath; slower still asleep.
+      const breathRate = lerp(1.75, 0.95, asleep);
+      m.set('ParamBreath', 0.5 + 0.5 * Math.sin(t * breathRate));
+
+      // Face: every parameter eases to where the emotion wants it.
+      const want = emotions[life.emotion]?.face ?? {};
+      for (const id of Object.keys(want)) if (!life.face.has(id)) life.face.set(id, 0);
+      for (const [id, value] of life.face) life.face.set(id, ease(value, want[id] ?? 0, 7, dt));
+      let lidFromFace = 1;
+      for (const [id, value] of life.face) {
+        if (id === 'eyelid') lidFromFace = 1 - (1 - (want.eyelid ?? 1)) * clamp(Math.abs(value), 0, 1);
+        else m.add(id, value);
+      }
+      if (thinking) {
+        m.add('ParamBrowLY', 0.35);
+        m.add('ParamBrowRY', 0.15);
+      }
+      // A good mood shows as the faintest resting smile.
+      if (life.emotion === 'calm') {
+        const pleased = (vitals.valence - 0.25) * 0.7;
+        m.add('ParamMouthForm', pleased);
+        m.add('ParamEyeSmile', pleased * 0.5);
+      }
+
+      // Eyes: blink, emotions, a pat, sleep.
+      const lid = eyelid(now) * lidFromFace * (1 - 0.92 * life.pat) * (1 - asleep);
+      m.set('ParamEyeLOpen', lid);
+      m.set('ParamEyeROpen', lid);
+      if (life.pat > 0.02) {
+        m.add('ParamEyeSmile', life.pat);
+        m.add('ParamMouthForm', life.pat);
+      }
+
+      // Actions add on top of all that.
+      for (const [name, run] of life.actions) {
+        const p = (now - run.start) / run.action.ms;
+        if (p >= 1) {
+          life.actions.delete(name);
+          continue;
+        }
+        for (const [id, keys] of Object.entries(run.action.tracks)) m.add(id, sample(keys, p));
+      }
+
+      // Idle flourishes, only when nothing else is going on.
+      if (!REDUCED && life.mood === 'idle' && !life.pointer && now > life.flourishAt && life.emotion === 'calm') {
+        const name = pick(idleChoices());
+        if (name === 'tail') {
+          life.tailKick = 1;
+        } else if (name === 'hum') {
+          playAction('sway');
+          humNotes(3);
+        } else {
+          playAction(name);
+        }
+        life.flourishAt = now + rand(11000, 28000) / (0.6 + life.vitals.energy * 0.8);
+      }
+
+      // Mouth: real audio levels when given (later), else the rhythm of the text.
+      let mouth = 0;
+      if (life.mouthOverride !== null) {
+        mouth = life.mouthOverride;
+      } else if (life.speech > 0) {
+        life.speech = Math.max(0, life.speech - dt);
+        life.syllable += dt * 8.5;
+        const beat = Math.sin(life.syllable * Math.PI);
+        mouth = Math.pow(Math.abs(beat), 0.7) * (0.55 + 0.4 * Math.sin(life.syllable * 0.37) ** 2);
+      }
+      life.mouth = ease(life.mouth, mouth, mouth > life.mouth ? 26 : 16, dt);
+      m.add('ParamMouthOpenY', life.mouth);
+    },
+
+    after(m, dt) {
+      // The tail runs after physics: a wag on top of whatever physics did.
+      if (!m.tailIds.length) return;
+      life.tailKick = Math.max(0, life.tailKick - dt * 0.55);
+      const happy = life.emotion === 'happy' || life.patting ? 0.45 : 0;
+      const amount = REDUCED ? 0 : Math.max(life.tailKick, happy);
+      const t = life.time;
+      m.tailIds.forEach((id, i) => {
+        const sway = Math.sin(t * 1.1 - i * 0.55) * 3;
+        const wag = Math.sin(t * 7 - i * 0.8) * 13 * amount;
+        m.add(id, sway + wag);
+      });
+    },
+  };
+
+  function setMood(mood) {
+    if (life.mood === mood) return;
+    const wasAsleep = life.mood === 'sleeping';
+    life.mood = mood;
+    post({ type: 'mood', mood });
+    if (wasAsleep) {
+      playAction('stretch');
+      life.blink.next = performance.now() + 300;
+    }
+    life.wanderAt = 0;
+  }
+
+  // ── Camera ──────────────────────────────────────────────────────────────
+
+  const camera = { zoom: 1.2, x: 0, y: 0 };
+
+  function projection() {
+    const aspect = canvas.height / canvas.width;
+    // She floats: a slow lift and drift, on top of any hop.
+    const float = REDUCED ? 0 : Math.sin(life.time * 0.85) * 0.011;
+    const hopY = life.hop.x * 0.12 + float;
+    const m = new Fw.CubismMatrix44();
+    const sx = camera.zoom * aspect;
+    const sy = camera.zoom;
+    m.setMatrix(new Float32Array([sx, 0, 0, 0, 0, sy, 0, 0, 0, 0, 1, 0, -camera.x * sx, -camera.y * sy + hopY, 0, 1]));
+    return m;
+  }
+
+  /** Client coordinates → model-matrix space. */
+  function toModel(clientX, clientY) {
+    const rect = canvas.getBoundingClientRect();
+    const cx = ((clientX - rect.left) / rect.width) * 2 - 1;
+    const cy = 1 - ((clientY - rect.top) / rect.height) * 2;
+    const aspect = canvas.height / canvas.width;
+    return {
+      x: cx / (camera.zoom * aspect) + camera.x,
+      y: cy / camera.zoom + camera.y,
+    };
+  }
+
+  /** Model-matrix space → CSS pixels. */
+  function toScreen(x, y) {
+    const rect = canvas.getBoundingClientRect();
+    const aspect = canvas.height / (canvas.width || 1);
+    const cx = (x - camera.x) * camera.zoom * aspect;
+    const cy = (y - camera.y) * camera.zoom;
+    return [((cx + 1) / 2) * rect.width, ((1 - cy) / 2) * rect.height];
+  }
+
+  function headOnScreen() {
+    const [ax, ay] = Array.isArray(character.mark) ? character.mark : [0.19, 0.84];
+    const [x, y] = toScreen(ax, ay);
+    return [x + life.head.x.x * 16, y - life.head.y.x * 10]; // Beside her head, where manga puts them.
+  }
+
+  function zoneAt(x, y) {
+    const fromTop = (1 - y) / 2;
+    return (
+      zones.find(
+        (z) => fromTop >= z.from && fromTop < z.to && x >= (z.xFrom ?? -Infinity) && x < (z.xTo ?? Infinity),
+      )?.id ?? null
+    );
+  }
+
+  function touched() {
+    life.lastTouch = performance.now();
+    if (life.mood === 'sleeping') {
+      setMood('idle');
+      post({ type: 'wake' });
+    }
+  }
+
+  // ── Touch ───────────────────────────────────────────────────────────────
+
+  const pointers = new Map();
+  const gesture = { pinch: 0, zoom: 0, midX: 0, midY: 0, camX: 0, camY: 0 };
+  let press = null;
+  const taps = [];
+
+  function toGaze(clientX, clientY) {
+    const rect = canvas.getBoundingClientRect();
+    const x = ((clientX - rect.left) / rect.width) * 2 - 1;
+    const y = 1 - ((clientY - rect.top) / rect.height) * 2;
+    // Her face sits in the upper part of the stage: aim from there.
+    return [clamp(x * 1.15, -1, 1), clamp((y - 0.25) * 1.1, -1, 1)];
+  }
+
+  function pinchInfo() {
+    const [a, b] = [...pointers.values()];
+    return { distance: Math.hypot(a.x - b.x, a.y - b.y), midX: (a.x + b.x) / 2, midY: (a.y + b.y) / 2 };
+  }
+
+  canvas.addEventListener('pointerdown', (e) => {
+    canvas.setPointerCapture(e.pointerId);
+    pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    touched();
+    if (pointers.size === 2) {
+      const info = pinchInfo();
+      Object.assign(gesture, { pinch: info.distance, zoom: camera.zoom, midX: info.midX, midY: info.midY, camX: camera.x, camY: camera.y });
+      press = null;
+      life.pointer = null;
+      life.patting = false;
+      return;
+    }
+    if (pointers.size > 2) return;
+    const point = toModel(e.clientX, e.clientY);
+    press = {
+      id: e.pointerId,
+      x: e.clientX,
+      y: e.clientY,
+      at: performance.now(),
+      zone: model?.hit(point.x, point.y) ? zoneAt(point.x, point.y) : null,
+      travel: 0,
+      lastX: e.clientX,
+      lastY: e.clientY,
+      modelX: point.x,
+    };
+    life.pointer = toGaze(e.clientX, e.clientY);
+    scene.marks.ripple(e.clientX, e.clientY);
+  });
+
+  canvas.addEventListener('pointermove', (e) => {
+    if (!pointers.has(e.pointerId)) return;
+    pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    touched();
+    if (pointers.size === 2) {
+      const info = pinchInfo();
+      camera.zoom = clamp(gesture.zoom * (info.distance / (gesture.pinch || 1)), 0.55, 3.2);
+      const rect = canvas.getBoundingClientRect();
+      const aspect = canvas.height / canvas.width;
+      camera.x = gesture.camX - (((info.midX - gesture.midX) / rect.width) * 2) / (camera.zoom * aspect);
+      camera.y = gesture.camY + (((info.midY - gesture.midY) / rect.height) * 2) / camera.zoom;
+      return;
+    }
+    if (!press || press.id !== e.pointerId) return;
+    life.pointer = toGaze(e.clientX, e.clientY);
+    press.travel += Math.hypot(e.clientX - press.lastX, e.clientY - press.lastY);
+    press.lastX = e.clientX;
+    press.lastY = e.clientY;
+    if (press.zone === 'head' && press.travel > 26) {
+      if (!life.patting) {
+        life.patting = true;
+        press.patStart = performance.now();
+        post({ type: 'touch', zone: 'head', kind: 'pat' });
+        setEmotion('shy', 30000);
+        life.patHeartAt = 0;
+      }
+      if (performance.now() > life.patHeartAt) {
+        life.patHeartAt = performance.now() + 420;
+        scene.marks.hearts(e.clientX, e.clientY - 18, 1);
+      }
+      const point = toModel(e.clientX, e.clientY);
+      life.patX = clamp((point.x - press.modelX) * 2.2, -1, 1);
+    }
+  });
+
+  function endPointer(e) {
+    if (!pointers.delete(e.pointerId)) return;
+    if (!press || press.id !== e.pointerId) return;
+    const quick = performance.now() - press.at < 420 && press.travel < 14;
+    if (life.patting) {
+      life.patting = false;
+      life.emotionUntil = performance.now() + 1600;
+    } else if (quick && press.zone) {
+      tap(press.zone, e.clientX);
+    }
+    press = null;
+    // Her eyes stay on where the finger was for a moment.
+    setTimeout(() => {
+      if (!press) life.pointer = null;
+    }, 700);
+  }
+  canvas.addEventListener('pointerup', endPointer);
+  canvas.addEventListener('pointercancel', endPointer);
+  canvas.addEventListener('lostpointercapture', endPointer);
+
+  function tap(zone, clientX) {
+    const now = performance.now();
+    taps.push(now);
+    while (taps.length && now - taps[0] > 1100) taps.shift();
+    const rect = canvas.getBoundingClientRect();
+    const side = (clientX - rect.left) / rect.width < 0.5 ? -1 : 1;
+    if (taps.length >= 3) {
+      taps.length = 0;
+      setEmotion('dizzy', 2400);
+      playAction('shake');
+      post({ type: 'touch', zone, kind: 'tease' });
+      return;
+    }
+    const reaction = TAPS[zone] ?? TAPS.body;
+    setEmotion(reaction.emotion, reaction.hold);
+    playAction(reaction.action);
+    if (reaction.tail) life.tailKick = 1;
+    if (!REDUCED) {
+      life.poke.x.v += side * -70;
+      life.poke.z.v += side * 45;
+      if (zone === 'tail') hop(0.8);
+    }
+    post({ type: 'touch', zone, kind: 'tap' });
+  }
+
+  // ── Commands from Flutter ───────────────────────────────────────────────
+
+  const commands = {
+    mood: ({ mood }) => {
+      touched();
+      setMood(mood);
+    },
+    emotion: ({ name, hold }) => setEmotion(name, hold),
+    action: ({ name }) => {
+      if (name === 'hop') hop();
+      else if (name === 'tail') life.tailKick = 1;
+      else playAction(name);
+    },
+    // New reply text arrived: the mouth keeps moving for about as long as
+    // reading it aloud would take.
+    say: ({ chars }) => {
+      life.speech = Math.min(life.speech + chars * 0.085, 12);
+      touched();
+    },
+    quiet: () => {
+      life.speech = 0;
+    },
+    // A sentence ended while she speaks: the small dip people do between phrases.
+    beat: () => {
+      if (!REDUCED) life.head.y.v -= 0.55;
+    },
+    mouth: ({ value }) => {
+      life.mouthOverride = value == null ? null : clamp(value, 0, 1);
+    },
+    vitals: ({ valence, energy, closeness }) => {
+      const unit = (v, fallback) => (Number.isFinite(v) ? clamp(v, 0, 1) : fallback);
+      life.vitals = {
+        valence: unit(valence, life.vitals.valence),
+        energy: unit(energy, life.vitals.energy),
+        closeness: unit(closeness, life.vitals.closeness),
+      };
+    },
+    pause: () => pause(),
+    resume: () => resume(),
+  };
+
+  // ── Loop ────────────────────────────────────────────────────────────────
+
+  let gl = null;
+  let model = null;
+  let paused = false;
+  let frame = 0;
+  let last = 0;
+  let drawn = 0;
+  let fpsAt = performance.now();
+  let fps = 0;
+
+  function resize() {
+    const dpr = Math.min(window.devicePixelRatio || 1, DPR_CAP);
+    const width = Math.round(canvas.clientWidth * dpr);
+    const height = Math.round(canvas.clientHeight * dpr);
+    if (width === canvas.width && height === canvas.height) return;
+    canvas.width = width;
+    canvas.height = height;
+    model?.setRenderTargetSize(width, height);
+  }
+
+  function render(ts) {
+    frame = requestAnimationFrame(render);
+    // Thirty frames while she idles, sixty while something's happening, and
+    // twelve asleep: she's on screen for long stretches.
+    const busy =
+      pointers.size > 0 ||
+      life.actions.size > 0 ||
+      life.mood === 'speaking' ||
+      life.speech > 0 ||
+      life.patting ||
+      scene.busy();
+    const target = life.sleep > 0.9 ? 12 : busy ? 60 : 30;
+    if (ts - last < 1000 / target - 2) return;
+    const dt = clamp((ts - last) / 1000, 0.001, 0.05);
+    last = ts;
+    life.hop.step(0, dt);
+    resize();
+    model.tick(dt, animate);
+    gl.viewport(0, 0, canvas.width, canvas.height);
+    gl.clearColor(0, 0, 0, 0);
+    gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+    gl.enable(gl.BLEND);
+    gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
+    model.draw(projection(), [0, 0, canvas.width, canvas.height]);
+    moodMarks(ts);
+    scene.step(dt, life.body.x.x);
+    parallax();
+    drawn++;
+    if (ts - fpsAt > 1000) {
+      fps = (drawn * 1000) / (ts - fpsAt);
+      drawn = 0;
+      fpsAt = ts;
+    }
+  }
+
+  let moodMarkAt = 0;
+  let thoughtStep = 0;
+
+  /** Signs that repeat while a mood lasts. */
+  function moodMarks(ts) {
+    if (ts < moodMarkAt || REDUCED) return;
+    const [x, y] = headOnScreen();
+    if (life.mood === 'thinking') {
+      scene.marks.thought(x, y, thoughtStep);
+      thoughtStep = (thoughtStep + 1) % 3;
+      moodMarkAt = ts + (thoughtStep === 0 ? 900 : 300);
+    } else if (life.mood === 'sleeping' && life.sleep > 0.6) {
+      scene.marks.zzz(x, y);
+      moodMarkAt = ts + 1900;
+    } else {
+      moodMarkAt = ts + 400;
+    }
+  }
+
+  let lastParallax = null;
+
+  /** The far water moves a touch less than she does: depth, not a parallax show. */
+  function parallax() {
+    if (REDUCED) return;
+    const x = Math.round(life.body.x.x * 40) / 10;
+    if (x === lastParallax) return;
+    lastParallax = x;
+    reefFar.style.transform = `translate3d(${-x * 0.7}px, 0, 0)`;
+    reefNear.style.transform = `translate3d(${-x * 1.5}px, 0, 0)`;
+    sun.style.transform = `translate3d(${x * 0.4}px, 0, 0)`;
+  }
+
+  function pause() {
+    if (paused) return;
+    paused = true;
+    cancelAnimationFrame(frame);
+  }
+
+  function resume() {
+    if (!paused || !model) return;
+    paused = false;
+    last = performance.now();
+    frame = requestAnimationFrame(render);
+  }
+
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) pause();
+    else resume();
+  });
+
+  canvas.addEventListener('webglcontextlost', (e) => {
+    e.preventDefault();
+    pause();
+  });
+  canvas.addEventListener('webglcontextrestored', () => location.reload());
+
+  /** The water follows the hour. */
+  function timeOfDay(hour) {
+    if (hour >= 5 && hour < 8) return 'dawn';
+    if (hour >= 8 && hour < 17) return 'day';
+    if (hour >= 17 && hour < 19) return 'dusk';
+    return 'night';
+  }
+
+  const TINTS = { dawn: [1, 0.98, 0.96], day: [1, 1, 1], dusk: [1, 0.95, 0.93], night: [0.92, 0.94, 1] };
+
+  function applyTimeOfDay() {
+    const tod = query.get('tod') ?? timeOfDay(new Date().getHours());
+    document.documentElement.dataset.tod = tod;
+    scene.configure({ night: tod === 'night', reducedMotion: REDUCED });
+    const [r, g, b] = TINTS[tod] ?? TINTS.day;
+    model?.getRenderer().setModelColor(r, g, b, 1);
+  }
+
+  async function boot() {
+    const started = performance.now();
+    if (REDUCED) document.documentElement.dataset.motion = 'reduced';
+    applyTimeOfDay();
+    scene.resize();
+    window.addEventListener('resize', () => scene.resize());
+    try {
+      const response = await fetch(`${CHARACTER}character.json`);
+      character = response.ok ? await response.json() : {};
+      emotions = mergeEmotions(character.emotions);
+      actions = { ...ACTIONS, ...(character.actions ?? {}) };
+      if (Array.isArray(character.zones) && character.zones.length) zones = character.zones;
+      camera.zoom = Number(character.framing?.zoom) || camera.zoom;
+      camera.y = Number(character.framing?.y) || 0;
+
+      Fw.CubismFramework.startUp(Object.assign(new Fw.Option(), { logFunction: () => {}, loggingLevel: Fw.LogLevel?.LogLevel_Off ?? 5 }));
+      Fw.CubismFramework.initialize();
+
+      const options = { alpha: true, premultipliedAlpha: true, antialias: true, preserveDrawingBuffer: query.get('capture') === '1' };
+      gl = canvas.getContext('webgl2', options) || canvas.getContext('webgl', options);
+      if (!gl) throw new Error('webgl');
+      canvas.width = canvas.height = 0;
+      resize();
+
+      const next = new StageModel();
+      await next.load(gl, character);
+      model = next;
+      applyTimeOfDay();
+      setInterval(applyTimeOfDay, 10 * 60 * 1000);
+      setEmotion('calm');
+      // A hello, so opening the page is already a small event.
+      playAction('nodSmall');
+      last = performance.now();
+      frame = requestAnimationFrame(render);
+      document.documentElement.dataset.ready = '1';
+      post({ type: 'ready', ms: Math.round(performance.now() - started), name: character.name ?? null, expressions: [...model.expressions.keys()] });
+    } catch (error) {
+      post({ type: 'error', message: String(error?.message ?? error) });
+      document.documentElement.dataset.ready = 'error';
+      document.documentElement.dataset.error = String(error?.stack ?? error);
+    }
+  }
+
+  function mergeEmotions(custom) {
+    const merged = { ...DEFAULT_EMOTIONS };
+    if (custom && typeof custom === 'object') {
+      for (const [name, def] of Object.entries(custom)) {
+        if (def && typeof def === 'object') merged[name] = { ...merged[name], ...def };
+      }
+    }
+    return merged;
+  }
+
+  window.stage = {
+    command(message) {
+      const run = commands[message?.type];
+      if (run && model) run(message);
+    },
+    // For the verification harness; nothing in the app reads it.
+    debug: () => ({
+      fps,
+      mood: life.mood,
+      emotion: life.emotion,
+      patting: life.patting,
+      zoom: camera.zoom,
+      paused,
+      drawables: model?.core.getDrawableCount() ?? 0,
+      canvas: [canvas.width, canvas.height],
+      model,
+    }),
+  };
+
+  boot();
+})();

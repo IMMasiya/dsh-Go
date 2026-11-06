@@ -4752,6 +4752,275 @@ class L10nEn extends L10n {
   }
 
   @override
+  String get companionTitle => 'Companion room';
+
+  @override
+  String get companionEntrySubtitle => 'Spend some time with her';
+
+  @override
+  String get companionDefaultName => 'her';
+
+  @override
+  String companionInputHint(String name) {
+    return 'Say something to $name';
+  }
+
+  @override
+  String get companionMenu => 'More';
+
+  @override
+  String get companionVoice => 'Voice';
+
+  @override
+  String get companionStop => 'Ask her to stop';
+
+  @override
+  String get companionSend => 'Send';
+
+  @override
+  String get companionNotConnected => 'I can\'t reach the engine right now. Tell me again in a bit?';
+
+  @override
+  String get companionSendFailed => 'That didn\'t get through. Say it again?';
+
+  @override
+  String get companionNeedsAttention => 'Something needs your confirmation. Tap to see it';
+
+  @override
+  String get companionMenuHistory => 'View chat history';
+
+  @override
+  String get companionMenuRestart => 'Start over';
+
+  @override
+  String get companionMenuRestartHint => 'Begin a new conversation';
+
+  @override
+  String get companionMenuRestartConfirm =>
+      'She will forget this conversation. The old record stays on the host and is not deleted.';
+
+  @override
+  String get companionMenuRemovePack => 'Remove assets';
+
+  @override
+  String get companionMenuRemoveConfirm =>
+      'The character assets on this phone will be deleted. Chats aren\'t affected. You\'ll need to import them again next time.';
+
+  @override
+  String companionCreditAuthor(String name) {
+    return 'By $name';
+  }
+
+  @override
+  String get companionSetupTitle => 'Bring her home';
+
+  @override
+  String get companionSetupBody =>
+      'Character assets aren\'t part of the app and only land on your phone when you want them. Import an asset pack (zip) to meet her.';
+
+  @override
+  String get companionSetupImport => 'Import asset pack';
+
+  @override
+  String get companionFailedTitle => 'She couldn\'t come out';
+
+  @override
+  String companionFailedBody(String reason) {
+    return 'Loading failed on this phone ($reason). You can import the asset pack again and retry.';
+  }
+
+  @override
+  String get companionPackBroken => 'This file can\'t be opened. It may not be an asset pack, or it may be damaged.';
+
+  @override
+  String get companionPackRuntimeMismatch => 'The runtime in this pack doesn\'t match this version of the app.';
+
+  @override
+  String get companionPackNoRuntime =>
+      'This pack only has a character and there\'s no runtime on this phone yet. Import a full asset pack first.';
+
+  @override
+  String get companionPackNoModel => 'No Live2D model (.model3.json) found in the pack.';
+
+  @override
+  String get companionPackUnsafe => 'The pack has files or paths that aren\'t allowed, so it wasn\'t imported.';
+
+  @override
+  String get companionPackTooLarge => 'This asset pack is too large.';
+
+  @override
+  String get companionPackStorage => 'Couldn\'t write the files. Check your phone\'s free storage.';
+
+  @override
+  String get companionGreetFirst => 'Hi, I\'m the whale girl. I live here now, nice to meet you.';
+
+  @override
+  String get companionGreetMorning => 'Morning! Don\'t skip breakfast today.';
+
+  @override
+  String get companionGreetNoon => 'It\'s noon already. Have you eaten?';
+
+  @override
+  String get companionGreetAfternoon => 'Good afternoon. I was just daydreaming.';
+
+  @override
+  String get companionGreetEvening => 'Good evening. How was your day?';
+
+  @override
+  String get companionGreetLate => 'Still up this late?';
+
+  @override
+  String get companionGreetLong => 'It\'s been a while! I thought you\'d forgotten me.';
+
+  @override
+  String get companionGreetBack => 'Hm? Back again.';
+
+  @override
+  String get companionWake => 'Mm... I wasn\'t asleep. Just resting my eyes.';
+
+  @override
+  String get companionPat1 => 'Hehe... you can keep going a little longer.';
+
+  @override
+  String get companionPat2 => 'Mmm, that\'s nice.';
+
+  @override
+  String get companionPat3 => 'You\'re messing up my hair.';
+
+  @override
+  String get companionTapHead1 => 'What\'s up?';
+
+  @override
+  String get companionTapHead2 => 'Hm?';
+
+  @override
+  String get companionTapFace1 => 'Don\'t poke my face.';
+
+  @override
+  String get companionTapFace2 => 'Whoa, your hands are cold.';
+
+  @override
+  String get companionTapFace3 => 'Is there something on my face?';
+
+  @override
+  String get companionTapBody1 => 'Oh! You startled me.';
+
+  @override
+  String get companionTapBody2 => 'What is it?';
+
+  @override
+  String get companionTapBody3 => 'I just washed this apron!';
+
+  @override
+  String get companionTapTail1 => 'Tails are not for touching!';
+
+  @override
+  String get companionTapTail2 => 'Eek, that tickles.';
+
+  @override
+  String get companionTapTail3 => 'This is a very important tail.';
+
+  @override
+  String get companionTapLegs1 => 'Is something on the floor?';
+
+  @override
+  String get companionTapLegs2 => 'Where are you looking?';
+
+  @override
+  String get companionTease1 => 'Stop it, I\'m getting dizzy.';
+
+  @override
+  String get companionTease2 => 'One more poke and I\'m ignoring you!';
+
+  @override
+  String get companionTease3 => 'Don\'t you have anything better to do?';
+
+  @override
+  String get companionStatusIdle => 'Daydreaming';
+
+  @override
+  String get companionStatusListening => 'Listening';
+
+  @override
+  String get companionStatusThinking => 'Thinking';
+
+  @override
+  String get companionStatusSpeaking => 'Talking';
+
+  @override
+  String get companionStatusSleeping => 'Asleep';
+
+  @override
+  String get companionStatusAway => 'Away';
+
+  @override
+  String get companionListening => 'Listening…';
+
+  @override
+  String get companionTouchHint => 'Try patting her head';
+
+  @override
+  String get companionArriving => 'She\'s swimming over…';
+
+  @override
+  String get companionPrivacyLine => 'Assets stay on this phone. Chats go through the current host.';
+
+  @override
+  String get companionMemoryTitle => 'What she remembers';
+
+  @override
+  String companionMemoryScope(String host) {
+    return 'Kept on $host. She doesn\'t bring these up by herself yet; a later version will.';
+  }
+
+  @override
+  String get companionMemoryAdd => 'Add';
+
+  @override
+  String get companionMemoryEdit => 'Edit';
+
+  @override
+  String get companionMemorySave => 'Save';
+
+  @override
+  String get companionMemoryHint => 'For example: I like unsweetened tea and don\'t drink coffee';
+
+  @override
+  String get companionMemoryForget => 'Forget';
+
+  @override
+  String get companionMemoryForgetTitle => 'Have her forget this?';
+
+  @override
+  String get companionMemoryEmpty => 'Nothing saved yet';
+
+  @override
+  String get companionMemoryEmptyHint =>
+      'Write down what you\'d like her to remember. It stays on the current host, and you can edit or delete it anytime.';
+
+  @override
+  String get companionMemoryUnsupported => 'This host can\'t keep her memories yet';
+
+  @override
+  String get companionMemoryUnsupportedHint =>
+      'It isn\'t available over the DSH Remote relay, or this host\'s dsh-go bridge is older.';
+
+  @override
+  String get companionMemoryLoadFailed => 'Couldn\'t load';
+
+  @override
+  String get companionMemoryRetry => 'Retry';
+
+  @override
+  String get companionMemoryConflict => 'It was just changed elsewhere, so it\'s been refreshed';
+
+  @override
+  String get companionMemoryFull => 'The list is full. Delete some first';
+
+  @override
+  String get companionMemorySaveFailed => 'Couldn\'t save. Try again?';
+
+  @override
   String get engineNewChatDefaultsLast => 'New chat defaults (last choice)';
 
   @override

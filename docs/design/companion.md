@@ -1,0 +1,121 @@
+# 伙伴小屋
+
+> 2026-11-06。第一版的实现规格，以及之后的路线。调研和长期设计的底稿在 Drive `AI-workspace/dshgo-companion1/`（C1xx 调研、C2xx 设计、C3xx 后端约定）。
+
+## 0. 结论
+
+- **整页换模式，不是加挂件。** 从「切换主机」面板进入。这页是一个 Live2D 角色，上面叠字幕和输入条。现有的状态宠物（`pets.md`）不变，它仍然只表达 agent 在干什么。
+- **活人感优先靠规则层，不靠模型。** 眨眼、视线、呼吸、闲置小动作、触摸反应、昼夜和问候都不花 token。模型只在用户开口时才调用。
+- **Live2D 的东西不进 APK 和仓库。** Core 是 Live2D 的专有代码，框架和模型各有条款。它们打成素材包，用时才放进手机。App 里只有我们自己的舞台代码。
+- **角色素材是数据，运行库是代码。** 运行库按写死的摘要校验，角色目录只收数据文件。所以以后用户自己导入角色时，别人的包不能在 WebView 里跑脚本。
+- **大脑是当前主机上的一个普通会话。** 用 `dsh-go-companion` 预设：人设接管整个系统提示词，没有工具。
+
+## 1. 第一版做了什么
+
+| 能力 | 做法 | 位置 |
+|---|---|---|
+| 入口 | 「切换主机」面板里的「伙伴小屋」一行 | `app/lib/ui/remote/host_switcher.dart` |
+| 页面 | 全屏 WebView 上面叠 Flutter（名牌、字幕、输入条），暗色玻璃 | `app/lib/ui/companion/` |
+| 渲染 | 官方 Cubism Web Framework 5-r.5 + Core 6.0.1，自写模型类 | `app/assets/companion/stage.js` |
+| 场景 | 水下：光束、远处的鲸、礁石、浮游微粒，随时段换色（清晨、白天、傍晚、夜晚） | `stage.css`、`scene.js` |
+| 活着 | 分层逐帧计算：视线弹簧 → 闲置漂移 → 心情姿态 → 情绪表情 → 动作曲线 → 触摸 → 口型 → 表情 → 物理 → 尾巴 | `stage.js` |
+| 触摸 | 点头、脸、身体、尾巴、腿各有反应；摸头闭眼脸红并飘心；连戳三下头晕；双指缩放；手指移动时视线跟随 | `stage.js`、`companion_page.dart` |
+| 漫符 | 心、星、感叹号、问号、青筋、汗滴、思考点、Zzz | `scene.js` |
+| 对话 | 文本和语音输入，流式字幕，标记驱动表情和动作，文本节奏带动口型 | `companion_page.dart`、`companion_reply.dart` |
+| 问候 | 按时间和离开多久选一句，不责备 | `companionGreeting` |
+| 素材 | 导入 zip，路径和类型检查，运行库摘要校验，可删除 | `app/lib/companion/companion_pack.dart` |
+| 预设 | `dsh-go-companion`，桥接随引擎带上；旧主机退回「人设放进第一条消息」 | `runtime/bridge/dsh-go-bridge/cordis.patch.yml` |
+| 状态（第 1 期） | 主机上的心情、精力、亲近度：进门记一次到访，摸头记一次事件；心情好时带一点笑，精力影响动作幅度，越熟越常看着你。问候用主机记下的上次到访时间 | `runtime/bridge/dsh-go-bridge/lib/companion/`、`companion_api.dart` |
+| 记忆（第 1 期） | 「她记得的事」：用户写下、修改、删除，只存在当前主机；页面如实写明她还不会自己想起 | `companion_memory_page.dart` |
+| 生活细节 | 夜里更容易困、会打哈欠，清晨伸懒腰，心情好时哼歌冒音符，说到句末轻轻点头 | `stage.js` |
+
+没有做：TTS（App 目前没有）、自动回忆、小房子、喂食和玩耍、手机操控。见 §6。
+
+**会话的权限**：伙伴会话建好后切到 `read-only`，也不受「自动批准命令」影响。Pro 的 C200 指出只挂人设的预设仍可能继承主机的全局工具，真实工具集合还在核实（Drive ADDENDUM-03）。
+
+## 2. 结构
+
+```
+Flutter CompanionPage
+  ├─ CompanionStage（WebViewController）── runJavaScript: stage.command({type, ...})
+  │     ▲ JS channel DshCompanion: ready / error / touch / wake / mood
+  │     └─ http://127.0.0.1:<随机端口>/<随机令牌>/{app,pack}/...  CompanionServer
+  ├─ 名牌、字幕、输入条（companion_chrome.dart）
+  └─ chatProvider(sessionId) ── 普通会话 ── 当前主机上的 DSH
+```
+
+- **回环服务**：WebView 要 `fetch` 着色器和模型文件，`file://` 做不到。手机上任何 App 都能连回环端口，所以每条路径都以每次启动随机生成的令牌开头，没有令牌只有 404。页面关闭时服务也关闭。`app/` 只有固定的几个文件，`pack/` 只读且不出目录。
+- **WebView 不拿权限**：`onPermissionRequest` 一律拒绝，页面只能导航到自己。麦克风留在 Flutter 一侧，用现有的 `VoiceInputController`。
+- **CSP**：`script-src 'self' 'wasm-unsafe-eval'`，Core 的 WASM 需要后者。模型文字不进脚本，命令都是 JSON 编码的结构化消息。
+- **一帧的顺序**（`StageModel.tick`）：恢复参数基线 → 保存 → `animate.before`（写视线、姿态、表情参数、动作、口型）→ 表情管理器 → 物理 → Pose → `animate.after`（尾巴）→ `model.update`。Framework 的 `getParameterIndex` 对不存在的参数会造一个虚拟索引，所以判断模型有没有某个参数要和 `getParameterCount` 比。
+
+## 3. 素材包
+
+```
+pack.zip
+├─ runtime/                      代码，摘要写死在 companionRuntimeDigest
+│  ├─ live2dcubismcore.min.js    Live2D Proprietary Software License（RedistributableFiles.txt 列出的可再分发文件）
+│  ├─ cubism-framework.js        Live2D Open Software License，由 build-pack.mjs 打包
+│  ├─ shaders/*.frag|*.vert
+│  └─ LICENSE-framework.md
+└─ character/                    数据：.json .moc3 .png .jpg .jpeg .webp .wav .mp3 .txt .md
+   ├─ character.json             可选，见下
+   ├─ *.model3.json
+   └─ ...
+```
+
+`tooling/companion/build-pack.mjs` 生成它并打印摘要。只含 `character/` 的包保留已装的运行库，这是以后「用户自己上传角色」的入口。
+
+**Core 的版本**：Framework 5-r.5 要 Core 6.0.1，它来自 SDK 压缩包 `CubismSdkForWeb-5-r.5`。`cubism.live2d.com/sdk-web/cubismcore/` 上的 CDN 版本是 5.1.0，两者不兼容，`csmGetMocVersion` 会报错。
+
+**`character.json`**（都可选，缺了用标准参数名和默认分区）：
+
+| 键 | 含义 |
+|---|---|
+| `name`、`author`、`license`、`source` | 菜单底部如实显示 |
+| `model` | 模型文件；缺省取第一个 `*.model3.json` |
+| `framing` | `{zoom, y}` 默认取景 |
+| `mark` | 漫符出现的位置，模型坐标 |
+| `tail` | 尾巴的参数 ID，从根到尖 |
+| `zones` | 触摸分区：`{id, from, to, xFrom?, xTo?}`，纵向是从头顶算的比例 |
+| `emotions` | 情绪：`{expression, face: {参数: 值}, gaze: [x, y]}`，和默认表合并 |
+| `actions` | 该模型专有的动作曲线，如 `wave` |
+
+鲸鱼娘的配置在 `tooling/companion/whale-girl.character.json`。
+
+## 4. 预设和人设
+
+`cordis.patch.yml` 里 `--- shared rows ---` 以下的行，`rtbuild.py` 也会放进本机运行时的 overlay，所以本机和 `dsh plugin add dsh-go-bridge` 的远程主机都有这个预设。人设用 `prefix` + `complete: true` + `includeRuntimeContext: false`，只留人设，再带上压缩组。人设写了不声称是真人、不写色情内容、不发展恋爱情节、遇到自伤信号要放下角色认真回应。
+
+**没有预设的主机**（旧运行时、没更新桥接的远程主机）：`CompanionSessions` 查不到预设就退回默认预设，人设放进第一条消息。这时她有工具，请求审批时页面上出现「有件事要你确认」，点了进普通对话。批准只能是真实点按，她说的话和语音都不算。
+
+**会话隔离**：`companionSessionFilterProvider` 让她的会话不进抽屉，她的回复不发「做完了」提醒。需要用户处理的提醒照常走。
+
+**旁白**：每条消息前加 `〔11月6日 周五 21:14，对方刚才摸了摸你的头〕`，告诉她时间和刚才的触摸。人设说明了这不是对方说的话。
+
+## 5. 设计约定
+
+- 气质按 `polish-guide.md`：玻璃表面、边距 12、顶栏 44、输入条里的圆键同心。这一页的水下场景、缓慢光束和轻微视差是例外，它就是这一页的内容，而且都是合成层变换，开销很小。系统关闭动画时全部停掉。
+- 触摸反应立刻发生，不等网络。
+- 低内存手机（不足 6 GB）纹理降到 2048。画布最多 2 倍像素。闲置 30 帧，有事 60 帧，睡着 12 帧。App 进后台时暂停。
+
+## 6. 路线图
+
+Pro 的长期设计（C2xx）到了之后再细化这张表。
+
+| 阶段 | 内容 | 依赖 |
+|---|---|---|
+| 1.1 | TTS 和真实口型，打断 | 选型见 C2xx |
+| 1.2 | 素材包在线下载（已留 `companionPackSource`） | 素材授权确认后发布 |
+| 2 | 内在状态：心情、精力、亲近度，规则层推进，不因缺席惩罚 | ☑️ 后端（Pro C303，本机 34 项测试通过）和 App 接线；待真机 |
+| 2 | 持久记忆：用户确认后写入，可查可删；换主机不伪装连续 | ☑️ 存取和页面；自动回忆要先核实引擎作用域（C200 §7） |
+| 3 | 小房子：场景层换成房间，活动状态（喂食、陪伴、玩耍、睡觉） | 状态层 |
+| 3 | 主动开口：默认关，有每日预算，便宜信号触发 | 状态层 |
+| 4 | 用户上传角色 | Live2D 的 Expandable Application 条款 |
+| 4 | 和手机操控结合：她帮你做事，审批走真实点按 | 手机操控 |
+
+## 7. 待确认
+
+- **素材授权。** 群友包里的说明写着模型商用需授权、本包不含授权；owner 说模型是开源的。公开发布素材包前要有来源和条款，`character.json` 的 `author`、`license`、`source` 现在是空的。
+- **Live2D 条款。** 个人和年销售额低于 1000 万日元的小企业通常不用签发布授权，但用户可加载任意模型的应用属于 Expandable Application，要过审，官方写明完全免费的应用原则上不批。第 4 阶段前要问 Live2D。
+- **《人工智能拟人化互动服务管理暂行办法》**（2026-07-15 施行）对开源、自带 key 的客户端要求到哪一步，需要懂的人确认。

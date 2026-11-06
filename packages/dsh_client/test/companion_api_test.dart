@@ -1,0 +1,73 @@
+import 'package:dsh_client/dsh_client.dart';
+import 'package:test/test.dart';
+
+void main() {
+  test('reads a snapshot as the bridge sends it', () {
+    final snapshot = CompanionSnapshot.fromJson({
+      'v': 1,
+      'storeId': 'd0a90d66-ff37-4f2a-b31c-194c791ec651',
+      'companionId': 'whale-girl',
+      'revision': 7,
+      'memoryRevision': 2,
+      'capabilities': {'persistence': 'host', 'memories': true, 'automaticRecall': false},
+      'asOf': 1793899800000,
+      'state': {
+        'valence': 0.35,
+        'energy': 0.75,
+        'closeness': 0.01,
+        'activity': 'idle',
+        'activityUntil': null,
+        'lastVisitAt': 1793899700000,
+        'lastInteractionAt': 1793899700000,
+        'thought': 'enjoy-company',
+      },
+    })!;
+    expect(snapshot.storeId, 'd0a90d66-ff37-4f2a-b31c-194c791ec651');
+    expect(snapshot.revision, 7);
+    expect(snapshot.memoryRevision, 2);
+    expect(snapshot.memories, isTrue);
+    expect(snapshot.automaticRecall, isFalse);
+    expect(snapshot.vitals.valence, 0.35);
+    expect(snapshot.vitals.closeness, 0.01);
+    expect(snapshot.vitals.lastVisitAt, DateTime.fromMillisecondsSinceEpoch(1793899700000));
+    expect(snapshot.vitals.activityUntil, isNull);
+  });
+
+  test('a snapshot without identity is not one', () {
+    expect(CompanionSnapshot.fromJson({'revision': 1}), isNull);
+    expect(CompanionSnapshot.fromJson({'storeId': 'x'}), isNull);
+    expect(CompanionSnapshot.fromJson('nope'), isNull);
+  });
+
+  test('out-of-range or missing state stays in range', () {
+    final vitals = CompanionVitals.fromJson({'valence': 3, 'energy': -1});
+    expect(vitals.valence, 1);
+    expect(vitals.energy, 0);
+    expect(vitals.closeness, 0);
+    expect(vitals.activity, 'idle');
+  });
+
+  test('a memory round-trips to what a write sends', () {
+    final memory = CompanionMemory.fromJson({
+      'id': '2dc91037-8de1-41af-96e0-482e7309bf34',
+      'kind': 'preference',
+      'text': '用户更喜欢无糖茶，不喜欢咖啡。',
+      'keywords': ['茶', '咖啡'],
+      'pinned': false,
+      'source': {'kind': 'user-confirmed'},
+      'expiresAt': null,
+      'createdAt': 1793899700000,
+      'updatedAt': 1793899700000,
+    })!;
+    expect(memory.kind, 'preference');
+    expect(memory.toWrite(), {
+      'id': '2dc91037-8de1-41af-96e0-482e7309bf34',
+      'kind': 'preference',
+      'text': '用户更喜欢无糖茶，不喜欢咖啡。',
+      'keywords': ['茶', '咖啡'],
+      'pinned': false,
+      'source': {'kind': 'manual'},
+      'expiresAt': null,
+    });
+  });
+}
