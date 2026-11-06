@@ -47,7 +47,7 @@ source_hash = sha256(json.dumps(payload, ensure_ascii=False,
                                allow_nan=False).encode('utf-8')).hexdigest()
 ```
 
-This is the same algorithm used by this delivery's four-language `source-all-hashes.json`; all 5477 baseline hashes were compared successfully. Including `area` conservatively marks a fragment move for review. Metadata is the Chinese template's `@key` object, including declared types/context, or `{}` when absent. English `@key` metadata is not the template type source and is excluded from this hash version.
+This is the same algorithm as the four-language draft's `source-all-hashes.json` (not in the repo); on `d38c1f0` all 5477 hashes matched. Including `area` conservatively marks a fragment move for review. Metadata is the Chinese template's `@key` object, including declared types/context, or `{}` when absent. English `@key` metadata is not the template type source and is excluded from this hash version.
 
 A separate glossary/style-guide version is outside the v1 source hash. When those rules change, maintainers must prepare additional review work for affected terms; unchanged message hashes do not waive terminology review.
 
@@ -87,4 +87,4 @@ Fingerprinting does not replace ICU or placeholder validation. Follow it with st
 
 Metrics count keys, Python Unicode characters, and English whitespace-separated words, including ICU syntax, markup, and placeholders. They are not token counts or pricing estimates. The supplied `d38c1f0` snapshot has 5477 keys, 52337 Chinese characters, 144756 English characters, and 23245 English whitespace-separated words. Both suggested queues have separate metrics for preparing batches around actual changes.
 
-For example, a 20-key source change gives each of four target languages those 20 changes to assess, plus any separately missing or stale entries. It should not trigger retranslation of all 5477 messages on every update. Model charges, token counts, and human review time require measurement with the actual model, context, target text, and review method.
+For example, a 20-key source change gives each of four target languages those 20 changes to assess, plus any separately missing or stale entries. It should not trigger a full retranslation on every update. Model charges, token counts, and human review time require measurement with the actual model, context, target text, and review method.

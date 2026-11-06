@@ -148,12 +148,18 @@ void main() {
     await pumpFrames(tester, 2);
     expect(find.textContaining('只发出一次请求'), findsNothing);
     expect(find.textContaining('double taps'), findsOneWidget);
-    expect(find.text('Translate'), findsOneWidget);
+    // English reasoning in the English interface: nothing to translate.
+    expect(find.text('Translate'), findsNothing);
     expect(translator.asked, hasLength(2));
 
-    await tester.tap(find.text('Translate'));
+    AppLocale.use(AppLocale.zhCN);
+    await tester.pumpWidget(_app(_english, translator: translator));
+    await pumpFrames(tester, 2);
+    expect(find.textContaining('只发出一次请求'), findsNothing);
+    await tester.tap(find.text('翻译'));
     await pumpFrames(tester, 4);
-    expect(translator.asked.skip(2).map((a) => a.$3).toSet(), {'en'});
+    expect(find.textContaining('只发出一次请求'), findsOneWidget);
+    expect(translator.asked, hasLength(4));
   });
 
   testWidgets('a failure keeps the original and offers a retry', (tester) async {

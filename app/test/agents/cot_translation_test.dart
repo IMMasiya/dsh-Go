@@ -73,6 +73,16 @@ void main() {
     expect(reasoningNeedsTranslation('先看一下 pubspec 里锁的版本，再决定怎么改。', 'zh'), isFalse);
     expect(reasoningNeedsTranslation('看 `flutter_riverpod` 的 `ProviderScope.containerOf` 实现', 'zh-CN'), isFalse);
     expect(reasoningNeedsTranslation('先看一下版本。', 'en'), isTrue);
+    expect(reasoningNeedsTranslation('Let me check the pubspec first.', 'en'), isFalse);
+    expect(reasoningNeedsTranslation('The button says 登录 here.', 'en'), isFalse);
+  });
+
+  test('math notation in Chinese reasoning is not a foreign script', () {
+    for (final text in ['设 θ 为入射角，先算 sin θ 的值。', '学习率 α 取 0.001，耗时 300µs。', '在 ℝ 上取连续函数。']) {
+      expect(reasoningNeedsTranslation(text, 'zh'), isFalse, reason: text);
+    }
+    expect(reasoningNeedsTranslation('Θα ελέγξω πρώτα τις ρυθμίσεις.', 'zh'), isTrue);
+    expect(reasoningNeedsTranslation('Θα ελέγξω πρώτα τις ρυθμίσεις.', 'en'), isTrue);
   });
 
   test('offers Chinese translation for non-Latin source scripts', () {

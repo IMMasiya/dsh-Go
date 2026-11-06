@@ -50,23 +50,29 @@ final reasoningTranslatorProvider = Provider<ReasoningTranslator?>((ref) {
 });
 
 /// Whether [text] is worth translating into [target]: reasoning already in
-/// the target script (Chinese into `zh`) is not.
+/// the target script (Chinese into `zh`, Latin into the other interface
+/// languages) is not.
 bool reasoningNeedsTranslation(String text, String target) {
-  if (!target.toLowerCase().startsWith('zh')) return true;
-  // Kana, Hangul, Cyrillic and other non-Han/non-Latin letters are not
-  // evidence of Chinese. Keep an explicit translation choice for such text.
+  // Kana, Hangul, Cyrillic and other scripts belong to neither interface
+  // language. Keep an explicit translation choice for such text.
   if (_reasoningOtherLetters.hasMatch(text)) return true;
-  // A Han character carries about as much as a Latin word; identifiers in
-  // Chinese reasoning don't make it foreign. This is only an offer heuristic:
-  // Han-only Japanese cannot be distinguished from Chinese by script alone.
+  // A Han character carries about as much as a Latin word: identifiers in
+  // Chinese reasoning don't make it foreign, nor a quoted Chinese word in
+  // English. This is only an offer heuristic: Han-only Japanese cannot be
+  // distinguished from Chinese by script alone.
   final cjk = _reasoningHan.allMatches(text).length;
   final words = _reasoningLatinWords.allMatches(text).length;
-  return words > cjk;
+  return target.toLowerCase().startsWith('zh') ? words > cjk : cjk > words;
 }
 
 final _reasoningHan = RegExp(r'\p{Script=Han}', unicode: true);
 final _reasoningLatinWords = RegExp(r'\p{Script=Latin}+', unicode: true);
-final _reasoningOtherLetters = RegExp(r'(?!\p{Script=Han}|\p{Script=Latin})\p{L}', unicode: true);
+// A lone Greek letter (θ, α) or a letterlike symbol (µ, ℝ) is notation, not a
+// language; Greek words still are.
+final _reasoningOtherLetters = RegExp(
+  r'(?!\p{Script=Han}|\p{Script=Latin}|\p{Script=Greek}|\p{Script=Common})\p{L}|\p{Script=Greek}{2,}',
+  unicode: true,
+);
 
 /// Sequential paragraph translation for one reasoning block, as the official
 /// client does it: complete paragraphs (and request-sized pieces of long ones)
