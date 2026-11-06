@@ -9086,6 +9086,12 @@ abstract class L10n {
   /// **'这台手机没有能用的中文语音。可以在系统设置的「文字转语音」里装一个。'**
   String get companionVoiceUnavailable;
 
+  /// No description provided for @companionWidgetWaiting.
+  ///
+  /// In zh, this message translates to:
+  /// **'在小屋里等你'**
+  String get companionWidgetWaiting;
+
   /// No description provided for @engineNewChatDefaultsLast.
   ///
   /// In zh, this message translates to:

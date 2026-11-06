@@ -56,6 +56,11 @@ What you can do:
   - Until you choose, she uses Full while a host is connected and Light otherwise.
 - Zoom: pinch to zoom and move.
 - Her corner: there's a snack in the shell at the bottom left, a bubble floating on the right, and a seaweed cushion behind her. Tap the shell to give her a snack, the bubble to play, and the cushion to let her rest for a while. What she's doing shows under her name.
+- Feed her, hold her: drag a snack out of the shell dish and let go at her mouth, and she eats it. Rest a finger on her to give her a hug. Tilt the phone and the reef shifts a little.
+- Her voice: turn on **Her voice** in the menu at the top right and she reads her words aloud with the phone's own voice. She stops as soon as you type or use the microphone. Without a Chinese voice, add one under Text-to-speech in system settings.
+- Getting closer: visit and pat her often and she slowly gets more familiar with you; **You two** in the menu shows how far you've come. Once you're close she hums more and has fonder words for a pat.
+- Your other chats: while the room is open, she tells you when another chat finishes, fails or waits for your approval; tap Take a look to go there.
+- Home-screen widget: add the Companion room widget to see what she's doing and the last thing she said. Tap it to visit.
 - Her invitations: when you sit quietly with her for a while, she may now and then ask, above the input bar, whether you'd like to rest on the cushion together. Tap **Sure** and she leans back on it; tap **Not now** or just leave it, and she won't ask again for a few hours. At most twice a day, and silently. To stop them, turn off **Invitations** in the menu at the top right.
 
 She notices that you visit and pat her, and slowly gets more familiar with you; staying away for a few days doesn't upset her. Write down things you want her to remember in **What she remembers** in the menu. You can edit or delete them anytime. In Full mode they stay on the current host; in Light mode, on this phone. She doesn't bring these up by herself yet, can't speak aloud and only shows text, and can't touch your files or phone.

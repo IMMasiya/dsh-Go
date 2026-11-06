@@ -4913,6 +4913,9 @@ class L10nZh extends L10n {
   String get companionVoiceUnavailable => '这台手机没有能用的中文语音。可以在系统设置的「文字转语音」里装一个。';
 
   @override
+  String get companionWidgetWaiting => '在小屋里等你';
+
+  @override
   String get engineNewChatDefaultsLast => '新对话默认（上次选择）';
 
   @override

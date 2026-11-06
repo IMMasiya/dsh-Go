@@ -5214,6 +5214,9 @@ class L10nEn extends L10n {
       'This phone has no Chinese voice to use. You can add one under Text-to-speech in system settings.';
 
   @override
+  String get companionWidgetWaiting => 'Waiting for you in the room';
+
+  @override
   String get engineNewChatDefaultsLast => 'New chat defaults (last choice)';
 
   @override

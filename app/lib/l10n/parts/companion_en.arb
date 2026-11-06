@@ -143,5 +143,6 @@
   "companionMenuVoice": "Her voice",
   "companionMenuVoiceHint": "Reads her words aloud with the phone's own voice",
   "companionVoiceHello": "Hi, this is my voice. Keep it on if you like it.",
-  "companionVoiceUnavailable": "This phone has no Chinese voice to use. You can add one under Text-to-speech in system settings."
+  "companionVoiceUnavailable": "This phone has no Chinese voice to use. You can add one under Text-to-speech in system settings.",
+  "companionWidgetWaiting": "Waiting for you in the room"
 }

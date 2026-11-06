@@ -26,6 +26,7 @@ import '../../companion/companion_pack.dart';
 import '../../companion/companion_reply.dart';
 import '../../companion/companion_state.dart';
 import '../../companion/companion_voice.dart';
+import '../../companion/companion_widget.dart';
 import '../../l10n/l10n.dart';
 import '../../pets/pet_mood.dart' show PetEvent, PetEventKind;
 import '../../pets/pet_signals.dart' show petEventBusProvider;
@@ -347,6 +348,7 @@ class _CompanionPageState extends ConsumerState<CompanionPage> implements Compan
     final v = snapshot.vitals;
     _stage.command('vitals', {'valence': v.valence, 'energy': v.energy, 'closeness': v.closeness});
     _stage.command('activity', {'name': v.activity, 'remainingMs': snapshot.activityLeft.inMilliseconds});
+    _widgetUpdate();
     // A step closer while the person is here: a small moment, once, as it
     // happens. Arriving with it already reached is not news.
     if (before != null && before.storeId == snapshot.storeId) {
@@ -603,6 +605,35 @@ class _CompanionPageState extends ConsumerState<CompanionPage> implements Compan
     _objectTimer?.cancel();
     if (!_speakAloud(line, flush: true)) _stage.command('say', {'chars': line.length});
     _showBubble(line, hold: Duration(milliseconds: 2400 + line.length * 90));
+    _widgetUpdate(line: line);
+  }
+
+  /// The home-screen widget: who she is, what she's doing, how well she knows
+  /// the person, and [line] when she has just said something.
+  void _widgetUpdate({String? line}) {
+    if (!mounted) return;
+    final l10n = context.l10n;
+    final snapshot = _vitals;
+    final activity = snapshot?.vitals.activity ?? _home;
+    unawaited(
+      ref.read(companionWidgetProvider).update({
+        'name': _character.name ?? l10n.companionDefaultName,
+        'activity': activity,
+        'status': switch (activity) {
+          'snack' => l10n.companionStatusSnacking,
+          'play' => l10n.companionStatusPlaying,
+          'rest' => l10n.companionStatusResting,
+          _ => l10n.companionStatusIdle,
+        },
+        'untilMs': snapshot == null
+            ? null
+            : DateTime.now().millisecondsSinceEpoch + snapshot.activityLeft.inMilliseconds,
+        'statusAsleep': l10n.companionStatusSleeping,
+        'statusWaiting': l10n.companionWidgetWaiting,
+        'bond': snapshot == null ? null : companionBond(snapshot.vitals.closeness),
+        if (line != null) ...{'line': line, 'saidAt': DateTime.now().millisecondsSinceEpoch},
+      }),
+    );
   }
 
   // ── Voice ────────────────────────────────────────────────────────────────
@@ -1066,6 +1097,7 @@ class _CompanionPageState extends ConsumerState<CompanionPage> implements Compan
       if (error != null) {
         _showBubble(error, hold: const Duration(seconds: 6), error: true);
       } else if (reply.words.isNotEmpty) {
+        _widgetUpdate(line: reply.words.length > 80 ? '${reply.words.substring(0, 79)}…' : reply.words);
         _bubbleTimer?.cancel();
         _bubbleTimer = Timer(Duration(milliseconds: 9000 + reply.words.length * 60), () {
           if (mounted) setState(() => _bubble = null);
