@@ -468,8 +468,9 @@ enum SessionDay { today, yesterday, thisWeek, earlier }
 /// Calendar grouping in local time; weeks start on Monday.
 SessionDay sessionDayOf(DateTime at, DateTime now) {
   final local = at.toLocal();
-  final today = DateTime(now.year, now.month, now.day);
-  final day = DateTime(local.year, local.month, local.day);
+  // Compare calendar dates on a fixed-length day axis, including across DST.
+  final today = DateTime.utc(now.year, now.month, now.day);
+  final day = DateTime.utc(local.year, local.month, local.day);
   final diff = today.difference(day).inDays;
   if (diff <= 0) return SessionDay.today;
   if (diff == 1) return SessionDay.yesterday;
