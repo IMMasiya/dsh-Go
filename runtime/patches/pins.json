@@ -1387,6 +1387,14 @@
           "before": "ad2ebafd722a97b7d641b59e03f5c969c0958aa989ea7361fcd7e78ff2c7e92d"
         }
       }
+    },
+    "zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz-sqlite-document-count.diff": {
+      "0.2.2-rc.1": {
+        "node_modules/@deepseek-ai/dsh-session-query-sqlite/lib/index.js": {
+          "after": "6a70f328528d9c799b9f15a0c4505712ebb259163d4e9abe7a6a7dfa0557730b",
+          "before": "9c347d1916155416f4af9ddf79f196e106be683884acfa107246745512853d35"
+        }
+      }
     }
   },
   "schema": 1
