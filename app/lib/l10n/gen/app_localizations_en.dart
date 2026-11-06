@@ -5166,6 +5166,41 @@ class L10nEn extends L10n {
   String get companionHugClose => 'You can hold me tighter, you know.';
 
   @override
+  String companionTaskDone(String title) {
+    return '\"$title\" is done over there.';
+  }
+
+  @override
+  String get companionTaskDoneUntitled => 'Your task over there is done.';
+
+  @override
+  String companionTaskFailed(String title) {
+    return '\"$title\" seems to have hit an error. Take a look?';
+  }
+
+  @override
+  String get companionTaskFailedUntitled => 'Your task over there seems to have hit an error. Take a look?';
+
+  @override
+  String companionTaskApproval(String title) {
+    return '\"$title\" is waiting for your approval.';
+  }
+
+  @override
+  String get companionTaskApprovalUntitled => 'Something over there is waiting for your approval.';
+
+  @override
+  String companionTaskQuestion(String title) {
+    return '\"$title\" has a question for you.';
+  }
+
+  @override
+  String get companionTaskQuestionUntitled => 'There\'s a question waiting for you over there.';
+
+  @override
+  String get companionTaskOpen => 'Take a look';
+
+  @override
   String get engineNewChatDefaultsLast => 'New chat defaults (last choice)';
 
   @override

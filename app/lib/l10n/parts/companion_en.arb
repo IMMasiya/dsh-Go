@@ -130,5 +130,14 @@
   "companionCloser2": "Being with you feels easier and easier.",
   "companionCloser3": "Keep coming back, okay? I'll miss you.",
   "companionPatClose": "I love it when you pat my head.",
-  "companionHugClose": "You can hold me tighter, you know."
+  "companionHugClose": "You can hold me tighter, you know.",
+  "companionTaskDone": "\"{title}\" is done over there.",
+  "companionTaskDoneUntitled": "Your task over there is done.",
+  "companionTaskFailed": "\"{title}\" seems to have hit an error. Take a look?",
+  "companionTaskFailedUntitled": "Your task over there seems to have hit an error. Take a look?",
+  "companionTaskApproval": "\"{title}\" is waiting for your approval.",
+  "companionTaskApprovalUntitled": "Something over there is waiting for your approval.",
+  "companionTaskQuestion": "\"{title}\" has a question for you.",
+  "companionTaskQuestionUntitled": "There's a question waiting for you over there.",
+  "companionTaskOpen": "Take a look"
 }

@@ -5,6 +5,10 @@ import 'dart:io';
 import 'package:dsh_app/companion/companion_keeper.dart';
 import 'package:dsh_app/companion/companion_pack.dart';
 import 'package:dsh_app/companion/companion_state.dart';
+import 'package:dsh_app/pets/pet_mood.dart';
+import 'package:dsh_app/pets/pet_signals.dart';
+import 'package:dsh_app/state/hosts_state.dart';
+import 'package:dsh_app/state/sessions_state.dart';
 import 'package:dsh_app/state/settings_state.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
@@ -306,6 +310,55 @@ void main() {
 
       await tester.pumpWidget(const SizedBox());
       await tester.pump(const Duration(seconds: 10));
+    });
+
+    testWidgets('another conversation finishing: she says so, and the pill opens it', (tester) async {
+      SharedPreferences.setMockInitialValues({'companion_touch_hint_done': true, 'companion_home_hint_done': true});
+      final commands = <(String, Map<String, Object?>)>[];
+      CompanionStageEvents? stageEvents;
+      await tester.pumpWidget(
+        _app(
+          CompanionPage(
+            storeOverride: installedStore(),
+            stageBuilder: (controller, events) {
+              stageEvents = events;
+              return const SizedBox.expand();
+            },
+            stageController: CompanionStageController(sink: (type, args) => commands.add((type, args))),
+          ),
+        ),
+      );
+      (await _stageUp(tester, () => stageEvents)).onReady();
+      await _settle(tester);
+      await tester.pump(const Duration(seconds: 8)); // The greeting goes.
+      final container = ProviderScope.containerOf(tester.element(find.byType(CompanionPage)));
+      PetEvent event(PetEventKind kind, String? title) => PetEvent(
+        kind: kind,
+        host: container.read(activeHostProvider),
+        sessionId: 's-photos',
+        key: 'turn',
+        at: DateTime.now(),
+        title: title,
+      );
+
+      // Stopped is the person's own doing: nothing.
+      container.read(petEventBusProvider).add(event(PetEventKind.stopped, '整理照片'));
+      await tester.pump();
+      expect(find.textContaining('整理照片'), findsNothing);
+
+      container.read(petEventBusProvider).add(event(PetEventKind.done, '整理照片'));
+      await tester.pump(const Duration(milliseconds: 400));
+      expect(find.text('「整理照片」那边跑完啦。'), findsOneWidget);
+      expect(find.text('去看看 · 整理照片'), findsOneWidget);
+      expect(commands.where((c) => c.$1 == 'emotion').last.$2['name'], 'happy');
+
+      await tester.tap(find.text('去看看 · 整理照片'));
+      await tester.pump();
+      expect(container.read(currentSessionProvider), 's-photos');
+      expect(find.text('去看看 · 整理照片'), findsNothing);
+
+      await tester.pumpWidget(const SizedBox());
+      await tester.pump(const Duration(seconds: 20));
     });
 
     testWidgets('her things answer without a host: activity, a line, the status', (tester) async {

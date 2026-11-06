@@ -26,6 +26,8 @@ import '../../companion/companion_pack.dart';
 import '../../companion/companion_reply.dart';
 import '../../companion/companion_state.dart';
 import '../../l10n/l10n.dart';
+import '../../pets/pet_mood.dart' show PetEvent, PetEventKind;
+import '../../pets/pet_signals.dart' show petEventBusProvider;
 import '../../pets/pet_state.dart';
 import '../../state/chat_state.dart';
 import '../../state/connection_state.dart';
@@ -153,6 +155,13 @@ class _CompanionPageState extends ConsumerState<CompanionPage> implements Compan
   Timer? _settleTimer;
   Timer? _objectTimer;
 
+  // Her other work: conversations on the hosts that finish, fail or wait on
+  // the person while they're here.
+  StreamSubscription<PetEvent>? _agentEvents;
+  ({String sessionId, String label})? _agentPill;
+  Timer? _agentPillTimer;
+  DateTime? _agentSaidAt;
+
   // Her invitation to rest (Pro C451/C452): the installation's owner decides,
   // this page shows it and says what the person really does.
   static int _pages = 0;
@@ -196,6 +205,7 @@ class _CompanionPageState extends ConsumerState<CompanionPage> implements Compan
       },
     );
     _voice.addListener(_voiceChanged);
+    _agentEvents = ref.read(petEventBusProvider).events.listen(_onAgentEvent);
     _focus.addListener(_refreshMood);
     _input.addListener(_inputChanged);
     unawaited(_prepare());
@@ -245,6 +255,8 @@ class _CompanionPageState extends ConsumerState<CompanionPage> implements Compan
     _bubbleTimer?.cancel();
     _settleTimer?.cancel();
     _objectTimer?.cancel();
+    unawaited(_agentEvents?.cancel());
+    _agentPillTimer?.cancel();
     _voice.removeListener(_voiceChanged);
     _voice.dispose();
     _focus.dispose();
@@ -485,6 +497,71 @@ class _CompanionPageState extends ConsumerState<CompanionPage> implements Compan
     });
   }
 
+  /// A conversation of the person's (not hers) ended its turn, failed, or waits
+  /// on them. She says so in a line, and offers the way there when it is on the
+  /// host in front. Not something the person did: it doesn't count as activity.
+  /// (Phone events and notifications: Pro ADDENDUM-06 #2.)
+  void _onAgentEvent(PetEvent event) {
+    if (!mounted || _leaving || !_stageReady || event.sessionId == _sessionId) return;
+    // Stopped is the person's own doing.
+    if (event.kind == PetEventKind.stopped) return;
+    final l10n = context.l10n;
+    final title = _shortTitle(event.title);
+    final String line;
+    final String emotion;
+    final String action;
+    final String note;
+    switch (event.kind) {
+      case PetEventKind.failed:
+        line = title == null ? l10n.companionTaskFailedUntitled : l10n.companionTaskFailed(title);
+        (emotion, action, note) = ('worried', 'tilt', '出错了');
+      case PetEventKind.approval:
+        line = title == null ? l10n.companionTaskApprovalUntitled : l10n.companionTaskApproval(title);
+        (emotion, action, note) = ('surprised', 'lookUp', '在等对方批准');
+      case PetEventKind.question:
+        line = title == null ? l10n.companionTaskQuestionUntitled : l10n.companionTaskQuestion(title);
+        (emotion, action, note) = ('confused', 'tilt', '有问题要问对方');
+      case PetEventKind.done || PetEventKind.stopped:
+        line = title == null ? l10n.companionTaskDoneUntitled : l10n.companionTaskDone(title);
+        (emotion, action, note) = ('happy', 'nodSmall', '跑完了');
+    }
+    _remember('对方的另一个对话${title == null ? '' : '「$title」'}刚刚$note');
+    if (event.host == ref.read(activeHostProvider)) {
+      _agentPillTimer?.cancel();
+      setState(() {
+        _agentPill = (
+          sessionId: event.sessionId,
+          label: title == null ? l10n.companionTaskOpen : '${l10n.companionTaskOpen} · $title',
+        );
+      });
+      _agentPillTimer = Timer(const Duration(seconds: 15), () {
+        if (mounted) setState(() => _agentPill = null);
+      });
+    }
+    // Her own words come first; and a burst of them gets one line, not five.
+    final now = DateTime.now();
+    if (_running || _sending || (_agentSaidAt != null && now.difference(_agentSaidAt!) < const Duration(seconds: 4))) {
+      return;
+    }
+    _agentSaidAt = now;
+    _stage.command('emotion', {'name': emotion, 'hold': 2600});
+    _stage.command('action', {'name': action});
+    _say(line);
+  }
+
+  static String? _shortTitle(String? title) {
+    final text = title?.trim();
+    if (text == null || text.isEmpty) return null;
+    return text.characters.length > 14 ? '${text.characters.take(13)}…' : text;
+  }
+
+  void _openAgent(String sessionId) {
+    _agentPillTimer?.cancel();
+    setState(() => _agentPill = null);
+    ref.read(currentSessionProvider.notifier).select(sessionId);
+    Navigator.of(context).popUntil((route) => route.isFirst);
+  }
+
   void _onActivity(String name) {
     if (mounted && name != _home) setState(() => _home = name);
   }
@@ -571,7 +648,7 @@ class _CompanionPageState extends ConsumerState<CompanionPage> implements Compan
     audioBusy: _voice.active || (_settleTimer?.isActive ?? false),
     activityBusy: _home != 'idle' || _asleep || (_objectTimer?.isActive ?? false),
     approvalPending: _needsAttention,
-    externalPromptBusy: _bubble != null || _myLine != null,
+    externalPromptBusy: _bubble != null || _myLine != null || _agentPill != null,
     quietHoursBlocked: false,
     enabled: ref.read(companionInitiativeEnabledProvider) ?? false,
     accessible: _accessible,
@@ -1552,6 +1629,16 @@ class _CompanionPageState extends ConsumerState<CompanionPage> implements Compan
                     CompanionPill(icon: AppIcons.tip, label: l10n.companionTouchHint)
                   else if (_showHomeHint && _bubble == null && !inviting)
                     CompanionPill(icon: AppIcons.tip, label: l10n.companionTouchHintHome),
+                  if (_agentPill case final pill?)
+                    CompanionPill(
+                      icon: AppIcons.conversations,
+                      label: pill.label,
+                      tone: const Color(0xFF9FD8F2),
+                      onTap: () {
+                        _acted();
+                        _openAgent(pill.sessionId);
+                      },
+                    ),
                   if (_needsAttention)
                     CompanionPill(
                       icon: AppIcons.toConfirm,

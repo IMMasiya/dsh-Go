@@ -4866,6 +4866,41 @@ class L10nZh extends L10n {
   String get companionHugClose => '抱紧一点也没关系哦。';
 
   @override
+  String companionTaskDone(String title) {
+    return '「$title」那边跑完啦。';
+  }
+
+  @override
+  String get companionTaskDoneUntitled => '你那边的任务跑完啦。';
+
+  @override
+  String companionTaskFailed(String title) {
+    return '「$title」好像出错了，要去看看吗？';
+  }
+
+  @override
+  String get companionTaskFailedUntitled => '你那边的任务好像出错了，要去看看吗？';
+
+  @override
+  String companionTaskApproval(String title) {
+    return '「$title」在等你批准。';
+  }
+
+  @override
+  String get companionTaskApprovalUntitled => '你那边有件事在等你批准。';
+
+  @override
+  String companionTaskQuestion(String title) {
+    return '「$title」有事想问你。';
+  }
+
+  @override
+  String get companionTaskQuestionUntitled => '你那边有个问题在等你回答。';
+
+  @override
+  String get companionTaskOpen => '去看看';
+
+  @override
   String get engineNewChatDefaultsLast => '新对话默认（上次选择）';
 
   @override

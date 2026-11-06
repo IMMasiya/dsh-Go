@@ -3012,6 +3012,43 @@
   "companionCloser3": "以后也要常来哦，我会想你的。",
   "companionPatClose": "最喜欢被你摸头了。",
   "companionHugClose": "抱紧一点也没关系哦。",
+  "companionTaskDone": "「{title}」那边跑完啦。",
+  "@companionTaskDone": {
+    "placeholders": {
+      "title": {
+        "type": "String"
+      }
+    }
+  },
+  "companionTaskDoneUntitled": "你那边的任务跑完啦。",
+  "companionTaskFailed": "「{title}」好像出错了，要去看看吗？",
+  "@companionTaskFailed": {
+    "placeholders": {
+      "title": {
+        "type": "String"
+      }
+    }
+  },
+  "companionTaskFailedUntitled": "你那边的任务好像出错了，要去看看吗？",
+  "companionTaskApproval": "「{title}」在等你批准。",
+  "@companionTaskApproval": {
+    "placeholders": {
+      "title": {
+        "type": "String"
+      }
+    }
+  },
+  "companionTaskApprovalUntitled": "你那边有件事在等你批准。",
+  "companionTaskQuestion": "「{title}」有事想问你。",
+  "@companionTaskQuestion": {
+    "placeholders": {
+      "title": {
+        "type": "String"
+      }
+    }
+  },
+  "companionTaskQuestionUntitled": "你那边有个问题在等你回答。",
+  "companionTaskOpen": "去看看",
   "engineNewChatDefaultsLast": "新对话默认（上次选择）",
   "engineNewChatDefaultsFixed": "新对话默认（固定）",
   "engineNewChatUseLast": "沿用上次",

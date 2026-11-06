@@ -9008,6 +9008,60 @@ abstract class L10n {
   /// **'抱紧一点也没关系哦。'**
   String get companionHugClose;
 
+  /// No description provided for @companionTaskDone.
+  ///
+  /// In zh, this message translates to:
+  /// **'「{title}」那边跑完啦。'**
+  String companionTaskDone(String title);
+
+  /// No description provided for @companionTaskDoneUntitled.
+  ///
+  /// In zh, this message translates to:
+  /// **'你那边的任务跑完啦。'**
+  String get companionTaskDoneUntitled;
+
+  /// No description provided for @companionTaskFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'「{title}」好像出错了，要去看看吗？'**
+  String companionTaskFailed(String title);
+
+  /// No description provided for @companionTaskFailedUntitled.
+  ///
+  /// In zh, this message translates to:
+  /// **'你那边的任务好像出错了，要去看看吗？'**
+  String get companionTaskFailedUntitled;
+
+  /// No description provided for @companionTaskApproval.
+  ///
+  /// In zh, this message translates to:
+  /// **'「{title}」在等你批准。'**
+  String companionTaskApproval(String title);
+
+  /// No description provided for @companionTaskApprovalUntitled.
+  ///
+  /// In zh, this message translates to:
+  /// **'你那边有件事在等你批准。'**
+  String get companionTaskApprovalUntitled;
+
+  /// No description provided for @companionTaskQuestion.
+  ///
+  /// In zh, this message translates to:
+  /// **'「{title}」有事想问你。'**
+  String companionTaskQuestion(String title);
+
+  /// No description provided for @companionTaskQuestionUntitled.
+  ///
+  /// In zh, this message translates to:
+  /// **'你那边有个问题在等你回答。'**
+  String get companionTaskQuestionUntitled;
+
+  /// No description provided for @companionTaskOpen.
+  ///
+  /// In zh, this message translates to:
+  /// **'去看看'**
+  String get companionTaskOpen;
+
   /// No description provided for @engineNewChatDefaultsLast.
   ///
   /// In zh, this message translates to:
