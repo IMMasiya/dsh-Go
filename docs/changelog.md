@@ -15,10 +15,9 @@
 - 对话：同一轮里的多段正式回答都会保留，不再被误折叠；上下文用量的估算说明更清楚。
 - 远程：没选工作区时，新对话落到最近用过的工作区，新对话页会显示它；主机上一个工作区都没有时会写明「主机默认目录」。新增 `设置 › 远程主机 › 精简历史`，支持的 DSH Remote 主机可以只传历史工具输出的摘要。SSH 认证途中断线会继续重连，不再当成密钥错误，启动失败时显示详情。连接详情里能看到实际走的路径和 IPv4 / IPv6。
 - 引擎：一个被改名或损坏的会话目录不再让整个引擎起不来，其余对话照常显示；安全模式在数据坏掉时用独立的数据目录启动，原来的对话保持原样。用 OpenAI 兼容协议接 Gemini 不再被 400 拒绝。插件安装、更新和热更新时的并发问题已修复；大量文本截断不再切坏字符，编辑文件时保留原来的 BOM 和行尾。
-- 手机操控：无障碍服务被系统打断时不再直接停止本次操作；后台屏刚打开时的黑帧不再被报成安全窗口；无障碍授权自动恢复失败时会说明原因；通知上的两个停止按钮改叫「停止手机操控」和「停止引擎」。
+- 手机操控：OPPO、realme 等机型上确认卡的按钮点不动、只能等倒计时结束的问题已修复（#608、#632）。确认卡不再按触摸事件的字段猜是不是真手指，改成只拒绝 App 自己发出的点击，助手仍然不能替你点「允许」。这一项没在这些机型的真机上验证过。另外，无障碍服务被系统打断时不再直接停止本次操作；后台屏刚打开时的黑帧不再被报成安全窗口；无障碍授权自动恢复失败时会说明原因；通知上的两个停止按钮改叫「停止手机操控」和「停止引擎」。
 - 设置：重置运行环境的确认框写明，`/root` 里没保留的内容（包括工作区文件、`AGENTS.md` 和插件自己存的数据）也会一起删除。
 - 网页版：原版布局下侧栏按钮不再被 App 的浮钮挡住；顶栏按钮不再独占一排。
-- 已知问题：OPPO、realme 等机型上手机操控的确认卡点不动（#608），修法已经定了，这一版还没带上。
 
 ### English
 
@@ -31,10 +30,9 @@
 - Chat: every final answer in a turn is kept instead of being folded away by mistake, and the context usage estimate is explained more clearly.
 - Remote: with no workspace selected, a new chat starts in the workspace you used last and the new chat page shows it; a host with no workspace at all says "Host default folder". New `Settings › Remote host › Compact history` lets supporting DSH Remote hosts send only summaries of past tool output. An SSH connection dropped during authentication keeps reconnecting instead of being reported as a key error, and a failed start shows its details. Connection details show the path actually used and IPv4 or IPv6.
 - Engine: one renamed or damaged session folder no longer stops the whole engine from starting, and the other chats still show; safe mode starts on a separate data folder when the data is damaged, leaving the original chats untouched. Gemini through the OpenAI-compatible protocol is no longer rejected with a 400. Concurrency problems when installing, updating and hot-reloading plugins are fixed; many text truncations no longer cut characters apart, and editing a file keeps its BOM and line endings.
-- Phone control: an accessibility service interrupted by the system no longer stops the current action; the black first frame of a just-opened background screen is no longer reported as a secure window; when restoring accessibility access automatically fails, the reason is shown; the notification's two stop buttons are now "Stop phone control" and "Stop engine".
+- Phone control: on OPPO, realme and similar phones the confirmation card's buttons no longer ignore taps until the countdown runs out (#608, #632). The card no longer guesses from touch event fields whether a finger is real; it only refuses taps the app itself sends, so the assistant still can't tap Allow for you. This hasn't been verified on those phones. Also, an accessibility service interrupted by the system no longer stops the current action; the black first frame of a just-opened background screen is no longer reported as a secure window; when restoring accessibility access automatically fails, the reason is shown; the notification's two stop buttons are now "Stop phone control" and "Stop engine".
 - Settings: the reset runtime dialog says that anything in `/root` you don't keep, including workspace files, `AGENTS.md` and data plugins store themselves, is deleted too.
 - Web UI: in the original layout the sidebar button is no longer covered by the app's floating button, and the header buttons no longer take a row of their own.
-- Known issue: on OPPO, realme and similar phones the phone control confirmation card doesn't respond to taps (#608). The fix is decided but not in this version.
 
 ## 1.0.11 · 2026-11-05
 
