@@ -193,5 +193,18 @@
   "companionVoiceStyle": "Speaking style",
   "companionVoiceStyleHelper": "Describe her tone and the service reads in it; leave empty for the default gentle girl's voice",
   "companionVoiceFemale": "female",
-  "companionVoiceMale": "male"
+  "companionVoiceMale": "male",
+  "companionClonePreset": "Preset voices",
+  "companionCloneMine": "Clone a voice",
+  "companionVoicePresetVoice": "Preset voice",
+  "companionCloneRecording": "Recording",
+  "companionCloneHelper": "5–30 seconds of one person speaking with no background noise, mp3 or wav, up to 7 MB. Only use your own voice, or one whose owner agreed. Every line she says sends this recording to Xiaomi.",
+  "companionCloneNone": "No recording yet",
+  "companionCloneReady": "Uploaded · {detail}",
+  "companionCloneSeconds": "{n} s",
+  "companionClonePick": "Choose a recording",
+  "companionCloneReplace": "Replace",
+  "companionCloneTooLarge": "The recording is too large (7 MB at most). Trim it and try again.",
+  "companionCloneNotAudio": "Only mp3 or wav recordings work.",
+  "companionCloneFailed": "Couldn't read that recording."
 }

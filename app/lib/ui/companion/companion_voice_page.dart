@@ -4,6 +4,8 @@
 // line with what is filled in now.
 
 import 'dart:async';
+import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -54,6 +56,12 @@ class _CompanionVoicePageState extends ConsumerState<CompanionVoicePage> {
 
   /// 试听: null idle, '' requesting, 'ok', or why it failed.
   String? _preview;
+
+  // The recording to clone from: what it is, picking one, why that failed.
+  String? _recording;
+  String? _recordingFor;
+  bool _picking = false;
+  String? _recordingError;
 
   List<TextEditingController> get _all => [
     _base,
@@ -142,6 +150,61 @@ class _CompanionVoicePageState extends ConsumerState<CompanionVoicePage> {
     _seen = next;
   }
 
+  /// Size and, for WAV, length of the kept recording, for its row.
+  Future<void> _describe(String path) async {
+    _recordingFor = path;
+    String? text;
+    try {
+      final file = File(path);
+      final size = await file.length();
+      final head = await file.openRead(0, 44).fold<List<int>>([], (all, part) => all..addAll(part));
+      final length = companionRecordingLength(Uint8List.fromList(head), size);
+      if (!mounted) return;
+      final l10n = context.l10n;
+      text = [
+        '${(size / 1024).round()} KB',
+        if (length != null) l10n.companionCloneSeconds(length.inSeconds),
+      ].join(' · ');
+    } on FileSystemException {
+      text = null;
+    }
+    if (mounted) setState(() => _recording = text);
+  }
+
+  Future<void> _pickRecording(CompanionVoiceSettings s) async {
+    final l10n = context.l10n;
+    setState(() {
+      _picking = true;
+      _recordingError = null;
+    });
+    try {
+      final picked = await ref.read(companionVoicePickerProvider)();
+      if (picked == null || !mounted) return;
+      final (bytes, size) = picked;
+      if (size != null && size > companionCloneMaxBytes) throw const CompanionVoiceError('too-large');
+      final folder = await ref.read(companionVoiceSampleFolderProvider)();
+      final file = await companionKeepRecording(bytes, folder);
+      if (!mounted) return;
+      await _set(s.copyWith(cloneOn: true, cloneSample: file.path));
+      await _describe(file.path);
+      if (mounted) setState(() => _preview = null);
+    } on CompanionVoiceError catch (error) {
+      if (mounted) {
+        setState(
+          () => _recordingError = switch (error.reason) {
+            'too-large' => l10n.companionCloneTooLarge,
+            'not-audio' => l10n.companionCloneNotAudio,
+            _ => l10n.companionCloneFailed,
+          },
+        );
+      }
+    } on Object {
+      if (mounted) setState(() => _recordingError = l10n.companionCloneFailed);
+    } finally {
+      if (mounted) setState(() => _picking = false);
+    }
+  }
+
   Future<void> _set(CompanionVoiceSettings next) async {
     final merged = _fromFields(next);
     _seen = merged;
@@ -222,6 +285,7 @@ class _CompanionVoicePageState extends ConsumerState<CompanionVoicePage> {
     final s = _seen = ref.watch(companionVoiceSettingsProvider);
     if (s == null) return AppPage.list(title: l10n.companionMenuVoice, children: const []);
     _fill(s);
+    if (s.cloneSample.isNotEmpty && _recordingFor != s.cloneSample) unawaited(_describe(s.cloneSample));
     final busy = _preview == '';
     final status = switch (_preview) {
       null => null,
@@ -293,30 +357,69 @@ class _CompanionVoicePageState extends ConsumerState<CompanionVoicePage> {
                     helper: l10n.companionVoiceKeyWhere(s.presetInfo.site),
                     child: _text(_presetKey, hint: 'sk-…', secret: true),
                   ),
-                  FormFieldBlock(
-                    label: l10n.companionVoiceVoice,
-                    helper: l10n.companionVoiceVoiceCustomHelper,
-                    below: Wrap(
-                      spacing: 8,
-                      runSpacing: 8,
-                      children: [
-                        for (final voice in s.presetInfo.voices)
-                          ChoiceChip(
-                            label: Text(switch (voice.kind) {
-                              'f' => '${voice.id} · ${l10n.companionVoiceFemale}',
-                              'm' => '${voice.id} · ${l10n.companionVoiceMale}',
-                              _ => voice.id,
-                            }),
-                            selected: _presetVoice.text.trim() == voice.id,
-                            onSelected: (_) {
-                              setState(() => _presetVoice.text = voice.id);
-                              _edited();
-                            },
-                          ),
-                      ],
+                  if (s.presetInfo.clones)
+                    FormFieldBlock(
+                      label: l10n.companionVoiceVoice,
+                      child: SegmentedPill<bool>(
+                        segments: [
+                          PillSegment(false, l10n.companionClonePreset),
+                          PillSegment(true, l10n.companionCloneMine),
+                        ],
+                        selected: s.cloneOn,
+                        onChanged: (on) {
+                          setState(() => _preview = null);
+                          unawaited(_set(s.copyWith(cloneOn: on)));
+                        },
+                      ),
                     ),
-                    child: _text(_presetVoice, hint: s.presetInfo.voices.first.id),
-                  ),
+                  if (s.cloning)
+                    FormFieldBlock(
+                      label: l10n.companionCloneRecording,
+                      helper: _recordingError == null ? l10n.companionCloneHelper : null,
+                      error: _recordingError,
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              s.cloneSample.isEmpty
+                                  ? l10n.companionCloneNone
+                                  : l10n.companionCloneReady(_recording ?? '…'),
+                              style: theme.textTheme.bodyMedium,
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          FilledButton.tonal(
+                            onPressed: _picking ? null : () => unawaited(_pickRecording(s)),
+                            child: Text(s.cloneSample.isEmpty ? l10n.companionClonePick : l10n.companionCloneReplace),
+                          ),
+                        ],
+                      ),
+                    )
+                  else
+                    FormFieldBlock(
+                      label: s.presetInfo.clones ? l10n.companionVoicePresetVoice : l10n.companionVoiceVoice,
+                      helper: l10n.companionVoiceVoiceCustomHelper,
+                      below: Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: [
+                          for (final voice in s.presetInfo.voices)
+                            ChoiceChip(
+                              label: Text(switch (voice.kind) {
+                                'f' => '${voice.id} · ${l10n.companionVoiceFemale}',
+                                'm' => '${voice.id} · ${l10n.companionVoiceMale}',
+                                _ => voice.id,
+                              }),
+                              selected: _presetVoice.text.trim() == voice.id,
+                              onSelected: (_) {
+                                setState(() => _presetVoice.text = voice.id);
+                                _edited();
+                              },
+                            ),
+                        ],
+                      ),
+                      child: _text(_presetVoice, hint: s.presetInfo.voices.first.id),
+                    ),
                   if (s.presetInfo.styled)
                     FormFieldBlock(
                       label: l10n.companionVoiceStyle,

@@ -5071,6 +5071,49 @@ class L10nZh extends L10n {
   String get companionVoiceMale => '男声';
 
   @override
+  String get companionClonePreset => '预置音色';
+
+  @override
+  String get companionCloneMine => '克隆声音';
+
+  @override
+  String get companionVoicePresetVoice => '预置音色';
+
+  @override
+  String get companionCloneRecording => '录音';
+
+  @override
+  String get companionCloneHelper => '5–30 秒、只有一个人在说话、没有背景音的 mp3 或 wav，最大 7 MB。请只用你自己的声音，或本人同意过的声音。她说的每句话都会带上这段录音发给小米。';
+
+  @override
+  String get companionCloneNone => '还没有录音';
+
+  @override
+  String companionCloneReady(String detail) {
+    return '已上传 · $detail';
+  }
+
+  @override
+  String companionCloneSeconds(int n) {
+    return '$n 秒';
+  }
+
+  @override
+  String get companionClonePick => '选一段录音';
+
+  @override
+  String get companionCloneReplace => '换一段';
+
+  @override
+  String get companionCloneTooLarge => '录音太大了，最大 7 MB。剪短一点再试。';
+
+  @override
+  String get companionCloneNotAudio => '只支持 mp3 或 wav 格式的录音。';
+
+  @override
+  String get companionCloneFailed => '没能读取这段录音。';
+
+  @override
   String get engineNewChatDefaultsLast => '新对话默认（上次选择）';
 
   @override

@@ -9386,6 +9386,84 @@ abstract class L10n {
   /// **'男声'**
   String get companionVoiceMale;
 
+  /// No description provided for @companionClonePreset.
+  ///
+  /// In zh, this message translates to:
+  /// **'预置音色'**
+  String get companionClonePreset;
+
+  /// No description provided for @companionCloneMine.
+  ///
+  /// In zh, this message translates to:
+  /// **'克隆声音'**
+  String get companionCloneMine;
+
+  /// No description provided for @companionVoicePresetVoice.
+  ///
+  /// In zh, this message translates to:
+  /// **'预置音色'**
+  String get companionVoicePresetVoice;
+
+  /// No description provided for @companionCloneRecording.
+  ///
+  /// In zh, this message translates to:
+  /// **'录音'**
+  String get companionCloneRecording;
+
+  /// No description provided for @companionCloneHelper.
+  ///
+  /// In zh, this message translates to:
+  /// **'5–30 秒、只有一个人在说话、没有背景音的 mp3 或 wav，最大 7 MB。请只用你自己的声音，或本人同意过的声音。她说的每句话都会带上这段录音发给小米。'**
+  String get companionCloneHelper;
+
+  /// No description provided for @companionCloneNone.
+  ///
+  /// In zh, this message translates to:
+  /// **'还没有录音'**
+  String get companionCloneNone;
+
+  /// No description provided for @companionCloneReady.
+  ///
+  /// In zh, this message translates to:
+  /// **'已上传 · {detail}'**
+  String companionCloneReady(String detail);
+
+  /// No description provided for @companionCloneSeconds.
+  ///
+  /// In zh, this message translates to:
+  /// **'{n} 秒'**
+  String companionCloneSeconds(int n);
+
+  /// No description provided for @companionClonePick.
+  ///
+  /// In zh, this message translates to:
+  /// **'选一段录音'**
+  String get companionClonePick;
+
+  /// No description provided for @companionCloneReplace.
+  ///
+  /// In zh, this message translates to:
+  /// **'换一段'**
+  String get companionCloneReplace;
+
+  /// No description provided for @companionCloneTooLarge.
+  ///
+  /// In zh, this message translates to:
+  /// **'录音太大了，最大 7 MB。剪短一点再试。'**
+  String get companionCloneTooLarge;
+
+  /// No description provided for @companionCloneNotAudio.
+  ///
+  /// In zh, this message translates to:
+  /// **'只支持 mp3 或 wav 格式的录音。'**
+  String get companionCloneNotAudio;
+
+  /// No description provided for @companionCloneFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'没能读取这段录音。'**
+  String get companionCloneFailed;
+
   /// No description provided for @engineNewChatDefaultsLast.
   ///
   /// In zh, this message translates to:

@@ -9,6 +9,7 @@ import 'dart:async';
 import 'dart:collection';
 import 'dart:io';
 
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
@@ -123,6 +124,21 @@ final companionVoiceProvider = Provider<CompanionVoice>((ref) {
 /// Where fetched requests go out, and where their audio waits to be played; tests answer both.
 final companionVoiceClientProvider = Provider<http.Client Function()>((ref) => http.Client.new);
 final companionVoiceFolderProvider = Provider<Future<Directory> Function()>((ref) => getTemporaryDirectory);
+
+/// Where the recording to clone her voice from is kept (it outlives the cache).
+final companionVoiceSampleFolderProvider = Provider<Future<Directory> Function()>(
+  (ref) =>
+      () async => Directory('${(await getApplicationSupportDirectory()).path}/companion'),
+);
+
+/// Picks a recording: its bytes and, when the system says, its size. Null when cancelled.
+final companionVoicePickerProvider = Provider<Future<(Stream<List<int>>, int?)?> Function()>(
+  (ref) => () async {
+    final picked = await FilePicker.pickFile(type: FileType.audio);
+    if (picked == null) return null;
+    return (picked.readAsByteStream(), picked.lengthSync());
+  },
+);
 
 class _Line {
   _Line(this.id, this.text, this.generation, this.audio);

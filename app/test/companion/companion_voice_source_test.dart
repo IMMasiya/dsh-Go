@@ -283,6 +283,68 @@ void main() {
       });
     });
 
+    test('MiMo cloning: the cloning model, the recording as the voice', () async {
+      final folder = Directory.systemTemp.createTempSync('companion-clone');
+      addTearDown(() => folder.deleteSync(recursive: true));
+      final sample = File('${folder.path}/voice-sample.wav')..writeAsBytesSync(_wav(quiet: 0, loud: 200));
+      final settings = CompanionVoiceSettings(
+        source: CompanionVoiceSource.preset,
+        presetKeys: const {'mimo': 'mimo-key'},
+        cloneOn: true,
+        cloneSample: sample.path,
+      );
+      expect(settings.cloning, isTrue);
+      expect(settings.configured, isTrue);
+      expect(settings.copyWith(cloneSample: '').configured, isFalse);
+      final sent = await sentBy(
+        settings,
+        (_) => http.Response(
+          jsonEncode({
+            'choices': [
+              {
+                'message': {
+                  'audio': {'data': base64.encode(_wav(quiet: 0, loud: 40))},
+                },
+              },
+            ],
+          }),
+          200,
+        ),
+      );
+      final body = jsonDecode(sent.body) as Map;
+      expect(body['model'], 'mimo-v2.5-tts-voiceclone');
+      final voice = (body['audio'] as Map)['voice'] as String;
+      expect(voice, startsWith('data:audio/wav;base64,'));
+      expect(base64.decode(voice.substring(voice.indexOf(',') + 1)), sample.readAsBytesSync());
+    });
+
+    test('a kept recording: mp3 or wav only, 7 MB at most, nothing half-written left', () async {
+      final folder = Directory.systemTemp.createTempSync('companion-keep');
+      addTearDown(() => folder.deleteSync(recursive: true));
+      final wav = _wav(quiet: 0, loud: 200);
+      final kept = await companionKeepRecording(Stream.value(wav), folder);
+      expect(kept.path, endsWith('voice-sample.wav'));
+      expect(kept.readAsBytesSync(), wav);
+      expect(
+        companionRecordingLength(Uint8List.fromList(wav.take(44).toList()), wav.length),
+        const Duration(milliseconds: 200),
+      );
+
+      Future<String> refused(Stream<List<int>> bytes) async {
+        try {
+          await companionKeepRecording(bytes, folder);
+          return 'kept';
+        } on CompanionVoiceError catch (error) {
+          return error.reason;
+        }
+      }
+
+      expect(await refused(Stream.value(utf8.encode('hello, not audio'))), 'not-audio');
+      expect(await refused(Stream.fromIterable(List.generate(8, (_) => List.filled(1024 * 1024, 0)))), 'too-large');
+      // The good one is still the one kept, and nothing else is lying around.
+      expect(folder.listSync().map((f) => f.uri.pathSegments.last), ['voice-sample.wav']);
+    });
+
     test('a preset without its key is not set up; keys stay out of plain preferences', () {
       const settings = CompanionVoiceSettings(source: CompanionVoiceSource.preset, presetKeys: {'openai': 'sk-o'});
       expect(settings.configured, isFalse); // MiMo is chosen, its key is missing.

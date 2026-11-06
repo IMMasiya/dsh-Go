@@ -5375,6 +5375,50 @@ class L10nEn extends L10n {
   String get companionVoiceMale => 'male';
 
   @override
+  String get companionClonePreset => 'Preset voices';
+
+  @override
+  String get companionCloneMine => 'Clone a voice';
+
+  @override
+  String get companionVoicePresetVoice => 'Preset voice';
+
+  @override
+  String get companionCloneRecording => 'Recording';
+
+  @override
+  String get companionCloneHelper =>
+      '5–30 seconds of one person speaking with no background noise, mp3 or wav, up to 7 MB. Only use your own voice, or one whose owner agreed. Every line she says sends this recording to Xiaomi.';
+
+  @override
+  String get companionCloneNone => 'No recording yet';
+
+  @override
+  String companionCloneReady(String detail) {
+    return 'Uploaded · $detail';
+  }
+
+  @override
+  String companionCloneSeconds(int n) {
+    return '$n s';
+  }
+
+  @override
+  String get companionClonePick => 'Choose a recording';
+
+  @override
+  String get companionCloneReplace => 'Replace';
+
+  @override
+  String get companionCloneTooLarge => 'The recording is too large (7 MB at most). Trim it and try again.';
+
+  @override
+  String get companionCloneNotAudio => 'Only mp3 or wav recordings work.';
+
+  @override
+  String get companionCloneFailed => 'Couldn\'t read that recording.';
+
+  @override
   String get engineNewChatDefaultsLast => 'New chat defaults (last choice)';
 
   @override

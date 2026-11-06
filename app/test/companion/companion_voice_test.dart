@@ -228,6 +228,96 @@ void main() {
       await tester.pumpWidget(const SizedBox());
     });
 
+    testWidgets('MiMo cloning: choose a recording, then hear her in that voice', (tester) async {
+      tester.view.physicalSize = const Size(1080, 3600);
+      tester.view.devicePixelRatio = 2;
+      addTearDown(tester.view.reset);
+      SharedPreferences.setMockInitialValues({});
+      final calls = <MethodCall>[];
+      tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(_channel, (call) async {
+        calls.add(call);
+        return switch (call.method) {
+          'ready' || 'speak' || 'play' => true,
+          _ => null,
+        };
+      });
+      addTearDown(() => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(_channel, null));
+      final folder = Directory.systemTemp.createTempSync('companion-voice-clone');
+      addTearDown(() {
+        try {
+          folder.deleteSync(recursive: true);
+        } on FileSystemException {
+          // The system clears temp.
+        }
+      });
+      final wav = <int>[...'RIFF'.codeUnits, 36, 0, 0, 0, ...'WAVE'.codeUnits, ...List.filled(64, 0)];
+      final sent = <http.Request>[];
+      final client = MockClient((request) async {
+        sent.add(request);
+        return http.Response(
+          jsonEncode({
+            'choices': [
+              {
+                'message': {
+                  'audio': {'data': base64.encode(wav)},
+                },
+              },
+            ],
+          }),
+          200,
+        );
+      });
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            companionVoiceClientProvider.overrideWithValue(() => client),
+            companionVoiceFolderProvider.overrideWithValue(() async => folder),
+            companionVoiceSampleFolderProvider.overrideWithValue(() async => folder),
+            companionVoicePickerProvider.overrideWithValue(() async => (Stream.value(wav), wav.length)),
+          ],
+          child: MaterialApp(
+            theme: buildDarkTheme(),
+            localizationsDelegates: L10n.localizationsDelegates,
+            supportedLocales: L10n.supportedLocales,
+            locale: const Locale('zh'),
+            home: const CompanionVoicePage(),
+          ),
+        ),
+      );
+      await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 50)));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('常用服务'));
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find.byWidgetPredicate((w) => w is TextField && w.decoration?.hintText == 'sk-…'),
+        'mimo-key',
+      );
+      await tester.tap(find.text('克隆声音'));
+      await tester.pumpAndSettle();
+      expect(find.text('还没有录音'), findsOneWidget);
+      expect(find.text('茉莉 · 女声'), findsNothing);
+
+      await tester.tap(find.text('选一段录音'));
+      for (var i = 0; i < 20 && find.textContaining('已上传').evaluate().isEmpty; i++) {
+        await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 30)));
+        await tester.pump();
+      }
+      expect(find.textContaining('已上传'), findsOneWidget);
+      expect(File('${folder.path}/voice-sample.wav').existsSync(), isTrue);
+
+      await tester.tap(find.text('试听'));
+      for (var i = 0; i < 20 && !calls.any((c) => c.method == 'play'); i++) {
+        await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 30)));
+        await tester.pump();
+      }
+      expect(find.text('能用，听到了吗？'), findsOneWidget);
+      final body = jsonDecode(sent.single.body) as Map;
+      expect(body['model'], 'mimo-v2.5-tts-voiceclone');
+      expect((body['audio'] as Map)['voice'], startsWith('data:audio/wav;base64,'));
+      await tester.pumpWidget(const SizedBox());
+    });
+
     testWidgets('an OpenAI-compatible voice: fill it in, hear it, or see why not', (tester) async {
       SharedPreferences.setMockInitialValues({});
       final calls = <MethodCall>[];

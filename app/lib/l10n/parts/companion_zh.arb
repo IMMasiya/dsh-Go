@@ -277,5 +277,32 @@
   "companionVoiceStyle": "说话风格",
   "companionVoiceStyleHelper": "描述她说话的语气，服务会照着读；留空用默认的温柔少女音",
   "companionVoiceFemale": "女声",
-  "companionVoiceMale": "男声"
+  "companionVoiceMale": "男声",
+  "companionClonePreset": "预置音色",
+  "companionCloneMine": "克隆声音",
+  "companionVoicePresetVoice": "预置音色",
+  "companionCloneRecording": "录音",
+  "companionCloneHelper": "5–30 秒、只有一个人在说话、没有背景音的 mp3 或 wav，最大 7 MB。请只用你自己的声音，或本人同意过的声音。她说的每句话都会带上这段录音发给小米。",
+  "companionCloneNone": "还没有录音",
+  "companionCloneReady": "已上传 · {detail}",
+  "@companionCloneReady": {
+    "placeholders": {
+      "detail": {
+        "type": "String"
+      }
+    }
+  },
+  "companionCloneSeconds": "{n} 秒",
+  "@companionCloneSeconds": {
+    "placeholders": {
+      "n": {
+        "type": "int"
+      }
+    }
+  },
+  "companionClonePick": "选一段录音",
+  "companionCloneReplace": "换一段",
+  "companionCloneTooLarge": "录音太大了，最大 7 MB。剪短一点再试。",
+  "companionCloneNotAudio": "只支持 mp3 或 wav 格式的录音。",
+  "companionCloneFailed": "没能读取这段录音。"
 }

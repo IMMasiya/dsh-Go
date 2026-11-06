@@ -6,6 +6,7 @@
 
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 import 'dart:math';
 
 import 'package:flutter/foundation.dart';
@@ -35,6 +36,7 @@ class CompanionVoicePreset {
     required this.voices,
     required this.build,
     this.styled = false,
+    this.clones = false,
   });
 
   final String id;
@@ -46,6 +48,10 @@ class CompanionVoicePreset {
 
   /// Whether the service takes a speaking style.
   final bool styled;
+
+  /// Whether it can speak in a voice cloned from the person's own recording
+  /// (sent as a `data:` URI in place of a voice id).
+  final bool clones;
   final CompanionVoiceSettings Function(CompanionVoiceSettings base, String key, String voice, String style) build;
 }
 
@@ -59,6 +65,7 @@ final companionVoicePresets = <CompanionVoicePreset>[
     name: '小米 MiMo',
     site: 'platform.xiaomimimo.com',
     styled: true,
+    clones: true,
     voices: const [
       (id: '冰糖', kind: 'f'),
       (id: '茉莉', kind: 'f'),
@@ -72,13 +79,14 @@ final companionVoicePresets = <CompanionVoicePreset>[
     ],
     // Chat completions, not /audio/speech: the line is the assistant's message,
     // the style the user's; the audio comes back as base64 WAV (24 kHz PCM16).
+    // A recording in place of the voice id means the cloning model.
     build: (base, key, voice, style) => base.copyWith(
       source: CompanionVoiceSource.custom,
       customUrl: 'https://api.xiaomimimo.com/v1/chat/completions',
       customPost: true,
       customHeaders: 'api-key: $key\nAuthorization: Bearer $key',
       customBody: _jsonText({
-        'model': 'mimo-v2.5-tts',
+        'model': voice.startsWith('data:') ? 'mimo-v2.5-tts-voiceclone' : 'mimo-v2.5-tts',
         'messages': [
           {'role': 'user', 'content': style},
           {'role': 'assistant', 'content': '{text}'},
@@ -176,6 +184,8 @@ class CompanionVoiceSettings {
     this.presetKeys = const {},
     this.presetVoices = const {},
     this.presetStyle = '',
+    this.cloneOn = false,
+    this.cloneSample = '',
     this.openaiBase = 'https://api.openai.com/v1',
     this.openaiKey = '',
     this.openaiModel = 'gpt-4o-mini-tts',
@@ -197,6 +207,14 @@ class CompanionVoiceSettings {
   final Map<String, String> presetKeys;
   final Map<String, String> presetVoices;
   final String presetStyle;
+
+  /// Speak in a voice cloned from [cloneSample] (a file this app keeps), for
+  /// presets that can.
+  final bool cloneOn;
+  final String cloneSample;
+
+  /// Whether the current preset speaks in the cloned voice.
+  bool get cloning => source == CompanionVoiceSource.preset && presetInfo.clones && cloneOn;
 
   final String openaiBase;
   final String openaiKey;
@@ -233,7 +251,8 @@ class CompanionVoiceSettings {
   /// Whether the chosen source has what it needs to be asked at all.
   bool get configured => switch (source) {
     CompanionVoiceSource.system => true,
-    CompanionVoiceSource.preset => presetKey.trim().isNotEmpty && presetVoice.trim().isNotEmpty,
+    CompanionVoiceSource.preset =>
+      presetKey.trim().isNotEmpty && (cloning ? cloneSample.isNotEmpty : presetVoice.trim().isNotEmpty),
     CompanionVoiceSource.openai => openaiBase.trim().isNotEmpty && openaiVoice.trim().isNotEmpty,
     CompanionVoiceSource.custom => customUrl.trim().isNotEmpty,
   };
@@ -245,6 +264,8 @@ class CompanionVoiceSettings {
     Map<String, String>? presetKeys,
     Map<String, String>? presetVoices,
     String? presetStyle,
+    bool? cloneOn,
+    String? cloneSample,
     String? openaiBase,
     String? openaiKey,
     String? openaiModel,
@@ -262,6 +283,8 @@ class CompanionVoiceSettings {
     presetKeys: presetKeys ?? this.presetKeys,
     presetVoices: presetVoices ?? this.presetVoices,
     presetStyle: presetStyle ?? this.presetStyle,
+    cloneOn: cloneOn ?? this.cloneOn,
+    cloneSample: cloneSample ?? this.cloneSample,
     openaiBase: openaiBase ?? this.openaiBase,
     openaiKey: openaiKey ?? this.openaiKey,
     openaiModel: openaiModel ?? this.openaiModel,
@@ -280,6 +303,8 @@ class CompanionVoiceSettings {
     'preset': preset,
     'presetVoices': presetVoices,
     'presetStyle': presetStyle,
+    'cloneOn': cloneOn,
+    'cloneSample': cloneSample,
     'openaiBase': openaiBase,
     'openaiModel': openaiModel,
     'openaiVoice': openaiVoice,
@@ -304,6 +329,8 @@ class CompanionVoiceSettings {
             if (key is String && value is String) key: value,
       },
       presetStyle: text('presetStyle', d.presetStyle),
+      cloneOn: map['cloneOn'] == true,
+      cloneSample: text('cloneSample', d.cloneSample),
       openaiBase: text('openaiBase', d.openaiBase),
       openaiModel: text('openaiModel', d.openaiModel),
       openaiVoice: text('openaiVoice', d.openaiVoice),
@@ -423,6 +450,10 @@ Future<CompanionVoiceAudio> fetchCompanionVoice(
   http.Client client, {
   Duration timeout = const Duration(seconds: 20),
 }) async {
+  if (settings.cloning) {
+    final voice = await companionCloneVoice(settings.cloneSample);
+    settings = settings.copyWith(presetVoices: {...settings.presetVoices, settings.preset: voice});
+  }
   settings = settings.resolved();
   final http.Response response;
   try {
@@ -519,6 +550,80 @@ Future<Uint8List> _fromJson(Uint8List body, String path, http.Client client, Dur
   } on FormatException {
     throw CompanionVoiceError('field $path is neither base64 nor a link');
   }
+}
+
+// ── Cloning ────────────────────────────────────────────────────────────────
+
+/// The largest recording kept for cloning: MiMo takes at most 10 MB of base64.
+const companionCloneMaxBytes = 7 * 1024 * 1024;
+
+String? _cloneKey;
+String? _cloneUri;
+
+/// The recording at [path] as the `data:` URI a cloning request carries. Kept
+/// in memory while the file is unchanged: every sentence sends it.
+Future<String> companionCloneVoice(String path) async {
+  final file = File(path);
+  final FileStat stat;
+  try {
+    stat = await file.stat();
+  } on FileSystemException {
+    throw const CompanionVoiceError('recording missing');
+  }
+  if (stat.type != FileSystemEntityType.file) throw const CompanionVoiceError('recording missing');
+  final key = '$path:${stat.size}:${stat.modified.millisecondsSinceEpoch}';
+  if (key == _cloneKey && _cloneUri != null) return _cloneUri!;
+  final bytes = await file.readAsBytes();
+  final mime = switch (companionAudioKind(bytes)) {
+    'wav' => 'audio/wav',
+    'mp3' => 'audio/mpeg',
+    _ => throw const CompanionVoiceError('recording is not mp3 or wav'),
+  };
+  _cloneKey = key;
+  return _cloneUri = 'data:$mime;base64,${base64.encode(bytes)}';
+}
+
+/// Keeps a picked recording in [folder] as the one to clone from, replacing
+/// the one before. Checks its size as it arrives and its format once it has.
+Future<File> companionKeepRecording(Stream<List<int>> bytes, Directory folder) async {
+  await folder.create(recursive: true);
+  final incoming = File('${folder.path}/voice-sample.part');
+  try {
+    final sink = incoming.openWrite();
+    var size = 0;
+    try {
+      await for (final chunk in bytes) {
+        size += chunk.length;
+        if (size > companionCloneMaxBytes) throw const CompanionVoiceError('too-large');
+        sink.add(chunk);
+      }
+    } finally {
+      await sink.close();
+    }
+    final head = await incoming.openRead(0, 16).fold<List<int>>([], (all, part) => all..addAll(part));
+    final ext = switch (companionAudioKind(Uint8List.fromList(head))) {
+      'wav' => 'wav',
+      'mp3' => 'mp3',
+      _ => throw const CompanionVoiceError('not-audio'),
+    };
+    for (final old in ['wav', 'mp3']) {
+      final previous = File('${folder.path}/voice-sample.$old');
+      if (await previous.exists()) await previous.delete();
+    }
+    return await incoming.rename('${folder.path}/voice-sample.$ext');
+  } finally {
+    // Refused or failed: nothing half-written stays. (Once renamed, it is gone from here.)
+    if (await incoming.exists()) await incoming.delete();
+  }
+}
+
+/// How long a WAV recording lasts; null for other formats.
+Duration? companionRecordingLength(Uint8List head, int size) {
+  if (companionAudioKind(head) != 'wav' || head.length < 32) return null;
+  final data = ByteData.sublistView(head);
+  final byteRate = data.getUint32(28, Endian.little);
+  if (byteRate == 0) return null;
+  return Duration(milliseconds: (size - 44) * 1000 ~/ byteRate);
 }
 
 // ── Loudness ───────────────────────────────────────────────────────────────
