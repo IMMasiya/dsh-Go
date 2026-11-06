@@ -374,9 +374,9 @@ void main() {
       final system = asked.single['system']! as String;
       expect(system, startsWith('你的名字是「小蓝」。\n你是一只爱撒娇的猫娘'));
       expect(system, contains('称呼对方为「阿周」。'));
-      // The app's rules stay, whatever the persona says.
+      // The marks her stage reads stay, whatever the persona says; the rest is theirs.
       expect(system, contains('[表情:开心]'));
-      expect(system, contains('不写色情内容'));
+      expect(system, isNot(contains('不写色情内容')));
       expect(system, isNot(contains('你是鲸鱼娘')));
 
       await tester.pumpWidget(const SizedBox());

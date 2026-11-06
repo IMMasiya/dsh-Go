@@ -5141,7 +5141,7 @@ class L10nZh extends L10n {
   String get companionPersonaTextLabel => '她是谁、怎么说话';
 
   @override
-  String get companionPersonaTextHelper => '性格、身份、说话方式都写在这里。表情动作的格式和安全边界由 App 自动加上，不用写，也删不掉。';
+  String get companionPersonaTextHelper => '性格、身份、说话方式、哪些话不说，都写在这里，删改随你。只有表情动作的标记格式由 App 自动加上。';
 
   @override
   String get companionPersonaReset => '恢复默认';

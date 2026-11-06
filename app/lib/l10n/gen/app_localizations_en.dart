@@ -5448,7 +5448,7 @@ class L10nEn extends L10n {
 
   @override
   String get companionPersonaTextHelper =>
-      'Her personality, who she is, how she speaks. The app adds the format for her expressions and the safety lines itself: no need to write them, and they can\'t be removed.';
+      'Her personality, who she is, how she talks, what she won\'t say: all yours to write or delete. Only the format of her expression marks is added by the app.';
 
   @override
   String get companionPersonaReset => 'Reset';
