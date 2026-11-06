@@ -476,6 +476,7 @@ export function createNativeRoutes(core) {
       return;
     }
     const bytes = await readFile(file);
+    if (bytes.length > L.assetBytes) fail(404, "not-found", "no such asset");
     res.writeHead(200, { ...headers, "content-length": bytes.length });
     res.end(req.method === "HEAD" ? undefined : bytes);
   }
