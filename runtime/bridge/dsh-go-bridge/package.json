@@ -7,7 +7,8 @@
   "exports": {
     ".": "./lib/index.js",
     "./client": "./lib/client.js",
-    "./package.json": "./package.json"
+    "./package.json": "./package.json",
+    "./companion/full-context": "./lib/companion/full-context.js"
   },
   "files": [
     "lib/index.js",
@@ -16,7 +17,8 @@
     "lib/client.js",
     "lib/companion/*.js",
     "lib/native/*.js",
-    "cordis.patch.yml"
+    "cordis.patch.yml",
+    "PRESET-NOTICE.txt"
   ],
   "dsh": {
     "bundle": {

@@ -810,7 +810,10 @@ def bridge_shared_rows():
     """The rows of the bridge bundle's cordis.patch.yml that the local overlay also carries."""
     source = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "bridge", "dsh-go-bridge", "cordis.patch.yml")
     with open(source, encoding="utf-8") as patch:
-        return patch.read().split("    # --- shared rows ---\n", 1)[1]
+        rows = patch.read().split("    # --- shared rows ---\n", 1)[1]
+    # Local runtimes load the bridge by path; it is not a profile dependency.
+    return rows.replace("name: dsh-go-bridge/companion/full-context",
+                        "name: %s/lib/companion/full-context.js" % DSH_GO_BRIDGE)
 
 
 def overlay_entries(runtime_info, with_python=False, with_pnpm=False, with_bridge=False):
