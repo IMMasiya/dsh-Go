@@ -176,8 +176,9 @@ class _CompanionPageState extends ConsumerState<CompanionPage> {
   @override
   void dispose() {
     unawaited(companionMarkSeen(DateTime.now()));
-    unawaited(_lightReply?.cancel());
+    // Leaving: drop the light request without touching the page any more.
     _lightClient?.close();
+    unawaited(_lightReply?.cancel().catchError((Object _) {}));
     _chat?.close();
     _bubbleTimer?.cancel();
     _settleTimer?.cancel();
@@ -630,7 +631,7 @@ class _CompanionPageState extends ConsumerState<CompanionPage> {
     _stage.command('mood', {'mood': 'thinking'});
     try {
       if (_light) {
-        await _sendLight(text);
+        await _sendLight(text, current);
         return;
       }
       final binding = await ref.read(companionSessionsProvider.notifier).ensure();
@@ -678,12 +679,14 @@ class _CompanionPageState extends ConsumerState<CompanionPage> {
 
   /// Light mode: the reply comes straight from the model, and the conversation
   /// stays on this phone.
-  Future<void> _sendLight(String text) async {
+  Future<void> _sendLight(String text, bool Function() current) async {
     final key = ref.read(settingsProvider).apiKey.trim();
     if (key.isEmpty) throw const CompanionLightError(CompanionLightFailure.noKey);
     final history = _lightHistory ??= CompanionLightHistory.at(_store!.root);
     await history.load();
-    if (!mounted) return;
+    // Switched to full (or away) while the history was read: this line is not
+    // light mode's any more.
+    if (!current()) return;
     final aside = companionAside(now: DateTime.now(), notes: List.of(_notes));
     history.add(CompanionLine.user([?aside, text].join('\n')));
     _notes.clear();
@@ -717,6 +720,7 @@ class _CompanionPageState extends ConsumerState<CompanionPage> {
   void _endLight(String turn, {Object? error}) {
     if (turn != _lightTurn || _lightReply == null) return;
     _lightReply = null;
+    _lightTurn = '';
     _lightClient?.close();
     _lightClient = null;
     final history = _lightHistory;
@@ -735,11 +739,20 @@ class _CompanionPageState extends ConsumerState<CompanionPage> {
     _onReply(turn, _lightText, running: false, error: error == null ? null : _failureText(error));
   }
 
+  /// Ends the light reply on its way, at once: what she has said so far is
+  /// kept, the request is dropped (its client closed first), and nothing it
+  /// does later reaches the page. Cancelling can itself fail late (a timeout
+  /// already under way); that is swallowed, not let loose.
+  void _retireLight() {
+    final reply = _lightReply;
+    if (reply == null) return;
+    _endLight(_lightTurn);
+    unawaited(reply.cancel().catchError((Object _) {}));
+  }
+
   Future<void> _stop() async {
-    if (_lightReply case final reply?) {
-      final turn = _lightTurn;
-      await reply.cancel();
-      _endLight(turn);
+    if (_lightReply != null) {
+      _retireLight();
       return;
     }
     final id = _sessionId;
@@ -751,11 +764,7 @@ class _CompanionPageState extends ConsumerState<CompanionPage> {
   /// mode's conversation, then arrive again.
   void _modeChanged() {
     _boundLight = _light;
-    if (_lightReply case final reply?) {
-      final turn = _lightTurn;
-      unawaited(reply.cancel());
-      _endLight(turn);
-    }
+    _retireLight();
     setState(_unbind);
     if (!_stageReady) return;
     if (!_light) {
@@ -1001,6 +1010,8 @@ class _CompanionPageState extends ConsumerState<CompanionPage> {
     );
     if (!ok || !mounted) return;
     if (light) {
+      // The reply still on its way would otherwise write itself back after the clear.
+      _retireLight();
       await _lightHistory?.clear();
       if (!mounted) return;
       _say(l10n.companionGreetFirst);

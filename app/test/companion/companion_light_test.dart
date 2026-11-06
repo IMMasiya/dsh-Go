@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -100,6 +101,50 @@ void main() {
     });
   });
 
+  group('reply ends', () {
+    Future<(String, CompanionLightFailure?)> run(MockClient client) async {
+      final words = StringBuffer();
+      try {
+        await for (final word in streamCompanionReply(
+          client: client,
+          apiKey: 'k',
+          system: 's',
+          lines: const [CompanionLine.user('hi')],
+        )) {
+          words.write(word);
+        }
+        return (words.toString(), null);
+      } on CompanionLightError catch (error) {
+        return (words.toString(), error.failure);
+      }
+    }
+
+    test('a connection that closes before message_stop is a failure, after what it said', () async {
+      final (words, failure) = await run(_answering(200, _sse([_text('说到一半')])));
+      expect(words, '说到一半');
+      expect(failure, CompanionLightFailure.network);
+    });
+
+    test('a bare error object with no type is a failure, not an empty success', () async {
+      final (words, failure) = await run(_answering(200, 'data: {"error":{"message":"timeout"}}\n\n'));
+      expect(words, isEmpty);
+      expect(failure, CompanionLightFailure.server);
+    });
+
+    test('a refused key is reported even when its body never finishes', () async {
+      final body = StreamController<List<int>>();
+      addTearDown(body.close);
+      final client = MockClient.streaming((_, _) async {
+        body.add(utf8.encode('{"error":'));
+        return http.StreamedResponse(body.stream, 401);
+      });
+      final watch = Stopwatch()..start();
+      final (_, failure) = await run(client);
+      expect(failure, CompanionLightFailure.badKey);
+      expect(watch.elapsed, lessThan(const Duration(seconds: 5)));
+    });
+  });
+
   group('history', () {
     late Directory root;
     setUp(() => root = Directory.systemTemp.createTempSync('companion-light'));
@@ -145,6 +190,46 @@ void main() {
       final empty = CompanionLightHistory.at(root);
       await empty.load();
       expect(empty.lines, isEmpty);
+    });
+
+    test('every load waits for the one read: the old conversation stays first', () async {
+      final old = CompanionLightHistory.at(root)
+        ..add(const CompanionLine.user('上次'))
+        ..add(const CompanionLine.her('上次的回答'));
+      await old.save();
+      final history = CompanionLightHistory.at(root);
+      final first = history.load();
+      await history.load();
+      history.add(const CompanionLine.user('这次'));
+      await first;
+      expect(history.lines.map((l) => l.text), ['上次', '上次的回答', '这次']);
+    });
+
+    test('a closing page finishes its save before the next page reads', () async {
+      final a = CompanionLightHistory.at(root)
+        ..add(const CompanionLine.user('你好'))
+        ..add(const CompanionLine.her('你好呀'));
+      unawaited(a.save());
+      final b = CompanionLightHistory.at(root);
+      await b.load();
+      expect(b.lines.map((l) => l.text), ['你好', '你好呀']);
+    });
+
+    test('a clear deletes only what came before it, and stops an earlier read', () async {
+      final seed = CompanionLightHistory.at(root)..add(const CompanionLine.user('旧的'));
+      await seed.save();
+      final history = CompanionLightHistory.at(root);
+      final reading = history.load();
+      final clearing = history.clear();
+      history.add(const CompanionLine.user('新的'));
+      final saving = history.save();
+      await reading;
+      await clearing;
+      await saving;
+      expect(history.lines.map((l) => l.text), ['新的']);
+      final again = CompanionLightHistory.at(root);
+      await again.load();
+      expect(again.lines.map((l) => l.text), ['新的']);
     });
 
     test('an unreadable file starts afresh', () async {

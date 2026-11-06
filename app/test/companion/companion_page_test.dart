@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -59,14 +60,14 @@ class _Settings extends SettingsController {
   AppSettings build() => AppSettings(loaded: true, apiKey: apiKey);
 }
 
-String _sse(List<String> words) => [
+String _sse(List<String> words, {bool end = true}) => [
   for (final text in words)
     'event: content_block_delta\ndata: ${jsonEncode({
       'type': 'content_block_delta',
       'index': 0,
       'delta': {'type': 'text_delta', 'text': text},
     })}\n\n',
-  'event: message_stop\ndata: {"type":"message_stop"}\n\n',
+  if (end) 'event: message_stop\ndata: {"type":"message_stop"}\n\n',
 ].join();
 
 void main() {
@@ -364,6 +365,83 @@ void main() {
 
         await tester.pumpWidget(const SizedBox());
         await tester.pump(const Duration(seconds: 20));
+      });
+
+      Future<void> settleIo(WidgetTester tester) async {
+        for (var i = 0; i < 4; i++) {
+          await _settle(tester);
+        }
+      }
+
+      testWidgets('starting over drops the reply on its way: it never writes itself back', (tester) async {
+        final body = StreamController<List<int>>();
+        final client = MockClient.streaming((_, _) async => http.StreamedResponse(body.stream, 200));
+        await openLight(tester, apiKey: 'sk-test', client: client);
+        await say(tester, '你好');
+        body.add(utf8.encode(_sse(['旧回答的前半。'], end: false)));
+        await settleIo(tester);
+
+        await tester.tap(find.byIcon(AppIcons.more));
+        await settleIo(tester);
+        await tester.tap(find.text('重新认识'));
+        await settleIo(tester);
+        await tester.tap(find.widgetWithText(FilledButton, '重新认识'));
+        await settleIo(tester);
+
+        body.add(utf8.encode(_sse(['旧回答的后半。'])));
+        await body.close();
+        await settleIo(tester);
+        await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 200)));
+        final file = File('${root.path}/light-chat.json');
+        expect(file.existsSync() ? file.readAsStringSync() : '', isNot(contains('旧回答')));
+        expect(find.textContaining('旧回答的后半'), findsNothing);
+
+        await tester.pumpWidget(const SizedBox());
+        await tester.pump(const Duration(seconds: 20));
+      });
+
+      testWidgets('switching to full while the history is read sends nothing from the phone', (tester) async {
+        var asked = 0;
+        final client = MockClient((_) async {
+          asked++;
+          return http.Response('', 500);
+        });
+        await openLight(tester, apiKey: 'sk-test', client: client);
+        await tester.enterText(find.byType(TextField), '你好');
+        await tester.pump();
+        await tester.tap(find.byIcon(AppIcons.send).last);
+        // Before the history read can finish (it needs real time):
+        final container = ProviderScope.containerOf(tester.element(find.byType(CompanionPage)));
+        await container.read(companionModeProvider.notifier).choose(CompanionMode.full);
+        await settleIo(tester);
+        expect(asked, 0);
+
+        await tester.pumpWidget(const SizedBox());
+        await tester.pump(const Duration(seconds: 20));
+      });
+
+      testWidgets('stop lets go at once, even before the model answers', (tester) async {
+        var asked = 0;
+        final never = Completer<http.StreamedResponse>();
+        final client = MockClient.streaming((_, _) {
+          asked++;
+          return asked == 1
+              ? never.future
+              : Future.value(http.StreamedResponse(Stream.value(utf8.encode(_sse(['在呢。']))), 200));
+        });
+        await openLight(tester, apiKey: 'sk-test', client: client);
+        await say(tester, '你好');
+        await tester.tap(find.byIcon(AppIcons.stopGenerating).last);
+        await settleIo(tester);
+
+        await tester.pump(const Duration(seconds: 12));
+        await say(tester, '还在吗');
+        expect(asked, 2);
+        expect(find.text('在呢。'), findsOneWidget);
+
+        await tester.pumpWidget(const SizedBox());
+        // The first request's own 30-second timeout runs out into a cancelled subscription.
+        await tester.pump(const Duration(seconds: 40));
       });
     });
   });

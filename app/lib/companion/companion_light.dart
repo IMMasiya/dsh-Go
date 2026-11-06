@@ -87,12 +87,14 @@ Stream<String> streamCompanionReply({
     throw CompanionLightError(CompanionLightFailure.network, '$error');
   }
   if (response.statusCode != 200) {
-    final body = await response.stream.bytesToString().catchError((Object _) => '');
-    throw CompanionLightError(switch (response.statusCode) {
+    // The status already says what went wrong; the body is only a note, read
+    // for a moment and a few hundred bytes at most.
+    final failure = switch (response.statusCode) {
       401 || 403 => CompanionLightFailure.badKey,
       429 => CompanionLightFailure.busy,
       _ => CompanionLightFailure.server,
-    }, '${response.statusCode} ${body.length > 200 ? body.substring(0, 200) : body}');
+    };
+    throw CompanionLightError(failure, '${response.statusCode} ${await _note(response.stream)}');
   }
   final events = response.stream
       .transform(utf8.decoder)
@@ -111,21 +113,23 @@ Stream<String> streamCompanionReply({
         continue;
       }
       if (event is! Map) continue;
+      // An error event, or a bare {"error": …} (the API's own timeout answer has no type).
+      if (event['type'] == 'error' || (event['type'] == null && event['error'] != null)) {
+        final error = event['error'];
+        final kind = error is Map ? error['type'] : null;
+        throw CompanionLightError(
+          kind == 'overloaded_error' || kind == 'rate_limit_error'
+              ? CompanionLightFailure.busy
+              : CompanionLightFailure.server,
+          error is Map ? '${error['message']}' : '$error',
+        );
+      }
       switch (event['type']) {
         case 'content_block_delta':
           final delta = event['delta'];
           if (delta is Map && delta['type'] == 'text_delta' && delta['text'] is String) {
             yield delta['text'] as String;
           }
-        case 'error':
-          final error = event['error'];
-          final kind = error is Map ? error['type'] : null;
-          throw CompanionLightError(
-            kind == 'overloaded_error' || kind == 'rate_limit_error'
-                ? CompanionLightFailure.busy
-                : CompanionLightFailure.server,
-            error is Map ? '${error['message']}' : null,
-          );
         case 'message_stop':
           return;
       }
@@ -135,9 +139,39 @@ Stream<String> streamCompanionReply({
   } on Object catch (error) {
     throw CompanionLightError(CompanionLightFailure.network, '$error');
   }
+  // The connection ended before message_stop: the reply is incomplete, not done.
+  throw const CompanionLightError(CompanionLightFailure.network, 'ended before message_stop');
+}
+
+/// Up to [limit] bytes of an error body, within [wait]; never more, never longer.
+Future<String> _note(Stream<List<int>> body, {int limit = 512, Duration wait = const Duration(seconds: 2)}) async {
+  final bytes = <int>[];
+  final done = Completer<void>();
+  late final StreamSubscription<List<int>> sub;
+  sub = body.listen(
+    (chunk) {
+      bytes.addAll(chunk.take(limit - bytes.length));
+      if (bytes.length >= limit && !done.isCompleted) done.complete();
+    },
+    onError: (Object _) {
+      if (!done.isCompleted) done.complete();
+    },
+    onDone: () {
+      if (!done.isCompleted) done.complete();
+    },
+    cancelOnError: true,
+  );
+  await done.future.timeout(wait, onTimeout: () {});
+  unawaited(sub.cancel().catchError((Object _) {}));
+  return utf8.decode(bytes, allowMalformed: true);
 }
 
 /// The light conversation, kept on this phone.
+///
+/// One page holds the current one. Reads, saves and clears of the same file
+/// run one after another in the order they were asked for, across instances:
+/// a page that has just closed finishes its last save before the next page
+/// reads, and a clear cannot delete a save asked for after it.
 class CompanionLightHistory {
   CompanionLightHistory(this.file);
 
@@ -146,8 +180,20 @@ class CompanionLightHistory {
 
   final File file;
   final List<CompanionLine> _lines = [];
-  bool _loaded = false;
-  Future<void> _writes = Future.value();
+  Future<void>? _loading;
+
+  /// Bumped by [clear]: a read that started before it must not bring the old lines back.
+  int _epoch = 0;
+
+  /// The tail of each file's queue of reads and writes.
+  static final _queues = <String, Future<void>>{};
+
+  Future<void> _queued(Future<void> Function() op) {
+    final key = file.absolute.path;
+    final next = (_queues[key] ?? Future<void>.value()).then((_) => op()).catchError((Object _) {});
+    _queues[key] = next;
+    return next;
+  }
 
   /// Lines kept on disk; older ones fall off.
   static const keep = 80;
@@ -157,17 +203,21 @@ class CompanionLightHistory {
 
   List<CompanionLine> get lines => List.unmodifiable(_lines);
 
-  Future<void> load() async {
-    if (_loaded) return;
-    _loaded = true;
-    try {
-      final json = jsonDecode(await file.readAsString());
-      if (json is Map && json['lines'] is List) {
-        _lines.addAll([for (final line in json['lines'] as List) ?CompanionLine.fromJson(line)]);
+  /// Reads the file once; every caller waits for that same read, so the old
+  /// conversation always comes before anything added after it.
+  Future<void> load() {
+    final epoch = _epoch;
+    return _loading ??= _queued(() async {
+      try {
+        final json = jsonDecode(await file.readAsString());
+        if (epoch == _epoch && json is Map && json['lines'] is List) {
+          _lines.insertAll(0, [for (final line in json['lines'] as List) ?CompanionLine.fromJson(line)]);
+          if (_lines.length > keep) _lines.removeRange(0, _lines.length - keep);
+        }
+      } on Object {
+        // Missing or unreadable: she starts afresh rather than not talking.
       }
-    } on Object {
-      // Missing or unreadable: she starts afresh rather than not talking.
-    }
+    });
   }
 
   void add(CompanionLine line) {
@@ -197,29 +247,34 @@ class CompanionLightHistory {
     return out;
   }
 
-  Future<void> save() => _writes = _writes.then((_) async {
-    try {
-      await file.parent.create(recursive: true);
-      final temp = File('${file.path}.tmp');
-      await temp.writeAsString(
-        jsonEncode({
-          'v': 1,
-          'lines': [for (final line in _lines) line.toJson()],
-        }),
-      );
-      await temp.rename(file.path);
-    } on Object {
-      // A lost write costs her a little memory, never the conversation in progress.
-    }
-  });
+  /// Writes the conversation as it is now (taken at the call, not when the
+  /// write's turn comes).
+  Future<void> save() {
+    final json = jsonEncode({
+      'v': 1,
+      'lines': [for (final line in _lines) line.toJson()],
+    });
+    return _queued(() async {
+      try {
+        await file.parent.create(recursive: true);
+        final temp = File('${file.path}.tmp');
+        await temp.writeAsString(json);
+        await temp.rename(file.path);
+      } on Object {
+        // A lost write costs her a little memory, never the conversation in progress.
+      }
+    });
+  }
 
-  Future<void> clear() async {
+  Future<void> clear() {
+    _epoch++;
     _lines.clear();
-    await _writes;
-    try {
-      if (await file.exists()) await file.delete();
-    } on Object {
-      // Nothing to forget, or it can't be: the next save overwrites it.
-    }
+    return _queued(() async {
+      try {
+        if (await file.exists()) await file.delete();
+      } on Object {
+        // Nothing to forget, or it can't be: the next save overwrites it.
+      }
+    });
   }
 }
