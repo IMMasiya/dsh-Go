@@ -211,7 +211,7 @@
   "companionPersonaCallMeHelper": "Leave empty for nothing in particular",
   "companionPersonaText": "Persona",
   "companionPersonaTextLabel": "Who she is and how she talks",
-  "companionPersonaTextHelper": "Her personality, who she is, how she speaks. The app adds the format for her expressions and the safety lines itself: no need to write them, and they can't be removed.",
+  "companionPersonaTextHelper": "Her personality, who she is, how she talks, what she won't say: all yours to write or delete. Only the format of her expression marks is added by the app.",
   "companionPersonaReset": "Reset",
   "companionPersonaFooter": "Light mode uses it from her next reply; full mode tells her with your next message."
 }

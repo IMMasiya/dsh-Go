@@ -3167,7 +3167,7 @@
   "companionPersonaCallMeHelper": "留空就不特别称呼",
   "companionPersonaText": "人设",
   "companionPersonaTextLabel": "她是谁、怎么说话",
-  "companionPersonaTextHelper": "性格、身份、说话方式都写在这里。表情动作的格式和安全边界由 App 自动加上，不用写，也删不掉。",
+  "companionPersonaTextHelper": "性格、身份、说话方式、哪些话不说，都写在这里，删改随你。只有表情动作的标记格式由 App 自动加上。",
   "companionPersonaReset": "恢复默认",
   "companionPersonaFooter": "轻量模式下一句就生效；完整模式会在你下一条消息里把新设定告诉她。",
   "engineNewChatDefaultsLast": "新对话默认（上次选择）",
