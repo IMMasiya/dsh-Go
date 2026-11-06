@@ -4725,6 +4725,42 @@ class L10nZh extends L10n {
   String get companionMemorySaveFailed => '没保存上，再试一次吧';
 
   @override
+  String get companionStatusSnacking => '在吃点心';
+
+  @override
+  String get companionStatusPlaying => '在玩泡泡';
+
+  @override
+  String get companionStatusResting => '在软垫上歇着';
+
+  @override
+  String get companionSnack1 => '啊呜——好吃！';
+
+  @override
+  String get companionSnack2 => '是海苔味的，谢谢你。';
+
+  @override
+  String get companionSnack3 => '嗯……我还能再吃一块吗？';
+
+  @override
+  String get companionPlay1 => '嘿，接住啦！';
+
+  @override
+  String get companionPlay2 => '泡泡软软的，好好玩。';
+
+  @override
+  String get companionPlay3 => '它又飘回去了。';
+
+  @override
+  String get companionRest1 => '那我在这儿靠一会儿。';
+
+  @override
+  String get companionRest2 => '你说，我听着呢。';
+
+  @override
+  String get companionTouchHintHome => '点点贝壳、泡泡和软垫试试';
+
+  @override
   String get engineNewChatDefaultsLast => '新对话默认（上次选择）';
 
   @override

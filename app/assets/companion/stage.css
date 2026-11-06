@@ -18,9 +18,28 @@
   --reef-near: #123f68;
   --whale: #0f4a78;
   --vignette: 5, 20, 44;
+  /* Her corner of the seabed (Pro C204 palette). */
+  --floor-fill: #4c8a97;
+  --object-ink: #194860;
+  --shell-fill: #d8ebe6;
+  --shell-rim: #96c7cc;
+  --mat-fill: #6eb5a8;
+  --mat-shade: #468e92;
+  --bubble-fill: #b4dfe8;
+  --bubble-edge: #e2f7f2;
+  --warm: 242, 213, 172;
 }
 
 html[data-tod='dawn'] {
+  --floor-fill: #36798b;
+  --object-ink: #143d55;
+  --shell-fill: #d6e9dd;
+  --shell-rim: #92c4bd;
+  --mat-fill: #65a79e;
+  --mat-shade: #3e7e83;
+  --bubble-fill: #bde5e9;
+  --bubble-edge: #daf5f0;
+  --warm: 237, 207, 164;
   --top: #f3c9b8;
   --upper: #a9bfcf;
   --mid: #5f8db0;
@@ -36,6 +55,15 @@ html[data-tod='dawn'] {
 }
 
 html[data-tod='dusk'] {
+  --floor-fill: #627f94;
+  --object-ink: #293d61;
+  --shell-fill: #d9d1df;
+  --shell-rim: #aeabc8;
+  --mat-fill: #809ea8;
+  --mat-shade: #546f93;
+  --bubble-fill: #c9d5eb;
+  --bubble-edge: #eee6f5;
+  --warm: 235, 198, 186;
   --top: #e9a48f;
   --upper: #a77fa0;
   --mid: #5f5f96;
@@ -54,6 +82,15 @@ html[data-tod='dusk'] {
 }
 
 html[data-tod='night'] {
+  --floor-fill: #254c61;
+  --object-ink: #102c43;
+  --shell-fill: #93b6c6;
+  --shell-rim: #5d8fa6;
+  --mat-fill: #4d858f;
+  --mat-shade: #2c5e78;
+  --bubble-fill: #7db7cd;
+  --bubble-edge: #c2e6ec;
+  --warm: 213, 188, 158;
   --top: #27507f;
   --upper: #1c3f6d;
   --mid: #142f58;
@@ -214,6 +251,81 @@ html[data-ready='1'] #stage {
 
 #fx {
   pointer-events: none;
+}
+
+/* Her things. The stage canvas takes every touch and asks where they are. */
+.props {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+}
+
+.floor {
+  position: absolute;
+  left: 4%;
+  right: 4%;
+  bottom: 19%;
+  height: 12%;
+  border-radius: 50%;
+  background: radial-gradient(closest-side, var(--floor-fill), rgba(0, 0, 0, 0));
+  opacity: 0.6;
+}
+
+.prop {
+  position: absolute;
+  overflow: visible;
+}
+
+.prop .press {
+  transform-box: fill-box;
+  transform-origin: 50% 90%;
+  transition: transform 0.18s ease-out;
+}
+
+.prop.squash .press {
+  transform: scale(1.02, 0.95);
+  transition-duration: 0.09s;
+}
+
+#prop-snack {
+  width: 27%;
+  left: 4%;
+  bottom: 21.5%;
+}
+
+#prop-snack .dish {
+  transition: fill 0.6s ease;
+}
+
+/* A little warmth stays in the dish after a snack. */
+#prop-snack.warm .dish {
+  fill: rgb(var(--warm));
+}
+
+#prop-rest {
+  width: 34%;
+  right: 2%;
+  bottom: 22%;
+}
+
+#prop-rest.resting .press {
+  transform: scale(1.01, 0.96);
+  transition-duration: 0.6s;
+}
+
+#prop-play {
+  width: 16%;
+  right: 5%;
+  top: 46%;
+}
+
+#prop-play .ball {
+  transform-box: fill-box;
+  transform-origin: 50% 50%;
+}
+
+#prop-play.lively .ball circle:first-child {
+  stroke-width: 2.6;
 }
 
 .vignette {

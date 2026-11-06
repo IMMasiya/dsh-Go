@@ -40,6 +40,7 @@ import 'companion_memory_page.dart';
 import 'companion_stage.dart';
 
 const _hintDoneKey = 'companion_touch_hint_done';
+const _homeHintDoneKey = 'companion_home_hint_done';
 
 final _sentenceEnd = RegExp(r'[。！？!?…~～]');
 
@@ -77,6 +78,10 @@ class _CompanionPageState extends ConsumerState<CompanionPage> {
   String? _installError;
   bool _showTouchHint = false;
 
+  /// After the first touch: her shell, bubble and cushion can be tapped too.
+  bool _showHomeHint = false;
+  bool _homeHintDone = true;
+
   // The conversation.
   String? _sessionId;
   ProviderSubscription<ChatState>? _chat;
@@ -84,6 +89,9 @@ class _CompanionPageState extends ConsumerState<CompanionPage> {
   bool _running = false;
   bool _needsAttention = false;
   bool _asleep = false;
+
+  /// What she's doing in her corner (the stage's word for it).
+  String _home = 'idle';
   String? _baselineUser;
   bool _baselineSet = false;
   int _marksHandled = 0;
@@ -164,7 +172,13 @@ class _CompanionPageState extends ConsumerState<CompanionPage> {
 
   Future<void> _loadHint() async {
     final prefs = await SharedPreferences.getInstance();
-    if (mounted && prefs.getBool(_hintDoneKey) != true) setState(() => _showTouchHint = true);
+    if (!mounted) return;
+    final touchDone = prefs.getBool(_hintDoneKey) ?? false;
+    _homeHintDone = prefs.getBool(_homeHintDoneKey) ?? false;
+    setState(() {
+      _showTouchHint = !touchDone;
+      _showHomeHint = touchDone && !_homeHintDone;
+    });
   }
 
   /// Her state first (it knows when the person was last here, on any phone),
@@ -192,6 +206,7 @@ class _CompanionPageState extends ConsumerState<CompanionPage> {
     _vitals = snapshot;
     final v = snapshot.vitals;
     _stage.command('vitals', {'valence': v.valence, 'energy': v.energy, 'closeness': v.closeness});
+    _stage.command('activity', {'name': v.activity, 'remainingMs': snapshot.activityLeft.inMilliseconds});
   }
 
   /// One event at a time, against the state last read. A conflict reads again;
@@ -239,7 +254,10 @@ class _CompanionPageState extends ConsumerState<CompanionPage> {
 
   void _onTouch(String zone, String kind) {
     if (_showTouchHint) {
-      setState(() => _showTouchHint = false);
+      setState(() {
+        _showTouchHint = false;
+        _showHomeHint = !_homeHintDone;
+      });
       unawaited(SharedPreferences.getInstance().then((p) => p.setBool(_hintDoneKey, true)));
     }
     final l10n = context.l10n;
@@ -265,6 +283,51 @@ class _CompanionPageState extends ConsumerState<CompanionPage> {
     final line = choices[_random.nextInt(choices.length)];
     _lastLine = line;
     _say(line);
+  }
+
+  /// How long an activity lasts when this host can't keep it (the bridge's
+  /// own durations, docs/design/companion.md).
+  static const _localActivity = {
+    'snack': Duration(seconds: 45),
+    'play': Duration(seconds: 90),
+    'rest': Duration(minutes: 15),
+  };
+
+  void _onObject(String id) {
+    if (!_homeHintDone) {
+      _homeHintDone = true;
+      setState(() => _showHomeHint = false);
+      unawaited(SharedPreferences.getInstance().then((p) => p.setBool(_homeHintDoneKey, true)));
+    }
+    if (_vitals != null) {
+      _event(id);
+    } else {
+      // No host to keep it: the page's own guess, so her corner still answers.
+      _stage.command('activity', {'name': id, 'remainingMs': _localActivity[id]!.inMilliseconds});
+    }
+    _remember(switch (id) {
+      'snack' => '对方刚才给你吃了一块点心',
+      'play' => '对方刚才陪你玩了泡泡球',
+      _ => '对方刚才让你在海草软垫上歇一会儿',
+    });
+    if (_running || _sending) return;
+    final l10n = context.l10n;
+    final lines = switch (id) {
+      'snack' => [l10n.companionSnack1, l10n.companionSnack2, l10n.companionSnack3],
+      'play' => [l10n.companionPlay1, l10n.companionPlay2, l10n.companionPlay3],
+      _ => [l10n.companionRest1, l10n.companionRest2],
+    };
+    final choices = lines.where((l) => l != _lastLine).toList();
+    final line = choices[_random.nextInt(choices.length)];
+    _lastLine = line;
+    // After the snack has reached her, not before.
+    Future<void>.delayed(Duration(milliseconds: id == 'snack' ? 1700 : 900), () {
+      if (mounted && !_running && !_sending) _say(line);
+    });
+  }
+
+  void _onActivity(String name) {
+    if (mounted && name != _home) setState(() => _home = name);
   }
 
   void _onMood(String mood) {
@@ -322,7 +385,12 @@ class _CompanionPageState extends ConsumerState<CompanionPage> {
     if (_sending || (_running && _bubble == null)) return CompanionActivity.thinking;
     if (_running) return CompanionActivity.speaking;
     if (_focus.hasFocus || _voice.active) return CompanionActivity.listening;
-    return CompanionActivity.idle;
+    return switch (_home) {
+      'snack' => CompanionActivity.snacking,
+      'play' => CompanionActivity.playing,
+      'rest' => CompanionActivity.resting,
+      _ => CompanionActivity.idle,
+    };
   }
 
   // ── Talking ──────────────────────────────────────────────────────────────
@@ -710,6 +778,8 @@ class _CompanionPageState extends ConsumerState<CompanionPage> {
       onTouch: _onTouch,
       onWake: () => _say(l10n.companionWake),
       onMood: _onMood,
+      onObject: _onObject,
+      onActivity: _onActivity,
     );
     return Scaffold(
       backgroundColor: const Color(0xFF0D2F55),
@@ -776,7 +846,9 @@ class _CompanionPageState extends ConsumerState<CompanionPage> {
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   if (_showTouchHint && _bubble == null)
-                    CompanionPill(icon: AppIcons.tip, label: l10n.companionTouchHint),
+                    CompanionPill(icon: AppIcons.tip, label: l10n.companionTouchHint)
+                  else if (_showHomeHint && _bubble == null)
+                    CompanionPill(icon: AppIcons.tip, label: l10n.companionTouchHintHome),
                   if (_needsAttention)
                     CompanionPill(
                       icon: AppIcons.toConfirm,

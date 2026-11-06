@@ -30,6 +30,11 @@
   const reefFar = document.querySelector('.reef.far');
   const reefNear = document.querySelector('.reef.near');
   const sun = document.querySelector('.sun');
+  const props = {
+    snack: document.getElementById('prop-snack'),
+    play: document.getElementById('prop-play'),
+    rest: document.getElementById('prop-rest'),
+  };
 
   const post = (message) => {
     try {
@@ -440,6 +445,7 @@
 
   function gazeTarget(now) {
     if (life.pointer) return life.pointer;
+    if (home.gaze) return home.gaze;
     if (life.gazeHold) return life.gazeHold;
     switch (life.mood) {
       case 'thinking':
@@ -456,7 +462,12 @@
     if (now > life.wanderAt) {
       // The better she knows you, the more she looks at you instead of away.
       const glance = Math.random() < 0.22 * (1 - life.vitals.closeness * 0.6);
-      life.wander = glance ? [rand(-0.7, 0.7), rand(-0.3, 0.45)] : [rand(-0.1, 0.1), rand(-0.02, 0.1)];
+      const toWindow = glance && Math.random() < 0.3;
+      life.wander = toWindow
+        ? [rand(-0.85, -0.65), rand(0.45, 0.65)]
+        : glance
+          ? [rand(-0.7, 0.7), rand(-0.3, 0.45)]
+          : [rand(-0.1, 0.1), rand(-0.02, 0.1)];
       life.wanderAt = now + (glance ? rand(900, 1800) : rand(2600, 7000));
       if (glance && now > life.blink.next - 2500) life.blink.next = now; // eyes blink as they jump
     }
@@ -560,6 +571,8 @@
         m.add('ParamMouthForm', life.pat);
       }
 
+      homePose(m, now, dt);
+
       // Actions add on top of all that.
       for (const [name, run] of life.actions) {
         const p = (now - run.start) / run.action.ms;
@@ -625,6 +638,214 @@
     life.wanderAt = 0;
   }
 
+  // ── Home (Pro C204): a shell dish, a seaweed cushion, a bubble ball ──────
+  //
+  // A tap gives an immediate short show (no network, no model) and tells
+  // Flutter, which sends snack / play / rest to the Host. What lasts afterwards
+  // (a warm dish, a pressed cushion, her leaning back) follows the activity the
+  // Host answers with, or the page's guess when this host can't keep it.
+
+  const SHOW_MS = { snack: 3200, play: 3600, rest: 1200 };
+
+  const home = {
+    activity: 'idle',
+    until: 0,
+    show: null, // { kind, start, familiar }
+    gaze: null,
+    rest: 0, // 0–1, eased
+    reach: 0, // model units she leans toward the dish
+    ball: { x: 0, y: 0, s: 1 },
+  };
+
+  function propRect(name) {
+    return props[name]?.getBoundingClientRect() ?? null;
+  }
+
+  function propAt(x, y, names) {
+    for (const name of names) {
+      const r = propRect(name);
+      if (!r) continue;
+      // A little more than the drawing: fingers are bigger than shells.
+      const pad = 10;
+      if (x >= r.left - pad && x <= r.right + pad && y >= r.top - pad && y <= r.bottom + pad) return name;
+    }
+    return null;
+  }
+
+  function squash(name) {
+    const el = props[name];
+    if (!el) return;
+    el.classList.add('squash');
+    setTimeout(() => el.classList.remove('squash'), 160);
+  }
+
+  function useProp(name) {
+    squash(name);
+    post({ type: 'object', id: name });
+    // One show at a time: another tap meanwhile is only acknowledged.
+    if (home.show || REDUCED) return;
+    home.show = { kind: name, start: performance.now(), familiar: life.vitals.closeness };
+    if (name === 'rest') setActivity('rest', null);
+  }
+
+  function setActivity(name, remainingMs) {
+    const known = ['idle', 'snack', 'play', 'rest'].includes(name) ? name : 'idle';
+    if (known !== home.activity) post({ type: 'activity', name: known });
+    home.activity = known;
+    home.until = known === 'idle' || remainingMs == null ? (known === 'idle' ? 0 : home.until || performance.now() + 15 * 60000) : performance.now() + Math.max(0, remainingMs);
+    props.snack?.classList.toggle('warm', known === 'snack');
+    props.play?.classList.toggle('lively', known === 'play');
+    props.rest?.classList.toggle('resting', known === 'rest');
+  }
+
+  function toGazeFromClient(x, y) {
+    return toGaze(x, y);
+  }
+
+  function center(rect) {
+    return [rect.left + rect.width / 2, rect.top + rect.height / 2];
+  }
+
+  /** Where her mouth roughly is on screen, for the snack to arrive at. */
+  function mouthOnScreen() {
+    const [x, y] = toScreen(0, 0.52);
+    return [x - 22, y + 10];
+  }
+
+  function homePose(m, now, dt) {
+    if (home.activity !== 'idle' && home.until && now > home.until) setActivity('idle', 0);
+    home.rest = ease(home.rest, home.activity === 'rest' ? 1 : 0, home.activity === 'rest' ? 1.6 : 3, dt);
+    if (home.rest > 0.01) {
+      // Leaning back on the cushion: a little to the right, head a little low.
+      m.add('ParamBodyAngleZ', -6 * home.rest);
+      m.add('ParamAngleZ', -5 * home.rest);
+      m.add('ParamAngleY', -3 * home.rest);
+      m.add('ParamBodyAngleX', 4 * home.rest);
+    }
+    const show = home.show;
+    if (!show) {
+      home.gaze = null;
+      return;
+    }
+    const t = (now - show.start) / SHOW_MS[show.kind];
+    if (t >= 1) {
+      home.show = null;
+      home.gaze = null;
+      home.reach = 0;
+      resetBall();
+      return;
+    }
+    if (show.kind === 'snack') snackShow(m, show, t);
+    else if (show.kind === 'play') playShow(m, show, t);
+    else restShow(show, t);
+  }
+
+  const smooth = (u) => {
+    const k = clamp(u, 0, 1);
+    return k * k * (3 - 2 * k);
+  };
+
+  // 3.2 s: look at the dish, a snack floats up, gone with a nod, look back.
+  function snackShow(m, show, t) {
+    const dish = propRect('snack');
+    const lookFirst = show.familiar >= 0.025 && t < 0.08;
+    if (lookFirst) {
+      home.gaze = [0, 0.05];
+    } else if (t < 0.5 && dish) {
+      home.gaze = toGazeFromClient(...center(dish));
+    } else if (t < 0.66) {
+      home.gaze = toGazeFromClient(...mouthOnScreen());
+    } else {
+      home.gaze = [0, 0.05];
+    }
+    if (!show.snack && t > 0.06 && dish) {
+      show.snack = true;
+      const from = [dish.left + dish.width * 0.5, dish.top + dish.height * 0.42];
+      const warm = getComputedStyle(document.documentElement).getPropertyValue('--warm').trim() || '242, 213, 172';
+      scene.marks.snack(from, mouthOnScreen(), `rgb(${warm})`);
+    }
+    const toward = smooth((t - 0.15) / 0.3) * (1 - smooth((t - 0.62) / 0.25));
+    m.add('ParamBodyAngleX', -4 * toward);
+    home.reach = -0.03 * toward;
+    if (!show.ate && t > 0.5) {
+      show.ate = true;
+      playAction('nodSmall');
+      setEmotion('happy', 1800);
+      life.tailKick = Math.max(life.tailKick, 0.6);
+      const [x, y] = mouthOnScreen();
+      scene.marks.sparkles(x + 20, y - 20, 2);
+    }
+  }
+
+  // 3.6 s: the ball goes to her, she watches it, it bobs, it comes back.
+  function playShow(m, show, t) {
+    const el = props.play;
+    const rect = el ? el.getBoundingClientRect() : null;
+    if (!el || !rect) return;
+    if (!show.home) show.home = center(rect);
+    const [hx, hy] = show.home;
+    const [fx, fy] = toScreen(0.2, 0.62); // beside her face, never on it
+    const near = [fx + 24 - hx, fy - hy];
+    const back = [near[0] * 0.55, near[1] * 0.45 + 18];
+    let dx = 0;
+    let dy = 0;
+    let s = 1;
+    if (t < 0.25) {
+      const k = smooth((t - 0.05) / 0.2);
+      dx = near[0] * k;
+      dy = near[1] * k - Math.sin(k * Math.PI) * 28;
+    } else if (t < 0.5) {
+      const k = smooth((t - 0.25) / 0.25);
+      dx = lerp(near[0], back[0], k);
+      dy = lerp(near[1], back[1], k) - Math.sin(k * Math.PI) * 12;
+    } else if (t < 0.75) {
+      const k = smooth((t - 0.5) / 0.25);
+      dx = lerp(back[0], 0, k);
+      dy = lerp(back[1], 0, k);
+      // Handing it back, when she knows you well.
+      if (show.familiar >= 0.095) s = 1 + 0.05 * Math.sin(k * Math.PI);
+    }
+    setBall(dx, dy, s);
+    home.gaze = toGazeFromClient(hx + dx, hy + dy);
+    if (t > 0.75) home.gaze = [0, 0.05];
+    m.add('ParamBodyAngleX', 3 * Math.sin(clamp(t / 0.5, 0, 1) * Math.PI));
+    if (!show.caught && t > 0.3) {
+      show.caught = true;
+      life.tailKick = 1;
+      setEmotion('happy', 1600);
+      hop(0.5);
+    }
+    if (!show.trail && t > 0.75) {
+      show.trail = true;
+      scene.marks.bubbles(hx, hy - 10, 3);
+    }
+  }
+
+  // 1.2 s: the cushion takes her weight; what lasts is the activity.
+  function restShow(show, t) {
+    if (!show.sighed && t > 0.3) {
+      show.sighed = true;
+      setEmotion('sleepy', 2600);
+    }
+    home.gaze = t < 0.5 ? [0.4, -0.3] : null;
+  }
+
+  function setBall(dx, dy, s) {
+    const b = home.ball;
+    if (Math.abs(b.x - dx) < 0.3 && Math.abs(b.y - dy) < 0.3 && Math.abs(b.s - s) < 0.003) return;
+    b.x = dx;
+    b.y = dy;
+    b.s = s;
+    props.play.style.transform = `translate3d(${dx.toFixed(1)}px, ${dy.toFixed(1)}px, 0) scale(${s.toFixed(3)})`;
+  }
+
+  // Always clear: the last frame can leave it at exactly 0,0,1 with the
+  // inline transform still set, and that would win over the CSS states.
+  function resetBall() {
+    home.ball = { x: 0, y: 0, s: 1 };
+    if (props.play) props.play.style.transform = '';
+  }
+
   // ── Camera ──────────────────────────────────────────────────────────────
 
   const camera = { zoom: 1.2, x: 0, y: 0 };
@@ -633,11 +854,12 @@
     const aspect = canvas.height / canvas.width;
     // She floats: a slow lift and drift, on top of any hop.
     const float = REDUCED ? 0 : Math.sin(life.time * 0.85) * 0.011;
-    const hopY = life.hop.x * 0.12 + float;
+    const hopY = life.hop.x * 0.12 + float - home.rest * 0.025;
+    const lean = home.rest * 0.07 + home.reach;
     const m = new Fw.CubismMatrix44();
     const sx = camera.zoom * aspect;
     const sy = camera.zoom;
-    m.setMatrix(new Float32Array([sx, 0, 0, 0, 0, sy, 0, 0, 0, 0, 1, 0, -camera.x * sx, -camera.y * sy + hopY, 0, 1]));
+    m.setMatrix(new Float32Array([sx, 0, 0, 0, 0, sy, 0, 0, 0, 0, 1, 0, (lean - camera.x) * sx, -camera.y * sy + hopY, 0, 1]));
     return m;
   }
 
@@ -648,7 +870,7 @@
     const cy = 1 - ((clientY - rect.top) / rect.height) * 2;
     const aspect = canvas.height / canvas.width;
     return {
-      x: cx / (camera.zoom * aspect) + camera.x,
+      x: cx / (camera.zoom * aspect) + camera.x - (home.rest * 0.07 + home.reach),
       y: cy / camera.zoom + camera.y,
     };
   }
@@ -657,7 +879,7 @@
   function toScreen(x, y) {
     const rect = canvas.getBoundingClientRect();
     const aspect = canvas.height / (canvas.width || 1);
-    const cx = (x - camera.x) * camera.zoom * aspect;
+    const cx = (x - camera.x + home.rest * 0.07 + home.reach) * camera.zoom * aspect;
     const cy = (y - camera.y) * camera.zoom;
     return [((cx + 1) / 2) * rect.width, ((1 - cy) / 2) * rect.height];
   }
@@ -719,12 +941,16 @@
     }
     if (pointers.size > 2) return;
     const point = toModel(e.clientX, e.clientY);
+    const front = propAt(e.clientX, e.clientY, ['snack', 'play']);
+    const onHer = !front && model?.hit(point.x, point.y);
     press = {
       id: e.pointerId,
       x: e.clientX,
       y: e.clientY,
-      at: performance.now(),
-      zone: model?.hit(point.x, point.y) ? zoneAt(point.x, point.y) : null,
+      // Event time, not handler time: a slow frame must not turn a tap into a hold.
+      at: e.timeStamp,
+      prop: front ?? (onHer ? null : propAt(e.clientX, e.clientY, ['rest'])),
+      zone: onHer ? zoneAt(point.x, point.y) : null,
       travel: 0,
       lastX: e.clientX,
       lastY: e.clientY,
@@ -772,10 +998,12 @@
   function endPointer(e) {
     if (!pointers.delete(e.pointerId)) return;
     if (!press || press.id !== e.pointerId) return;
-    const quick = performance.now() - press.at < 420 && press.travel < 14;
+    const quick = e.timeStamp - press.at < 420 && press.travel < 14;
     if (life.patting) {
       life.patting = false;
       life.emotionUntil = performance.now() + 1600;
+    } else if (quick && press.prop) {
+      useProp(press.prop);
     } else if (quick && press.zone) {
       tap(press.zone, e.clientX);
     }
@@ -851,6 +1079,7 @@
         closeness: unit(closeness, life.vitals.closeness),
       };
     },
+    activity: ({ name, remainingMs }) => setActivity(name, remainingMs),
     pause: () => pause(),
     resume: () => resume(),
   };
@@ -886,6 +1115,7 @@
       life.mood === 'speaking' ||
       life.speech > 0 ||
       life.patting ||
+      home.show !== null ||
       scene.busy();
     const target = life.sleep > 0.9 ? 12 : busy ? 60 : 30;
     if (ts - last < 1000 / target - 2) return;

@@ -32,7 +32,7 @@ GlassStyle _deepGlass(BuildContext context) =>
         .copyWith(fill: const Color(0xC40E2740), fallbackFill: const Color(0xF20E2740), blurSigma: 22, saturation: 1.3);
 
 /// What she's doing, for the line under her name.
-enum CompanionActivity { idle, listening, thinking, speaking, sleeping, away }
+enum CompanionActivity { idle, listening, thinking, speaking, sleeping, away, snacking, playing, resting }
 
 class CompanionRoundButton extends StatelessWidget {
   const CompanionRoundButton({super.key, required this.icon, required this.label, required this.onTap});
@@ -75,12 +75,18 @@ class CompanionNamePlate extends StatelessWidget {
       CompanionActivity.speaking => l10n.companionStatusSpeaking,
       CompanionActivity.sleeping => l10n.companionStatusSleeping,
       CompanionActivity.away => l10n.companionStatusAway,
+      CompanionActivity.snacking => l10n.companionStatusSnacking,
+      CompanionActivity.playing => l10n.companionStatusPlaying,
+      CompanionActivity.resting => l10n.companionStatusResting,
     };
     final dot = switch (activity) {
       CompanionActivity.thinking || CompanionActivity.speaking => theme.colorScheme.primary,
       CompanionActivity.listening => const Color(0xFF7BE0B8),
       CompanionActivity.sleeping || CompanionActivity.away => colors.textTertiary,
       CompanionActivity.idle => const Color(0xFF9FD8F2),
+      CompanionActivity.snacking => const Color(0xFFF2D5AC),
+      CompanionActivity.playing => const Color(0xFFB4DFE8),
+      CompanionActivity.resting => const Color(0xFF6EB5A8),
     };
     return Semantics(
       label: '$name，$status',

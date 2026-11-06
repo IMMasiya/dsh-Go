@@ -32,6 +32,17 @@ Future<void> _settle(WidgetTester tester) async {
   }
 }
 
+/// Real file work (the pack check) takes longer on a busy machine: wait for
+/// the stage itself, not a fixed number of rounds.
+Future<CompanionStageEvents> _stageUp(WidgetTester tester, CompanionStageEvents? Function() events) async {
+  for (var i = 0; i < 100 && events() == null; i++) {
+    await _settle(tester);
+  }
+  final up = events();
+  expect(up, isNotNull, reason: 'the stage was never built');
+  return up!;
+}
+
 void main() {
   setUp(() => SharedPreferences.setMockInitialValues({}));
 
@@ -155,8 +166,7 @@ void main() {
           ),
         ),
       );
-      await _settle(tester);
-      expect(stageEvents, isNotNull);
+      await _stageUp(tester, () => stageEvents);
       expect(find.text('她正在游过来…'), findsOneWidget);
 
       stageEvents!.onReady();
@@ -175,6 +185,55 @@ void main() {
       expect(find.text('睡着了'), findsOneWidget);
 
       // Leave cleanly: timers cancelled with the page.
+      await tester.pumpWidget(_app(const SizedBox()));
+      await tester.pump(const Duration(seconds: 10));
+    });
+
+    testWidgets('her things answer without a host: activity, a line, the status', (tester) async {
+      SharedPreferences.setMockInitialValues({'companion_touch_hint_done': true});
+      final commands = <(String, Map<String, Object?>)>[];
+      CompanionStageEvents? stageEvents;
+      await tester.pumpWidget(
+        _app(
+          CompanionPage(
+            storeOverride: installedStore(),
+            stageBuilder: (controller, events) {
+              stageEvents = events;
+              return const SizedBox.expand();
+            },
+            stageController: CompanionStageController(sink: (type, args) => commands.add((type, args))),
+          ),
+        ),
+      );
+      await _stageUp(tester, () => stageEvents);
+      stageEvents!.onReady();
+      await _settle(tester);
+      // The greeting first; then the hint for her things.
+      await tester.pump(const Duration(seconds: 8));
+      await _settle(tester);
+      expect(find.text('点点贝壳、泡泡和软垫试试'), findsOneWidget);
+
+      commands.clear();
+      stageEvents!.onObject('snack');
+      await tester.pump(const Duration(milliseconds: 100));
+      final activity = commands.where((c) => c.$1 == 'activity').single.$2;
+      expect(activity['name'], 'snack');
+      expect(activity['remainingMs'], 45000);
+      expect(find.text('点点贝壳、泡泡和软垫试试'), findsNothing);
+      // Her line waits for the snack to reach her.
+      expect(commands.where((c) => c.$1 == 'say'), isEmpty);
+      await tester.pump(const Duration(milliseconds: 1800));
+      expect(commands.where((c) => c.$1 == 'say'), isNotEmpty);
+
+      stageEvents!.onActivity('snack');
+      await tester.pump(const Duration(milliseconds: 100));
+      expect(find.text('在吃点心'), findsOneWidget);
+      stageEvents!.onActivity('idle');
+      // The plate cross-fades its label.
+      await tester.pump(const Duration(milliseconds: 100));
+      await tester.pump(const Duration(milliseconds: 600));
+      expect(find.text('在吃点心'), findsNothing);
+
       await tester.pumpWidget(_app(const SizedBox()));
       await tester.pump(const Duration(seconds: 10));
     });

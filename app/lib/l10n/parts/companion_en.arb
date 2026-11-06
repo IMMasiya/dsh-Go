@@ -83,5 +83,17 @@
   "companionMemoryRetry": "Retry",
   "companionMemoryConflict": "It was just changed elsewhere, so it's been refreshed",
   "companionMemoryFull": "The list is full. Delete some first",
-  "companionMemorySaveFailed": "Couldn't save. Try again?"
+  "companionMemorySaveFailed": "Couldn't save. Try again?",
+  "companionStatusSnacking": "Having a snack",
+  "companionStatusPlaying": "Playing with the bubble",
+  "companionStatusResting": "Resting on the cushion",
+  "companionSnack1": "Nom! So good!",
+  "companionSnack2": "Seaweed flavour. Thank you.",
+  "companionSnack3": "Mm... can I have another?",
+  "companionPlay1": "Hey, got it!",
+  "companionPlay2": "The bubble is so squishy. Fun!",
+  "companionPlay3": "It floated back again.",
+  "companionRest1": "I'll lean here for a while, then.",
+  "companionRest2": "Go on, I'm listening.",
+  "companionTouchHintHome": "Try tapping the shell, the bubble and the cushion"
 }

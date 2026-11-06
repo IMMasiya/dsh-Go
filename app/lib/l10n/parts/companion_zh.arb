@@ -111,5 +111,17 @@
   "companionMemoryRetry": "重试",
   "companionMemoryConflict": "刚才另一处改过了，已经刷新",
   "companionMemoryFull": "记满了，先删掉一些吧",
-  "companionMemorySaveFailed": "没保存上，再试一次吧"
+  "companionMemorySaveFailed": "没保存上，再试一次吧",
+  "companionStatusSnacking": "在吃点心",
+  "companionStatusPlaying": "在玩泡泡",
+  "companionStatusResting": "在软垫上歇着",
+  "companionSnack1": "啊呜——好吃！",
+  "companionSnack2": "是海苔味的，谢谢你。",
+  "companionSnack3": "嗯……我还能再吃一块吗？",
+  "companionPlay1": "嘿，接住啦！",
+  "companionPlay2": "泡泡软软的，好好玩。",
+  "companionPlay3": "它又飘回去了。",
+  "companionRest1": "那我在这儿靠一会儿。",
+  "companionRest2": "你说，我听着呢。",
+  "companionTouchHintHome": "点点贝壳、泡泡和软垫试试"
 }

@@ -5021,6 +5021,42 @@ class L10nEn extends L10n {
   String get companionMemorySaveFailed => 'Couldn\'t save. Try again?';
 
   @override
+  String get companionStatusSnacking => 'Having a snack';
+
+  @override
+  String get companionStatusPlaying => 'Playing with the bubble';
+
+  @override
+  String get companionStatusResting => 'Resting on the cushion';
+
+  @override
+  String get companionSnack1 => 'Nom! So good!';
+
+  @override
+  String get companionSnack2 => 'Seaweed flavour. Thank you.';
+
+  @override
+  String get companionSnack3 => 'Mm... can I have another?';
+
+  @override
+  String get companionPlay1 => 'Hey, got it!';
+
+  @override
+  String get companionPlay2 => 'The bubble is so squishy. Fun!';
+
+  @override
+  String get companionPlay3 => 'It floated back again.';
+
+  @override
+  String get companionRest1 => 'I\'ll lean here for a while, then.';
+
+  @override
+  String get companionRest2 => 'Go on, I\'m listening.';
+
+  @override
+  String get companionTouchHintHome => 'Try tapping the shell, the bubble and the cushion';
+
+  @override
   String get engineNewChatDefaultsLast => 'New chat defaults (last choice)';
 
   @override

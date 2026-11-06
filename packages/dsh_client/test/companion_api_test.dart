@@ -33,6 +33,19 @@ void main() {
     expect(snapshot.vitals.activityUntil, isNull);
   });
 
+  test('what is left of her activity is counted on the host clock', () {
+    CompanionSnapshot snap(String activity, int? until) => CompanionSnapshot.fromJson({
+      'storeId': 's',
+      'revision': 1,
+      'asOf': 1793899800000,
+      'state': {'activity': activity, 'activityUntil': until},
+    })!;
+    expect(snap('snack', 1793899800000 + 30000).activityLeft, const Duration(seconds: 30));
+    expect(snap('rest', 1793899800000 - 5000).activityLeft, Duration.zero);
+    expect(snap('idle', 1793899800000 + 30000).activityLeft, Duration.zero);
+    expect(snap('play', null).activityLeft, Duration.zero);
+  });
+
   test('a snapshot without identity is not one', () {
     expect(CompanionSnapshot.fromJson({'revision': 1}), isNull);
     expect(CompanionSnapshot.fromJson({'storeId': 'x'}), isNull);

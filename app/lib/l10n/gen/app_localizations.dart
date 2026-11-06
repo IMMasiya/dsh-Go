@@ -8726,6 +8726,78 @@ abstract class L10n {
   /// **'没保存上，再试一次吧'**
   String get companionMemorySaveFailed;
 
+  /// No description provided for @companionStatusSnacking.
+  ///
+  /// In zh, this message translates to:
+  /// **'在吃点心'**
+  String get companionStatusSnacking;
+
+  /// No description provided for @companionStatusPlaying.
+  ///
+  /// In zh, this message translates to:
+  /// **'在玩泡泡'**
+  String get companionStatusPlaying;
+
+  /// No description provided for @companionStatusResting.
+  ///
+  /// In zh, this message translates to:
+  /// **'在软垫上歇着'**
+  String get companionStatusResting;
+
+  /// No description provided for @companionSnack1.
+  ///
+  /// In zh, this message translates to:
+  /// **'啊呜——好吃！'**
+  String get companionSnack1;
+
+  /// No description provided for @companionSnack2.
+  ///
+  /// In zh, this message translates to:
+  /// **'是海苔味的，谢谢你。'**
+  String get companionSnack2;
+
+  /// No description provided for @companionSnack3.
+  ///
+  /// In zh, this message translates to:
+  /// **'嗯……我还能再吃一块吗？'**
+  String get companionSnack3;
+
+  /// No description provided for @companionPlay1.
+  ///
+  /// In zh, this message translates to:
+  /// **'嘿，接住啦！'**
+  String get companionPlay1;
+
+  /// No description provided for @companionPlay2.
+  ///
+  /// In zh, this message translates to:
+  /// **'泡泡软软的，好好玩。'**
+  String get companionPlay2;
+
+  /// No description provided for @companionPlay3.
+  ///
+  /// In zh, this message translates to:
+  /// **'它又飘回去了。'**
+  String get companionPlay3;
+
+  /// No description provided for @companionRest1.
+  ///
+  /// In zh, this message translates to:
+  /// **'那我在这儿靠一会儿。'**
+  String get companionRest1;
+
+  /// No description provided for @companionRest2.
+  ///
+  /// In zh, this message translates to:
+  /// **'你说，我听着呢。'**
+  String get companionRest2;
+
+  /// No description provided for @companionTouchHintHome.
+  ///
+  /// In zh, this message translates to:
+  /// **'点点贝壳、泡泡和软垫试试'**
+  String get companionTouchHintHome;
+
   /// No description provided for @engineNewChatDefaultsLast.
   ///
   /// In zh, this message translates to:

@@ -66,7 +66,7 @@ window.companionScene = (() => {
     const fadeOut = Math.min(1, (s.life - s.age) / Math.max(0.2, s.life * 0.4));
     ctx.globalAlpha = Math.max(0, Math.min(fadeIn, fadeOut)) * (s.alpha ?? 1);
     const grow = s.pop ? 1 + 0.35 * Math.max(0, 1 - s.age / 0.22) * Math.sin(Math.min(1, s.age / 0.22) * Math.PI) : 1;
-    const appear = s.pop ? Math.min(1, s.age / 0.12) : 1;
+    const appear = (s.pop ? Math.min(1, s.age / 0.12) : 1) * (s.shrink ? 1 - 0.35 * Math.max(0, (s.age / s.life - 0.7) / 0.3) : 1);
     ctx.save();
     ctx.translate(s.x, s.y);
     ctx.rotate(s.rot);
@@ -107,6 +107,26 @@ window.companionScene = (() => {
         ctx.arc(0, 0, 10, 0, Math.PI * 2);
         ctx.stroke();
         break;
+      case 'snack': {
+        ctx.fillStyle = s.color;
+        ctx.strokeStyle = 'rgba(120, 72, 40, 0.55)';
+        ctx.lineWidth = 1.2;
+        ctx.beginPath();
+        ctx.arc(0, 0, 7, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+        ctx.fillStyle = 'rgba(120, 72, 40, 0.5)';
+        for (const [cx, cy] of [[-2.5, -1.5], [2, 1.5], [-0.5, 3]]) {
+          ctx.beginPath();
+          ctx.arc(cx, cy, 0.9, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        ctx.fillStyle = 'rgba(255,255,255,0.55)';
+        ctx.beginPath();
+        ctx.ellipse(-2.6, -3, 2, 1.1, -0.5, 0, Math.PI * 2);
+        ctx.fill();
+        break;
+      }
       case 'dot':
         ctx.fillStyle = 'rgba(255,255,255,0.92)';
         ctx.beginPath();
@@ -181,6 +201,27 @@ window.companionScene = (() => {
     note(x, y) {
       add({ kind: 'glyph', text: '♪', color: '#6f8ff0', x: x + rand(-6, 10), y, vx: rand(10, 22), vy: rand(-30, -22), scale: rand(0.65, 0.9), rot: rand(-0.2, 0.2), spin: rand(-0.6, 0.6), life: 1.9 });
     },
+    /** A snack that floats from [from] to [to] along a soft arc, shrinking at the end. */
+    snack(from, to, color) {
+      const mid = [(from[0] + to[0]) / 2 + 30, Math.min(from[1], to[1]) - 70];
+      add({
+        kind: 'snack',
+        color,
+        life: 1.35,
+        pop: true,
+        path: (t) => {
+          const k = t * t * (3 - 2 * t);
+          const a = 1 - k;
+          return [a * a * from[0] + 2 * a * k * mid[0] + k * k * to[0], a * a * from[1] + 2 * a * k * mid[1] + k * k * to[1]];
+        },
+        shrink: true,
+      });
+    },
+    bubbles(x, y, count = 3) {
+      for (let i = 0; i < count; i++) {
+        add({ kind: 'ring', x: x + rand(-10, 10), y: y + rand(-6, 6), vx: rand(-6, 6), vy: rand(-46, -28), scale: rand(0.28, 0.5), life: rand(0.9, 1.4), pop: false });
+      }
+    },
     ripple(x, y) {
       add({ kind: 'ring', x, y, scale: 0.6, grow: 3.6, life: 0.55, pop: false });
     },
@@ -215,9 +256,13 @@ window.companionScene = (() => {
         sprites.splice(i, 1);
         continue;
       }
-      s.vy += s.gravity * dt;
-      s.x += s.vx * dt + (s.kind === 'heart' ? Math.sin(s.age * 5) * 0.25 : 0);
-      s.y += s.vy * dt;
+      if (s.path) {
+        [s.x, s.y] = s.path(s.age / s.life);
+      } else {
+        s.vy += s.gravity * dt;
+        s.x += s.vx * dt + (s.kind === 'heart' ? Math.sin(s.age * 5) * 0.25 : 0);
+        s.y += s.vy * dt;
+      }
       s.rot += s.spin * dt;
       if (s.grow) s.scale += s.grow * dt;
     }

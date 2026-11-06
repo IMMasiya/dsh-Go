@@ -46,6 +46,8 @@ class CompanionStageEvents {
     required this.onTouch,
     required this.onWake,
     required this.onMood,
+    required this.onObject,
+    required this.onActivity,
   });
 
   final VoidCallback onReady;
@@ -53,6 +55,12 @@ class CompanionStageEvents {
   final void Function(String zone, String kind) onTouch;
   final VoidCallback onWake;
   final ValueChanged<String> onMood;
+
+  /// One of her things was tapped: `snack`, `play` or `rest`.
+  final ValueChanged<String> onObject;
+
+  /// What she's doing changed (also when it ran out): `idle` / `snack` / `play` / `rest`.
+  final ValueChanged<String> onActivity;
 }
 
 class CompanionStage extends StatefulWidget {
@@ -146,6 +154,12 @@ class _CompanionStageState extends State<CompanionStage> with WidgetsBindingObse
       case 'mood':
         final mood = message['mood'];
         if (mood is String) events.onMood(mood);
+      case 'object':
+        final id = message['id'];
+        if (id is String && const {'snack', 'play', 'rest'}.contains(id)) events.onObject(id);
+      case 'activity':
+        final name = message['name'];
+        if (name is String) events.onActivity(name);
     }
   }
 

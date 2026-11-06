@@ -38,8 +38,7 @@ class CompanionVitals {
 
   factory CompanionVitals.fromJson(Object? json) {
     final map = asMapOrEmpty(json);
-    double unit(String key, double fallback) =>
-        (asNum(map[key])?.toDouble() ?? fallback).clamp(0, 1);
+    double unit(String key, double fallback) => (asNum(map[key])?.toDouble() ?? fallback).clamp(0, 1);
     return CompanionVitals(
       valence: unit('valence', 0.25),
       energy: unit('energy', 0.75),
@@ -75,6 +74,7 @@ class CompanionSnapshot {
     required this.revision,
     required this.memoryRevision,
     required this.vitals,
+    this.asOf,
     this.memories = false,
     this.automaticRecall = false,
   });
@@ -90,6 +90,7 @@ class CompanionSnapshot {
       revision: revision,
       memoryRevision: asInt(map['memoryRevision']) ?? 0,
       vitals: CompanionVitals.fromJson(map['state']),
+      asOf: _time(map['asOf']),
       memories: capabilities['memories'] == true,
       automaticRecall: capabilities['automaticRecall'] == true,
     );
@@ -99,6 +100,19 @@ class CompanionSnapshot {
   final int revision;
   final int memoryRevision;
   final CompanionVitals vitals;
+
+  /// The Host's clock when it projected [vitals].
+  final DateTime? asOf;
+
+  /// How long her current activity has left, on the Host's own clock (never
+  /// the phone's: the two can disagree).
+  Duration get activityLeft {
+    final until = vitals.activityUntil;
+    final now = asOf;
+    if (vitals.activity == 'idle' || until == null || now == null) return Duration.zero;
+    final left = until.difference(now);
+    return left.isNegative ? Duration.zero : left;
+  }
 
   /// The Host keeps confirmed memories.
   final bool memories;
@@ -158,11 +172,7 @@ class CompanionMemory {
 }
 
 class CompanionMemories {
-  const CompanionMemories({
-    required this.storeId,
-    required this.revision,
-    required this.memories,
-  });
+  const CompanionMemories({required this.storeId, required this.revision, required this.memories});
 
   final String storeId;
   final int revision;
@@ -179,9 +189,7 @@ extension CompanionApi on DshClient {
 
   /// `GET /dsh-go/v1/companion`. Null when this Host can't keep her state:
   /// the relay, or a bridge without these routes.
-  Future<CompanionSnapshot?> companionSnapshot({
-    Duration timeout = const Duration(seconds: 8),
-  }) async {
+  Future<CompanionSnapshot?> companionSnapshot({Duration timeout = const Duration(seconds: 8)}) async {
     if (!canReachDshGo) return null;
     final response = await _bridge.get(dshGoCompanionPath, timeout: timeout);
     if (response.statusCode == 404 && _codeOf(response) == null) return null;
@@ -203,20 +211,14 @@ extension CompanionApi on DshClient {
     return _snapshot(path, response);
   }
 
-  Future<CompanionMemories> companionMemories({
-    Duration timeout = const Duration(seconds: 8),
-  }) async {
+  Future<CompanionMemories> companionMemories({Duration timeout = const Duration(seconds: 8)}) async {
     const path = '$dshGoCompanionPath/memories';
     final response = await _bridge.get(path, timeout: timeout);
     return _memories(path, response);
   }
 
   /// Adds [memory], or replaces the one with its id. Returns the new revision.
-  Future<int> saveCompanionMemory(
-    String storeId,
-    int revision,
-    CompanionMemory memory,
-  ) async {
+  Future<int> saveCompanionMemory(String storeId, int revision, CompanionMemory memory) async {
     const path = '$dshGoCompanionPath/memories';
     final response = await _bridge.postJson(path, {
       'storeId': storeId,
@@ -226,11 +228,7 @@ extension CompanionApi on DshClient {
     return _revision(path, response);
   }
 
-  Future<int> deleteCompanionMemory(
-    String storeId,
-    int revision,
-    String id,
-  ) async {
+  Future<int> deleteCompanionMemory(String storeId, int revision, String id) async {
     const path = '$dshGoCompanionPath/memories/delete';
     final response = await _bridge.postJson(path, {
       'storeId': storeId,
@@ -243,8 +241,7 @@ extension CompanionApi on DshClient {
   CompanionSnapshot _snapshot(String path, DshHttpResponse response) {
     if (response.statusCode != 200) throw companionHttpError(path, response);
     final snapshot = CompanionSnapshot.fromJson(tryDecodeJson(response.text));
-    if (snapshot == null)
-      throw DshProtocolException('$path: not a companion snapshot');
+    if (snapshot == null) throw DshProtocolException('$path: not a companion snapshot');
     return snapshot;
   }
 
@@ -253,15 +250,11 @@ extension CompanionApi on DshClient {
     final map = asMap(tryDecodeJson(response.text));
     final storeId = asString(map?['storeId']);
     final revision = asInt(map?['revision']);
-    if (map == null || storeId == null || revision == null)
-      throw DshProtocolException('$path: not a memory list');
+    if (map == null || storeId == null || revision == null) throw DshProtocolException('$path: not a memory list');
     return CompanionMemories(
       storeId: storeId,
       revision: revision,
-      memories: [
-        for (final m in asListOrEmpty(map['memories']))
-          ?CompanionMemory.fromJson(m),
-      ],
+      memories: [for (final m in asListOrEmpty(map['memories'])) ?CompanionMemory.fromJson(m)],
     );
   }
 
@@ -273,8 +266,7 @@ extension CompanionApi on DshClient {
   }
 }
 
-String? _codeOf(DshHttpResponse response) =>
-    asString(asMap(asMap(tryDecodeJson(response.text))?['error'])?['code']);
+String? _codeOf(DshHttpResponse response) => asString(asMap(asMap(tryDecodeJson(response.text))?['error'])?['code']);
 
 /// A refusal as its `companion/<code>` (`companion/http-<status>` without one).
 DshRemoteException companionHttpError(String path, DshHttpResponse response) {
