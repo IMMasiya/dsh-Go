@@ -57,7 +57,7 @@ Whatever the settings, the bar closes when the reply ends.
 
 - **Stop** on the floating bar, or hold the ball for a second.
 - **Stop** on the "Operating your phone" card on the phone control page.
-- **Stop actions** on the engine notification. **Stop** on the same notification stops the whole engine.
+- **Stop phone control** on the engine notification. **Stop engine** on the same notification stops the whole engine.
 
 Stopping phone control also stops every reply in progress on this phone's engine.
 

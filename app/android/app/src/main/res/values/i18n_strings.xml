@@ -289,8 +289,8 @@
     <string name="service_running">Local DSH is running</string>
     <string name="service_stopping">Stopping…</string>
     <string name="service_title">Local DSH</string>
-    <string name="service_stop_phone">Stop actions</string>
-    <string name="service_stop">Stop</string>
+    <string name="service_stop_phone">Stop phone control</string>
+    <string name="service_stop">Stop engine</string>
     <string name="service_package_checksum_failed">Runtime verification failed (SHA-256 mismatch). Reinstall the app</string>
     <string name="service_storage_insufficient">Not enough storage: about %1$s MB needed, %2$s MB available</string>
     <!-- share -->
