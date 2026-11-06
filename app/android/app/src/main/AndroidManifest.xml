@@ -316,5 +316,10 @@
             <action android:name="android.intent.action.PROCESS_TEXT"/>
             <data android:mimeType="text/plain"/>
         </intent>
+        <!-- 伙伴小屋's voice (CompanionVoicePlugin): finding the system's speech engine once the
+             target SDK reaches 30. Harmless at 28. -->
+        <intent>
+            <action android:name="android.intent.action.TTS_SERVICE"/>
+        </intent>
     </queries>
 </manifest>

@@ -25,6 +25,7 @@ import '../../companion/companion_light.dart';
 import '../../companion/companion_pack.dart';
 import '../../companion/companion_reply.dart';
 import '../../companion/companion_state.dart';
+import '../../companion/companion_voice.dart';
 import '../../l10n/l10n.dart';
 import '../../pets/pet_mood.dart' show PetEvent, PetEventKind;
 import '../../pets/pet_signals.dart' show petEventBusProvider;
@@ -162,6 +163,17 @@ class _CompanionPageState extends ConsumerState<CompanionPage> implements Compan
   Timer? _agentPillTimer;
   DateTime? _agentSaidAt;
 
+  // Her voice (companion_voice.dart): what is queued, and how far into the
+  // current reply she has read aloud. Her mouth follows the engine when it
+  // reports what it is reading, else the text's own rhythm.
+  late final CompanionVoice _tts;
+  StreamSubscription<CompanionVoiceEvent>? _ttsEvents;
+  bool _ttsReady = false;
+  bool _ttsRanges = false;
+  int _ttsSerial = 0;
+  int _spokenTo = 0;
+  final Map<String, int> _ttsPending = {};
+
   // Her invitation to rest (Pro C451/C452): the installation's owner decides,
   // this page shows it and says what the person really does.
   static int _pages = 0;
@@ -206,6 +218,11 @@ class _CompanionPageState extends ConsumerState<CompanionPage> implements Compan
     );
     _voice.addListener(_voiceChanged);
     _agentEvents = ref.read(petEventBusProvider).events.listen(_onAgentEvent);
+    _tts = ref.read(companionVoiceProvider);
+    _ttsEvents = _tts.events.listen(_onTts);
+    ref.listenManual(companionVoiceEnabledProvider, (_, on) {
+      if (on == true && !_ttsReady) unawaited(_prepareVoice());
+    }, fireImmediately: true);
     _focus.addListener(_refreshMood);
     _input.addListener(_inputChanged);
     unawaited(_prepare());
@@ -256,6 +273,8 @@ class _CompanionPageState extends ConsumerState<CompanionPage> implements Compan
     _settleTimer?.cancel();
     _objectTimer?.cancel();
     unawaited(_agentEvents?.cancel());
+    unawaited(_ttsEvents?.cancel());
+    if (_ttsPending.isNotEmpty) unawaited(_tts.stop());
     _agentPillTimer?.cancel();
     _voice.removeListener(_voiceChanged);
     _voice.dispose();
@@ -582,8 +601,75 @@ class _CompanionPageState extends ConsumerState<CompanionPage> implements Compan
   /// A short line without the model.
   void _say(String line) {
     _objectTimer?.cancel();
-    _stage.command('say', {'chars': line.length});
+    if (!_speakAloud(line, flush: true)) _stage.command('say', {'chars': line.length});
     _showBubble(line, hold: Duration(milliseconds: 2400 + line.length * 90));
+  }
+
+  // ── Voice ────────────────────────────────────────────────────────────────
+
+  bool get _voiceOn => _ttsReady && (ref.read(companionVoiceEnabledProvider) ?? false);
+
+  Future<void> _prepareVoice() async {
+    final ready = await _tts.ready();
+    if (mounted) _ttsReady = ready;
+  }
+
+  /// Reads [text] aloud when her voice is on; false when it isn't (then her
+  /// mouth keeps the text's rhythm). [flush] replaces whatever she is saying.
+  bool _speakAloud(String text, {bool flush = false}) {
+    if (!_voiceOn || text.trim().isEmpty) return false;
+    if (flush) _ttsPending.clear();
+    final id = 'v${++_ttsSerial}';
+    _ttsPending[id] = text.length;
+    unawaited(
+      _tts.speak(id, text, flush: flush).then((ok) {
+        if (!ok && mounted) setState(() => _ttsPending.remove(id));
+      }),
+    );
+    return true;
+  }
+
+  /// She stops talking at once: the person is typing, talking, stopping her or leaving.
+  void _hush() {
+    if (_ttsPending.isEmpty) return;
+    _ttsPending.clear();
+    unawaited(_tts.stop());
+    _stage.command('quiet');
+  }
+
+  void _onTts(CompanionVoiceEvent event) {
+    if (!mounted || !_ttsPending.containsKey(event.id)) return;
+    switch (event.type) {
+      case CompanionVoiceEventType.start:
+        // Engines that don't say what they're reading: the whole line's rhythm.
+        if (!_ttsRanges) _stage.command('say', {'chars': _ttsPending[event.id]});
+      case CompanionVoiceEventType.range:
+        _ttsRanges = true;
+        _stage.command('say', {'chars': max(1, (event.end ?? 0) - (event.start ?? 0))});
+      case CompanionVoiceEventType.done || CompanionVoiceEventType.stopped || CompanionVoiceEventType.error:
+        setState(() => _ttsPending.remove(event.id));
+    }
+  }
+
+  /// The menu's switch: on only once the engine can speak, and she says hello
+  /// in it so the person hears what they turned on.
+  Future<void> _setVoice(bool on) async {
+    final setting = ref.read(companionVoiceEnabledProvider.notifier);
+    if (!on) {
+      _hush();
+      await setting.set(false);
+      return;
+    }
+    final l10n = context.l10n;
+    final ready = await _tts.ready();
+    if (!mounted) return;
+    _ttsReady = ready;
+    if (!ready) {
+      _showBubble(l10n.companionVoiceUnavailable, hold: const Duration(seconds: 6), error: true);
+      return;
+    }
+    await setting.set(true);
+    if (mounted) _say(l10n.companionVoiceHello);
   }
 
   void _showBubble(String text, {Duration? hold, bool error = false}) {
@@ -645,7 +731,7 @@ class _CompanionPageState extends ConsumerState<CompanionPage> implements Compan
     inputBusy: _focus.hasFocus || _input.text.trim().isNotEmpty,
     generating: _sending || _running || _lightReply != null,
     // Her mouth still settling counts: the words may still be on their way out.
-    audioBusy: _voice.active || (_settleTimer?.isActive ?? false),
+    audioBusy: _voice.active || (_settleTimer?.isActive ?? false) || _ttsPending.isNotEmpty,
     activityBusy: _home != 'idle' || _asleep || (_objectTimer?.isActive ?? false),
     approvalPending: _needsAttention,
     externalPromptBusy: _bubble != null || _myLine != null || _agentPill != null,
@@ -787,6 +873,7 @@ class _CompanionPageState extends ConsumerState<CompanionPage> implements Compan
   void _unbind() {
     _bindingEpoch++;
     _greetingPending = true;
+    _hush();
     if (_voice.active) unawaited(_voice.cancel());
     _bubbleTimer?.cancel();
     _settleTimer?.cancel();
@@ -918,6 +1005,7 @@ class _CompanionPageState extends ConsumerState<CompanionPage> implements Compan
       final old = parseCompanionReply(text);
       _marksHandled = old.marks.length;
       _wordsSpoken = old.words.length;
+      _spokenTo = old.words.length;
       _replyParts = parts ?? const [];
       _replyWords = old.words;
       if (!running) {
@@ -931,6 +1019,7 @@ class _CompanionPageState extends ConsumerState<CompanionPage> implements Compan
       _baselineUser = user;
       _marksHandled = 0;
       _wordsSpoken = 0;
+      _spokenTo = 0;
       _replyParts = const [];
     }
 
@@ -948,11 +1037,21 @@ class _CompanionPageState extends ConsumerState<CompanionPage> implements Compan
     _marksHandled = reply.marks.length;
 
     final fresh = reply.words.length - _wordsSpoken;
+    final aloud = _voiceOn && error == null;
     if (fresh > 0) {
-      _stage.command('say', {'chars': fresh});
+      // Read aloud, her mouth follows the voice instead of the text.
+      if (!aloud) _stage.command('say', {'chars': fresh});
       if (_sentenceEnd.hasMatch(reply.words.substring(_wordsSpoken))) _stage.command('beat');
     }
     _wordsSpoken = reply.words.length;
+    if (aloud) {
+      // Whole sentences as they complete, the rest once the reply is in. A
+      // retry can take words back; what was said stays said.
+      if (_spokenTo > reply.words.length) _spokenTo = reply.words.length;
+      final (sentences, to) = companionSpeakable(reply.words, _spokenTo, final_: !running);
+      _spokenTo = to;
+      if (sentences.isNotEmpty) _speakAloud(sentences);
+    }
     _showReplyWords(reply.words, fresh);
 
     if (running) {
@@ -984,6 +1083,7 @@ class _CompanionPageState extends ConsumerState<CompanionPage> implements Compan
     final text = _input.text.trim();
     if (text.isEmpty || _sending || _lightReply != null) return;
     _acted();
+    _hush();
     _retireGreeting();
     if (_voice.active) unawaited(_voice.cancel());
     final current = _currentRoom();
@@ -1127,6 +1227,7 @@ class _CompanionPageState extends ConsumerState<CompanionPage> implements Compan
 
   Future<void> _stop() async {
     _acted();
+    _hush();
     if (_lightReply != null) {
       _retireLight();
       return;
@@ -1360,6 +1461,16 @@ class _CompanionPageState extends ConsumerState<CompanionPage> implements Compan
                           ),
                         );
                       },
+                    ),
+                    Consumer(
+                      builder: (context, ref, _) => SettingsSwitchTile(
+                        icon: AppIcons.companionVoice,
+                        tinted: false,
+                        title: l10n.companionMenuVoice,
+                        subtitle: l10n.companionMenuVoiceHint,
+                        value: ref.watch(companionVoiceEnabledProvider) ?? false,
+                        onChanged: (on) => unawaited(_setVoice(on)),
+                      ),
                     ),
                     Consumer(
                       builder: (context, ref, _) => SettingsSwitchTile(
@@ -1667,7 +1778,10 @@ class _CompanionPageState extends ConsumerState<CompanionPage> implements Compan
                   ),
                   const SizedBox(height: 10),
                   CompanionComposer(
-                    onUserInput: _acted,
+                    onUserInput: () {
+                      _acted();
+                      _hush();
+                    },
                     input: _input,
                     focus: _focus,
                     hint: l10n.companionInputHint(name),
@@ -1680,6 +1794,8 @@ class _CompanionPageState extends ConsumerState<CompanionPage> implements Compan
                     onVoice: () {
                       // Reaching for the microphone is already doing something.
                       _acted();
+                      // Her voice off before the microphone opens.
+                      _hush();
                       _voice.active ? _voice.stop() : _voice.start();
                     },
                   ),

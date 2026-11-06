@@ -1,0 +1,142 @@
+// Her voice: sentences read as they complete, her mouth on the engine's word
+// boundaries, silence the moment the person types.
+
+import 'dart:io';
+
+import 'package:dsh_app/companion/companion_keeper.dart';
+import 'package:dsh_app/companion/companion_pack.dart';
+import 'package:dsh_app/companion/companion_voice.dart';
+import 'package:dsh_app/l10n/gen/app_localizations.dart';
+import 'package:dsh_app/state/connection_state.dart';
+import 'package:dsh_app/ui/companion/companion_page.dart';
+import 'package:dsh_app/ui/companion/companion_stage.dart';
+import 'package:dsh_app/ui/theme/app_theme.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+
+import 'phone_keeper_fake.dart';
+
+const _channel = MethodChannel('dsh/companion_voice');
+
+void main() {
+  group('companionSpeakable', () {
+    test('whole sentences while streaming, the rest once finished', () {
+      expect(companionSpeakable('你好', 0, final_: false), ('', 0));
+      expect(companionSpeakable('你好。今天', 0, final_: false), ('你好。', 3));
+      expect(companionSpeakable('你好。今天好累！我', 3, final_: false), ('今天好累！', 8));
+      expect(companionSpeakable('你好。今天好累！我在', 8, final_: true), ('我在', 10));
+      expect(companionSpeakable('你好。', 3, final_: true), ('', 3));
+    });
+
+    test('a retry that took words back starts over from where it now ends', () {
+      expect(companionSpeakable('好。', 10, final_: false), ('', 2));
+    });
+  });
+
+  group('page', () {
+    late Directory root;
+    final calls = <MethodCall>[];
+
+    setUp(() {
+      root = Directory.systemTemp.createTempSync('companion-voice');
+      calls.clear();
+      SharedPreferences.setMockInitialValues({
+        'companion_touch_hint_done': true,
+        'companion_home_hint_done': true,
+        'companion_voice_enabled': true,
+      });
+    });
+    tearDown(() {
+      try {
+        root.deleteSync(recursive: true);
+      } on FileSystemException {
+        // Windows can hold a file a moment longer; the system clears temp.
+      }
+    });
+
+    Future<void> event(WidgetTester tester, Map<String, Object?> args) =>
+        tester.binding.defaultBinaryMessenger.handlePlatformMessage(
+          _channel.name,
+          const StandardMethodCodec().encodeMethodCall(MethodCall('event', args)),
+          (_) {},
+        );
+
+    testWidgets('her lines are read aloud, her mouth follows the voice, typing silences her', (tester) async {
+      tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(_channel, (call) async {
+        calls.add(call);
+        return switch (call.method) {
+          'ready' || 'speak' => true,
+          _ => null,
+        };
+      });
+      addTearDown(() => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(_channel, null));
+      Directory('${root.path}/pack/runtime').createSync(recursive: true);
+      Directory('${root.path}/pack/character').createSync(recursive: true);
+      File('${root.path}/pack/runtime/live2dcubismcore.min.js').writeAsStringSync('core');
+      File('${root.path}/pack/character/index.json').writeAsStringSync('[]');
+      File('${root.path}/pack/character/character.json').writeAsStringSync('{"name":"鲸鱼娘"}');
+      final commands = <(String, Map<String, Object?>)>[];
+      CompanionStageEvents? stage;
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            activeConnectionProvider.overrideWithValue(const AsyncData<HostConnection?>(null)),
+            companionPhoneKeeperProvider.overrideWithValue((_) => FakePhoneKeeper() as CompanionKeeper),
+          ],
+          child: MaterialApp(
+            theme: buildDarkTheme(),
+            localizationsDelegates: L10n.localizationsDelegates,
+            supportedLocales: L10n.supportedLocales,
+            locale: const Locale('zh'),
+            home: CompanionPage(
+              storeOverride: CompanionPackStore(root),
+              stageBuilder: (controller, events) {
+                stage = events;
+                return const SizedBox.expand();
+              },
+              stageController: CompanionStageController(sink: (type, args) => commands.add((type, args))),
+            ),
+          ),
+        ),
+      );
+      for (var i = 0; i < 100 && stage == null; i++) {
+        await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 40)));
+        await tester.pump(const Duration(milliseconds: 120));
+      }
+      expect(calls.map((c) => c.method), contains('ready'));
+      stage!.onReady();
+      for (var i = 0; i < 6; i++) {
+        await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 40)));
+        await tester.pump(const Duration(milliseconds: 120));
+      }
+      // The greeting, aloud.
+      final greeting = calls.where((c) => c.method == 'speak').single.arguments as Map;
+      expect(greeting['text'], '你好呀，我是鲸鱼娘。以后就住在这里了，请多指教。');
+      expect(greeting['flush'], isTrue);
+
+      await tester.pump(const Duration(seconds: 8));
+      calls.clear();
+      commands.clear();
+      stage!.onTouch('tail', 'tap');
+      await tester.pump(const Duration(milliseconds: 100));
+      final line = calls.where((c) => c.method == 'speak').single.arguments as Map;
+      expect(find.text(line['text'] as String), findsOneWidget);
+      // Her mouth waits for the voice, not the text.
+      expect(commands.where((c) => c.$1 == 'say'), isEmpty);
+      await event(tester, {'type': 'start', 'id': line['id']});
+      await event(tester, {'type': 'range', 'id': line['id'], 'start': 0, 'end': 2});
+      expect(commands.where((c) => c.$1 == 'say').map((c) => c.$2['chars']), [line['text'].toString().length, 2]);
+
+      // The person types: she stops.
+      await tester.enterText(find.byType(TextField), '等等');
+      await tester.pump();
+      expect(calls.map((c) => c.method), contains('stop'));
+
+      await tester.pumpWidget(const SizedBox());
+      await tester.pump(const Duration(seconds: 10));
+    });
+  });
+}

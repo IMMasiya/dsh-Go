@@ -139,5 +139,9 @@
   "companionTaskApprovalUntitled": "Something over there is waiting for your approval.",
   "companionTaskQuestion": "\"{title}\" has a question for you.",
   "companionTaskQuestionUntitled": "There's a question waiting for you over there.",
-  "companionTaskOpen": "Take a look"
+  "companionTaskOpen": "Take a look",
+  "companionMenuVoice": "Her voice",
+  "companionMenuVoiceHint": "Reads her words aloud with the phone's own voice",
+  "companionVoiceHello": "Hi, this is my voice. Keep it on if you like it.",
+  "companionVoiceUnavailable": "This phone has no Chinese voice to use. You can add one under Text-to-speech in system settings."
 }

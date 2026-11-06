@@ -5201,6 +5201,19 @@ class L10nEn extends L10n {
   String get companionTaskOpen => 'Take a look';
 
   @override
+  String get companionMenuVoice => 'Her voice';
+
+  @override
+  String get companionMenuVoiceHint => 'Reads her words aloud with the phone\'s own voice';
+
+  @override
+  String get companionVoiceHello => 'Hi, this is my voice. Keep it on if you like it.';
+
+  @override
+  String get companionVoiceUnavailable =>
+      'This phone has no Chinese voice to use. You can add one under Text-to-speech in system settings.';
+
+  @override
   String get engineNewChatDefaultsLast => 'New chat defaults (last choice)';
 
   @override

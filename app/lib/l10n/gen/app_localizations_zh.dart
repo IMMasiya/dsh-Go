@@ -4901,6 +4901,18 @@ class L10nZh extends L10n {
   String get companionTaskOpen => '去看看';
 
   @override
+  String get companionMenuVoice => '她的声音';
+
+  @override
+  String get companionMenuVoiceHint => '用手机自带的语音读出她说的话';
+
+  @override
+  String get companionVoiceHello => '你好呀，这是我的声音。喜欢的话就留着吧。';
+
+  @override
+  String get companionVoiceUnavailable => '这台手机没有能用的中文语音。可以在系统设置的「文字转语音」里装一个。';
+
+  @override
   String get engineNewChatDefaultsLast => '新对话默认（上次选择）';
 
   @override

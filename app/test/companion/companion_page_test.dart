@@ -551,6 +551,9 @@ void main() {
 
         await tester.tap(find.byIcon(AppIcons.more));
         await settleIo(tester);
+        // The menu scrolls on a short screen.
+        await tester.ensureVisible(find.text('重新认识'));
+        await tester.pumpAndSettle();
         await tester.tap(find.text('重新认识'));
         await settleIo(tester);
         await tester.tap(find.widgetWithText(FilledButton, '重新认识'));

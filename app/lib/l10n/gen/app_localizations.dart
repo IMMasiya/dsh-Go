@@ -9062,6 +9062,30 @@ abstract class L10n {
   /// **'去看看'**
   String get companionTaskOpen;
 
+  /// No description provided for @companionMenuVoice.
+  ///
+  /// In zh, this message translates to:
+  /// **'她的声音'**
+  String get companionMenuVoice;
+
+  /// No description provided for @companionMenuVoiceHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'用手机自带的语音读出她说的话'**
+  String get companionMenuVoiceHint;
+
+  /// No description provided for @companionVoiceHello.
+  ///
+  /// In zh, this message translates to:
+  /// **'你好呀，这是我的声音。喜欢的话就留着吧。'**
+  String get companionVoiceHello;
+
+  /// No description provided for @companionVoiceUnavailable.
+  ///
+  /// In zh, this message translates to:
+  /// **'这台手机没有能用的中文语音。可以在系统设置的「文字转语音」里装一个。'**
+  String get companionVoiceUnavailable;
+
   /// No description provided for @engineNewChatDefaultsLast.
   ///
   /// In zh, this message translates to:
