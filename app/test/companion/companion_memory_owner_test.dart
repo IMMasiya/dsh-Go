@@ -24,6 +24,8 @@ class _Bridge extends DshConnection {
   _Bridge(this.store, this.text) : super(Uri.parse('http://127.0.0.1:9'));
   final String store;
   String? text;
+  Map<String, Object?> source = const {'kind': 'manual'};
+  int? expiresAt;
   int revision = 0;
   int snapshotReads = 0;
   int listReads = 0;
@@ -51,6 +53,8 @@ class _Bridge extends DshConnection {
           'kind': 'preference',
           'keywords': ['kept'],
           'pinned': true,
+          'source': source,
+          'expiresAt': expiresAt,
         },
     ],
   });
@@ -411,5 +415,93 @@ void main() {
     old.complete(room.a.memories());
     await flush(tester);
     expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('C435: editing preserves source and expiry from the real memory GET', (tester) async {
+    final room = _Room();
+    const source = {'kind': 'user-confirmed', 'sessionId': 'confirmed-session', 'messageId': 'confirmed-message'};
+    final expiry = DateTime.utc(2030, 1, 1).millisecondsSinceEpoch;
+    room.a
+      ..source = source
+      ..expiresAt = expiry;
+    await room.open(tester);
+    await edit(tester, 'A memory', 'Only the text changes');
+    expect(room.a.writes, hasLength(1));
+    expect(room.a.writes.single.$2, {
+      'storeId': room.a.store,
+      'expectedRevision': 0,
+      'memory': {
+        'id': _memoryId,
+        'text': 'Only the text changes',
+        'kind': 'preference',
+        'keywords': ['kept'],
+        'pinned': true,
+        'source': source,
+        'expiresAt': expiry,
+      },
+    });
+    await room.close(tester);
+  });
+
+  testWidgets('C435: adding a memory keeps the manual source and null expiry', (tester) async {
+    final room = _Room();
+    room.a.text = null;
+    await room.open(tester);
+    await tester.tap(find.byWidgetPredicate((w) => w is IconButton && w.tooltip == '添加'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField), 'A new manual memory');
+    await tester.tap(find.widgetWithText(FilledButton, '保存'));
+    await tester.pumpAndSettle();
+    expect(room.a.writes, hasLength(1));
+    final request = room.a.writes.single.$2;
+    expect(request['storeId'], room.a.store);
+    expect(request['expectedRevision'], 0);
+    final memory = request['memory']! as Map;
+    expect(memory['source'], {'kind': 'manual'});
+    expect(memory['expiresAt'], isNull);
+    expect(memory['text'], 'A new manual memory');
+    expect(memory['kind'], 'fact');
+    expect(memory['keywords'], isEmpty);
+    expect(memory['pinned'], isFalse);
+    await room.close(tester);
+  });
+
+  testWidgets('C436: an empty list cannot open another editor while its first save is pending', (tester) async {
+    final room = _Room();
+    room.a.text = null;
+    final pending = Completer<DshHttpResponse>();
+    room.a.nextWrite = () => pending.future;
+    await room.open(tester);
+    try {
+      final emptyAdd = find.widgetWithText(OutlinedButton, '添加');
+      await tester.tap(emptyAdd);
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byType(TextField), 'First memory');
+      await tester.tap(find.widgetWithText(FilledButton, '保存'));
+      await tester.pumpAndSettle();
+      expect(room.a.writes, hasLength(1));
+      expect(
+        tester.widget<IconButton>(find.byWidgetPredicate((w) => w is IconButton && w.tooltip == '添加')).onPressed,
+        isNull,
+      );
+      expect(tester.widget<OutlinedButton>(emptyAdd).onPressed, isNull);
+      await tester.tap(emptyAdd);
+      await tester.pumpAndSettle();
+      expect(find.byType(TextField), findsNothing);
+      expect(room.a.writes, hasLength(1));
+      room.a
+        ..text = 'First memory'
+        ..revision = 1;
+      pending.complete(_json({'revision': 1}));
+      await flush(tester);
+      expect(find.text('First memory'), findsOneWidget);
+      expect(
+        tester.widget<IconButton>(find.byWidgetPredicate((w) => w is IconButton && w.tooltip == '添加')).onPressed,
+        isNotNull,
+      );
+    } finally {
+      await room.close(tester);
+      if (!pending.isCompleted) pending.complete(_json({'revision': 1}));
+    }
   });
 }

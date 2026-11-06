@@ -5,6 +5,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:dsh_app/companion/companion_keeper.dart';
 import 'package:dsh_app/companion/companion_pack.dart';
 import 'package:dsh_app/companion/companion_state.dart';
 import 'package:dsh_app/l10n/gen/app_localizations.dart';
@@ -21,6 +22,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+
+import 'phone_keeper_fake.dart';
 
 class _Host extends ActiveHostController {
   @override
@@ -100,6 +103,7 @@ class _Room {
           activeConnectionProvider.overrideWith((ref) => const AsyncData(null)),
           settingsProvider.overrideWith(_Settings.new),
           companionLightClientProvider.overrideWithValue(newClient),
+          companionPhoneKeeperProvider.overrideWithValue((_) => FakePhoneKeeper()),
         ],
         child: MaterialApp(
           theme: buildDarkTheme(),

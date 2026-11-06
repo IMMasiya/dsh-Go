@@ -60,24 +60,41 @@ void main() {
     expect(vitals.activity, 'idle');
   });
 
-  test('a memory round-trips to what a write sends', () {
+  test('a stored memory preserves source and expiry when written again', () {
     final memory = CompanionMemory.fromJson({
       'id': '2dc91037-8de1-41af-96e0-482e7309bf34',
       'kind': 'preference',
       'text': '用户更喜欢无糖茶，不喜欢咖啡。',
       'keywords': ['茶', '咖啡'],
       'pinned': false,
-      'source': {'kind': 'user-confirmed'},
-      'expiresAt': null,
+      'source': {'kind': 'user-confirmed', 'sessionId': 'synthetic-session', 'messageId': 'synthetic-message'},
+      'expiresAt': 1793986100000,
       'createdAt': 1793899700000,
       'updatedAt': 1793899700000,
     })!;
     expect(memory.kind, 'preference');
+    expect(memory.source.kind, 'user-confirmed');
+    expect(memory.expiresAt, DateTime.fromMillisecondsSinceEpoch(1793986100000));
     expect(memory.toWrite(), {
       'id': '2dc91037-8de1-41af-96e0-482e7309bf34',
       'kind': 'preference',
       'text': '用户更喜欢无糖茶，不喜欢咖啡。',
       'keywords': ['茶', '咖啡'],
+      'pinned': false,
+      'source': {'kind': 'user-confirmed', 'sessionId': 'synthetic-session', 'messageId': 'synthetic-message'},
+      'expiresAt': 1793986100000,
+    });
+  });
+
+  test('new manual memories keep the existing manual source and no-expiry defaults', () {
+    const memory = CompanionMemory(id: '2dc91037-8de1-41af-96e0-482e7309bf34', text: '用户手动添加的合成事实。');
+    expect(memory.source.kind, 'manual');
+    expect(memory.expiresAt, isNull);
+    expect(memory.toWrite(), {
+      'id': '2dc91037-8de1-41af-96e0-482e7309bf34',
+      'kind': 'fact',
+      'text': '用户手动添加的合成事实。',
+      'keywords': <String>[],
       'pinned': false,
       'source': {'kind': 'manual'},
       'expiresAt': null,

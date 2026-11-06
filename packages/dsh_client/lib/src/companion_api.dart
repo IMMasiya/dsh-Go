@@ -121,6 +121,29 @@ class CompanionSnapshot {
   final bool automaticRecall;
 }
 
+/// Provenance supplied by the confirming UI, not proof of user approval.
+class CompanionMemorySource {
+  const CompanionMemorySource({this.kind = 'manual', this.sessionId, this.messageId});
+
+  factory CompanionMemorySource.fromJson(Object? json) {
+    final map = asMapOrEmpty(json);
+    return CompanionMemorySource(
+      kind: asString(map['kind']) ?? 'manual',
+      sessionId: asString(map['sessionId']),
+      messageId: asString(map['messageId']),
+    );
+  }
+
+  final String kind;
+  final String? sessionId;
+  final String? messageId;
+  Map<String, Object?> toJson() => {
+    'kind': kind,
+    if (sessionId != null) 'sessionId': sessionId,
+    if (messageId != null) 'messageId': messageId,
+  };
+}
+
 /// One thing she remembers, as the person confirmed it.
 class CompanionMemory {
   const CompanionMemory({
@@ -129,6 +152,8 @@ class CompanionMemory {
     this.kind = 'fact',
     this.keywords = const [],
     this.pinned = false,
+    this.source = const CompanionMemorySource(),
+    this.expiresAt,
     this.createdAt,
     this.updatedAt,
   });
@@ -144,6 +169,8 @@ class CompanionMemory {
       kind: asString(map['kind']) ?? 'fact',
       keywords: asStringList(map['keywords']),
       pinned: map['pinned'] == true,
+      source: CompanionMemorySource.fromJson(map['source']),
+      expiresAt: _time(map['expiresAt']),
       createdAt: _time(map['createdAt']),
       updatedAt: _time(map['updatedAt']),
     );
@@ -156,6 +183,8 @@ class CompanionMemory {
   final String kind;
   final List<String> keywords;
   final bool pinned;
+  final CompanionMemorySource source;
+  final DateTime? expiresAt;
   final DateTime? createdAt;
   final DateTime? updatedAt;
 
@@ -166,16 +195,22 @@ class CompanionMemory {
     'text': text,
     'keywords': keywords,
     'pinned': pinned,
-    'source': {'kind': 'manual'},
-    'expiresAt': null,
+    'source': source.toJson(),
+    'expiresAt': expiresAt?.millisecondsSinceEpoch,
   };
 }
 
 class CompanionMemories {
-  const CompanionMemories({required this.storeId, required this.revision, required this.memories});
+  const CompanionMemories({
+    required this.storeId,
+    required this.revision,
+    required this.memories,
+    this.memoryRevision = 0,
+  });
 
   final String storeId;
   final int revision;
+  final int memoryRevision;
   final List<CompanionMemory> memories;
 }
 
@@ -254,6 +289,7 @@ extension CompanionApi on DshClient {
     return CompanionMemories(
       storeId: storeId,
       revision: revision,
+      memoryRevision: asInt(map['memoryRevision']) ?? 0,
       memories: [for (final m in asListOrEmpty(map['memories'])) ?CompanionMemory.fromJson(m)],
     );
   }

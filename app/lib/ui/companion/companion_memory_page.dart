@@ -10,6 +10,7 @@ import 'package:dsh_client/dsh_client.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../companion/companion_keeper.dart';
 import '../../l10n/l10n.dart';
 import '../../state/connection_state.dart';
 import '../../state/hosts_state.dart';
@@ -37,7 +38,10 @@ String companionMemoryId() {
 }
 
 class CompanionMemoryPage extends ConsumerStatefulWidget {
-  const CompanionMemoryPage({super.key});
+  const CompanionMemoryPage({super.key, this.phone});
+
+  /// Light mode: her memories on this phone instead of the active host.
+  final CompanionKeeper? phone;
 
   @override
   ConsumerState<CompanionMemoryPage> createState() => _CompanionMemoryPageState();
@@ -62,9 +66,19 @@ class _CompanionMemoryPageState extends ConsumerState<CompanionMemoryPage> {
     unawaited(_read());
   }
 
+  /// Where the list is kept: this phone (light mode) or the active host.
+  CompanionKeeper? get _keeper {
+    final phone = widget.phone;
+    if (phone != null) return phone;
+    final client = _client;
+    return client == null ? null : HostKeeper(client);
+  }
+
   /// A read, write or dialog belongs to this visit, including after A→B→A.
   bool Function() _currentRoom() {
     final epoch = _bindingEpoch;
+    // The phone's list belongs to no host.
+    if (widget.phone != null) return () => mounted && epoch == _bindingEpoch;
     final host = _bindingHost;
     final client = _client;
     return () =>
@@ -75,6 +89,7 @@ class _CompanionMemoryPageState extends ConsumerState<CompanionMemoryPage> {
   }
 
   void _bindingChanged() {
+    if (widget.phone != null) return;
     final host = ref.read(activeHostProvider);
     final client = ref.read(activeConnectionProvider).value?.client;
     if (host == _bindingHost && identical(client, _client)) return;
@@ -94,9 +109,9 @@ class _CompanionMemoryPageState extends ConsumerState<CompanionMemoryPage> {
     final owner = _currentRoom();
     final serial = ++_readSerial;
     bool current() => serial == _readSerial && owner();
-    final client = _client;
+    final keeper = _keeper;
     if (!current()) return;
-    if (client == null) {
+    if (keeper == null) {
       setState(() {
         _list = null;
         _load = _Load.failed;
@@ -104,7 +119,7 @@ class _CompanionMemoryPageState extends ConsumerState<CompanionMemoryPage> {
       return;
     }
     try {
-      final snapshot = await client.companionSnapshot();
+      final snapshot = await keeper.snapshot();
       if (!current()) return;
       if (snapshot == null || !snapshot.memories) {
         setState(() {
@@ -113,7 +128,7 @@ class _CompanionMemoryPageState extends ConsumerState<CompanionMemoryPage> {
         });
         return;
       }
-      final list = await client.companionMemories();
+      final list = await keeper.memories();
       if (!current()) return;
       setState(() {
         _list = list;
@@ -128,17 +143,17 @@ class _CompanionMemoryPageState extends ConsumerState<CompanionMemoryPage> {
     }
   }
 
-  /// One write, then the list as the Host now has it.
-  Future<void> _write(Future<int> Function(DshClient client, CompanionMemories list) write) async {
+  /// One write, then the list as it is now kept.
+  Future<void> _write(Future<int> Function(CompanionKeeper keeper, CompanionMemories list) write) async {
     if (!mounted) return;
     final current = _currentRoom();
-    final client = _client;
+    final keeper = _keeper;
     final list = _list;
-    if (!current() || client == null || list == null || _load != _Load.ready || _busy) return;
+    if (!current() || keeper == null || list == null || _load != _Load.ready || _busy) return;
     final l10n = context.l10n;
     setState(() => _busy = true);
     try {
-      await write(client, list);
+      await write(keeper, list);
       if (!current()) return;
       await _read();
     } on DshRemoteException catch (error) {
@@ -194,8 +209,10 @@ class _CompanionMemoryPageState extends ConsumerState<CompanionMemoryPage> {
       kind: memory?.kind ?? 'fact',
       keywords: memory?.keywords ?? const [],
       pinned: memory?.pinned ?? false,
+      source: memory?.source ?? const CompanionMemorySource(),
+      expiresAt: memory?.expiresAt,
     );
-    await _write((client, list) => client.saveCompanionMemory(list.storeId, list.revision, next));
+    await _write((keeper, list) => keeper.saveMemory(list.storeId, list.revision, next));
   }
 
   Future<void> _delete(CompanionMemory memory) async {
@@ -222,7 +239,7 @@ class _CompanionMemoryPageState extends ConsumerState<CompanionMemoryPage> {
       ),
     );
     if (!current() || ok != true) return;
-    await _write((client, list) => client.deleteCompanionMemory(list.storeId, list.revision, memory.id));
+    await _write((keeper, list) => keeper.deleteMemory(list.storeId, list.revision, memory.id));
   }
 
   @override
@@ -232,7 +249,9 @@ class _CompanionMemoryPageState extends ConsumerState<CompanionMemoryPage> {
     final l10n = context.l10n;
     final theme = Theme.of(context);
     final host = ref.watch(activeHostProvider);
-    final hostName = ref.watch(hostNameProvider(host)) ?? (host.isLocal ? l10n.commonThisPhone : l10n.commonRemoteHost);
+    final hostName = widget.phone != null
+        ? l10n.commonThisPhone
+        : ref.watch(hostNameProvider(host)) ?? (host.isLocal ? l10n.commonThisPhone : l10n.commonRemoteHost);
     final list = _list;
     final Widget body;
     switch (_load) {
@@ -259,7 +278,7 @@ class _CompanionMemoryPageState extends ConsumerState<CompanionMemoryPage> {
           icon: AppIcons.bookmark,
           title: l10n.companionMemoryEmpty,
           message: l10n.companionMemoryEmptyHint,
-          onAction: _edit,
+          onAction: _busy ? null : _edit,
           actionLabel: l10n.companionMemoryAdd,
         );
       case _Load.ready:

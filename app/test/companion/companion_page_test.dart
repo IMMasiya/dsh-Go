@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:dsh_app/companion/companion_keeper.dart';
 import 'package:dsh_app/companion/companion_pack.dart';
 import 'package:dsh_app/companion/companion_state.dart';
 import 'package:dsh_app/state/settings_state.dart';
@@ -20,9 +21,15 @@ import 'package:flutter_riverpod/misc.dart' show Override;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-Widget _app(Widget child, {List<Override> extra = const []}) => ProviderScope(
+import 'phone_keeper_fake.dart';
+
+Widget _app(Widget child, {List<Override> extra = const [], CompanionKeeper? phone}) => ProviderScope(
   // No host here: the page must stand on its own without one.
-  overrides: [activeConnectionProvider.overrideWithValue(const AsyncData<HostConnection?>(null)), ...extra],
+  overrides: [
+    activeConnectionProvider.overrideWithValue(const AsyncData<HostConnection?>(null)),
+    companionPhoneKeeperProvider.overrideWithValue((_) => phone ?? FakePhoneKeeper()),
+    ...extra,
+  ],
   child: MaterialApp(
     theme: buildDarkTheme(),
     localizationsDelegates: L10n.localizationsDelegates,
@@ -213,6 +220,41 @@ void main() {
 
       // Leave cleanly: timers cancelled with the page.
       await tester.pumpWidget(_app(const SizedBox()));
+      await tester.pump(const Duration(seconds: 10));
+    });
+
+    testWidgets('in light mode her state is kept on the phone: the visit and her things go there', (tester) async {
+      SharedPreferences.setMockInitialValues({'companion_touch_hint_done': true, 'companion_home_hint_done': true});
+      final phone = FakePhoneKeeper(state: FakePhoneKeeper.snapshotOf());
+      final commands = <(String, Map<String, Object?>)>[];
+      CompanionStageEvents? stageEvents;
+      await tester.pumpWidget(
+        _app(
+          CompanionPage(
+            storeOverride: installedStore(),
+            stageBuilder: (controller, events) {
+              stageEvents = events;
+              return const SizedBox.expand();
+            },
+            stageController: CompanionStageController(sink: (type, args) => commands.add((type, args))),
+          ),
+          phone: phone,
+        ),
+      );
+      (await _stageUp(tester, () => stageEvents)).onReady();
+      await _settle(tester);
+      expect(phone.events, ['visit']);
+      expect(commands.where((c) => c.$1 == 'vitals'), isNotEmpty);
+
+      commands.clear();
+      stageEvents!.onObject('snack');
+      await _settle(tester);
+      expect(phone.events, ['visit', 'snack']);
+      final activity = commands.where((c) => c.$1 == 'activity').last.$2;
+      expect(activity['name'], 'snack');
+      expect(activity['remainingMs'], 45000);
+
+      await tester.pumpWidget(const SizedBox());
       await tester.pump(const Duration(seconds: 10));
     });
 

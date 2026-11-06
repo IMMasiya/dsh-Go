@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:dsh_app/companion/companion_keeper.dart';
 import 'package:dsh_app/companion/companion_pack.dart';
 import 'package:dsh_app/companion/companion_state.dart';
 import 'package:dsh_app/l10n/gen/app_localizations.dart';
@@ -23,6 +24,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+
+import 'phone_keeper_fake.dart';
 
 DshHttpResponse _json(Object value, [int status = 200]) =>
     DshHttpResponse(status, 'application/json', Uint8List.fromList(utf8.encode(jsonEncode(value))));
@@ -170,6 +173,7 @@ class _Room {
       chatProvider.overrideWith2((id) => chats.putIfAbsent(id, () => _Chat(id))),
       settingsProvider.overrideWith(_Settings.new),
       companionLightClientProvider.overrideWithValue(() => light),
+      companionPhoneKeeperProvider.overrideWithValue((_) => FakePhoneKeeper()),
     ],
     child: MaterialApp(
       theme: buildDarkTheme(),

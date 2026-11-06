@@ -17,6 +17,7 @@ import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../../companion/companion_keeper.dart';
 import '../../companion/companion_light.dart';
 import '../../companion/companion_pack.dart';
 import '../../companion/companion_reply.dart';
@@ -123,7 +124,11 @@ class _CompanionPageState extends ConsumerState<CompanionPage> {
 
   // Her state on the Host (null: this host can't keep it).
   CompanionSnapshot? _vitals;
-  DshClient? _vitalsClient;
+  CompanionKeeper? _keeper;
+
+  /// Light mode's keeper: her state and memories on this phone.
+  CompanionKeeper? _phone;
+  CompanionKeeper get _phoneKeeper => _phone ??= ref.read(companionPhoneKeeperProvider)(_store!.root);
   Future<void> _vitalsQueue = Future.value();
 
   // What's on screen.
@@ -228,19 +233,20 @@ class _CompanionPageState extends ConsumerState<CompanionPage> {
   /// then the greeting, then this visit.
   Future<void> _arrive({bool greet = true}) async {
     final current = _currentRoom();
-    // Light mode asks no host for anything.
-    final client = _light ? null : ref.read(activeConnectionProvider).value?.client;
+    // Light mode keeps her on this phone and asks no host for anything.
+    final client = ref.read(activeConnectionProvider).value?.client;
+    final CompanionKeeper? keeper = _light ? _phoneKeeper : (client == null ? null : HostKeeper(client));
     CompanionSnapshot? snapshot;
-    if (client != null) {
+    if (keeper != null) {
       try {
-        snapshot = await client.companionSnapshot().timeout(const Duration(seconds: 3));
+        snapshot = await keeper.snapshot().timeout(const Duration(seconds: 3));
       } on Object {
         // Not this host, or not now: she's still here, just without memory of it.
       }
     }
     if (!current()) return;
     if (snapshot != null) {
-      _vitalsClient = client;
+      _keeper = keeper;
       _applyVitals(snapshot);
     }
     if (greet) await _greet(snapshot?.vitals.lastVisitAt, current);
@@ -257,20 +263,20 @@ class _CompanionPageState extends ConsumerState<CompanionPage> {
   /// One event at a time, against the state last read. A conflict reads again;
   /// it never sends the same event twice.
   void _event(String type) {
-    final client = _vitalsClient;
-    if (client == null) return;
+    final keeper = _keeper;
+    if (keeper == null) return;
     final current = _currentRoom();
     _vitalsQueue = _vitalsQueue.then((_) async {
-      if (!current() || !identical(client, _vitalsClient)) return;
+      if (!current() || !identical(keeper, _keeper)) return;
       final read = _vitals;
       if (read == null) return;
       try {
         try {
-          final next = await client.companionEvent(read, type);
+          final next = await keeper.event(read, type);
           if (current()) _applyVitals(next);
         } on DshRemoteException catch (error) {
           if (!current() || (!error.code.endsWith('conflict') && !error.code.endsWith('store-changed'))) return;
-          final again = await client.companionSnapshot();
+          final again = await keeper.snapshot();
           if (current() && again != null) _applyVitals(again);
         }
       } on Object {
@@ -508,7 +514,7 @@ class _CompanionPageState extends ConsumerState<CompanionPage> {
     _settleTimer?.cancel();
     _objectTimer?.cancel();
     _vitals = null;
-    _vitalsClient = null;
+    _keeper = null;
     _vitalsQueue = Future.value();
     _chat?.close();
     _chat = null;
@@ -979,28 +985,28 @@ class _CompanionPageState extends ConsumerState<CompanionPage> {
     unawaited(
       showAppSheet<void>(
         context,
+        // Scrolls on a short screen instead of overflowing.
         builder: (sheet) => SafeArea(
           top: false,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              SheetTitleBar(_character.name ?? l10n.companionTitle),
-              SheetGroup(
-                margin: const EdgeInsets.fromLTRB(SheetTitleBar.inset, 0, SheetTitleBar.inset, 12),
-                children: [
-                  SettingsTile(
-                    icon: light ? AppIcons.engineStarting : AppIcons.engine,
-                    tinted: false,
-                    title: l10n.companionMenuMode,
-                    value: Text(light ? l10n.companionModeLight : l10n.companionModeFull),
-                    onTap: () {
-                      Navigator.of(sheet).pop();
-                      _chooseMode();
-                    },
-                  ),
-                  // Her memories live on the host for now.
-                  if (!light)
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                SheetTitleBar(_character.name ?? l10n.companionTitle),
+                SheetGroup(
+                  margin: const EdgeInsets.fromLTRB(SheetTitleBar.inset, 0, SheetTitleBar.inset, 12),
+                  children: [
+                    SettingsTile(
+                      icon: light ? AppIcons.engineStarting : AppIcons.engine,
+                      tinted: false,
+                      title: l10n.companionMenuMode,
+                      value: Text(light ? l10n.companionModeLight : l10n.companionModeFull),
+                      onTap: () {
+                        Navigator.of(sheet).pop();
+                        _chooseMode();
+                      },
+                    ),
                     SettingsTile(
                       icon: AppIcons.bookmark,
                       tinted: false,
@@ -1008,60 +1014,64 @@ class _CompanionPageState extends ConsumerState<CompanionPage> {
                       onTap: () {
                         Navigator.of(sheet).pop();
                         unawaited(
-                          Navigator.of(context)
-                              .push(MaterialPageRoute<void>(builder: (_) => const CompanionMemoryPage())),
+                          Navigator.of(context).push(
+                            MaterialPageRoute<void>(
+                              builder: (_) => CompanionMemoryPage(phone: light ? _phoneKeeper : null),
+                            ),
+                          ),
                         );
                       },
                     ),
-                  if (light && (_lightHistory?.lines.isNotEmpty ?? false))
+                    if (light && (_lightHistory?.lines.isNotEmpty ?? false))
+                      SettingsTile(
+                        icon: AppIcons.newChat,
+                        tinted: false,
+                        title: l10n.companionMenuRestart,
+                        subtitle: l10n.companionMenuRestartLightHint,
+                        onTap: () {
+                          Navigator.of(sheet).pop();
+                          unawaited(_restart());
+                        },
+                      ),
+                    if (_sessionId != null)
+                      SettingsTile(
+                        icon: AppIcons.conversations,
+                        tinted: false,
+                        title: l10n.companionMenuHistory,
+                        onTap: () {
+                          Navigator.of(sheet).pop();
+                          _openFullChat();
+                        },
+                      ),
+                    if (_sessionId != null)
+                      SettingsTile(
+                        icon: AppIcons.newChat,
+                        tinted: false,
+                        title: l10n.companionMenuRestart,
+                        subtitle: l10n.companionMenuRestartHint,
+                        onTap: () {
+                          Navigator.of(sheet).pop();
+                          unawaited(_restart());
+                        },
+                      ),
                     SettingsTile(
-                      icon: AppIcons.newChat,
+                      icon: AppIcons.delete,
                       tinted: false,
-                      title: l10n.companionMenuRestart,
-                      subtitle: l10n.companionMenuRestartLightHint,
+                      title: l10n.companionMenuRemovePack,
                       onTap: () {
                         Navigator.of(sheet).pop();
-                        unawaited(_restart());
+                        unawaited(_removePack());
                       },
                     ),
-                  if (_sessionId != null)
-                    SettingsTile(
-                      icon: AppIcons.conversations,
-                      tinted: false,
-                      title: l10n.companionMenuHistory,
-                      onTap: () {
-                        Navigator.of(sheet).pop();
-                        _openFullChat();
-                      },
-                    ),
-                  if (_sessionId != null)
-                    SettingsTile(
-                      icon: AppIcons.newChat,
-                      tinted: false,
-                      title: l10n.companionMenuRestart,
-                      subtitle: l10n.companionMenuRestartHint,
-                      onTap: () {
-                        Navigator.of(sheet).pop();
-                        unawaited(_restart());
-                      },
-                    ),
-                  SettingsTile(
-                    icon: AppIcons.delete,
-                    tinted: false,
-                    title: l10n.companionMenuRemovePack,
-                    onTap: () {
-                      Navigator.of(sheet).pop();
-                      unawaited(_removePack());
-                    },
-                  ),
-                ],
-              ),
-              if (credit.isNotEmpty)
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(SheetTitleBar.inset + 8, 0, SheetTitleBar.inset + 8, 12),
-                  child: Text(credit, style: Theme.of(sheet).textTheme.bodySmall),
+                  ],
                 ),
-            ],
+                if (credit.isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(SheetTitleBar.inset + 8, 0, SheetTitleBar.inset + 8, 12),
+                    child: Text(credit, style: Theme.of(sheet).textTheme.bodySmall),
+                  ),
+              ],
+            ),
           ),
         ),
       ),
