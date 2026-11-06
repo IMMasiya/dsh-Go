@@ -80,7 +80,9 @@ class _CompanionVoicePageState extends ConsumerState<CompanionVoicePage> {
   @override
   void dispose() {
     _saveTimer?.cancel();
-    _flush();
+    // Providers can't change while the tree is being torn down: right after.
+    final pending = _pending();
+    if (pending != null) scheduleMicrotask(() => unawaited(_store.update(pending)));
     for (final c in _all) {
       c.dispose();
     }
@@ -123,18 +125,25 @@ class _CompanionVoicePageState extends ConsumerState<CompanionVoicePage> {
     if (_preview != null && _preview != '') setState(() => _preview = null);
   }
 
-  void _flush() {
-    _saveTimer?.cancel();
+  /// The settings as the fields have them, when they differ from what is saved.
+  CompanionVoiceSettings? _pending() {
     final s = _seen;
-    if (s == null || !_filled) return;
+    if (s == null || !_filled) return null;
     final next = _fromFields(s);
-    if (next.plain().toString() != s.plain().toString() ||
+    final changed =
+        next.plain().toString() != s.plain().toString() ||
         next.openaiKey != s.openaiKey ||
         next.customHeaders != s.customHeaders ||
-        next.presetKeys.toString() != s.presetKeys.toString()) {
-      _seen = next;
-      unawaited(_store.update(next));
-    }
+        next.presetKeys.toString() != s.presetKeys.toString();
+    return changed ? next : null;
+  }
+
+  void _flush() {
+    _saveTimer?.cancel();
+    final next = _pending();
+    if (next == null) return;
+    _seen = next;
+    unawaited(_store.update(next));
   }
 
   /// Another service: what is typed so far stays with the one before, and the

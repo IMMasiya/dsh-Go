@@ -5025,18 +5025,6 @@ class L10nZh extends L10n {
   String get companionGreetFirstNameless => '你好呀，以后我就住在这里了，请多指教。';
 
   @override
-  String get companionMenuName => '她的名字';
-
-  @override
-  String get companionRenameTitle => '给她起个名字';
-
-  @override
-  String get companionRenameHint => '最多 12 个字';
-
-  @override
-  String get companionRenameReset => '用回原来的';
-
-  @override
   String companionRenamed(String name) {
     return '「$name」……好，以后我就叫这个名字啦。';
   }
@@ -5112,6 +5100,39 @@ class L10nZh extends L10n {
 
   @override
   String get companionCloneFailed => '没能读取这段录音。';
+
+  @override
+  String get companionMenuPersona => '她的设定';
+
+  @override
+  String get companionPersonaName => '名字';
+
+  @override
+  String get companionPersonaNameHelper => '留空用素材包里的名字';
+
+  @override
+  String get companionPersonaCallMe => '她怎么叫你';
+
+  @override
+  String get companionPersonaCallMeHint => '比如 小周';
+
+  @override
+  String get companionPersonaCallMeHelper => '留空就不特别称呼';
+
+  @override
+  String get companionPersonaText => '人设';
+
+  @override
+  String get companionPersonaTextLabel => '她是谁、怎么说话';
+
+  @override
+  String get companionPersonaTextHelper => '性格、身份、说话方式都写在这里。表情动作的格式和安全边界由 App 自动加上，不用写，也删不掉。';
+
+  @override
+  String get companionPersonaReset => '恢复默认';
+
+  @override
+  String get companionPersonaFooter => '轻量模式下一句就生效；完整模式会在你下一条消息里把新设定告诉她。';
 
   @override
   String get engineNewChatDefaultsLast => '新对话默认（上次选择）';

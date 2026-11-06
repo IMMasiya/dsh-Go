@@ -312,8 +312,16 @@ void main() {
       await tester.pump(const Duration(seconds: 10));
     });
 
-    testWidgets('renamed: the name plate, her words and her persona follow', (tester) async {
+    testWidgets('她的设定: a new name, what she calls you and her own persona reach her', (tester) async {
+      tester.view.physicalSize = const Size(1080, 3200);
+      tester.view.devicePixelRatio = 2;
+      addTearDown(tester.view.reset);
       SharedPreferences.setMockInitialValues({'companion_touch_hint_done': true, 'companion_home_hint_done': true});
+      final asked = <Map<String, Object?>>[];
+      final client = MockClient.streaming((request, body) async {
+        asked.add(jsonDecode(await body.bytesToString()) as Map<String, Object?>);
+        return http.StreamedResponse(Stream.value(utf8.encode(_sse(['喵。']))), 200);
+      });
       CompanionStageEvents? stageEvents;
       await tester.pumpWidget(
         _app(
@@ -324,6 +332,10 @@ void main() {
               return const SizedBox.expand();
             },
           ),
+          extra: [
+            settingsProvider.overrideWith(() => _Settings('sk-test')),
+            companionLightClientProvider.overrideWithValue(() => client),
+          ],
         ),
       );
       (await _stageUp(tester, () => stageEvents)).onReady();
@@ -332,15 +344,40 @@ void main() {
 
       await tester.tap(find.byIcon(AppIcons.more));
       await tester.pumpAndSettle();
-      await tester.tap(find.text('她的名字'));
+      await tester.tap(find.text('她的设定'));
       await tester.pumpAndSettle();
-      await tester.enterText(find.byType(TextField).last, '小蓝');
-      await tester.tap(find.text('保存'));
-      await _settle(tester);
+      Finder field(String? hint) => find.byWidgetPredicate((w) => w is TextField && w.decoration?.hintText == hint);
+      // The persona starts as the default, to edit from.
+      expect(find.textContaining('你是鲸鱼娘，一只住在这台手机小屋里'), findsOneWidget);
+      await tester.enterText(field('鲸鱼娘'), '小蓝');
+      await tester.enterText(field('比如 小周'), '阿周');
+      await tester.enterText(
+        find.byWidgetPredicate((w) => w is TextField && w.maxLines == 24),
+        '你是一只爱撒娇的猫娘，说话结尾常带「喵」。',
+      );
+      await tester.pump(const Duration(milliseconds: 500));
+      Navigator.of(tester.element(find.text('她怎么叫你'))).pop();
+      await tester.pumpAndSettle();
+      await tester.pump(const Duration(milliseconds: 600));
       expect(find.text('「小蓝」……好，以后我就叫这个名字啦。'), findsOneWidget);
-      expect(find.text('小蓝'), findsWidgets);
       final prefs = await SharedPreferences.getInstance();
       expect(prefs.getString('companion_name'), '小蓝');
+
+      await tester.pump(const Duration(seconds: 10));
+      await tester.enterText(find.byType(TextField), '在吗');
+      await tester.pump();
+      await tester.tap(find.byIcon(AppIcons.send).last);
+      for (var i = 0; i < 20 && asked.isEmpty; i++) {
+        await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 40)));
+        await tester.pump(const Duration(milliseconds: 100));
+      }
+      final system = asked.single['system']! as String;
+      expect(system, startsWith('你的名字是「小蓝」。\n你是一只爱撒娇的猫娘'));
+      expect(system, contains('称呼对方为「阿周」。'));
+      // The app's rules stay, whatever the persona says.
+      expect(system, contains('[表情:开心]'));
+      expect(system, contains('不写色情内容'));
+      expect(system, isNot(contains('你是鲸鱼娘')));
 
       await tester.pumpWidget(const SizedBox());
       await tester.pump(const Duration(seconds: 20));

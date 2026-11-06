@@ -50,6 +50,7 @@ import '../theme/app_theme.dart';
 import '../theme/surfaces.dart';
 import 'companion_chrome.dart';
 import 'companion_memory_page.dart';
+import 'companion_persona_page.dart';
 import 'companion_voice_page.dart';
 import 'companion_stage.dart';
 
@@ -651,27 +652,24 @@ class _CompanionPageState extends ConsumerState<CompanionPage> implements Compan
     null => l10n.companionGreetFirstNameless,
   };
 
-  Future<void> _rename() async {
-    final l10n = context.l10n;
-    final given = ref.read(companionNameProvider);
-    final result = await showAppDialog<(String?,)>(
-      context: context,
-      builder: (_) => _RenameDialog(
-        initial: given ?? _character.name ?? '',
-        hint: _character.name ?? l10n.companionDefaultName,
-        canReset: given != null,
-      ),
+  /// Her persona as the person has it, under the name she goes by.
+  String _persona() {
+    final persona = ref.read(companionPersonaProvider);
+    return companionPersona(
+      custom: persona.custom,
+      name: ref.read(companionNameProvider) ?? _character.name,
+      callMe: persona.callMe,
     );
-    if (result == null || !mounted) return;
-    final before = _name(l10n);
-    await ref.read(companionNameProvider.notifier).set(result.$1);
-    if (!mounted) return;
-    final now = _name(l10n);
-    if (now == before) return;
-    _remember('对方刚给你起了新名字「$now」');
+  }
+
+  /// Renamed in 她的设定: back in the room, she answers to it.
+  void _renamedTo(String name) {
+    if (!mounted || !_stageReady) return;
+    final l10n = context.l10n;
+    _remember('对方刚给你起了新名字「$name」');
     _stage.command('emotion', {'name': 'happy', 'hold': 3200});
     _stage.command('action', {'name': 'hop'});
-    _say(l10n.companionRenamed(now));
+    _say(l10n.companionRenamed(name));
   }
 
   // ── Voice ────────────────────────────────────────────────────────────────
@@ -1174,10 +1172,24 @@ class _CompanionPageState extends ConsumerState<CompanionPage> implements Compan
       if (!await chat.waitForSync(isCurrent: current)) throw const DshClosedException('not synced');
       if (!current()) return;
       final firstInline = binding.inlinePersona && ref.read(chatProvider(binding.sessionId)).items.isEmpty;
+      final persona = ref.read(companionPersonaProvider);
+      final update = companionPersonaUpdate(custom: persona.custom, callMe: persona.callMe);
+      final tell =
+          update != null && !firstInline && !await companionPersonaTold(binding.sessionId, persona.fingerprint);
+      if (!current()) return;
       final aside = companionAside(now: DateTime.now(), notes: List.of(_notes));
       final named = companionNameNote(ref.read(companionNameProvider));
-      final message = [if (firstInline) companionInlinePersona, ?named, ?aside, text].join('\n');
+      final message = [
+        if (firstInline) '（从现在起请扮演下面的角色，直接开始，不要复述这段设定。）\n${_persona()}',
+        if (tell) update,
+        ?named,
+        ?aside,
+        text,
+      ].join('\n');
       final sent = await chat.send(message);
+      if (sent && (tell || (firstInline && update != null))) {
+        unawaited(companionPersonaMarkTold(binding.sessionId, persona.fingerprint));
+      }
       if (!current()) return;
       if (sent) {
         _notes.clear();
@@ -1242,7 +1254,7 @@ class _CompanionPageState extends ConsumerState<CompanionPage> implements Compan
         streamCompanionReply(
           client: client,
           apiKey: key,
-          system: companionLightSystem(memories, name: ref.read(companionNameProvider) ?? _character.name),
+          system: companionLightSystem(memories, persona: _persona()),
           lines: history.context(),
         ).listen(
           (delta) {
@@ -1491,11 +1503,15 @@ class _CompanionPageState extends ConsumerState<CompanionPage> implements Compan
                     SettingsTile(
                       icon: AppIcons.edit,
                       tinted: false,
-                      title: l10n.companionMenuName,
+                      title: l10n.companionMenuPersona,
                       value: Text(_name(l10n)),
                       onTap: () {
                         Navigator.of(sheet).pop();
-                        unawaited(_rename());
+                        unawaited(
+                          Navigator.of(context).push(
+                            MaterialPageRoute<void>(builder: (_) => CompanionPersonaPage(packName: _character.name)),
+                          ),
+                        );
                       },
                     ),
                     // Only where her state is kept: otherwise there is nothing to show.
@@ -1706,6 +1722,12 @@ class _CompanionPageState extends ConsumerState<CompanionPage> implements Compan
     _accessible = MediaQuery.accessibleNavigationOf(context);
     ref.watch(companionInitiativeEnabledProvider);
     ref.watch(companionNameProvider);
+    ref.listen(companionRenamedProvider, (_, name) {
+      if (name == null) return;
+      ref.read(companionRenamedProvider.notifier).set(null);
+      // After the page over her has gone.
+      Timer(const Duration(milliseconds: 450), () => _renamedTo(name));
+    });
     _queueObserve();
     final surfaces = DshSurfaces.of(context);
     return AnnotatedRegion<SystemUiOverlayStyle>(
@@ -1902,50 +1924,6 @@ class _CompanionPageState extends ConsumerState<CompanionPage> implements Compan
             ),
         ],
       ),
-    );
-  }
-}
-
-/// Her new name: the dialog owns its field, so it outlives the closing animation.
-class _RenameDialog extends StatefulWidget {
-  const _RenameDialog({required this.initial, required this.hint, required this.canReset});
-
-  final String initial;
-  final String hint;
-  final bool canReset;
-
-  @override
-  State<_RenameDialog> createState() => _RenameDialogState();
-}
-
-class _RenameDialogState extends State<_RenameDialog> {
-  late final _field = TextEditingController(text: widget.initial);
-
-  @override
-  void dispose() {
-    _field.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final l10n = context.l10n;
-    return AlertDialog(
-      title: Text(l10n.companionRenameTitle),
-      content: TextField(
-        controller: _field,
-        autofocus: true,
-        maxLength: companionNameMax,
-        textInputAction: TextInputAction.done,
-        decoration: InputDecoration(hintText: widget.hint, helperText: l10n.companionRenameHint),
-        onSubmitted: (value) => Navigator.pop(context, (value,)),
-      ),
-      actions: [
-        if (widget.canReset)
-          TextButton(onPressed: () => Navigator.pop(context, (null,)), child: Text(l10n.companionRenameReset)),
-        TextButton(onPressed: () => Navigator.pop(context), child: Text(l10n.commonCancel)),
-        FilledButton(onPressed: () => Navigator.pop(context, (_field.text,)), child: Text(l10n.commonSave)),
-      ],
     );
   }
 }

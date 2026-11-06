@@ -9302,30 +9302,6 @@ abstract class L10n {
   /// **'你好呀，以后我就住在这里了，请多指教。'**
   String get companionGreetFirstNameless;
 
-  /// No description provided for @companionMenuName.
-  ///
-  /// In zh, this message translates to:
-  /// **'她的名字'**
-  String get companionMenuName;
-
-  /// No description provided for @companionRenameTitle.
-  ///
-  /// In zh, this message translates to:
-  /// **'给她起个名字'**
-  String get companionRenameTitle;
-
-  /// No description provided for @companionRenameHint.
-  ///
-  /// In zh, this message translates to:
-  /// **'最多 12 个字'**
-  String get companionRenameHint;
-
-  /// No description provided for @companionRenameReset.
-  ///
-  /// In zh, this message translates to:
-  /// **'用回原来的'**
-  String get companionRenameReset;
-
   /// No description provided for @companionRenamed.
   ///
   /// In zh, this message translates to:
@@ -9463,6 +9439,72 @@ abstract class L10n {
   /// In zh, this message translates to:
   /// **'没能读取这段录音。'**
   String get companionCloneFailed;
+
+  /// No description provided for @companionMenuPersona.
+  ///
+  /// In zh, this message translates to:
+  /// **'她的设定'**
+  String get companionMenuPersona;
+
+  /// No description provided for @companionPersonaName.
+  ///
+  /// In zh, this message translates to:
+  /// **'名字'**
+  String get companionPersonaName;
+
+  /// No description provided for @companionPersonaNameHelper.
+  ///
+  /// In zh, this message translates to:
+  /// **'留空用素材包里的名字'**
+  String get companionPersonaNameHelper;
+
+  /// No description provided for @companionPersonaCallMe.
+  ///
+  /// In zh, this message translates to:
+  /// **'她怎么叫你'**
+  String get companionPersonaCallMe;
+
+  /// No description provided for @companionPersonaCallMeHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'比如 小周'**
+  String get companionPersonaCallMeHint;
+
+  /// No description provided for @companionPersonaCallMeHelper.
+  ///
+  /// In zh, this message translates to:
+  /// **'留空就不特别称呼'**
+  String get companionPersonaCallMeHelper;
+
+  /// No description provided for @companionPersonaText.
+  ///
+  /// In zh, this message translates to:
+  /// **'人设'**
+  String get companionPersonaText;
+
+  /// No description provided for @companionPersonaTextLabel.
+  ///
+  /// In zh, this message translates to:
+  /// **'她是谁、怎么说话'**
+  String get companionPersonaTextLabel;
+
+  /// No description provided for @companionPersonaTextHelper.
+  ///
+  /// In zh, this message translates to:
+  /// **'性格、身份、说话方式都写在这里。表情动作的格式和安全边界由 App 自动加上，不用写，也删不掉。'**
+  String get companionPersonaTextHelper;
+
+  /// No description provided for @companionPersonaReset.
+  ///
+  /// In zh, this message translates to:
+  /// **'恢复默认'**
+  String get companionPersonaReset;
+
+  /// No description provided for @companionPersonaFooter.
+  ///
+  /// In zh, this message translates to:
+  /// **'轻量模式下一句就生效；完整模式会在你下一条消息里把新设定告诉她。'**
+  String get companionPersonaFooter;
 
   /// No description provided for @engineNewChatDefaultsLast.
   ///

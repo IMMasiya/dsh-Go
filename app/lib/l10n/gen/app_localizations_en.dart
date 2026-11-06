@@ -5328,18 +5328,6 @@ class L10nEn extends L10n {
   String get companionGreetFirstNameless => 'Hi, I live here now. Nice to meet you.';
 
   @override
-  String get companionMenuName => 'Her name';
-
-  @override
-  String get companionRenameTitle => 'Name her';
-
-  @override
-  String get companionRenameHint => 'Up to 12 characters';
-
-  @override
-  String get companionRenameReset => 'Use the original';
-
-  @override
   String companionRenamed(String name) {
     return '\"$name\"... okay, that\'s my name from now on.';
   }
@@ -5417,6 +5405,41 @@ class L10nEn extends L10n {
 
   @override
   String get companionCloneFailed => 'Couldn\'t read that recording.';
+
+  @override
+  String get companionMenuPersona => 'About her';
+
+  @override
+  String get companionPersonaName => 'Name';
+
+  @override
+  String get companionPersonaNameHelper => 'Leave empty for the pack\'s name';
+
+  @override
+  String get companionPersonaCallMe => 'What she calls you';
+
+  @override
+  String get companionPersonaCallMeHint => 'e.g. Sam';
+
+  @override
+  String get companionPersonaCallMeHelper => 'Leave empty for nothing in particular';
+
+  @override
+  String get companionPersonaText => 'Persona';
+
+  @override
+  String get companionPersonaTextLabel => 'Who she is and how she talks';
+
+  @override
+  String get companionPersonaTextHelper =>
+      'Her personality, who she is, how she speaks. The app adds the format for her expressions and the safety lines itself: no need to write them, and they can\'t be removed.';
+
+  @override
+  String get companionPersonaReset => 'Reset';
+
+  @override
+  String get companionPersonaFooter =>
+      'Light mode uses it from her next reply; full mode tells her with your next message.';
 
   @override
   String get engineNewChatDefaultsLast => 'New chat defaults (last choice)';

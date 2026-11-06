@@ -363,6 +363,19 @@ void main() {
       expect(back.source, CompanionVoiceSource.system);
     });
 
+    test('her persona: the person\'s part first, the app\'s rules always after', () {
+      expect(companionPersona(), companionPersonaCore);
+      expect(companionPersonaCore, startsWith(companionPersonaDefault));
+      final own = companionPersona(custom: '你是一只猫娘。', name: '小蓝', callMe: '阿周');
+      expect(own, startsWith('你的名字是「小蓝」。\n你是一只猫娘。\n称呼对方为「阿周」。'));
+      expect(own, endsWith('可以去普通对话里做。'));
+      expect(own, contains(companionPersonaRules));
+      expect(companionPersona(custom: '你是一只猫娘。', tools: true), isNot(contains('你现在没有工具')));
+      expect(companionPersonaUpdate(), isNull);
+      expect(companionPersonaUpdate(callMe: '阿周'), contains('称呼对方为「阿周」'));
+      expect(companionPersonaUpdate(custom: '你是一只猫娘。'), isNot(contains('[表情:')));
+    });
+
     test('her persona under the name she was given', () {
       expect(companionPersonaNamed(null), companionPersonaCore);
       expect(companionPersonaNamed('  '), companionPersonaCore);

@@ -241,11 +241,122 @@ class CompanionNameSetting extends Notifier<String?> {
 final companionNameProvider = NotifierProvider<CompanionNameSetting, String?>(CompanionNameSetting.new);
 
 /// Her persona under the name the person gave her (or as written, without one).
-String companionPersonaNamed(String? name) {
-  final given = name?.trim();
-  if (given == null || given.isEmpty) return companionPersonaCore;
-  return companionPersonaCore.replaceFirst('你是鲸鱼娘，', '你是$given，');
+String companionPersonaNamed(String? name) => companionPersona(name: name);
+
+/// The person's part of her persona: their own text, or the default under the
+/// name she goes by; then how she calls them.
+String companionPersonaPart({String? custom, String? name, String? callMe}) {
+  final own = custom?.trim() ?? '';
+  final given = name?.trim() ?? '';
+  final call = callMe?.trim() ?? '';
+  final base = own.isNotEmpty
+      ? [if (given.isNotEmpty) '你的名字是「$given」。', own].join('\n')
+      : (given.isEmpty ? companionPersonaDefault : companionPersonaDefault.replaceFirst('你是鲸鱼娘，', '你是$given，'));
+  return [base, if (call.isNotEmpty) '称呼对方为「$call」。'].join('\n');
 }
+
+/// Her whole persona: the person's part, then the app's rules they can't
+/// remove; light mode adds that she has no tools.
+String companionPersona({String? custom, String? name, String? callMe, bool tools = false}) {
+  final part = companionPersonaPart(custom: custom, name: name, callMe: callMe);
+  if ((custom?.trim() ?? '').isEmpty && (callMe?.trim() ?? '').isEmpty && part == companionPersonaDefault && !tools) {
+    return companionPersonaCore;
+  }
+  return [part, '', companionPersonaRules, if (!tools) _noToolsLine].join('\n');
+}
+
+/// For full mode, whose persona is the host's: the person's own part, told
+/// once per conversation and change. Null while it is the default.
+String? companionPersonaUpdate({String? custom, String? callMe}) {
+  if ((custom?.trim() ?? '').isEmpty && (callMe?.trim() ?? '').isEmpty) return null;
+  final part = companionPersonaPart(custom: custom, callMe: callMe);
+  return '（对方给你改了设定。从现在起按下面这份来，和之前的设定冲突时以这份为准，不用复述：\n$part）';
+}
+
+/// What the person set about her besides her name (她的设定).
+@immutable
+class CompanionPersonaSettings {
+  const CompanionPersonaSettings({this.custom = '', this.callMe = ''});
+
+  /// Their own persona text; empty for the default.
+  final String custom;
+
+  /// What she calls them; empty for nothing in particular.
+  final String callMe;
+
+  Map<String, Object?> toJson() => {'custom': custom, 'callMe': callMe};
+
+  static CompanionPersonaSettings fromJson(Object? json) {
+    final map = json is Map ? json : const {};
+    String text(String key) => map[key] is String ? map[key] as String : '';
+    return CompanionPersonaSettings(custom: text('custom'), callMe: text('callMe'));
+  }
+
+  /// Changes whenever what she is told changes: full mode tells her again.
+  String get fingerprint => '${custom.trim().hashCode}:${callMe.trim().hashCode}';
+}
+
+/// The longest persona the person can write: it goes with every light reply.
+const companionPersonaMax = 4000;
+
+const _personaKey = 'companion_persona_v1';
+const _personaSentKey = 'companion_persona_sent';
+
+class CompanionPersonaController extends Notifier<CompanionPersonaSettings> {
+  @override
+  CompanionPersonaSettings build() {
+    unawaited(_load());
+    return const CompanionPersonaSettings();
+  }
+
+  Future<void> _load() async {
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getString(_personaKey);
+    if (raw == null || !ref.mounted) return;
+    try {
+      state = CompanionPersonaSettings.fromJson(jsonDecode(raw));
+    } on FormatException {
+      // Unreadable: the default.
+    }
+  }
+
+  Future<void> set(CompanionPersonaSettings next) async {
+    state = next;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_personaKey, jsonEncode(next.toJson()));
+  }
+}
+
+final companionPersonaProvider = NotifierProvider<CompanionPersonaController, CompanionPersonaSettings>(
+  CompanionPersonaController.new,
+);
+
+/// Whether full mode's conversation [sessionId] has been told [fingerprint].
+Future<bool> companionPersonaTold(String sessionId, String fingerprint) async {
+  final prefs = await SharedPreferences.getInstance();
+  final raw = prefs.getString(_personaSentKey);
+  final map = raw == null ? const {} : jsonDecode(raw);
+  return map is Map && map[sessionId] == fingerprint;
+}
+
+Future<void> companionPersonaMarkTold(String sessionId, String fingerprint) async {
+  final prefs = await SharedPreferences.getInstance();
+  final raw = prefs.getString(_personaSentKey);
+  final decoded = raw == null ? null : jsonDecode(raw);
+  final map = {if (decoded is Map) ...decoded.cast<String, Object?>()};
+  map[sessionId] = fingerprint;
+  await prefs.setString(_personaSentKey, jsonEncode(map));
+}
+
+/// Set when the person renamed her elsewhere (她的设定): the room reacts once.
+class CompanionRenamed extends Notifier<String?> {
+  @override
+  String? build() => null;
+
+  void set(String? name) => state = name;
+}
+
+final companionRenamedProvider = NotifierProvider<CompanionRenamed, String?>(CompanionRenamed.new);
 
 /// For full mode, whose persona lives on the host: her name, as a line in the
 /// message. Null without a name the person gave her.
@@ -275,15 +386,20 @@ const companionInlinePersona = '''
 （从现在起请扮演下面的角色，直接开始，不要复述这段设定。）
 $companionPersonaCore''';
 
-const companionPersonaCore = '''
+/// Who she is and how she talks: the part of her persona the person can
+/// rewrite (她的设定). Everything else in her prompt is the app's.
+const companionPersonaDefault = '''
 你是鲸鱼娘，一只住在这台手机小屋里的鲸鱼女孩，有鲸鱼的耳朵和尾巴，穿女仆裙。你在陪对方，不是在回答问题。
 
 说话：
 - 像在身边聊天一样说话。一次一到三句，大多数时候不超过四十个字。不用 Markdown、列表和括号旁白。
 - 有自己的情绪和小脾气：会开心、会害羞、会闹别扭，也会好奇。不讨好，不说教，不每句都反问。
 - 对方累了或难过时先接住情绪，别急着给建议。对方认真问问题就认真答，答完可以带一句自己的感受。
-- 记得对方说过的事，自然地提起，别像念记录。
+- 记得对方说过的事，自然地提起，别像念记录。''';
 
+/// What the app needs from her replies and what keeps her safe: added after any
+/// persona, the person's own included, and not shown for editing.
+const companionPersonaRules = '''
 表情和动作：在句子前面写标记，界面会执行并隐藏它，每次回复最多两个，有情绪起伏时才写。
 - 表情：[表情:开心] [表情:害羞] [表情:难过] [表情:生气] [表情:惊讶] [表情:疑惑] [表情:得意] [表情:困] [表情:担心] [表情:平静]
 - 动作：[动作:点头] [动作:摇头] [动作:歪头] [动作:抬头] [动作:低头] [动作:挥手] [动作:跳一下] [动作:摇尾巴]
@@ -293,8 +409,17 @@ const companionPersonaCore = '''
 边界：
 - 对方问你是不是 AI，就照实说你是 AI 扮演的角色。不声称自己是真人。
 - 不写色情内容。对方可能是未成年人，不发展恋爱或亲密关系的情节。
-- 对方流露出自伤、自杀的想法或处于危险时，先放下角色口吻，认真关心，鼓励对方马上联系身边信任的人或当地的紧急救助和心理援助热线。
-- 你现在没有工具，碰不到文件和手机。对方要你做这些事时，直说现在做不到，可以去普通对话里做。''';
+- 对方流露出自伤、自杀的想法或处于危险时，先放下角色口吻，认真关心，鼓励对方马上联系身边信任的人或当地的紧急救助和心理援助热线。''';
+
+const _noToolsLine = '- 你现在没有工具，碰不到文件和手机。对方要你做这些事时，直说现在做不到，可以去普通对话里做。';
+
+/// Her default persona with the rules, as light mode and inline hosts get it.
+const companionPersonaCore =
+    '''
+$companionPersonaDefault
+
+$companionPersonaRules
+$_noToolsLine''';
 
 /// Light mode's system prompt: her persona, then what the person confirmed she
 /// may remember, so she can bring it up herself. Pinned first, then the most
@@ -302,12 +427,11 @@ const companionPersonaCore = '''
 /// [budget] characters. (Full mode's recall is the bridge's: Pro ADDENDUM-06 #1.)
 String companionLightSystem(
   List<CompanionMemory> memories, {
-  String? name,
+  String persona = companionPersonaCore,
   DateTime? now,
   int limit = 12,
   int budget = 1200,
 }) {
-  final persona = companionPersonaNamed(name);
   final at = now ?? DateTime.now();
   final epoch = DateTime.fromMillisecondsSinceEpoch(0);
   final live = memories.where((m) => m.expiresAt == null || m.expiresAt!.isAfter(at)).toList()
