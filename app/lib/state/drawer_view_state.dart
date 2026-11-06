@@ -12,6 +12,7 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:dsh_client/dsh_client.dart';
+import 'package:flutter/widgets.dart' show StringCharacters;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -384,7 +385,7 @@ class DrawerViewController extends Notifier<DrawerView> {
 
   static String _clean(String name) {
     final trimmed = name.trim();
-    return trimmed.length <= maxName ? trimmed : trimmed.substring(0, maxName);
+    return trimmed.characters.take(maxName).toString();
   }
 
   static DrawerFolder _without(DrawerFolder f, Set<String> ids) => f.sessionIds.any(ids.contains)
