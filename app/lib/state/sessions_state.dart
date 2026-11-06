@@ -595,12 +595,30 @@ class SessionsController extends AsyncNotifier<List<SessionSummary>> {
   Future<String> create({bool autoApprove = true}) async {
     final conn = ref.read(activeConnectionProvider).value;
     if (conn == null) throw StateError('not connected');
+    return createForConnection(conn, autoApprove: autoApprove, isCurrent: () => true);
+  }
+
+  /// Creates for a captured connection. The caller retires its intent through
+  /// [isCurrent]; waits and workspace fallback must not start a later write.
+  Future<String> createForConnection(
+    HostConnection conn, {
+    required bool Function() isCurrent,
+    bool autoApprove = true,
+  }) async {
+    final owner = ref;
+    void checkCurrent() {
+      if (!owner.mounted || !isCurrent()) throw const DshClosedException('session creation superseded');
+    }
+
+    checkCurrent();
     // Remote hosts: the working directory configured for that host, else the
     // workspace used last (as the official client does), else the remote DSH's
     // own default.
     var workspaceId = await workspaceForNewSession(ref);
+    checkCurrent();
     if (workspaceId == null && _hostPicksNewChatDirectory(conn)) {
       await _listsForNewChat();
+      checkCurrent();
       final sameHost = identical(ref.read(activeConnectionProvider).value?.client, conn.client);
       if (sameHost) workspaceId = _recentForNewChat(conn, ref.read(workspacesProvider), state.value)?.workspaceId;
     }
@@ -608,7 +626,9 @@ class SessionsController extends AsyncNotifier<List<SessionSummary>> {
       conn.client,
       workspaceId,
       cwd: conn.isLocal ? localWorkspaceDir : conn.workingDirectory,
+      checkCurrent: checkCurrent,
     );
+    checkCurrent();
     // Safe mode keeps the default preset: the agent there repairs the engine
     // with a full shell already, and every command should still be asked.
     final safeMode = ref.read(localRuntimeProvider).status.inSafeMode;
@@ -619,6 +639,7 @@ class SessionsController extends AsyncNotifier<List<SessionSummary>> {
         // Keep the default preset if the command is unavailable.
       }
     }
+    checkCurrent();
     unawaited(refresh());
     return created.sessionId;
   }

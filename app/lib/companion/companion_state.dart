@@ -43,9 +43,16 @@ String _hostKey(HostRef host) => '${host.kind.name}:${host.id}';
 
 class CompanionSessions extends Notifier<Map<String, CompanionBinding>> {
   final _loaded = Completer<void>();
+  int _ownershipEpoch = 0;
 
   @override
   Map<String, CompanionBinding> build() {
+    ref.listen(activeHostProvider, (previous, next) {
+      if (previous != next) _ownershipEpoch++;
+    });
+    ref.listen(activeConnectionProvider.select((value) => value.value?.client), (previous, next) {
+      if (!identical(previous, next)) _ownershipEpoch++;
+    });
     unawaited(_load());
     return const {};
   }
@@ -66,8 +73,10 @@ class CompanionSessions extends Notifier<Map<String, CompanionBinding>> {
     if (!_loaded.isCompleted) _loaded.complete();
   }
 
-  Future<void> _save() async {
+  Future<void> _save([bool Function()? current]) async {
+    final owner = ref;
     final prefs = await SharedPreferences.getInstance();
+    if (!owner.mounted || (current != null && !current())) throw const DshClosedException('host changed');
     await prefs.setString(_sessionsKey, jsonEncode({for (final e in state.entries) e.key: e.value.toJson()}));
   }
 
@@ -76,15 +85,32 @@ class CompanionSessions extends Notifier<Map<String, CompanionBinding>> {
   /// The conversation on the active host, created on first use. Throws when
   /// the host isn't connected.
   Future<CompanionBinding> ensure() async {
-    await _loaded.future;
-    final host = ref.read(activeHostProvider);
-    final conn = ref.read(activeConnectionProvider).value;
+    final owner = ref;
+    final epoch = _ownershipEpoch;
+    final host = owner.read(activeHostProvider);
+    final conn = owner.read(activeConnectionProvider).value;
     if (conn == null) throw const DshClosedException('not connected');
-    final current = of(host);
-    if (current != null && !await _gone(conn.client, current.sessionId)) return current;
+    bool current() =>
+        owner.mounted &&
+        epoch == _ownershipEpoch &&
+        owner.read(activeHostProvider) == host &&
+        identical(owner.read(activeConnectionProvider).value?.client, conn.client);
+    void checkCurrent() {
+      if (!current()) throw const DshClosedException('host changed');
+    }
 
-    final sessions = ref.read(sessionsProvider.notifier);
-    final id = await sessions.create(autoApprove: false);
+    await _loaded.future;
+    checkCurrent();
+    final existing = of(host);
+    if (existing != null) {
+      final gone = await _gone(conn.client, existing.sessionId);
+      checkCurrent();
+      if (!gone) return existing;
+    }
+
+    final sessions = owner.read(sessionsProvider.notifier);
+    final id = await sessions.createForConnection(conn, autoApprove: false, isCurrent: current);
+    checkCurrent();
     // The preset declares no tools, but an engine can still lend an agent the
     // host's global ones. Whatever reaches her asks first and writes nothing.
     try {
@@ -92,20 +118,21 @@ class CompanionSessions extends Notifier<Map<String, CompanionBinding>> {
     } on Object {
       // An engine without the preset keeps its default (it asks for writes).
     }
+    checkCurrent();
     // Before the first message, so it never shows in the drawer.
-    var binding = CompanionBinding(id, inlinePersona: true);
+    final selected = await _selectPreset(conn.client, id, current);
+    checkCurrent();
+    final binding = CompanionBinding(id, inlinePersona: !selected);
     state = {...state, _hostKey(host): binding};
-    if (await _selectPreset(conn.client, id)) {
-      binding = CompanionBinding(id);
-      state = {...state, _hostKey(host): binding};
-    }
-    await _save();
+    await _save(current);
+    checkCurrent();
     return binding;
   }
 
-  Future<bool> _selectPreset(DshClient client, String id) async {
+  Future<bool> _selectPreset(DshClient client, String id, bool Function() current) async {
     try {
       final presets = await client.listAgentPresets();
+      if (!current()) return false;
       if (!presets.any((p) => p.id == companionPresetId && p.broken == null)) return false;
       await client.selectAgentPreset(id, companionPresetId);
       return true;
@@ -127,6 +154,7 @@ class CompanionSessions extends Notifier<Map<String, CompanionBinding>> {
 
   /// Starts over on the active host: the next message opens a new conversation.
   Future<void> forget() async {
+    _ownershipEpoch++;
     state = {...state}..remove(_hostKey(ref.read(activeHostProvider)));
     await _save();
   }
