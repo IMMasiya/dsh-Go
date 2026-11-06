@@ -351,7 +351,8 @@ void main() {
       expect(room.speech(tester), isNull);
       room.bridge.release();
       await flush(tester);
-      expect(room.speech(tester), room.l10n(tester).companionGreetFirst);
+      // This pack has no name: she introduces herself without one.
+      expect(room.speech(tester), room.l10n(tester).companionGreetFirstNameless);
       room.expectVisitAndVitals();
       expect(room.commands.where((command) => command.$1 == 'say'), hasLength(1));
     } finally {
@@ -487,7 +488,8 @@ void main() {
       room.bridge.release();
       await flush(tester);
       room.expectVisitAndVitals();
-      expect(room.speech(tester), room.l10n(tester).companionGreetFirst);
+      // This pack has no name: she introduces herself without one.
+      expect(room.speech(tester), room.l10n(tester).companionGreetFirstNameless);
       expect(room.commands.where((command) => command.$1 == 'emotion').map((command) => command.$2['name']), ['shy']);
     } finally {
       await room.close(tester);

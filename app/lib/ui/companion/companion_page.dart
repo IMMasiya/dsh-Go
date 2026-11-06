@@ -26,6 +26,7 @@ import '../../companion/companion_pack.dart';
 import '../../companion/companion_reply.dart';
 import '../../companion/companion_state.dart';
 import '../../companion/companion_voice.dart';
+import '../../companion/companion_voice_source.dart';
 import '../../companion/companion_widget.dart';
 import '../../l10n/l10n.dart';
 import '../../pets/pet_mood.dart' show PetEvent, PetEventKind;
@@ -49,6 +50,7 @@ import '../theme/app_theme.dart';
 import '../theme/surfaces.dart';
 import 'companion_chrome.dart';
 import 'companion_memory_page.dart';
+import 'companion_voice_page.dart';
 import 'companion_stage.dart';
 
 /// The person removed her pack: the one inside the app waits to be asked for.
@@ -167,8 +169,11 @@ class _CompanionPageState extends ConsumerState<CompanionPage> implements Compan
   // Her voice (companion_voice.dart): what is queued, and how far into the
   // current reply she has read aloud. Her mouth follows the engine when it
   // reports what it is reading, else the text's own rhythm.
-  late final CompanionVoice _tts;
+  late final CompanionSpeaker _speaker;
   StreamSubscription<CompanionVoiceEvent>? _ttsEvents;
+  String? _voiceNotice;
+  Timer? _voiceNoticeTimer;
+  bool _fallbackNoted = false;
   bool _ttsReady = false;
   bool _ttsRanges = false;
   int _ttsSerial = 0;
@@ -219,10 +224,10 @@ class _CompanionPageState extends ConsumerState<CompanionPage> implements Compan
     );
     _voice.addListener(_voiceChanged);
     _agentEvents = ref.read(petEventBusProvider).events.listen(_onAgentEvent);
-    _tts = ref.read(companionVoiceProvider);
-    _ttsEvents = _tts.events.listen(_onTts);
-    ref.listenManual(companionVoiceEnabledProvider, (_, on) {
-      if (on == true && !_ttsReady) unawaited(_prepareVoice());
+    _speaker = ref.read(companionSpeakerProvider);
+    _ttsEvents = _speaker.events.listen(_onTts);
+    ref.listenManual(companionVoiceSettingsProvider, (_, settings) {
+      if (settings != null) unawaited(_prepareVoice(settings));
     }, fireImmediately: true);
     _focus.addListener(_refreshMood);
     _input.addListener(_inputChanged);
@@ -275,7 +280,8 @@ class _CompanionPageState extends ConsumerState<CompanionPage> implements Compan
     _objectTimer?.cancel();
     unawaited(_agentEvents?.cancel());
     unawaited(_ttsEvents?.cancel());
-    if (_ttsPending.isNotEmpty) unawaited(_tts.stop());
+    if (_ttsPending.isNotEmpty) _speaker.stop();
+    _voiceNoticeTimer?.cancel();
     _agentPillTimer?.cancel();
     _voice.removeListener(_voiceChanged);
     _voice.dispose();
@@ -411,7 +417,7 @@ class _CompanionPageState extends ConsumerState<CompanionPage> implements Compan
     if (!mounted || !_takeGreeting(current)) return;
     final l10n = context.l10n;
     final (line, emotion, action) = switch (greeting) {
-      CompanionGreeting.firstTime => (l10n.companionGreetFirst, 'shy', 'wave'),
+      CompanionGreeting.firstTime => (_firstHello(l10n), 'shy', 'wave'),
       CompanionGreeting.morning => (l10n.companionGreetMorning, 'happy', 'wave'),
       CompanionGreeting.noon => (l10n.companionGreetNoon, 'calm', 'tilt'),
       CompanionGreeting.afternoon => (l10n.companionGreetAfternoon, 'calm', 'nodSmall'),
@@ -617,7 +623,7 @@ class _CompanionPageState extends ConsumerState<CompanionPage> implements Compan
     final activity = snapshot?.vitals.activity ?? _home;
     unawaited(
       ref.read(companionWidgetProvider).update({
-        'name': _character.name ?? l10n.companionDefaultName,
+        'name': _name(l10n),
         'activity': activity,
         'status': switch (activity) {
           'snack' => l10n.companionStatusSnacking,
@@ -636,12 +642,50 @@ class _CompanionPageState extends ConsumerState<CompanionPage> implements Compan
     );
   }
 
+  /// Her name: the one the person gave her, else her pack's, else just "her".
+  String _name(L10n l10n) => ref.read(companionNameProvider) ?? _character.name ?? l10n.companionDefaultName;
+
+  /// Introducing herself, by the name she goes by (if she has one).
+  String _firstHello(L10n l10n) => switch (ref.read(companionNameProvider) ?? _character.name) {
+    final name? => l10n.companionGreetFirst(name),
+    null => l10n.companionGreetFirstNameless,
+  };
+
+  Future<void> _rename() async {
+    final l10n = context.l10n;
+    final given = ref.read(companionNameProvider);
+    final result = await showAppDialog<(String?,)>(
+      context: context,
+      builder: (_) => _RenameDialog(
+        initial: given ?? _character.name ?? '',
+        hint: _character.name ?? l10n.companionDefaultName,
+        canReset: given != null,
+      ),
+    );
+    if (result == null || !mounted) return;
+    final before = _name(l10n);
+    await ref.read(companionNameProvider.notifier).set(result.$1);
+    if (!mounted) return;
+    final now = _name(l10n);
+    if (now == before) return;
+    _remember('对方刚给你起了新名字「$now」');
+    _stage.command('emotion', {'name': 'happy', 'hold': 3200});
+    _stage.command('action', {'name': 'hop'});
+    _say(l10n.companionRenamed(now));
+  }
+
   // ── Voice ────────────────────────────────────────────────────────────────
 
-  bool get _voiceOn => _ttsReady && (ref.read(companionVoiceEnabledProvider) ?? false);
+  bool get _voiceOn => _ttsReady && (ref.read(companionVoiceSettingsProvider)?.on ?? false);
 
-  Future<void> _prepareVoice() async {
-    final ready = await _tts.ready();
+  /// Ready to speak with [settings] (or silent when they are off).
+  Future<void> _prepareVoice(CompanionVoiceSettings settings) async {
+    if (!settings.on) {
+      _ttsReady = false;
+      _hush();
+      return;
+    }
+    final ready = await _speaker.ready(settings);
     if (mounted) _ttsReady = ready;
   }
 
@@ -652,11 +696,7 @@ class _CompanionPageState extends ConsumerState<CompanionPage> implements Compan
     if (flush) _ttsPending.clear();
     final id = 'v${++_ttsSerial}';
     _ttsPending[id] = text.length;
-    unawaited(
-      _tts.speak(id, text, flush: flush).then((ok) {
-        if (!ok && mounted) setState(() => _ttsPending.remove(id));
-      }),
-    );
+    _speaker.speak(id, text, flush: flush);
     return true;
   }
 
@@ -664,7 +704,7 @@ class _CompanionPageState extends ConsumerState<CompanionPage> implements Compan
   void _hush() {
     if (_ttsPending.isEmpty) return;
     _ttsPending.clear();
-    unawaited(_tts.stop());
+    _speaker.stop();
     _stage.command('quiet');
   }
 
@@ -672,35 +712,29 @@ class _CompanionPageState extends ConsumerState<CompanionPage> implements Compan
     if (!mounted || !_ttsPending.containsKey(event.id)) return;
     switch (event.type) {
       case CompanionVoiceEventType.start:
-        // Engines that don't say what they're reading: the whole line's rhythm.
-        if (!_ttsRanges) _stage.command('say', {'chars': _ttsPending[event.id]});
+        final external = ref.read(companionVoiceSettingsProvider)?.source != CompanionVoiceSource.system;
+        if (event.loudness case final levels?) {
+          // Fetched WAV: her mouth opens with the voice's own loudness.
+          _stage.command('loudness', {'levels': levels, 'frameMs': 40});
+        } else if (!_ttsRanges || external) {
+          // Engines that don't say what they're reading: the whole line's rhythm.
+          _stage.command('say', {'chars': _ttsPending[event.id]});
+        }
+      case CompanionVoiceEventType.fallback:
+        // Once per visit: the external voice didn't answer, the phone's stood in.
+        if (_fallbackNoted) return;
+        _fallbackNoted = true;
+        _voiceNoticeTimer?.cancel();
+        setState(() => _voiceNotice = context.l10n.companionVoiceFallback);
+        _voiceNoticeTimer = Timer(const Duration(seconds: 6), () {
+          if (mounted) setState(() => _voiceNotice = null);
+        });
       case CompanionVoiceEventType.range:
         _ttsRanges = true;
         _stage.command('say', {'chars': max(1, (event.end ?? 0) - (event.start ?? 0))});
       case CompanionVoiceEventType.done || CompanionVoiceEventType.stopped || CompanionVoiceEventType.error:
         setState(() => _ttsPending.remove(event.id));
     }
-  }
-
-  /// The menu's switch: on only once the engine can speak, and she says hello
-  /// in it so the person hears what they turned on.
-  Future<void> _setVoice(bool on) async {
-    final setting = ref.read(companionVoiceEnabledProvider.notifier);
-    if (!on) {
-      _hush();
-      await setting.set(false);
-      return;
-    }
-    final l10n = context.l10n;
-    final ready = await _tts.ready();
-    if (!mounted) return;
-    _ttsReady = ready;
-    if (!ready) {
-      _showBubble(l10n.companionVoiceUnavailable, hold: const Duration(seconds: 6), error: true);
-      return;
-    }
-    await setting.set(true);
-    if (mounted) _say(l10n.companionVoiceHello);
   }
 
   void _showBubble(String text, {Duration? hold, bool error = false}) {
@@ -1141,7 +1175,8 @@ class _CompanionPageState extends ConsumerState<CompanionPage> implements Compan
       if (!current()) return;
       final firstInline = binding.inlinePersona && ref.read(chatProvider(binding.sessionId)).items.isEmpty;
       final aside = companionAside(now: DateTime.now(), notes: List.of(_notes));
-      final message = [if (firstInline) companionInlinePersona, ?aside, text].join('\n');
+      final named = companionNameNote(ref.read(companionNameProvider));
+      final message = [if (firstInline) companionInlinePersona, ?named, ?aside, text].join('\n');
       final sent = await chat.send(message);
       if (!current()) return;
       if (sent) {
@@ -1207,7 +1242,7 @@ class _CompanionPageState extends ConsumerState<CompanionPage> implements Compan
         streamCompanionReply(
           client: client,
           apiKey: key,
-          system: companionLightSystem(memories),
+          system: companionLightSystem(memories, name: ref.read(companionNameProvider) ?? _character.name),
           lines: history.context(),
         ).listen(
           (delta) {
@@ -1449,10 +1484,20 @@ class _CompanionPageState extends ConsumerState<CompanionPage> implements Compan
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                SheetTitleBar(_character.name ?? l10n.companionTitle),
+                SheetTitleBar(ref.read(companionNameProvider) ?? _character.name ?? l10n.companionTitle),
                 SheetGroup(
                   margin: const EdgeInsets.fromLTRB(SheetTitleBar.inset, 0, SheetTitleBar.inset, 12),
                   children: [
+                    SettingsTile(
+                      icon: AppIcons.edit,
+                      tinted: false,
+                      title: l10n.companionMenuName,
+                      value: Text(_name(l10n)),
+                      onTap: () {
+                        Navigator.of(sheet).pop();
+                        unawaited(_rename());
+                      },
+                    ),
                     // Only where her state is kept: otherwise there is nothing to show.
                     if (_vitals case final vitals?)
                       SettingsTile(
@@ -1495,14 +1540,31 @@ class _CompanionPageState extends ConsumerState<CompanionPage> implements Compan
                       },
                     ),
                     Consumer(
-                      builder: (context, ref, _) => SettingsSwitchTile(
-                        icon: AppIcons.companionVoice,
-                        tinted: false,
-                        title: l10n.companionMenuVoice,
-                        subtitle: l10n.companionMenuVoiceHint,
-                        value: ref.watch(companionVoiceEnabledProvider) ?? false,
-                        onChanged: (on) => unawaited(_setVoice(on)),
-                      ),
+                      // The page's own context pushes the voice page, not the sheet's.
+                      builder: (_, ref, _) {
+                        final voice = ref.watch(companionVoiceSettingsProvider);
+                        return SettingsTile(
+                          icon: AppIcons.companionVoice,
+                          tinted: false,
+                          title: l10n.companionMenuVoice,
+                          value: Text(switch (voice) {
+                            CompanionVoiceSettings(on: true, source: CompanionVoiceSource.system) =>
+                              l10n.companionVoiceSystem,
+                            CompanionVoiceSettings(on: true, source: CompanionVoiceSource.openai) =>
+                              l10n.companionVoiceOpenai,
+                            CompanionVoiceSettings(on: true, source: CompanionVoiceSource.custom) =>
+                              l10n.companionVoiceCustom,
+                            _ => l10n.companionVoiceOff,
+                          }),
+                          onTap: () {
+                            Navigator.of(sheet).pop();
+                            unawaited(
+                              Navigator.of(context)
+                                  .push(MaterialPageRoute<void>(builder: (_) => const CompanionVoicePage())),
+                            );
+                          },
+                        );
+                      },
                     ),
                     Consumer(
                       builder: (context, ref, _) => SettingsSwitchTile(
@@ -1598,13 +1660,13 @@ class _CompanionPageState extends ConsumerState<CompanionPage> implements Compan
       _retireLight();
       await _lightHistory?.clear();
       if (!mounted) return;
-      _say(l10n.companionGreetFirst);
+      _say(_firstHello(l10n));
       return;
     }
     await ref.read(companionSessionsProvider.notifier).forget();
     if (!mounted) return;
     setState(_unbind);
-    _say(l10n.companionGreetFirst);
+    _say(_firstHello(l10n));
   }
 
   Future<void> _removePack() async {
@@ -1641,6 +1703,7 @@ class _CompanionPageState extends ConsumerState<CompanionPage> implements Compan
     _routeShown = TickerMode.valuesOf(context).enabled && (ModalRoute.isCurrentOf(context) ?? true);
     _accessible = MediaQuery.accessibleNavigationOf(context);
     ref.watch(companionInitiativeEnabledProvider);
+    ref.watch(companionNameProvider);
     _queueObserve();
     final surfaces = DshSurfaces.of(context);
     return AnnotatedRegion<SystemUiOverlayStyle>(
@@ -1665,7 +1728,7 @@ class _CompanionPageState extends ConsumerState<CompanionPage> implements Compan
     final padding = MediaQuery.paddingOf(context);
     final store = _store;
     final showStage = _phase == _Phase.stage && store != null;
-    final name = _character.name ?? l10n.companionDefaultName;
+    final name = _name(l10n);
     // Shown only while it still belongs here and nothing else has the floor,
     // in this very frame (the owner hears about it right after).
     final invite = _invite;
@@ -1772,6 +1835,7 @@ class _CompanionPageState extends ConsumerState<CompanionPage> implements Compan
                     CompanionPill(icon: AppIcons.tip, label: l10n.companionTouchHint)
                   else if (_showHomeHint && _bubble == null && !inviting)
                     CompanionPill(icon: AppIcons.tip, label: l10n.companionTouchHintHome),
+                  if (_voiceNotice case final notice?) CompanionPill(icon: AppIcons.tip, label: notice),
                   if (_agentPill case final pill?)
                     CompanionPill(
                       icon: AppIcons.conversations,
@@ -1836,6 +1900,50 @@ class _CompanionPageState extends ConsumerState<CompanionPage> implements Compan
             ),
         ],
       ),
+    );
+  }
+}
+
+/// Her new name: the dialog owns its field, so it outlives the closing animation.
+class _RenameDialog extends StatefulWidget {
+  const _RenameDialog({required this.initial, required this.hint, required this.canReset});
+
+  final String initial;
+  final String hint;
+  final bool canReset;
+
+  @override
+  State<_RenameDialog> createState() => _RenameDialogState();
+}
+
+class _RenameDialogState extends State<_RenameDialog> {
+  late final _field = TextEditingController(text: widget.initial);
+
+  @override
+  void dispose() {
+    _field.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = context.l10n;
+    return AlertDialog(
+      title: Text(l10n.companionRenameTitle),
+      content: TextField(
+        controller: _field,
+        autofocus: true,
+        maxLength: companionNameMax,
+        textInputAction: TextInputAction.done,
+        decoration: InputDecoration(hintText: widget.hint, helperText: l10n.companionRenameHint),
+        onSubmitted: (value) => Navigator.pop(context, (value,)),
+      ),
+      actions: [
+        if (widget.canReset)
+          TextButton(onPressed: () => Navigator.pop(context, (null,)), child: Text(l10n.companionRenameReset)),
+        TextButton(onPressed: () => Navigator.pop(context), child: Text(l10n.commonCancel)),
+        FilledButton(onPressed: () => Navigator.pop(context, (_field.text,)), child: Text(l10n.commonSave)),
+      ],
     );
   }
 }

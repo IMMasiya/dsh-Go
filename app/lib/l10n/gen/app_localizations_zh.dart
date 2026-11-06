@@ -4558,7 +4558,9 @@ class L10nZh extends L10n {
   String get companionPackStorage => '写入失败，看看手机存储空间够不够。';
 
   @override
-  String get companionGreetFirst => '你好呀，我是鲸鱼娘。以后就住在这里了，请多指教。';
+  String companionGreetFirst(String name) {
+    return '你好呀，我是$name。以后就住在这里了，请多指教。';
+  }
 
   @override
   String get companionGreetMorning => '早呀，今天也要好好吃早饭。';
@@ -4914,6 +4916,130 @@ class L10nZh extends L10n {
 
   @override
   String get companionWidgetWaiting => '在小屋里等你';
+
+  @override
+  String get companionVoiceOn => '让她出声';
+
+  @override
+  String get companionVoiceOffHint => '打开时她会先用选好的声音打个招呼。';
+
+  @override
+  String get companionVoiceOff => '关';
+
+  @override
+  String get companionVoiceSource => '声音来源';
+
+  @override
+  String get companionVoiceSystem => '手机自带';
+
+  @override
+  String get companionVoiceSystemHint => '系统的文字转语音，不联网也能用';
+
+  @override
+  String get companionVoiceOpenai => 'OpenAI 兼容接口';
+
+  @override
+  String get companionVoiceOpenaiHint => 'OpenAI、硅基流动，以及大多数自建的 GPT-SoVITS、CosyVoice、edge-tts 服务';
+
+  @override
+  String get companionVoiceCustom => '自定义 HTTP';
+
+  @override
+  String get companionVoiceCustomHint => '别的接口：自己填请求和返回的格式';
+
+  @override
+  String get companionVoiceApi => '接口';
+
+  @override
+  String get companionVoiceBase => '地址';
+
+  @override
+  String get companionVoiceBaseHelper => '填到 /v1 为止，App 会接上 /audio/speech';
+
+  @override
+  String get companionVoiceKeyHelper => '存在这台手机的安全存储里';
+
+  @override
+  String get companionVoiceModel => '模型';
+
+  @override
+  String get companionVoiceVoice => '音色';
+
+  @override
+  String get companionVoiceVoiceHelper => '服务给的音色名，比如 alloy，或你自建服务里的角色名';
+
+  @override
+  String get companionVoiceRequest => '请求';
+
+  @override
+  String get companionVoiceUrl => '请求地址';
+
+  @override
+  String get companionVoiceUrlHelper => '地址里也可以用 {text}';
+
+  @override
+  String get companionVoiceMethod => '方法';
+
+  @override
+  String get companionVoiceHeaders => '请求头';
+
+  @override
+  String get companionVoiceHeadersHelper => '每行一个；会存进安全存储';
+
+  @override
+  String get companionVoiceBody => '请求体';
+
+  @override
+  String get companionVoiceBodyHelper => '{text} 会换成她要说的话';
+
+  @override
+  String get companionVoiceField => '音频字段';
+
+  @override
+  String get companionVoiceFieldHelper => '返回 JSON 时，音频在哪个字段（base64 或链接），比如 data.audio；直接返回音频就留空';
+
+  @override
+  String get companionVoicePrivacy => '她要说的话会发给你填的这个服务。';
+
+  @override
+  String get companionVoicePreview => '试听';
+
+  @override
+  String get companionVoicePreviewing => '正在请求…';
+
+  @override
+  String get companionVoicePreviewOk => '能用，听到了吗？';
+
+  @override
+  String companionVoicePreviewFailed(String reason) {
+    return '没成功：$reason';
+  }
+
+  @override
+  String get companionVoiceNotSetUp => '先把上面的地址填好。';
+
+  @override
+  String get companionVoiceFallback => '外接的声音这次没连上，先用了手机自带的声音';
+
+  @override
+  String get companionGreetFirstNameless => '你好呀，以后我就住在这里了，请多指教。';
+
+  @override
+  String get companionMenuName => '她的名字';
+
+  @override
+  String get companionRenameTitle => '给她起个名字';
+
+  @override
+  String get companionRenameHint => '最多 12 个字';
+
+  @override
+  String get companionRenameReset => '用回原来的';
+
+  @override
+  String companionRenamed(String name) {
+    return '「$name」……好，以后我就叫这个名字啦。';
+  }
 
   @override
   String get engineNewChatDefaultsLast => '新对话默认（上次选择）';

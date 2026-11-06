@@ -57,7 +57,8 @@ What you can do:
 - Zoom: pinch to zoom and move.
 - Her corner: there's a snack in the shell at the bottom left, a bubble floating on the right, and a seaweed cushion behind her. Tap the shell to give her a snack, the bubble to play, and the cushion to let her rest for a while. What she's doing shows under her name.
 - Feed her, hold her: drag a snack out of the shell dish and let go at her mouth, and she eats it. Rest a finger on her to give her a hug. Tilt the phone and the reef shifts a little.
-- Her voice: turn on **Her voice** in the menu at the top right and she reads her words aloud with the phone's own voice. She stops as soon as you type or use the microphone. Without a Chinese voice, add one under Text-to-speech in system settings.
+- Her voice: turn it on under **Her voice** in the menu and she reads her words aloud; she stops as soon as you type or use the microphone. Use the phone's own voice or your own speech service: an OpenAI-compatible API (OpenAI, SiliconFlow, or your own GPT-SoVITS or CosyVoice server) or a custom HTTP API you describe. Tap **Preview** to check it works. With an external service, what she says is sent to it.
+- Her name: give her a new name under **Her name** in the menu, and she calls herself by it.
 - Getting closer: visit and pat her often and she slowly gets more familiar with you; **You two** in the menu shows how far you've come. Once you're close she hums more and has fonder words for a pat.
 - Your other chats: while the room is open, she tells you when another chat finishes, fails or waits for your approval; tap Take a look to go there.
 - Home-screen widget: add the Companion room widget to see what she's doing and the last thing she said. Tap it to visit.

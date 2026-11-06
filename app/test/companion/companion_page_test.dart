@@ -312,6 +312,40 @@ void main() {
       await tester.pump(const Duration(seconds: 10));
     });
 
+    testWidgets('renamed: the name plate, her words and her persona follow', (tester) async {
+      SharedPreferences.setMockInitialValues({'companion_touch_hint_done': true, 'companion_home_hint_done': true});
+      CompanionStageEvents? stageEvents;
+      await tester.pumpWidget(
+        _app(
+          CompanionPage(
+            storeOverride: installedStore(),
+            stageBuilder: (controller, events) {
+              stageEvents = events;
+              return const SizedBox.expand();
+            },
+          ),
+        ),
+      );
+      (await _stageUp(tester, () => stageEvents)).onReady();
+      await _settle(tester);
+      await tester.pump(const Duration(seconds: 8));
+
+      await tester.tap(find.byIcon(AppIcons.more));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('她的名字'));
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byType(TextField).last, '小蓝');
+      await tester.tap(find.text('保存'));
+      await _settle(tester);
+      expect(find.text('「小蓝」……好，以后我就叫这个名字啦。'), findsOneWidget);
+      expect(find.text('小蓝'), findsWidgets);
+      final prefs = await SharedPreferences.getInstance();
+      expect(prefs.getString('companion_name'), '小蓝');
+
+      await tester.pumpWidget(const SizedBox());
+      await tester.pump(const Duration(seconds: 20));
+    });
+
     testWidgets('another conversation finishing: she says so, and the pill opens it', (tester) async {
       SharedPreferences.setMockInitialValues({'companion_touch_hint_done': true, 'companion_home_hint_done': true});
       final commands = <(String, Map<String, Object?>)>[];

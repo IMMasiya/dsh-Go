@@ -9,6 +9,8 @@ import android.speech.tts.UtteranceProgressListener
 import io.flutter.embedding.engine.plugins.FlutterPlugin
 import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
+import io.github.ccch1mneyyy.dsh_app.nativemedia.ClipPlayer
+import java.io.File
 import java.util.Locale
 
 /**
@@ -17,8 +19,9 @@ import java.util.Locale
  * does with the text.
  *
  * `ready` starts the engine once and answers whether it can speak the language asked for.
- * `speak` queues one sentence under an id (or replaces everything with `flush`); `stop` drops what
- * is speaking and queued. Progress comes back on the same channel as `event` calls: `start`,
+ * `speak` queues one sentence under an id (or replaces everything with `flush`); `play` plays one
+ * sentence of an external voice from a file the app fetched (lib/companion/companion_voice_source.dart);
+ * `stop` drops what is speaking, playing and queued. Progress comes back on the same channel as `event` calls: `start`,
  * `range` (Android 8+: the characters being spoken now, for her mouth), `done`, `stopped`, `error`.
  */
 class CompanionVoicePlugin : FlutterPlugin, MethodChannel.MethodCallHandler {
@@ -41,14 +44,20 @@ class CompanionVoicePlugin : FlutterPlugin, MethodChannel.MethodCallHandler {
         tts?.stop()
         tts?.shutdown()
         tts = null
+        playing = null
+        player?.release()
+        player = null
     }
 
     override fun onMethodCall(call: MethodCall, result: MethodChannel.Result) {
         when (call.method) {
             "ready" -> ready(call.argument<String>("language") ?: "zh-CN", result)
             "speak" -> result.success(speak(call))
+            "play" -> result.success(play(call))
             "stop" -> {
                 tts?.stop()
+                playing = null
+                player?.release()
                 result.success(null)
             }
             else -> result.notImplemented()
@@ -94,6 +103,34 @@ class CompanionVoicePlugin : FlutterPlugin, MethodChannel.MethodCallHandler {
         engine.setPitch((call.argument<Double>("pitch") ?: 1.0).toFloat())
         val queue = if (call.argument<Boolean>("flush") == true) TextToSpeech.QUEUE_FLUSH else TextToSpeech.QUEUE_ADD
         return engine.speak(text, queue, Bundle(), id) == TextToSpeech.SUCCESS
+    }
+
+    // An external voice's sentence, as an audio file the app fetched: one at a time, through the
+    // same player as plugin clips (audio focus, interruptions, late callbacks all handled there).
+    private var player: ClipPlayer? = null
+    private var playing: String? = null
+
+    private fun play(call: MethodCall): Boolean {
+        val id = call.argument<String>("id") ?: return false
+        val path = call.argument<String>("path") ?: return false
+        val file = File(path)
+        if (!file.isFile) return false
+        val clips = player ?: ClipPlayer(
+            context,
+            object : ClipPlayer.Listener {
+                override fun onStarted() = send("start", playing)
+
+                override fun onEnded() = send("done", playing.also { playing = null })
+
+                override fun onStopped(reason: String) = send("stopped", playing.also { playing = null })
+
+                override fun onError(reason: String) = send("error", playing.also { playing = null })
+            },
+        ).also { player = it }
+        // The one before ends here; nothing more comes from it.
+        playing?.let { send("stopped", it) }
+        playing = id
+        return clips.play(file).also { if (!it) playing = null }
     }
 
     private fun send(type: String, id: String?, start: Int? = null, end: Int? = null) {

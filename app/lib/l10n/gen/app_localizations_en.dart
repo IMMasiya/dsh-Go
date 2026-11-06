@@ -4852,7 +4852,9 @@ class L10nEn extends L10n {
   String get companionPackStorage => 'Couldn\'t write the files. Check your phone\'s free storage.';
 
   @override
-  String get companionGreetFirst => 'Hi, I\'m the whale girl. I live here now, nice to meet you.';
+  String companionGreetFirst(String name) {
+    return 'Hi, I\'m $name. I live here now, nice to meet you.';
+  }
 
   @override
   String get companionGreetMorning => 'Morning! Don\'t skip breakfast today.';
@@ -5215,6 +5217,132 @@ class L10nEn extends L10n {
 
   @override
   String get companionWidgetWaiting => 'Waiting for you in the room';
+
+  @override
+  String get companionVoiceOn => 'Let her speak';
+
+  @override
+  String get companionVoiceOffHint => 'When you turn it on, she says hello in the chosen voice first.';
+
+  @override
+  String get companionVoiceOff => 'Off';
+
+  @override
+  String get companionVoiceSource => 'Voice';
+
+  @override
+  String get companionVoiceSystem => 'The phone\'s own';
+
+  @override
+  String get companionVoiceSystemHint => 'System text-to-speech, works offline';
+
+  @override
+  String get companionVoiceOpenai => 'OpenAI-compatible API';
+
+  @override
+  String get companionVoiceOpenaiHint =>
+      'OpenAI, SiliconFlow, and most self-hosted GPT-SoVITS, CosyVoice or edge-tts servers';
+
+  @override
+  String get companionVoiceCustom => 'Custom HTTP';
+
+  @override
+  String get companionVoiceCustomHint => 'Anything else: describe the request and the reply';
+
+  @override
+  String get companionVoiceApi => 'API';
+
+  @override
+  String get companionVoiceBase => 'Address';
+
+  @override
+  String get companionVoiceBaseHelper => 'Up to /v1; the app adds /audio/speech';
+
+  @override
+  String get companionVoiceKeyHelper => 'Kept in this phone\'s secure storage';
+
+  @override
+  String get companionVoiceModel => 'Model';
+
+  @override
+  String get companionVoiceVoice => 'Voice';
+
+  @override
+  String get companionVoiceVoiceHelper => 'The service\'s voice name, like alloy, or a speaker on your own server';
+
+  @override
+  String get companionVoiceRequest => 'Request';
+
+  @override
+  String get companionVoiceUrl => 'Request URL';
+
+  @override
+  String get companionVoiceUrlHelper => '{text} works in the URL too';
+
+  @override
+  String get companionVoiceMethod => 'Method';
+
+  @override
+  String get companionVoiceHeaders => 'Headers';
+
+  @override
+  String get companionVoiceHeadersHelper => 'One per line; kept in secure storage';
+
+  @override
+  String get companionVoiceBody => 'Body';
+
+  @override
+  String get companionVoiceBodyHelper => '{text} becomes what she says';
+
+  @override
+  String get companionVoiceField => 'Audio field';
+
+  @override
+  String get companionVoiceFieldHelper =>
+      'If the reply is JSON: where the audio is (base64 or a link), like data.audio. Leave empty when it returns audio';
+
+  @override
+  String get companionVoicePrivacy => 'What she says is sent to the service you enter.';
+
+  @override
+  String get companionVoicePreview => 'Preview';
+
+  @override
+  String get companionVoicePreviewing => 'Requesting…';
+
+  @override
+  String get companionVoicePreviewOk => 'It works. Did you hear her?';
+
+  @override
+  String companionVoicePreviewFailed(String reason) {
+    return 'Didn\'t work: $reason';
+  }
+
+  @override
+  String get companionVoiceNotSetUp => 'Fill in the address above first.';
+
+  @override
+  String get companionVoiceFallback => 'Couldn\'t reach her voice service, so the phone\'s own voice stood in';
+
+  @override
+  String get companionGreetFirstNameless => 'Hi, I live here now. Nice to meet you.';
+
+  @override
+  String get companionMenuName => 'Her name';
+
+  @override
+  String get companionRenameTitle => 'Name her';
+
+  @override
+  String get companionRenameHint => 'Up to 12 characters';
+
+  @override
+  String get companionRenameReset => 'Use the original';
+
+  @override
+  String companionRenamed(String name) {
+    return '\"$name\"... okay, that\'s my name from now on.';
+  }
 
   @override
   String get engineNewChatDefaultsLast => 'New chat defaults (last choice)';

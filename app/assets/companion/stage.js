@@ -381,6 +381,8 @@
     syllable: 0,
     mouth: 0,
     mouthOverride: null,
+    // A fetched voice's loudness, frame by frame, from when it started playing.
+    voice: null, // { levels, frameMs, start }
     sleep: 0,
     time: 0,
     // From the Host: how pleased, how lively, how familiar (0–1).
@@ -655,6 +657,11 @@
         life.syllable += dt * 8.5;
         const beat = Math.sin(life.syllable * Math.PI);
         mouth = Math.pow(Math.abs(beat), 0.7) * (0.55 + 0.4 * Math.sin(life.syllable * 0.37) ** 2);
+      }
+      if (life.voice) {
+        const i = Math.floor((now - life.voice.start) / life.voice.frameMs);
+        if (i < life.voice.levels.length) mouth = Math.max(mouth, life.voice.levels[i]);
+        else life.voice = null;
       }
       mouth = Math.max(mouth, life.expect * 0.45);
       life.mouth = ease(life.mouth, mouth, mouth > life.mouth ? 26 : 16, dt);
@@ -1219,6 +1226,13 @@
     },
     quiet: () => {
       life.speech = 0;
+      life.voice = null;
+    },
+    // Her voice from a speech API: how loud it is every frameMs, from now.
+    loudness: ({ levels, frameMs }) => {
+      const valid = Array.isArray(levels) && levels.length && levels.every(Number.isFinite);
+      life.voice = valid ? { levels: levels.map((v) => clamp(v, 0, 1)), frameMs: Math.max(10, frameMs || 40), start: performance.now() } : null;
+      touched();
     },
     // A sentence ended while she speaks: the small dip people do between phrases.
     beat: () => {
@@ -1287,6 +1301,7 @@
       life.actions.size > 0 ||
       life.mood === 'speaking' ||
       life.speech > 0 ||
+      life.voice !== null ||
       life.patting ||
       home.show !== null ||
       scene.busy();
@@ -1378,6 +1393,7 @@
     life.speech = 0;
     life.mouth = 0;
     life.mouthOverride = null;
+    life.voice = null;
     life.actions.clear();
     life.glance = null;
     life.hugging = false;

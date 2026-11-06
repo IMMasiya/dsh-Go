@@ -8399,8 +8399,8 @@ abstract class L10n {
   /// No description provided for @companionGreetFirst.
   ///
   /// In zh, this message translates to:
-  /// **'你好呀，我是鲸鱼娘。以后就住在这里了，请多指教。'**
-  String get companionGreetFirst;
+  /// **'你好呀，我是{name}。以后就住在这里了，请多指教。'**
+  String companionGreetFirst(String name);
 
   /// No description provided for @companionGreetMorning.
   ///
@@ -9091,6 +9091,246 @@ abstract class L10n {
   /// In zh, this message translates to:
   /// **'在小屋里等你'**
   String get companionWidgetWaiting;
+
+  /// No description provided for @companionVoiceOn.
+  ///
+  /// In zh, this message translates to:
+  /// **'让她出声'**
+  String get companionVoiceOn;
+
+  /// No description provided for @companionVoiceOffHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'打开时她会先用选好的声音打个招呼。'**
+  String get companionVoiceOffHint;
+
+  /// No description provided for @companionVoiceOff.
+  ///
+  /// In zh, this message translates to:
+  /// **'关'**
+  String get companionVoiceOff;
+
+  /// No description provided for @companionVoiceSource.
+  ///
+  /// In zh, this message translates to:
+  /// **'声音来源'**
+  String get companionVoiceSource;
+
+  /// No description provided for @companionVoiceSystem.
+  ///
+  /// In zh, this message translates to:
+  /// **'手机自带'**
+  String get companionVoiceSystem;
+
+  /// No description provided for @companionVoiceSystemHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'系统的文字转语音，不联网也能用'**
+  String get companionVoiceSystemHint;
+
+  /// No description provided for @companionVoiceOpenai.
+  ///
+  /// In zh, this message translates to:
+  /// **'OpenAI 兼容接口'**
+  String get companionVoiceOpenai;
+
+  /// No description provided for @companionVoiceOpenaiHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'OpenAI、硅基流动，以及大多数自建的 GPT-SoVITS、CosyVoice、edge-tts 服务'**
+  String get companionVoiceOpenaiHint;
+
+  /// No description provided for @companionVoiceCustom.
+  ///
+  /// In zh, this message translates to:
+  /// **'自定义 HTTP'**
+  String get companionVoiceCustom;
+
+  /// No description provided for @companionVoiceCustomHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'别的接口：自己填请求和返回的格式'**
+  String get companionVoiceCustomHint;
+
+  /// No description provided for @companionVoiceApi.
+  ///
+  /// In zh, this message translates to:
+  /// **'接口'**
+  String get companionVoiceApi;
+
+  /// No description provided for @companionVoiceBase.
+  ///
+  /// In zh, this message translates to:
+  /// **'地址'**
+  String get companionVoiceBase;
+
+  /// No description provided for @companionVoiceBaseHelper.
+  ///
+  /// In zh, this message translates to:
+  /// **'填到 /v1 为止，App 会接上 /audio/speech'**
+  String get companionVoiceBaseHelper;
+
+  /// No description provided for @companionVoiceKeyHelper.
+  ///
+  /// In zh, this message translates to:
+  /// **'存在这台手机的安全存储里'**
+  String get companionVoiceKeyHelper;
+
+  /// No description provided for @companionVoiceModel.
+  ///
+  /// In zh, this message translates to:
+  /// **'模型'**
+  String get companionVoiceModel;
+
+  /// No description provided for @companionVoiceVoice.
+  ///
+  /// In zh, this message translates to:
+  /// **'音色'**
+  String get companionVoiceVoice;
+
+  /// No description provided for @companionVoiceVoiceHelper.
+  ///
+  /// In zh, this message translates to:
+  /// **'服务给的音色名，比如 alloy，或你自建服务里的角色名'**
+  String get companionVoiceVoiceHelper;
+
+  /// No description provided for @companionVoiceRequest.
+  ///
+  /// In zh, this message translates to:
+  /// **'请求'**
+  String get companionVoiceRequest;
+
+  /// No description provided for @companionVoiceUrl.
+  ///
+  /// In zh, this message translates to:
+  /// **'请求地址'**
+  String get companionVoiceUrl;
+
+  /// No description provided for @companionVoiceUrlHelper.
+  ///
+  /// In zh, this message translates to:
+  /// **'地址里也可以用 {text}'**
+  String get companionVoiceUrlHelper;
+
+  /// No description provided for @companionVoiceMethod.
+  ///
+  /// In zh, this message translates to:
+  /// **'方法'**
+  String get companionVoiceMethod;
+
+  /// No description provided for @companionVoiceHeaders.
+  ///
+  /// In zh, this message translates to:
+  /// **'请求头'**
+  String get companionVoiceHeaders;
+
+  /// No description provided for @companionVoiceHeadersHelper.
+  ///
+  /// In zh, this message translates to:
+  /// **'每行一个；会存进安全存储'**
+  String get companionVoiceHeadersHelper;
+
+  /// No description provided for @companionVoiceBody.
+  ///
+  /// In zh, this message translates to:
+  /// **'请求体'**
+  String get companionVoiceBody;
+
+  /// No description provided for @companionVoiceBodyHelper.
+  ///
+  /// In zh, this message translates to:
+  /// **'{text} 会换成她要说的话'**
+  String get companionVoiceBodyHelper;
+
+  /// No description provided for @companionVoiceField.
+  ///
+  /// In zh, this message translates to:
+  /// **'音频字段'**
+  String get companionVoiceField;
+
+  /// No description provided for @companionVoiceFieldHelper.
+  ///
+  /// In zh, this message translates to:
+  /// **'返回 JSON 时，音频在哪个字段（base64 或链接），比如 data.audio；直接返回音频就留空'**
+  String get companionVoiceFieldHelper;
+
+  /// No description provided for @companionVoicePrivacy.
+  ///
+  /// In zh, this message translates to:
+  /// **'她要说的话会发给你填的这个服务。'**
+  String get companionVoicePrivacy;
+
+  /// No description provided for @companionVoicePreview.
+  ///
+  /// In zh, this message translates to:
+  /// **'试听'**
+  String get companionVoicePreview;
+
+  /// No description provided for @companionVoicePreviewing.
+  ///
+  /// In zh, this message translates to:
+  /// **'正在请求…'**
+  String get companionVoicePreviewing;
+
+  /// No description provided for @companionVoicePreviewOk.
+  ///
+  /// In zh, this message translates to:
+  /// **'能用，听到了吗？'**
+  String get companionVoicePreviewOk;
+
+  /// No description provided for @companionVoicePreviewFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'没成功：{reason}'**
+  String companionVoicePreviewFailed(String reason);
+
+  /// No description provided for @companionVoiceNotSetUp.
+  ///
+  /// In zh, this message translates to:
+  /// **'先把上面的地址填好。'**
+  String get companionVoiceNotSetUp;
+
+  /// No description provided for @companionVoiceFallback.
+  ///
+  /// In zh, this message translates to:
+  /// **'外接的声音这次没连上，先用了手机自带的声音'**
+  String get companionVoiceFallback;
+
+  /// No description provided for @companionGreetFirstNameless.
+  ///
+  /// In zh, this message translates to:
+  /// **'你好呀，以后我就住在这里了，请多指教。'**
+  String get companionGreetFirstNameless;
+
+  /// No description provided for @companionMenuName.
+  ///
+  /// In zh, this message translates to:
+  /// **'她的名字'**
+  String get companionMenuName;
+
+  /// No description provided for @companionRenameTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'给她起个名字'**
+  String get companionRenameTitle;
+
+  /// No description provided for @companionRenameHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'最多 12 个字'**
+  String get companionRenameHint;
+
+  /// No description provided for @companionRenameReset.
+  ///
+  /// In zh, this message translates to:
+  /// **'用回原来的'**
+  String get companionRenameReset;
+
+  /// No description provided for @companionRenamed.
+  ///
+  /// In zh, this message translates to:
+  /// **'「{name}」……好，以后我就叫这个名字啦。'**
+  String companionRenamed(String name);
 
   /// No description provided for @engineNewChatDefaultsLast.
   ///

@@ -1,0 +1,303 @@
+// An external voice: what is sent, what comes back, how loud it is, and the
+// order sentences play in (with the phone's voice standing in when one fails).
+
+import 'dart:async';
+import 'dart:convert';
+import 'dart:io';
+import 'dart:math';
+import 'dart:typed_data';
+
+import 'package:dsh_app/companion/companion_state.dart';
+import 'package:dsh_app/companion/companion_voice.dart';
+import 'package:dsh_app/companion/companion_voice_source.dart';
+import 'package:flutter/services.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:http/http.dart' as http;
+import 'package:http/testing.dart';
+
+/// 16-bit mono PCM: [quiet] ms of silence, then [loud] ms of a 440 Hz tone.
+Uint8List _wav({int quiet = 200, int loud = 200, int rate = 16000}) {
+  final samples = [
+    for (var i = 0; i < rate * quiet ~/ 1000; i++) 0,
+    for (var i = 0; i < rate * loud ~/ 1000; i++) (sin(2 * pi * 440 * i / rate) * 12000).round(),
+  ];
+  final data = ByteData(44 + samples.length * 2);
+  void text(int at, String s) => s.codeUnits.asMap().forEach((i, c) => data.setUint8(at + i, c));
+  text(0, 'RIFF');
+  data.setUint32(4, 36 + samples.length * 2, Endian.little);
+  text(8, 'WAVE');
+  text(12, 'fmt ');
+  data.setUint32(16, 16, Endian.little);
+  data.setUint16(20, 1, Endian.little);
+  data.setUint16(22, 1, Endian.little);
+  data.setUint32(24, rate, Endian.little);
+  data.setUint32(28, rate * 2, Endian.little);
+  data.setUint16(32, 2, Endian.little);
+  data.setUint16(34, 16, Endian.little);
+  text(36, 'data');
+  data.setUint32(40, samples.length * 2, Endian.little);
+  for (var i = 0; i < samples.length; i++) {
+    data.setInt16(44 + i * 2, samples[i], Endian.little);
+  }
+  return data.buffer.asUint8List();
+}
+
+void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+
+  group('audio', () {
+    test('kinds by their first bytes', () {
+      expect(companionAudioKind(_wav()), 'wav');
+      expect(companionAudioKind(Uint8List.fromList([...ascii.encode('ID3'), 3, 0])), 'mp3');
+      expect(companionAudioKind(Uint8List.fromList([0xFF, 0xFB, 0x90, 0])), 'mp3');
+      expect(companionAudioKind(Uint8List.fromList(ascii.encode('OggS....'))), 'ogg');
+      expect(companionAudioKind(Uint8List.fromList(utf8.encode('{"error":1}'))), 'bin');
+    });
+
+    test('her mouth stays closed in silence and opens with the voice', () {
+      final levels = companionLoudness(_wav())!;
+      expect(levels, hasLength(10)); // 400 ms at 40 ms.
+      expect(levels.take(5), everyElement(0));
+      expect(levels.skip(5), everyElement(greaterThan(0.6)));
+      expect(levels, everyElement(lessThanOrEqualTo(0.9)));
+      expect(companionLoudness(Uint8List.fromList([0xFF, 0xFB, 0, 0])), isNull);
+    });
+  });
+
+  group('fetch', () {
+    test('OpenAI-compatible: the speech endpoint, the key, the voice, wav please', () async {
+      late http.Request sent;
+      final client = MockClient((request) async {
+        sent = request;
+        return http.Response.bytes(_wav(), 200);
+      });
+      const settings = CompanionVoiceSettings(
+        source: CompanionVoiceSource.openai,
+        openaiBase: 'https://api.siliconflow.cn/v1/',
+        openaiKey: 'sk-test',
+        openaiModel: 'FunAudioLLM/CosyVoice2-0.5B',
+        openaiVoice: 'FunAudioLLM/CosyVoice2-0.5B:anna',
+      );
+      final audio = await fetchCompanionVoice(settings, '你好呀', client);
+      expect(sent.url.toString(), 'https://api.siliconflow.cn/v1/audio/speech');
+      expect(sent.headers['authorization'], 'Bearer sk-test');
+      expect(jsonDecode(sent.body), {
+        'model': 'FunAudioLLM/CosyVoice2-0.5B',
+        'input': '你好呀',
+        'voice': 'FunAudioLLM/CosyVoice2-0.5B:anna',
+        'response_format': 'wav',
+      });
+      expect(audio.ext, 'wav');
+    });
+
+    test('custom POST: headers per line, the text escaped inside the template', () async {
+      late http.Request sent;
+      final client = MockClient((request) async {
+        sent = request;
+        return http.Response.bytes([0xFF, 0xFB, 0x90, 0x00], 200);
+      });
+      const settings = CompanionVoiceSettings(
+        source: CompanionVoiceSource.custom,
+        customUrl: 'http://192.168.1.5:9880/tts',
+        customHeaders: 'X-Token: abc\nbroken line\nX-Speaker: 鲸鱼娘',
+        customBody: '{"text": "{text}", "lang": "zh"}',
+      );
+      final audio = await fetchCompanionVoice(settings, '她说"你好"\n然后笑了', client);
+      expect(sent.method, 'POST');
+      expect(sent.headers['X-Token'], 'abc');
+      expect(sent.headers['X-Speaker'], '鲸鱼娘');
+      expect(jsonDecode(sent.body), {'text': '她说"你好"\n然后笑了', 'lang': 'zh'});
+      expect(audio.ext, 'mp3');
+    });
+
+    test('custom GET with the text in the URL; JSON replies by field, base64 or link', () async {
+      final wav = _wav(quiet: 0, loud: 40);
+      final client = MockClient((request) async {
+        if (request.url.path == '/speak') {
+          expect(request.method, 'GET');
+          expect(request.url.queryParameters['q'], '早上好');
+          return http.Response(
+            jsonEncode({
+              'data': {'audio': base64.encode(wav)},
+            }),
+            200,
+          );
+        }
+        if (request.url.path == '/link') {
+          return http.Response(
+            jsonEncode({
+              'items': [
+                {'url': 'https://cdn.example/a.wav'},
+              ],
+            }),
+            200,
+          );
+        }
+        if (request.url.host == 'cdn.example') return http.Response.bytes(wav, 200);
+        return http.Response('', 404);
+      });
+      final b64 = await fetchCompanionVoice(
+        const CompanionVoiceSettings(
+          source: CompanionVoiceSource.custom,
+          customUrl: 'https://tts.example/speak?q={text}',
+          customPost: false,
+          customField: 'data.audio',
+        ),
+        '早上好',
+        client,
+      );
+      expect(b64.bytes, wav);
+      final link = await fetchCompanionVoice(
+        const CompanionVoiceSettings(
+          source: CompanionVoiceSource.custom,
+          customUrl: 'https://tts.example/link',
+          customField: 'items.0.url',
+        ),
+        '早上好',
+        client,
+      );
+      expect(link.ext, 'wav');
+    });
+
+    test('failures say why', () async {
+      Future<String> why(http.Response response, {String field = ''}) async {
+        try {
+          await fetchCompanionVoice(
+            CompanionVoiceSettings(
+              source: CompanionVoiceSource.custom,
+              customUrl: 'https://x.example',
+              customField: field,
+            ),
+            'hi',
+            MockClient((_) async => response),
+          );
+          return 'no error';
+        } on CompanionVoiceError catch (error) {
+          return error.reason;
+        }
+      }
+
+      expect(await why(http.Response('{"error":"bad key"}', 401)), startsWith('HTTP 401'));
+      expect(await why(http.Response('{"error":"quota"}', 200)), 'not audio');
+      expect(await why(http.Response('{"data":{}}', 200), field: 'data.audio'), 'no field data.audio');
+      expect(await why(http.Response('<html>', 200), field: 'data'), 'reply is not JSON');
+    });
+  });
+
+  group('settings', () {
+    test('keys and headers stay out of plain preferences', () {
+      const settings = CompanionVoiceSettings(openaiKey: 'sk-secret', customHeaders: 'Authorization: Bearer x');
+      expect(jsonEncode(settings.plain()), isNot(contains('sk-secret')));
+      expect(jsonEncode(settings.plain()), isNot(contains('Bearer')));
+      final back = CompanionVoiceSettings.fromPlain(jsonDecode(jsonEncode(settings.plain())), on: true);
+      expect(back.on, isTrue);
+      expect(back.openaiKey, '');
+      expect(back.source, CompanionVoiceSource.system);
+    });
+
+    test('her persona under the name she was given', () {
+      expect(companionPersonaNamed(null), companionPersonaCore);
+      expect(companionPersonaNamed('  '), companionPersonaCore);
+      expect(companionPersonaNamed('小蓝'), startsWith('你是小蓝，一只'));
+      expect(companionNameNote('小蓝'), contains('「小蓝」'));
+      expect(companionNameNote(null), isNull);
+    });
+  });
+
+  group('speaker', () {
+    const channel = MethodChannel('dsh/companion_voice');
+    late List<MethodCall> calls;
+    late Directory folder;
+
+    setUp(() {
+      calls = [];
+      folder = Directory.systemTemp.createTempSync('companion-speaker');
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger.setMockMethodCallHandler(channel, (call) async {
+        calls.add(call);
+        return switch (call.method) {
+          'ready' || 'speak' || 'play' => true,
+          _ => null,
+        };
+      });
+    });
+    tearDown(() {
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger.setMockMethodCallHandler(channel, null);
+      try {
+        folder.deleteSync(recursive: true);
+      } on FileSystemException {
+        // The system clears temp.
+      }
+    });
+
+    Future<void> native(String type, String id) =>
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger.handlePlatformMessage(
+          channel.name,
+          const StandardMethodCodec().encodeMethodCall(MethodCall('event', {'type': type, 'id': id})),
+          (_) {},
+        );
+
+    Future<void> until(bool Function() done) async {
+      for (var i = 0; i < 200 && !done(); i++) {
+        await Future<void>.delayed(const Duration(milliseconds: 5));
+      }
+      expect(done(), isTrue);
+    }
+
+    test('fetched sentences play in order, each after the one before; a failed one is read by the phone', () async {
+      final client = MockClient((request) async {
+        final text = (jsonDecode(request.body) as Map)['input'];
+        if (text == '坏的。') return http.Response('nope', 500);
+        return http.Response.bytes(_wav(quiet: 0, loud: 80), 200);
+      });
+      final speaker = CompanionSpeaker(CompanionVoice(), () => client, () async => folder);
+      addTearDown(speaker.dispose);
+      final events = <CompanionVoiceEvent>[];
+      speaker.events.listen(events.add);
+      expect(await speaker.ready(const CompanionVoiceSettings(on: true, source: CompanionVoiceSource.openai)), isTrue);
+      await until(() => calls.any((c) => c.method == 'ready'));
+
+      speaker
+        ..speak('a', '第一句。')
+        ..speak('b', '坏的。')
+        ..speak('c', '第三句。');
+      await until(() => calls.where((c) => c.method == 'play').length == 1);
+      expect((calls.lastWhere((c) => c.method == 'play').arguments as Map)['id'], 'a');
+      await native('start', 'a');
+      await until(() => events.any((e) => e.type == CompanionVoiceEventType.start && e.id == 'a'));
+      expect(events.firstWhere((e) => e.id == 'a').loudness, isNotEmpty);
+
+      await native('done', 'a');
+      // b couldn't be fetched: the phone's voice reads it, and says so.
+      await until(() => calls.any((c) => c.method == 'speak'));
+      expect((calls.lastWhere((c) => c.method == 'speak').arguments as Map)['text'], '坏的。');
+      expect(events.map((e) => (e.type, e.id)), contains((CompanionVoiceEventType.fallback, 'b')));
+      expect(calls.where((c) => c.method == 'play'), hasLength(1));
+
+      await native('done', 'b');
+      await until(() => calls.where((c) => c.method == 'play').length == 2);
+      expect((calls.lastWhere((c) => c.method == 'play').arguments as Map)['id'], 'c');
+      await native('done', 'c');
+      // Played files don't stay.
+      await until(() => folder.listSync().isEmpty);
+    });
+
+    test('stop: nothing queued plays after it', () async {
+      final gate = Completer<void>();
+      final client = MockClient((request) async {
+        await gate.future;
+        return http.Response.bytes(_wav(quiet: 0, loud: 40), 200);
+      });
+      final speaker = CompanionSpeaker(CompanionVoice(), () => client, () async => folder);
+      addTearDown(speaker.dispose);
+      await speaker.ready(const CompanionVoiceSettings(on: true, source: CompanionVoiceSource.openai));
+      speaker
+        ..speak('a', '一。')
+        ..speak('b', '二。')
+        ..stop();
+      gate.complete();
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+      expect(calls.where((c) => c.method == 'play'), isEmpty);
+      expect(calls.map((c) => c.method), contains('stop'));
+    });
+  });
+}

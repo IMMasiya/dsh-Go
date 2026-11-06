@@ -2903,7 +2903,14 @@
   "companionPackUnsafe": "包里有不允许的文件或路径，没有导入。",
   "companionPackTooLarge": "素材包太大了。",
   "companionPackStorage": "写入失败，看看手机存储空间够不够。",
-  "companionGreetFirst": "你好呀，我是鲸鱼娘。以后就住在这里了，请多指教。",
+  "companionGreetFirst": "你好呀，我是{name}。以后就住在这里了，请多指教。",
+  "@companionGreetFirst": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
   "companionGreetMorning": "早呀，今天也要好好吃早饭。",
   "companionGreetNoon": "中午啦，吃过饭了吗？",
   "companionGreetAfternoon": "下午好，我刚才在发呆。",
@@ -3054,6 +3061,60 @@
   "companionVoiceHello": "你好呀，这是我的声音。喜欢的话就留着吧。",
   "companionVoiceUnavailable": "这台手机没有能用的中文语音。可以在系统设置的「文字转语音」里装一个。",
   "companionWidgetWaiting": "在小屋里等你",
+  "companionVoiceOn": "让她出声",
+  "companionVoiceOffHint": "打开时她会先用选好的声音打个招呼。",
+  "companionVoiceOff": "关",
+  "companionVoiceSource": "声音来源",
+  "companionVoiceSystem": "手机自带",
+  "companionVoiceSystemHint": "系统的文字转语音，不联网也能用",
+  "companionVoiceOpenai": "OpenAI 兼容接口",
+  "companionVoiceOpenaiHint": "OpenAI、硅基流动，以及大多数自建的 GPT-SoVITS、CosyVoice、edge-tts 服务",
+  "companionVoiceCustom": "自定义 HTTP",
+  "companionVoiceCustomHint": "别的接口：自己填请求和返回的格式",
+  "companionVoiceApi": "接口",
+  "companionVoiceBase": "地址",
+  "companionVoiceBaseHelper": "填到 /v1 为止，App 会接上 /audio/speech",
+  "companionVoiceKeyHelper": "存在这台手机的安全存储里",
+  "companionVoiceModel": "模型",
+  "companionVoiceVoice": "音色",
+  "companionVoiceVoiceHelper": "服务给的音色名，比如 alloy，或你自建服务里的角色名",
+  "companionVoiceRequest": "请求",
+  "companionVoiceUrl": "请求地址",
+  "companionVoiceUrlHelper": "地址里也可以用 {text}",
+  "companionVoiceMethod": "方法",
+  "companionVoiceHeaders": "请求头",
+  "companionVoiceHeadersHelper": "每行一个；会存进安全存储",
+  "companionVoiceBody": "请求体",
+  "companionVoiceBodyHelper": "{text} 会换成她要说的话",
+  "companionVoiceField": "音频字段",
+  "companionVoiceFieldHelper": "返回 JSON 时，音频在哪个字段（base64 或链接），比如 data.audio；直接返回音频就留空",
+  "companionVoicePrivacy": "她要说的话会发给你填的这个服务。",
+  "companionVoicePreview": "试听",
+  "companionVoicePreviewing": "正在请求…",
+  "companionVoicePreviewOk": "能用，听到了吗？",
+  "companionVoicePreviewFailed": "没成功：{reason}",
+  "@companionVoicePreviewFailed": {
+    "placeholders": {
+      "reason": {
+        "type": "String"
+      }
+    }
+  },
+  "companionVoiceNotSetUp": "先把上面的地址填好。",
+  "companionVoiceFallback": "外接的声音这次没连上，先用了手机自带的声音",
+  "companionGreetFirstNameless": "你好呀，以后我就住在这里了，请多指教。",
+  "companionMenuName": "她的名字",
+  "companionRenameTitle": "给她起个名字",
+  "companionRenameHint": "最多 12 个字",
+  "companionRenameReset": "用回原来的",
+  "companionRenamed": "「{name}」……好，以后我就叫这个名字啦。",
+  "@companionRenamed": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
   "engineNewChatDefaultsLast": "新对话默认（上次选择）",
   "engineNewChatDefaultsFixed": "新对话默认（固定）",
   "engineNewChatUseLast": "沿用上次",
