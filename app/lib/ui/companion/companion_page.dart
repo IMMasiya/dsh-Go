@@ -1050,30 +1050,39 @@ class _CompanionPageState extends ConsumerState<CompanionPage> implements Compan
   // ── Setup ────────────────────────────────────────────────────────────────
 
   /// A pack the person picks.
-  Future<void> _import() => _installFrom(() async {
+  Future<void> _import() => _installFrom((claim) async {
     final picked = await FilePicker.pickFile();
     if (picked == null) return null;
     // Picks may be content URIs: bring it somewhere the unzipper can seek.
-    final temp = File(
+    final temp = claim(
       '${(await getTemporaryDirectory()).path}/companion-import-${DateTime.now().microsecondsSinceEpoch}.zip',
     );
     final sink = temp.openWrite();
-    await sink.addStream(picked.readAsByteStream());
-    await sink.close();
+    try {
+      await sink.addStream(picked.readAsByteStream());
+    } finally {
+      await sink.close();
+    }
     return temp;
   });
 
   /// The pack inside the app, through the same checks as any other.
   /// [arriving]: the first time, she swims over while it unpacks.
-  Future<void> _installBundled({bool arriving = false}) => _installFrom(() async {
+  Future<void> _installBundled({bool arriving = false}) => _installFrom((claim) async {
     final bytes = await _bundled();
     if (bytes == null) throw const CompanionPackException(CompanionPackProblem.notAPack);
-    final zip = File('${_store!.root.parent.path}/companion-bundled-${DateTime.now().microsecondsSinceEpoch}.zip');
+    final zip = claim('${_store!.root.parent.path}/companion-bundled-${DateTime.now().microsecondsSinceEpoch}.zip');
     await zip.writeAsBytes(bytes, flush: true);
     return zip;
   }, arriving: arriving);
 
-  Future<void> _installFrom(Future<File?> Function() bring, {bool arriving = false}) async {
+  /// [bring] makes the zip to install, through `claim` for its temporary
+  /// file: claimed before anything is written, so a write that fails halfway
+  /// is cleaned up too (Pro C542).
+  Future<void> _installFrom(
+    Future<File?> Function(File Function(String path) claim) bring, {
+    bool arriving = false,
+  }) async {
     final store = _store;
     if (store == null || _installing) return;
     setState(() {
@@ -1083,9 +1092,9 @@ class _CompanionPageState extends ConsumerState<CompanionPage> implements Compan
     });
     File? temp;
     try {
-      temp = await bring();
-      if (temp == null) return;
-      await store.install(temp.path);
+      final zip = await bring((path) => temp = File(path));
+      if (zip == null) return;
+      await store.install(zip.path);
       final character = await store.character();
       // She's back: the pack inside the app may come by itself again.
       unawaited(SharedPreferences.getInstance().then((p) => p.remove(_packRemovedKey)));

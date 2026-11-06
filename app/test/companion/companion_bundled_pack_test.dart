@@ -40,6 +40,38 @@ Uint8List _zip() {
   return Uint8List.fromList(ZipEncoder().encode(archive));
 }
 
+/// The real file, except that writing gets seven bytes onto the disk and fails.
+class _HalfWritten implements File {
+  _HalfWritten(this._real);
+
+  final File _real;
+
+  @override
+  String get path => _real.path;
+
+  @override
+  Future<File> writeAsBytes(List<int> bytes, {FileMode mode = FileMode.write, bool flush = false}) async {
+    await _real.writeAsBytes(bytes.take(7).toList(), flush: true);
+    throw FileSystemException('disk full', path);
+  }
+
+  @override
+  Future<FileSystemEntity> delete({bool recursive = false}) => _real.delete(recursive: recursive);
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+final class _Native extends IOOverrides {}
+
+final class _FailingWrites extends IOOverrides {
+  @override
+  File createFile(String path) {
+    final real = IOOverrides.runWithIOOverrides(() => File(path), _Native());
+    return path.contains('companion-bundled-') ? _HalfWritten(real) : real;
+  }
+}
+
 void main() {
   late Directory root;
   late CompanionPackStore store;
@@ -126,6 +158,26 @@ void main() {
     final prefs = await SharedPreferences.getInstance();
     expect(prefs.getBool('companion_pack_removed'), isNull);
     await close(tester);
+  });
+
+  testWidgets('a write that fails halfway leaves nothing behind, retry included (Pro C542)', (tester) async {
+    List<String> leftovers() => [
+      for (final f in root.listSync().whereType<File>())
+        if (f.path.contains('companion-bundled-')) f.path,
+    ];
+    await IOOverrides.runWithIOOverrides(() async {
+      await open(tester, () async => _zip());
+      await settle(tester, until: () => find.text('接她回家').evaluate().isNotEmpty);
+      expect(find.text('接她回家'), findsOneWidget);
+      expect(installed(), isFalse);
+      expect(leftovers(), isEmpty);
+
+      await tester.tap(find.text('接她回家'));
+      await settle(tester, rounds: 10);
+      expect(find.text('接她回家'), findsOneWidget);
+      expect(leftovers(), isEmpty);
+      await close(tester);
+    }, _FailingWrites());
   });
 
   testWidgets('a build without one asks for a zip, as before', (tester) async {
