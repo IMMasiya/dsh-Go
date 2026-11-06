@@ -112,9 +112,9 @@ class CompanionPackStore {
     }
   }
 
-  /// Unpacks [zip] next to the current pack and swaps it in. A failure leaves
-  /// the current pack as it was. A zip with only `character/` keeps the runtime
-  /// already installed.
+  /// Unpacks [zip] next to the current pack and swaps it in. If the swap fails,
+  /// attempts to restore the old pack; a failed restoration leaves it in
+  /// `pack.previous`. A zip with only `character/` keeps the installed runtime.
   Future<void> install(String zip) => compute(_install, (zip, root.path, expectedRuntime));
 
   Future<void> remove() async {
@@ -194,10 +194,17 @@ Future<void> _install((String, String, String) args) async {
     }
     await File('${staging.path}/character/index.json').writeAsString(jsonEncode(characterFiles));
 
-    // The old pack goes last, so a failure here never leaves nothing.
+    // Discard the old pack only after the new one is live. If promotion fails,
+    // restore it; if that also fails, keep pack.previous for recovery.
     await _forget(previous);
-    if (await live.exists()) await live.rename(previous.path);
-    await staging.rename(live.path);
+    final hadLive = await live.exists();
+    if (hadLive) await live.rename(previous.path);
+    try {
+      await staging.rename(live.path);
+    } on FileSystemException {
+      if (hadLive) await previous.rename(live.path);
+      rethrow;
+    }
     await _forget(previous);
   } on CompanionPackException {
     await _forget(staging);
