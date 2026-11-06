@@ -89,6 +89,12 @@ class _CompanionPageState extends ConsumerState<CompanionPage> {
   // The conversation.
   String? _sessionId;
   ProviderSubscription<ChatState>? _chat;
+  late HostRef _bindingHost;
+  DshClient? _bindingClient;
+  int _bindingEpoch = 0;
+
+  /// Light or full when the page last bound (see _bindingChanged).
+  late bool _boundLight;
   bool _sending = false;
   bool _running = false;
   bool _needsAttention = false;
@@ -123,10 +129,14 @@ class _CompanionPageState extends ConsumerState<CompanionPage> {
   String? _lastLine;
   Timer? _bubbleTimer;
   Timer? _settleTimer;
+  Timer? _objectTimer;
 
   @override
   void initState() {
     super.initState();
+    _bindingHost = ref.read(activeHostProvider);
+    _bindingClient = ref.read(activeConnectionProvider).value?.client;
+    _boundLight = _light;
     _voice = VoiceInputController(
       input: _input,
       bridge: ref.read(voiceBridgeProvider),
@@ -136,9 +146,12 @@ class _CompanionPageState extends ConsumerState<CompanionPage> {
           (ref.read(activeConnectionProvider).value?.isLocal ?? false) &&
           ref.read(voiceModelProvider).status == VoiceModelStatus.ready,
       client: () => mounted ? ref.read(activeConnectionProvider).value?.client : null,
-      onRecognized: () => scheduleMicrotask(() {
-        if (mounted && _input.text.trim().isNotEmpty) unawaited(_send());
-      }),
+      onRecognized: () {
+        final current = _currentRoom();
+        scheduleMicrotask(() {
+          if (current() && _input.text.trim().isNotEmpty) unawaited(_send());
+        });
+      },
     );
     _voice.addListener(_voiceChanged);
     _focus.addListener(_refreshMood);
@@ -168,6 +181,7 @@ class _CompanionPageState extends ConsumerState<CompanionPage> {
     _chat?.close();
     _bubbleTimer?.cancel();
     _settleTimer?.cancel();
+    _objectTimer?.cancel();
     _voice.removeListener(_voiceChanged);
     _voice.dispose();
     _focus.dispose();
@@ -208,6 +222,7 @@ class _CompanionPageState extends ConsumerState<CompanionPage> {
   /// Her state first (it knows when the person was last here, on any phone),
   /// then the greeting, then this visit.
   Future<void> _arrive({bool greet = true}) async {
+    final current = _currentRoom();
     // Light mode asks no host for anything.
     final client = _light ? null : ref.read(activeConnectionProvider).value?.client;
     CompanionSnapshot? snapshot;
@@ -218,13 +233,13 @@ class _CompanionPageState extends ConsumerState<CompanionPage> {
         // Not this host, or not now: she's still here, just without memory of it.
       }
     }
-    if (!mounted) return;
+    if (!current()) return;
     if (snapshot != null) {
       _vitalsClient = client;
       _applyVitals(snapshot);
     }
-    if (greet) await _greet(snapshot?.vitals.lastVisitAt);
-    if (snapshot != null) _event('visit');
+    if (greet) await _greet(snapshot?.vitals.lastVisitAt, current);
+    if (current() && snapshot != null) _event('visit');
   }
 
   void _applyVitals(CompanionSnapshot snapshot) {
@@ -237,30 +252,33 @@ class _CompanionPageState extends ConsumerState<CompanionPage> {
   /// One event at a time, against the state last read. A conflict reads again;
   /// it never sends the same event twice.
   void _event(String type) {
+    final client = _vitalsClient;
+    if (client == null) return;
+    final current = _currentRoom();
     _vitalsQueue = _vitalsQueue.then((_) async {
+      if (!current() || !identical(client, _vitalsClient)) return;
       final read = _vitals;
-      final client = _vitalsClient;
-      if (read == null || client == null || !identical(client, ref.read(activeConnectionProvider).value?.client)) {
-        return;
-      }
+      if (read == null) return;
       try {
-        final next = await client.companionEvent(read, type);
-        if (mounted) _applyVitals(next);
-      } on DshRemoteException catch (error) {
-        if (!error.code.endsWith('conflict') && !error.code.endsWith('store-changed')) return;
-        final again = await client.companionSnapshot();
-        if (mounted && again != null) _applyVitals(again);
+        try {
+          final next = await client.companionEvent(read, type);
+          if (current()) _applyVitals(next);
+        } on DshRemoteException catch (error) {
+          if (!current() || (!error.code.endsWith('conflict') && !error.code.endsWith('store-changed'))) return;
+          final again = await client.companionSnapshot();
+          if (current() && again != null) _applyVitals(again);
+        }
       } on Object {
-        // A lost event costs nothing: absence and silence are never penalised.
+        // The refresh can fail too. Keep the queue usable; never retry a write.
       }
     });
   }
 
-  Future<void> _greet(DateTime? lastVisit) async {
+  Future<void> _greet(DateTime? lastVisit, bool Function() current) async {
     final now = DateTime.now();
     final greeting = companionGreeting(now, lastVisit ?? await companionLastSeen());
     unawaited(companionMarkSeen(now));
-    if (!mounted) return;
+    if (!mounted || !current()) return;
     final l10n = context.l10n;
     final (line, emotion, action) = switch (greeting) {
       CompanionGreeting.firstTime => (l10n.companionGreetFirst, 'shy', 'wave'),
@@ -346,7 +364,8 @@ class _CompanionPageState extends ConsumerState<CompanionPage> {
     final line = choices[_random.nextInt(choices.length)];
     _lastLine = line;
     // After the snack has reached her, not before.
-    Future<void>.delayed(Duration(milliseconds: id == 'snack' ? 1700 : 900), () {
+    _objectTimer?.cancel();
+    _objectTimer = Timer(Duration(milliseconds: id == 'snack' ? 1700 : 900), () {
       if (mounted && !_running && !_sending) _say(line);
     });
   }
@@ -370,6 +389,7 @@ class _CompanionPageState extends ConsumerState<CompanionPage> {
 
   /// A short line without the model.
   void _say(String line) {
+    _objectTimer?.cancel();
     _stage.command('say', {'chars': line.length});
     _showBubble(line, hold: Duration(milliseconds: 2400 + line.length * 90));
   }
@@ -420,6 +440,41 @@ class _CompanionPageState extends ConsumerState<CompanionPage> {
 
   // ── Talking ──────────────────────────────────────────────────────────────
 
+  /// Work belongs to this visit to this host and client, even after A→B→A.
+  bool Function() _currentRoom() {
+    final epoch = _bindingEpoch;
+    // A light conversation belongs to no host: only leaving the page or
+    // switching modes (an unbind) ends what it started.
+    if (_light) return () => mounted && epoch == _bindingEpoch;
+    final host = ref.read(activeHostProvider);
+    final client = ref.read(activeConnectionProvider).value?.client;
+    return () =>
+        mounted &&
+        epoch == _bindingEpoch &&
+        host == ref.read(activeHostProvider) &&
+        identical(client, ref.read(activeConnectionProvider).value?.client);
+  }
+
+  void _bindingChanged() {
+    final host = ref.read(activeHostProvider);
+    final client = ref.read(activeConnectionProvider).value?.client;
+    if (host == _bindingHost && identical(client, _bindingClient)) return;
+    _bindingHost = host;
+    _bindingClient = client;
+    // With no mode picked, a host coming or going turns her light or full.
+    final light = _light;
+    if (light != _boundLight) {
+      _modeChanged();
+      return;
+    }
+    // A light conversation isn't on any host: nothing to rebind.
+    if (light) return;
+    setState(_unbind);
+    final binding = ref.read(companionSessionsProvider.notifier).of(host);
+    if (binding != null && _stageReady) _bind(binding.sessionId);
+    if (_stageReady) unawaited(_arrive());
+  }
+
   void _bind(String sessionId) {
     if (_sessionId == sessionId && _chat != null) return;
     _chat?.close();
@@ -429,16 +484,32 @@ class _CompanionPageState extends ConsumerState<CompanionPage> {
   }
 
   void _unbind() {
+    _bindingEpoch++;
+    if (_voice.active) unawaited(_voice.cancel());
+    _bubbleTimer?.cancel();
+    _settleTimer?.cancel();
+    _objectTimer?.cancel();
     _vitals = null;
     _vitalsClient = null;
+    _vitalsQueue = Future.value();
     _chat?.close();
     _chat = null;
     _sessionId = null;
+    _sending = false;
     _running = false;
     _needsAttention = false;
     _baselineSet = false;
     _marksHandled = 0;
     _wordsSpoken = 0;
+    _notes.clear();
+    _bubble = null;
+    _myLine = null;
+    _home = 'idle';
+    _asleep = false;
+    _stage.command('quiet');
+    _stage.command('activity', {'name': 'idle', 'remainingMs': 0});
+    _stage.command('vitals', {'valence': 0.25, 'energy': 0.75, 'closeness': 0});
+    _refreshMood();
   }
 
   /// The words after the latest thing the person said.
@@ -547,9 +618,10 @@ class _CompanionPageState extends ConsumerState<CompanionPage> {
     final text = _input.text.trim();
     if (text.isEmpty || _sending || _lightReply != null) return;
     if (_voice.active) unawaited(_voice.cancel());
-    final host = ref.read(activeHostProvider);
+    final current = _currentRoom();
     _input.clear();
     _bubbleTimer?.cancel();
+    _objectTimer?.cancel();
     setState(() {
       _sending = true;
       _bubble = null;
@@ -562,28 +634,29 @@ class _CompanionPageState extends ConsumerState<CompanionPage> {
         return;
       }
       final binding = await ref.read(companionSessionsProvider.notifier).ensure();
-      if (!mounted) return;
-      if (ref.read(activeHostProvider) != host) throw const DshClosedException('host changed');
+      if (!current()) return;
       _bind(binding.sessionId);
       final chat = ref.read(chatProvider(binding.sessionId).notifier);
-      if (!await chat.waitForSync()) throw const DshClosedException('not synced');
-      if (!mounted) return;
+      if (!await chat.waitForSync(isCurrent: current)) throw const DshClosedException('not synced');
+      if (!current()) return;
       final firstInline = binding.inlinePersona && ref.read(chatProvider(binding.sessionId)).items.isEmpty;
       final aside = companionAside(now: DateTime.now(), notes: List.of(_notes));
       final message = [if (firstInline) companionInlinePersona, ?aside, text].join('\n');
-      if (await chat.send(message)) {
+      final sent = await chat.send(message);
+      if (!current()) return;
+      if (sent) {
         _notes.clear();
       } else {
         throw StateError(ref.read(chatProvider(binding.sessionId)).error ?? 'send');
       }
     } on Object catch (error) {
-      if (!mounted) return;
+      if (!current()) return;
       if (_input.text.isEmpty) _input.text = text;
       _stage.command('emotion', {'name': 'worried', 'hold': 3000});
       setState(() => _myLine = null);
       _showBubble(_failureText(error), hold: const Duration(seconds: 6), error: true);
     } finally {
-      if (mounted) {
+      if (current()) {
         setState(() => _sending = false);
         _refreshMood();
       }
@@ -677,6 +750,7 @@ class _CompanionPageState extends ConsumerState<CompanionPage> {
   /// Switching modes on the page: drop the reply on its way and the other
   /// mode's conversation, then arrive again.
   void _modeChanged() {
+    _boundLight = _light;
     if (_lightReply case final reply?) {
       final turn = _lightTurn;
       unawaited(reply.cancel());
@@ -954,16 +1028,8 @@ class _CompanionPageState extends ConsumerState<CompanionPage> {
   @override
   Widget build(BuildContext context) {
     // Changing host while here: her conversation is per host.
-    ref.listen(activeHostProvider, (_, _) {
-      // A light conversation isn't on any host.
-      if (_light && _lightReply != null) return;
-      setState(_unbind);
-      if (!_light) {
-        final binding = ref.read(companionSessionsProvider.notifier).of(ref.read(activeHostProvider));
-        if (binding != null && _stageReady) _bind(binding.sessionId);
-      }
-      if (_stageReady) unawaited(_arrive());
-    });
+    ref.listen(activeHostProvider, (_, _) => _bindingChanged());
+    ref.listen(activeConnectionProvider.select((value) => value.value?.client), (_, _) => _bindingChanged());
     ref.listen(companionModeProvider, (before, now) {
       // The saved pick arriving after the page opened changes nothing if it is what she already does.
       bool light(CompanionMode? mode) =>
