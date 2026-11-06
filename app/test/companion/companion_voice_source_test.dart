@@ -184,6 +184,112 @@ void main() {
     });
   });
 
+  group('presets', () {
+    Future<http.Request> sentBy(CompanionVoiceSettings settings, http.Response Function(http.Request) reply) async {
+      late http.Request sent;
+      await fetchCompanionVoice(
+        settings,
+        '你好呀',
+        MockClient((request) async {
+          if (request.url.host == 'oss.example') return http.Response.bytes(_wav(quiet: 0, loud: 40), 200);
+          sent = request;
+          return reply(request);
+        }),
+      );
+      return sent;
+    }
+
+    test('MiMo: chat completions, the line as the assistant, the style as the user, base64 WAV back', () async {
+      const settings = CompanionVoiceSettings(
+        source: CompanionVoiceSource.preset,
+        presetKeys: {'mimo': 'mimo-key'},
+        presetVoices: {'mimo': '茉莉'},
+      );
+      expect(settings.configured, isTrue);
+      final sent = await sentBy(
+        settings,
+        (_) => http.Response(
+          jsonEncode({
+            'choices': [
+              {
+                'message': {
+                  'audio': {'data': base64.encode(_wav(quiet: 0, loud: 40))},
+                },
+              },
+            ],
+          }),
+          200,
+        ),
+      );
+      expect(sent.url.toString(), 'https://api.xiaomimimo.com/v1/chat/completions');
+      expect(sent.headers['api-key'], 'mimo-key');
+      expect(sent.headers['Authorization'], 'Bearer mimo-key');
+      expect(jsonDecode(sent.body), {
+        'model': 'mimo-v2.5-tts',
+        'messages': [
+          {'role': 'user', 'content': companionVoiceStyleDefault},
+          {'role': 'assistant', 'content': '你好呀'},
+        ],
+        'audio': {'format': 'wav', 'voice': '茉莉'},
+      });
+    });
+
+    test('OpenAI takes the style as instructions; SiliconFlow names its voices; Bailian links its audio', () async {
+      final openai = await sentBy(
+        const CompanionVoiceSettings(
+          source: CompanionVoiceSource.preset,
+          preset: 'openai',
+          presetKeys: {'openai': 'sk-o'},
+          presetStyle: '轻声细语',
+        ),
+        (_) => http.Response.bytes(_wav(quiet: 0, loud: 40), 200),
+      );
+      expect(openai.url.toString(), 'https://api.openai.com/v1/audio/speech');
+      expect(jsonDecode(openai.body), containsPair('instructions', '轻声细语'));
+      expect(jsonDecode(openai.body), containsPair('voice', 'coral'));
+
+      final silicon = await sentBy(
+        const CompanionVoiceSettings(
+          source: CompanionVoiceSource.preset,
+          preset: 'siliconflow',
+          presetKeys: {'siliconflow': 'sk-s'},
+          presetVoices: {'siliconflow': 'anna'},
+        ),
+        (_) => http.Response.bytes(_wav(quiet: 0, loud: 40), 200),
+      );
+      expect(silicon.url.toString(), 'https://api.siliconflow.cn/v1/audio/speech');
+      expect(jsonDecode(silicon.body), containsPair('voice', 'FunAudioLLM/CosyVoice2-0.5B:anna'));
+      expect(jsonDecode(silicon.body), isNot(contains('instructions')));
+
+      final bailian = await sentBy(
+        const CompanionVoiceSettings(
+          source: CompanionVoiceSource.preset,
+          preset: 'bailian',
+          presetKeys: {'bailian': 'sk-b'},
+        ),
+        (_) => http.Response(
+          jsonEncode({
+            'output': {
+              'audio': {'url': 'https://oss.example/a.wav'},
+            },
+          }),
+          200,
+        ),
+      );
+      expect(bailian.headers['Authorization'], 'Bearer sk-b');
+      expect(jsonDecode(bailian.body), {
+        'model': 'qwen3-tts-flash',
+        'input': {'text': '你好呀', 'voice': 'Cherry'},
+      });
+    });
+
+    test('a preset without its key is not set up; keys stay out of plain preferences', () {
+      const settings = CompanionVoiceSettings(source: CompanionVoiceSource.preset, presetKeys: {'openai': 'sk-o'});
+      expect(settings.configured, isFalse); // MiMo is chosen, its key is missing.
+      expect(jsonEncode(settings.plain()), isNot(contains('sk-o')));
+    });
+  });
+
   group('settings', () {
     test('keys and headers stay out of plain preferences', () {
       const settings = CompanionVoiceSettings(openaiKey: 'sk-secret', customHeaders: 'Authorization: Bearer x');

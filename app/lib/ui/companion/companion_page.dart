@@ -1550,6 +1550,8 @@ class _CompanionPageState extends ConsumerState<CompanionPage> implements Compan
                           value: Text(switch (voice) {
                             CompanionVoiceSettings(on: true, source: CompanionVoiceSource.system) =>
                               l10n.companionVoiceSystem,
+                            CompanionVoiceSettings(on: true, source: CompanionVoiceSource.preset) =>
+                              voice.presetInfo.name,
                             CompanionVoiceSettings(on: true, source: CompanionVoiceSource.openai) =>
                               l10n.companionVoiceOpenai,
                             CompanionVoiceSettings(on: true, source: CompanionVoiceSource.custom) =>

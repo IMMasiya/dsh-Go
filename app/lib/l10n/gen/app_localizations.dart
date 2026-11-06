@@ -9332,6 +9332,60 @@ abstract class L10n {
   /// **'「{name}」……好，以后我就叫这个名字啦。'**
   String companionRenamed(String name);
 
+  /// No description provided for @companionVoicePreset.
+  ///
+  /// In zh, this message translates to:
+  /// **'常用服务'**
+  String get companionVoicePreset;
+
+  /// No description provided for @companionVoicePresetHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'小米 MiMo、OpenAI、硅基流动、阿里云百炼：填个 Key 就能用'**
+  String get companionVoicePresetHint;
+
+  /// No description provided for @companionVoiceService.
+  ///
+  /// In zh, this message translates to:
+  /// **'服务'**
+  String get companionVoiceService;
+
+  /// No description provided for @companionVoiceKeyWhere.
+  ///
+  /// In zh, this message translates to:
+  /// **'在 {site} 申请；存在这台手机的安全存储里'**
+  String companionVoiceKeyWhere(String site);
+
+  /// No description provided for @companionVoiceVoiceCustomHelper.
+  ///
+  /// In zh, this message translates to:
+  /// **'点一个，或者直接填服务给的音色 ID'**
+  String get companionVoiceVoiceCustomHelper;
+
+  /// No description provided for @companionVoiceStyle.
+  ///
+  /// In zh, this message translates to:
+  /// **'说话风格'**
+  String get companionVoiceStyle;
+
+  /// No description provided for @companionVoiceStyleHelper.
+  ///
+  /// In zh, this message translates to:
+  /// **'描述她说话的语气，服务会照着读；留空用默认的温柔少女音'**
+  String get companionVoiceStyleHelper;
+
+  /// No description provided for @companionVoiceFemale.
+  ///
+  /// In zh, this message translates to:
+  /// **'女声'**
+  String get companionVoiceFemale;
+
+  /// No description provided for @companionVoiceMale.
+  ///
+  /// In zh, this message translates to:
+  /// **'男声'**
+  String get companionVoiceMale;
+
   /// No description provided for @engineNewChatDefaultsLast.
   ///
   /// In zh, this message translates to:

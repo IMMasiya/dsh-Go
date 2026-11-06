@@ -261,5 +261,21 @@
         "type": "String"
       }
     }
-  }
+  },
+  "companionVoicePreset": "常用服务",
+  "companionVoicePresetHint": "小米 MiMo、OpenAI、硅基流动、阿里云百炼：填个 Key 就能用",
+  "companionVoiceService": "服务",
+  "companionVoiceKeyWhere": "在 {site} 申请；存在这台手机的安全存储里",
+  "@companionVoiceKeyWhere": {
+    "placeholders": {
+      "site": {
+        "type": "String"
+      }
+    }
+  },
+  "companionVoiceVoiceCustomHelper": "点一个，或者直接填服务给的音色 ID",
+  "companionVoiceStyle": "说话风格",
+  "companionVoiceStyleHelper": "描述她说话的语气，服务会照着读；留空用默认的温柔少女音",
+  "companionVoiceFemale": "女声",
+  "companionVoiceMale": "男声"
 }

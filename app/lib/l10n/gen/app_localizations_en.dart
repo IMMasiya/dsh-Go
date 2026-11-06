@@ -5345,6 +5345,36 @@ class L10nEn extends L10n {
   }
 
   @override
+  String get companionVoicePreset => 'Popular services';
+
+  @override
+  String get companionVoicePresetHint => 'Xiaomi MiMo, OpenAI, SiliconFlow, Alibaba Model Studio: just add a key';
+
+  @override
+  String get companionVoiceService => 'Service';
+
+  @override
+  String companionVoiceKeyWhere(String site) {
+    return 'Get one at $site; kept in this phone\'s secure storage';
+  }
+
+  @override
+  String get companionVoiceVoiceCustomHelper => 'Pick one, or type a voice ID the service gave you';
+
+  @override
+  String get companionVoiceStyle => 'Speaking style';
+
+  @override
+  String get companionVoiceStyleHelper =>
+      'Describe her tone and the service reads in it; leave empty for the default gentle girl\'s voice';
+
+  @override
+  String get companionVoiceFemale => 'female';
+
+  @override
+  String get companionVoiceMale => 'male';
+
+  @override
   String get engineNewChatDefaultsLast => 'New chat defaults (last choice)';
 
   @override

@@ -33,6 +33,9 @@ class _CompanionVoicePageState extends ConsumerState<CompanionVoicePage> {
   final _headers = TextEditingController();
   final _body = TextEditingController();
   final _field = TextEditingController();
+  final _presetKey = TextEditingController();
+  final _presetVoice = TextEditingController();
+  final _presetStyle = TextEditingController();
   bool _filled = false;
 
   // Held from the start: edits still waiting are saved as the page closes,
@@ -52,7 +55,19 @@ class _CompanionVoicePageState extends ConsumerState<CompanionVoicePage> {
   /// 试听: null idle, '' requesting, 'ok', or why it failed.
   String? _preview;
 
-  List<TextEditingController> get _all => [_base, _key, _model, _voice, _url, _headers, _body, _field];
+  List<TextEditingController> get _all => [
+    _base,
+    _key,
+    _model,
+    _voice,
+    _url,
+    _headers,
+    _body,
+    _field,
+    _presetKey,
+    _presetVoice,
+    _presetStyle,
+  ];
 
   @override
   void dispose() {
@@ -75,9 +90,15 @@ class _CompanionVoicePageState extends ConsumerState<CompanionVoicePage> {
     _headers.text = s.customHeaders;
     _body.text = s.customBody;
     _field.text = s.customField;
+    _presetKey.text = s.presetKey;
+    _presetVoice.text = s.presetVoice;
+    _presetStyle.text = s.presetStyle;
   }
 
   CompanionVoiceSettings _fromFields(CompanionVoiceSettings s) => s.copyWith(
+    presetKeys: {...s.presetKeys, s.preset: _presetKey.text.trim()},
+    presetVoices: {...s.presetVoices, s.preset: _presetVoice.text.trim()}..removeWhere((_, voice) => voice.isEmpty),
+    presetStyle: _presetStyle.text.trim(),
     openaiBase: _base.text.trim(),
     openaiKey: _key.text.trim(),
     openaiModel: _model.text.trim(),
@@ -101,10 +122,24 @@ class _CompanionVoicePageState extends ConsumerState<CompanionVoicePage> {
     final next = _fromFields(s);
     if (next.plain().toString() != s.plain().toString() ||
         next.openaiKey != s.openaiKey ||
-        next.customHeaders != s.customHeaders) {
+        next.customHeaders != s.customHeaders ||
+        next.presetKeys.toString() != s.presetKeys.toString()) {
       _seen = next;
       unawaited(_store.update(next));
     }
+  }
+
+  /// Another service: what is typed so far stays with the one before, and the
+  /// fields show what this one has.
+  Future<void> _choosePreset(CompanionVoiceSettings s, String id) async {
+    final merged = _fromFields(s);
+    _seen = merged;
+    final next = merged.copyWith(preset: id);
+    _presetKey.text = next.presetKey;
+    _presetVoice.text = next.presetVoice;
+    setState(() => _preview = null);
+    await _store.update(next);
+    _seen = next;
   }
 
   Future<void> _set(CompanionVoiceSettings next) async {
@@ -218,6 +253,7 @@ class _CompanionVoicePageState extends ConsumerState<CompanionVoicePage> {
           children: [
             for (final (source, title, hint) in [
               (CompanionVoiceSource.system, l10n.companionVoiceSystem, l10n.companionVoiceSystemHint),
+              (CompanionVoiceSource.preset, l10n.companionVoicePreset, l10n.companionVoicePresetHint),
               (CompanionVoiceSource.openai, l10n.companionVoiceOpenai, l10n.companionVoiceOpenaiHint),
               (CompanionVoiceSource.custom, l10n.companionVoiceCustom, l10n.companionVoiceCustomHint),
             ])
@@ -233,6 +269,65 @@ class _CompanionVoicePageState extends ConsumerState<CompanionVoicePage> {
               ),
           ],
         ),
+        if (s.source == CompanionVoiceSource.preset) ...[
+          SettingsSection(
+            title: l10n.companionVoiceService,
+            children: [
+              for (final preset in companionVoicePresets)
+                SettingsTile(
+                  title: preset.name,
+                  subtitle: preset.site,
+                  chevron: false,
+                  trailing: s.preset == preset.id ? const Icon(AppIcons.selected, size: 20) : null,
+                  onTap: () => unawaited(_choosePreset(s, preset.id)),
+                ),
+            ],
+          ),
+          SettingsSection(
+            footer: Text(l10n.companionVoicePrivacy),
+            children: [
+              FormFieldGroup(
+                children: [
+                  FormFieldBlock(
+                    label: 'API Key',
+                    helper: l10n.companionVoiceKeyWhere(s.presetInfo.site),
+                    child: _text(_presetKey, hint: 'sk-…', secret: true),
+                  ),
+                  FormFieldBlock(
+                    label: l10n.companionVoiceVoice,
+                    helper: l10n.companionVoiceVoiceCustomHelper,
+                    below: Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        for (final voice in s.presetInfo.voices)
+                          ChoiceChip(
+                            label: Text(switch (voice.kind) {
+                              'f' => '${voice.id} · ${l10n.companionVoiceFemale}',
+                              'm' => '${voice.id} · ${l10n.companionVoiceMale}',
+                              _ => voice.id,
+                            }),
+                            selected: _presetVoice.text.trim() == voice.id,
+                            onSelected: (_) {
+                              setState(() => _presetVoice.text = voice.id);
+                              _edited();
+                            },
+                          ),
+                      ],
+                    ),
+                    child: _text(_presetVoice, hint: s.presetInfo.voices.first.id),
+                  ),
+                  if (s.presetInfo.styled)
+                    FormFieldBlock(
+                      label: l10n.companionVoiceStyle,
+                      helper: l10n.companionVoiceStyleHelper,
+                      child: _text(_presetStyle, hint: companionVoiceStyleDefault, lines: 2),
+                    ),
+                ],
+              ),
+            ],
+          ),
+        ],
         if (s.source == CompanionVoiceSource.openai)
           SettingsSection(
             title: l10n.companionVoiceApi,

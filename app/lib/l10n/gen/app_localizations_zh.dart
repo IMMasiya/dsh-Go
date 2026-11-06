@@ -5042,6 +5042,35 @@ class L10nZh extends L10n {
   }
 
   @override
+  String get companionVoicePreset => '常用服务';
+
+  @override
+  String get companionVoicePresetHint => '小米 MiMo、OpenAI、硅基流动、阿里云百炼：填个 Key 就能用';
+
+  @override
+  String get companionVoiceService => '服务';
+
+  @override
+  String companionVoiceKeyWhere(String site) {
+    return '在 $site 申请；存在这台手机的安全存储里';
+  }
+
+  @override
+  String get companionVoiceVoiceCustomHelper => '点一个，或者直接填服务给的音色 ID';
+
+  @override
+  String get companionVoiceStyle => '说话风格';
+
+  @override
+  String get companionVoiceStyleHelper => '描述她说话的语气，服务会照着读；留空用默认的温柔少女音';
+
+  @override
+  String get companionVoiceFemale => '女声';
+
+  @override
+  String get companionVoiceMale => '男声';
+
+  @override
   String get engineNewChatDefaultsLast => '新对话默认（上次选择）';
 
   @override
