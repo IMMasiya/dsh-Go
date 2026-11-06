@@ -80,14 +80,35 @@ class _CompanionStageState extends State<CompanionStage> with WidgetsBindingObse
   CompanionServer? _server;
   WebViewController? _web;
   Timer? _timeout;
+  AppLifecycleState? _lifecycle;
+  bool _routeVisible = true;
+  bool? _appliedPause;
 
   @override
   void initState() {
     super.initState();
+    _lifecycle = WidgetsBinding.instance.lifecycleState;
     WidgetsBinding.instance.addObserver(this);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) unawaited(_start());
     });
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // Off only when a page covers the room whole (the memory page): a sheet or
+    // a dialog over her leaves her moving under it, not frozen.
+    _routeVisible = TickerMode.valuesOf(context).enabled;
+    _syncVisibility();
+  }
+
+  void _syncVisibility() {
+    if (!widget.controller._ready) return;
+    final pause = !_routeVisible || (_lifecycle != null && _lifecycle != AppLifecycleState.resumed);
+    if (_appliedPause == pause) return;
+    _appliedPause = pause;
+    widget.controller.command(pause ? 'pause' : 'resume');
   }
 
   Future<void> _start() async {
@@ -142,6 +163,8 @@ class _CompanionStageState extends State<CompanionStage> with WidgetsBindingObse
       case 'ready':
         _timeout?.cancel();
         widget.controller._ready = true;
+        _appliedPause = null;
+        _syncVisibility();
         events.onReady();
       case 'error':
         _fail('${message['message']}');
@@ -170,14 +193,8 @@ class _CompanionStageState extends State<CompanionStage> with WidgetsBindingObse
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    switch (state) {
-      case AppLifecycleState.resumed:
-        widget.controller.command('resume');
-      case AppLifecycleState.hidden || AppLifecycleState.paused:
-        widget.controller.command('pause');
-      case AppLifecycleState.inactive || AppLifecycleState.detached:
-        break;
-    }
+    _lifecycle = state;
+    _syncVisibility();
   }
 
   @override

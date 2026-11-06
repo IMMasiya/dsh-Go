@@ -1085,14 +1085,22 @@
       };
     },
     activity: ({ name, remainingMs }) => setActivity(name, remainingMs),
-    pause: () => pause(),
-    resume: () => resume(),
+    pause: () => {
+      nativePaused = true;
+      pause();
+    },
+    resume: () => {
+      nativePaused = false;
+      resume();
+    },
   };
 
   // ── Loop ────────────────────────────────────────────────────────────────
 
   let gl = null;
   let model = null;
+  // Flutter can cover this route while the WebView document stays visible.
+  let nativePaused = false;
   let paused = false;
   let frame = 0;
   let last = 0;
@@ -1218,7 +1226,7 @@
 
   document.addEventListener('visibilitychange', () => {
     if (document.hidden) pause();
-    else resume();
+    else if (!nativePaused) resume();
   });
 
   canvas.addEventListener('webglcontextlost', (e) => {
