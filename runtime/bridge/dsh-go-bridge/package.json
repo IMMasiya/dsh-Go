@@ -14,6 +14,7 @@
     "lib/plugin-config.js",
     "lib/config-source.js",
     "lib/client.js",
+    "lib/companion/*.js",
     "lib/native/*.js",
     "cordis.patch.yml"
   ],
