@@ -383,6 +383,7 @@ class _CompanionPageState extends ConsumerState<CompanionPage> implements Compan
     }
     final l10n = context.l10n;
     final lines = switch ((zone, kind)) {
+      (_, 'hug') => [l10n.companionHug1, l10n.companionHug2, l10n.companionHug3],
       (_, 'tease') => [l10n.companionTease1, l10n.companionTease2, l10n.companionTease3],
       (_, 'pat') => [l10n.companionPat1, l10n.companionPat2, l10n.companionPat3],
       ('head', _) => [l10n.companionTapHead1, l10n.companionTapHead2],
@@ -391,8 +392,10 @@ class _CompanionPageState extends ConsumerState<CompanionPage> implements Compan
       ('legs', _) => [l10n.companionTapLegs1, l10n.companionTapLegs2],
       _ => [l10n.companionTapBody1, l10n.companionTapBody2, l10n.companionTapBody3],
     };
-    if (kind == 'pat') _event('pet');
+    // A hug is affection the way a pat is: the same event for her state.
+    if (kind == 'pat' || kind == 'hug') _event('pet');
     _remember(switch ((zone, kind)) {
+      (_, 'hug') => '对方刚才抱了抱你',
       (_, 'tease') => '对方刚才连着戳你',
       (_, 'pat') => '对方刚才摸了摸你的头',
       ('tail', _) => '对方刚才碰了你的尾巴',

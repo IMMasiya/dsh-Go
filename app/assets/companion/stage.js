@@ -351,6 +351,14 @@
     patting: false,
     patX: 0,
     patHeartAt: 0,
+    // A long press on her: a hug. She leans toward the hand (hugSide) and stays.
+    hug: 0,
+    hugging: false,
+    hugSide: 0,
+    hugHeartAt: 0,
+    // A snack carried toward her: her mouth opens a little as it comes close.
+    expect: 0,
+    expecting: 0,
     tailKick: 0,
     speech: 0, // seconds of mouth movement still owed
     syllable: 0,
@@ -530,6 +538,8 @@
 
       // Head pat: she leans into the hand and melts a little.
       life.pat = ease(life.pat, life.patting ? 1 : 0, life.patting ? 3.5 : 1.8, dt);
+      life.hug = ease(life.hug, life.hugging ? 1 : 0, life.hugging ? 3 : 1.6, dt);
+      life.expect = ease(life.expect, life.expecting, 8, dt);
 
       const vitals = life.vitals;
       // Livelier when rested, calmer when not; never frozen.
@@ -543,6 +553,13 @@
       m.set('ParamBodyAngleX', bodyX * 9 + Math.sin(t * 0.37) * 1.1 * drift);
       m.set('ParamBodyAngleY', bodyY * 7 - asleep * 4);
       m.set('ParamBodyAngleZ', bodyX * -3 + Math.sin(t * 0.41 + 1) * 1.3 * drift);
+      if (life.hug > 0.01) {
+        // Leaning into the hug, head a little down.
+        m.add('ParamAngleZ', life.hug * life.hugSide * 9);
+        m.add('ParamAngleY', -life.hug * 5);
+        m.add('ParamBodyAngleZ', life.hug * life.hugSide * 5);
+        m.add('ParamBodyAngleX', life.hug * life.hugSide * 3);
+      }
       m.set('ParamEyeBallX', Math.tanh(eyeX * 1.25) * (1 - asleep));
       m.set('ParamEyeBallY', Math.tanh(eyeY * 1.25) * (1 - asleep));
       // Slow breath; slower still asleep.
@@ -614,6 +631,7 @@
         const beat = Math.sin(life.syllable * Math.PI);
         mouth = Math.pow(Math.abs(beat), 0.7) * (0.55 + 0.4 * Math.sin(life.syllable * 0.37) ** 2);
       }
+      mouth = Math.max(mouth, life.expect * 0.45);
       life.mouth = ease(life.mouth, mouth, mouth > life.mouth ? 26 : 16, dt);
       m.add('ParamMouthOpenY', life.mouth);
     },
@@ -968,6 +986,13 @@
     if (pointers.size === 2) {
       const info = pinchInfo();
       Object.assign(gesture, { pinch: info.distance, zoom: camera.zoom, midX: info.midX, midY: info.midY, camX: camera.x, camY: camera.y });
+      // A second finger means zooming: no hug, and a carried snack goes back.
+      if (press) clearTimeout(press.hugTimer);
+      if (press?.dragging) {
+        scene.drop();
+        life.expecting = 0;
+      }
+      life.hugging = false;
       press = null;
       life.pointer = null;
       life.patting = false;
@@ -992,7 +1017,63 @@
     };
     life.pointer = toGaze(e.clientX, e.clientY);
     scene.marks.ripple(e.clientX, e.clientY);
+    // A finger that stays on her becomes a hug.
+    if (press.zone) {
+      const held = press;
+      held.hugTimer = setTimeout(() => startHug(held), HUG_MS);
+    }
   });
+
+  const HUG_MS = 650;
+  /** How close to her mouth a carried snack must be let go to count. */
+  const FEED_RADIUS = 80;
+
+  /** Her mouth itself, following her head: where a carried snack is aimed. */
+  function mouthPoint() {
+    const [x, y] = toScreen(0, 0.59);
+    return [x + life.head.x.x * 10, y - life.head.y.x * 6];
+  }
+
+  function warmColor() {
+    const warm = getComputedStyle(document.documentElement).getPropertyValue('--warm').trim() || '242, 213, 172';
+    return `rgb(${warm})`;
+  }
+
+  function startHug(held) {
+    if (press !== held || held.travel >= 14 || life.patting || pointers.size !== 1) return;
+    held.hugging = true;
+    life.hugging = true;
+    const [cx] = toScreen(0, 0.4);
+    life.hugSide = held.x < cx ? 1 : -1;
+    setEmotion('happy', 30000);
+    scene.marks.hearts(held.x, held.y - 18, 2);
+    post({ type: 'touch', zone: held.zone, kind: 'hug' });
+  }
+
+  /** A snack carried from the dish: into her mouth if let go there, else back to the dish. */
+  function endDrag(e) {
+    scene.drop();
+    life.expecting = 0;
+    const at = [e.clientX, e.clientY];
+    const mouth = mouthPoint();
+    const warm = warmColor();
+    if (e.type === 'pointerup' && Math.hypot(at[0] - mouth[0], at[1] - mouth[1]) < FEED_RADIUS) {
+      scene.marks.toss(at, mouth, warm, { arc: 8, life: 0.28 });
+      post({ type: 'object', id: 'snack' });
+      const epoch = transientEpoch;
+      setTimeout(() => {
+        if (epoch !== transientEpoch) return;
+        // The bite lands.
+        setEmotion('happy', 2600);
+        playAction('nodSmall');
+        life.tailKick = 1;
+        scene.marks.sparkles(mouth[0] + 20, mouth[1] - 20, 2);
+      }, 280);
+    } else {
+      const dish = propRect('snack');
+      if (dish) scene.marks.toss(at, center(dish), warm, { arc: 40, life: 0.5, shrink: false });
+    }
+  }
 
   canvas.addEventListener('pointermove', (e) => {
     if (!pointers.has(e.pointerId)) return;
@@ -1012,7 +1093,16 @@
     press.travel += Math.hypot(e.clientX - press.lastX, e.clientY - press.lastY);
     press.lastX = e.clientX;
     press.lastY = e.clientY;
-    if (press.zone === 'head' && press.travel > 26) {
+    if (press.travel > 14) clearTimeout(press.hugTimer);
+    // Pulled off the dish: she watches it come, mouth opening as it nears.
+    if (press.prop === 'snack' && (press.dragging || press.travel > 14)) {
+      press.dragging = true;
+      scene.hold(e.clientX, e.clientY, warmColor());
+      const [mx, my] = mouthPoint();
+      life.expecting = clamp(1 - Math.hypot(e.clientX - mx, e.clientY - my) / 170, 0, 1);
+      return;
+    }
+    if (press.zone === 'head' && press.travel > 26 && !press.hugging) {
       if (!life.patting) {
         life.patting = true;
         press.patStart = performance.now();
@@ -1033,7 +1123,13 @@
     if (!pointers.delete(e.pointerId)) return;
     if (!press || press.id !== e.pointerId) return;
     const quick = e.type === 'pointerup' && e.timeStamp - press.at < 420 && press.travel < 14;
-    if (life.patting) {
+    clearTimeout(press.hugTimer);
+    if (press.dragging) {
+      endDrag(e);
+    } else if (press.hugging) {
+      life.hugging = false;
+      life.emotionUntil = performance.now() + 1800;
+    } else if (life.patting) {
       life.patting = false;
       life.emotionUntil = performance.now() + 1600;
     } else if (quick && press.prop) {
@@ -1182,8 +1278,8 @@
     gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
     model.draw(projection(), [0, 0, canvas.width, canvas.height]);
     moodMarks(ts);
-    scene.step(dt, life.body.x.x);
-    parallax();
+    scene.step(dt, life.body.x.x + tilt.sx * 0.8);
+    parallax(dt);
     drawn++;
     if (ts - fpsAt > 1000) {
       fps = (drawn * 1000) / (ts - fpsAt);
@@ -1203,6 +1299,9 @@
       scene.marks.thought(x, y, thoughtStep);
       thoughtStep = (thoughtStep + 1) % 3;
       moodMarkAt = ts + (thoughtStep === 0 ? 900 : 300);
+    } else if (life.hugging) {
+      scene.marks.hearts(x, y, 1);
+      moodMarkAt = ts + 650;
     } else if (life.mood === 'sleeping' && life.sleep > 0.6) {
       scene.marks.zzz(x, y);
       moodMarkAt = ts + 1900;
@@ -1213,15 +1312,34 @@
 
   let lastParallax = null;
 
+  // Tilting the phone shifts the water a little, then it settles back to
+  // however the phone is being held: a window into the water, not a level.
+  const tilt = { x: 0, y: 0, sx: 0, sy: 0, beta: null, gamma: null };
+  window.addEventListener('deviceorientation', (e) => {
+    if (REDUCED || e.beta == null || e.gamma == null) return;
+    if (tilt.beta == null) {
+      tilt.beta = e.beta;
+      tilt.gamma = e.gamma;
+    }
+    tilt.beta += (e.beta - tilt.beta) * 0.004;
+    tilt.gamma += (e.gamma - tilt.gamma) * 0.004;
+    tilt.x = clamp((e.gamma - tilt.gamma) / 20, -1, 1);
+    tilt.y = clamp((e.beta - tilt.beta) / 20, -1, 1);
+  });
+
   /** The far water moves a touch less than she does: depth, not a parallax show. */
-  function parallax() {
+  function parallax(dt) {
     if (REDUCED) return;
-    const x = Math.round(life.body.x.x * 40) / 10;
-    if (x === lastParallax) return;
-    lastParallax = x;
-    reefFar.style.transform = `translate3d(${-x * 0.7}px, 0, 0)`;
-    reefNear.style.transform = `translate3d(${-x * 1.5}px, 0, 0)`;
-    sun.style.transform = `translate3d(${x * 0.4}px, 0, 0)`;
+    tilt.sx += (tilt.x - tilt.sx) * Math.min(1, dt * 5);
+    tilt.sy += (tilt.y - tilt.sy) * Math.min(1, dt * 5);
+    const x = Math.round((life.body.x.x * 4 + tilt.sx * 9) * 10) / 10;
+    const y = Math.round(tilt.sy * 50) / 10;
+    const key = `${x},${y}`;
+    if (key === lastParallax) return;
+    lastParallax = key;
+    reefFar.style.transform = `translate3d(${-x * 0.7}px, ${-y * 0.6}px, 0)`;
+    reefNear.style.transform = `translate3d(${-x * 1.5}px, ${-y * 1.2}px, 0)`;
+    sun.style.transform = `translate3d(${x * 0.4}px, ${y * 0.3}px, 0)`;
   }
 
   function discardTransient() {
@@ -1236,6 +1354,10 @@
     life.mouthOverride = null;
     life.actions.clear();
     life.glance = null;
+    life.hugging = false;
+    life.hug = 0;
+    life.expecting = 0;
+    life.expect = 0;
     home.show = null;
     home.beckon = null;
     home.gaze = null;
@@ -1357,6 +1479,11 @@
       mood: life.mood,
       emotion: life.emotion,
       patting: life.patting,
+      hugging: life.hugging,
+      hug: life.hug,
+      expect: life.expect,
+      mouthAt: model ? mouthPoint() : null,
+      tilt: [tilt.sx, tilt.sy],
       zoom: camera.zoom,
       paused,
       drawables: model?.core.getDrawableCount() ?? 0,

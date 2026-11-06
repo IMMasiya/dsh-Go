@@ -254,6 +254,13 @@ void main() {
       expect(activity['name'], 'snack');
       expect(activity['remainingMs'], 45000);
 
+      // A hug counts as affection, like a pat, and gets its own words.
+      await tester.pump(const Duration(seconds: 3));
+      stageEvents!.onTouch('body', 'hug');
+      await _settle(tester);
+      expect(phone.events, ['visit', 'snack', 'pet']);
+      expect(find.textContaining(RegExp('抱抱|好安心|再抱一会儿')), findsOneWidget);
+
       await tester.pumpWidget(const SizedBox());
       await tester.pump(const Duration(seconds: 10));
     });

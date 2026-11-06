@@ -123,7 +123,7 @@
   "companionPlay3": "它又飘回去了。",
   "companionRest1": "那我在这儿靠一会儿。",
   "companionRest2": "你说，我听着呢。",
-  "companionTouchHintHome": "点点贝壳、泡泡和软垫试试",
+  "companionTouchHintHome": "点点贝壳、泡泡和软垫，点心还能拖到她嘴边",
   "companionMenuMode": "对话方式",
   "companionModeLight": "轻量",
   "companionModeLightHint": "只聊天。手机直连模型，不用启动引擎",
@@ -145,5 +145,8 @@
   "companionSetupBundled": "接她回家",
   "companionSetupBodyBundled": "她就在 App 里，点一下就到，素材只解压到这台手机上。也可以导入别的素材包（zip）。",
   "companionSetupImportOther": "导入别的素材包",
-  "companionMenuRemoveConfirmBundled": "这台手机上解压出来的角色素材会被删除，聊天记录不受影响。之后随时可以再接她回来。"
+  "companionMenuRemoveConfirmBundled": "这台手机上解压出来的角色素材会被删除，聊天记录不受影响。之后随时可以再接她回来。",
+  "companionHug1": "唔……抱抱。",
+  "companionHug2": "被你这样抱着，好安心。",
+  "companionHug3": "再抱一会儿，就一会儿。"
 }

@@ -217,6 +217,23 @@ window.companionScene = (() => {
         shrink: true,
       });
     },
+    /** A short, nearly straight flight from [from] to [to]: a dropped snack going back, or into her mouth. */
+    toss(from, to, color, { arc = 18, life = 0.4, shrink = true } = {}) {
+      const mid = [(from[0] + to[0]) / 2, Math.min(from[1], to[1]) - arc];
+      add({
+        kind: 'snack',
+        color,
+        life,
+        pop: false,
+        scale: 1.5,
+        path: (t) => {
+          const k = t * t * (3 - 2 * t);
+          const a = 1 - k;
+          return [a * a * from[0] + 2 * a * k * mid[0] + k * k * to[0], a * a * from[1] + 2 * a * k * mid[1] + k * k * to[1]];
+        },
+        shrink,
+      });
+    },
     bubbles(x, y, count = 3) {
       for (let i = 0; i < count; i++) {
         add({ kind: 'ring', x: x + rand(-10, 10), y: y + rand(-6, 6), vx: rand(-6, 6), vy: rand(-46, -28), scale: rand(0.28, 0.5), life: rand(0.9, 1.4), pop: false });
@@ -267,11 +284,15 @@ window.companionScene = (() => {
       if (s.grow) s.scale += s.grow * dt;
     }
     for (const s of sprites) drawSprite(s);
+    if (held) drawSprite(held);
     ctx.globalAlpha = 1;
   }
 
+  /** A snack under a finger: drawn where the finger is every frame, until let go. */
+  let held = null;
+
   /** Whether the frame loop must keep running for the marks. */
-  const busy = () => sprites.length > 0;
+  const busy = () => sprites.length > 0 || held !== null;
 
   return {
     configure({ night, reducedMotion }) {
@@ -282,7 +303,19 @@ window.companionScene = (() => {
     resize,
     step,
     busy,
+    hold(x, y, color) {
+      if (held) {
+        held.x = x;
+        held.y = y;
+      } else {
+        held = { kind: 'snack', color, x, y, age: 1, life: 1e9, rot: 0, scale: 1.5, pop: false };
+      }
+    },
+    drop() {
+      held = null;
+    },
     clear() {
+      held = null;
       sprites.length = 0;
       ctx.clearRect(0, 0, canvas.width, canvas.height);
     },

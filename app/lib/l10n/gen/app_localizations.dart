@@ -8795,7 +8795,7 @@ abstract class L10n {
   /// No description provided for @companionTouchHintHome.
   ///
   /// In zh, this message translates to:
-  /// **'点点贝壳、泡泡和软垫试试'**
+  /// **'点点贝壳、泡泡和软垫，点心还能拖到她嘴边'**
   String get companionTouchHintHome;
 
   /// No description provided for @companionMenuMode.
@@ -8929,6 +8929,24 @@ abstract class L10n {
   /// In zh, this message translates to:
   /// **'这台手机上解压出来的角色素材会被删除，聊天记录不受影响。之后随时可以再接她回来。'**
   String get companionMenuRemoveConfirmBundled;
+
+  /// No description provided for @companionHug1.
+  ///
+  /// In zh, this message translates to:
+  /// **'唔……抱抱。'**
+  String get companionHug1;
+
+  /// No description provided for @companionHug2.
+  ///
+  /// In zh, this message translates to:
+  /// **'被你这样抱着，好安心。'**
+  String get companionHug2;
+
+  /// No description provided for @companionHug3.
+  ///
+  /// In zh, this message translates to:
+  /// **'再抱一会儿，就一会儿。'**
+  String get companionHug3;
 
   /// No description provided for @engineNewChatDefaultsLast.
   ///

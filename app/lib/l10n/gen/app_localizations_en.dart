@@ -5054,7 +5054,7 @@ class L10nEn extends L10n {
   String get companionRest2 => 'Go on, I\'m listening.';
 
   @override
-  String get companionTouchHintHome => 'Try tapping the shell, the bubble and the cushion';
+  String get companionTouchHintHome => 'Tap the shell, the bubble and the cushion, or drag a snack to her mouth';
 
   @override
   String get companionMenuMode => 'How she talks';
@@ -5125,6 +5125,15 @@ class L10nEn extends L10n {
   @override
   String get companionMenuRemoveConfirmBundled =>
       'The character assets unpacked on this phone will be deleted. Chats aren\'t affected. You can bring her back anytime.';
+
+  @override
+  String get companionHug1 => 'Mm... a hug.';
+
+  @override
+  String get companionHug2 => 'I feel safe like this.';
+
+  @override
+  String get companionHug3 => 'A little longer, just a little.';
 
   @override
   String get engineNewChatDefaultsLast => 'New chat defaults (last choice)';

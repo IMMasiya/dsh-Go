@@ -4758,7 +4758,7 @@ class L10nZh extends L10n {
   String get companionRest2 => '你说，我听着呢。';
 
   @override
-  String get companionTouchHintHome => '点点贝壳、泡泡和软垫试试';
+  String get companionTouchHintHome => '点点贝壳、泡泡和软垫，点心还能拖到她嘴边';
 
   @override
   String get companionMenuMode => '对话方式';
@@ -4825,6 +4825,15 @@ class L10nZh extends L10n {
 
   @override
   String get companionMenuRemoveConfirmBundled => '这台手机上解压出来的角色素材会被删除，聊天记录不受影响。之后随时可以再接她回来。';
+
+  @override
+  String get companionHug1 => '唔……抱抱。';
+
+  @override
+  String get companionHug2 => '被你这样抱着，好安心。';
+
+  @override
+  String get companionHug3 => '再抱一会儿，就一会儿。';
 
   @override
   String get engineNewChatDefaultsLast => '新对话默认（上次选择）';
