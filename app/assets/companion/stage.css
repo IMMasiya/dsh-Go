@@ -350,3 +350,8 @@ html[data-motion='reduced'] .whale {
 html[data-motion='reduced'] #stage {
   transition: none;
 }
+
+html[data-paused='1'] .shafts i,
+html[data-paused='1'] .whale {
+  animation-play-state: paused;
+}

@@ -364,6 +364,7 @@
   let character = {};
   let emotions = DEFAULT_EMOTIONS;
   let zones = DEFAULT_ZONES;
+  let transientEpoch = 0;
 
   function setEmotion(name, hold = EMOTION_HOLD) {
     const def = emotions[name];
@@ -378,9 +379,10 @@
 
   /** A few notes, one after another, while she hums. */
   function humNotes(count) {
+    const epoch = transientEpoch;
     for (let i = 0; i < count; i++) {
       setTimeout(() => {
-        if (!paused && model) {
+        if (epoch === transientEpoch && !paused && model) {
           const [x, y] = headOnScreen();
           scene.marks.note(x, y);
         }
@@ -685,7 +687,6 @@
     // One show at a time: another tap meanwhile is only acknowledged.
     if (home.show || REDUCED) return;
     home.show = { kind: name, start: performance.now(), familiar: life.vitals.closeness };
-    if (name === 'rest') setActivity('rest', null);
   }
 
   function setActivity(name, remainingMs) {
@@ -850,11 +851,15 @@
 
   const camera = { zoom: 1.2, x: 0, y: 0 };
 
+  function modelLift() {
+    const float = REDUCED ? 0 : Math.sin(life.time * 0.85) * 0.011;
+    return life.hop.x * 0.12 + float - home.rest * 0.025;
+  }
+
   function projection() {
     const aspect = canvas.height / canvas.width;
     // She floats: a slow lift and drift, on top of any hop.
-    const float = REDUCED ? 0 : Math.sin(life.time * 0.85) * 0.011;
-    const hopY = life.hop.x * 0.12 + float - home.rest * 0.025;
+    const hopY = modelLift();
     const lean = home.rest * 0.07 + home.reach;
     const m = new Fw.CubismMatrix44();
     const sx = camera.zoom * aspect;
@@ -871,7 +876,7 @@
     const aspect = canvas.height / canvas.width;
     return {
       x: cx / (camera.zoom * aspect) + camera.x - (home.rest * 0.07 + home.reach),
-      y: cy / camera.zoom + camera.y,
+      y: (cy - modelLift()) / camera.zoom + camera.y,
     };
   }
 
@@ -880,7 +885,7 @@
     const rect = canvas.getBoundingClientRect();
     const aspect = canvas.height / (canvas.width || 1);
     const cx = (x - camera.x + home.rest * 0.07 + home.reach) * camera.zoom * aspect;
-    const cy = (y - camera.y) * camera.zoom;
+    const cy = (y - camera.y) * camera.zoom + modelLift();
     return [((cx + 1) / 2) * rect.width, ((1 - cy) / 2) * rect.height];
   }
 
@@ -998,7 +1003,7 @@
   function endPointer(e) {
     if (!pointers.delete(e.pointerId)) return;
     if (!press || press.id !== e.pointerId) return;
-    const quick = e.timeStamp - press.at < 420 && press.travel < 14;
+    const quick = e.type === 'pointerup' && e.timeStamp - press.at < 420 && press.travel < 14;
     if (life.patting) {
       life.patting = false;
       life.emotionUntil = performance.now() + 1600;
@@ -1106,6 +1111,7 @@
   }
 
   function render(ts) {
+    if (paused || document.hidden) return;
     frame = requestAnimationFrame(render);
     // Thirty frames while she idles, sixty while something's happening, and
     // twelve asleep: she's on screen for long stretches.
@@ -1173,17 +1179,41 @@
     sun.style.transform = `translate3d(${x * 0.4}px, 0, 0)`;
   }
 
+  function discardTransient() {
+    transientEpoch++;
+    pointers.clear();
+    press = null;
+    life.pointer = null;
+    life.patting = false;
+    life.pat = 0;
+    life.speech = 0;
+    life.mouth = 0;
+    life.mouthOverride = null;
+    life.actions.clear();
+    home.show = null;
+    home.gaze = null;
+    home.reach = 0;
+    resetBall();
+    scene.clear();
+  }
+
   function pause() {
     if (paused) return;
     paused = true;
     cancelAnimationFrame(frame);
+    document.documentElement.dataset.paused = '1';
+    discardTransient();
   }
 
   function resume() {
-    if (!paused || !model) return;
+    if (!paused || document.hidden) return;
+    // Commands received out of sight must not replay an old short performance.
+    discardTransient();
     paused = false;
+    delete document.documentElement.dataset.paused;
+    applyTimeOfDay();
     last = performance.now();
-    frame = requestAnimationFrame(render);
+    if (model) frame = requestAnimationFrame(render);
   }
 
   document.addEventListener('visibilitychange', () => {
@@ -1248,7 +1278,8 @@
       // A hello, so opening the page is already a small event.
       playAction('nodSmall');
       last = performance.now();
-      frame = requestAnimationFrame(render);
+      if (document.hidden) pause();
+      if (!paused) frame = requestAnimationFrame(render);
       document.documentElement.dataset.ready = '1';
       post({ type: 'ready', ms: Math.round(performance.now() - started), name: character.name ?? null, expressions: [...model.expressions.keys()] });
     } catch (error) {

@@ -282,6 +282,10 @@ window.companionScene = (() => {
     resize,
     step,
     busy,
+    clear() {
+      sprites.length = 0;
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+    },
     marks,
   };
 })();
