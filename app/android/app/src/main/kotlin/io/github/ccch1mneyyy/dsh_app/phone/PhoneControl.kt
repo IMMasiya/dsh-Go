@@ -433,6 +433,9 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
         }
     }
 
+    /** Reads the existing immutable gate snapshot without refreshing phone state. */
+    fun backgroundProbeDiagnostics(): Map<String, Any?> = background.inputProbeDiagnostics()
+
     fun status(): Map<String, Any?> = linkedMapOf(
         "enabled" to isEnabled(),
         "bridgeListening" to bridge.listening,

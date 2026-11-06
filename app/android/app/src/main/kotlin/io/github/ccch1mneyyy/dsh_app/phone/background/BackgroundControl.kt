@@ -69,6 +69,9 @@ class BackgroundControl private constructor(context: Context) {
 
     // ---- status ------------------------------------------------------------
 
+    /** Last accepted gate facts only: no connection, permission query or fresh self-test. */
+    fun inputProbeDiagnostics(): Map<String, Any?> = InputProbeDiagnostics.snapshot(gate.snapshot)
+
     /** The `background` sub-map of the `dsh/phone` `status` method. */
     fun status(): Map<String, Any?> {
         val reason = readiness()

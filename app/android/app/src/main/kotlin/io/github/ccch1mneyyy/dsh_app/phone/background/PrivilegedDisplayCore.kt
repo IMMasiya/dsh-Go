@@ -121,7 +121,8 @@ class PrivilegedDisplayCore(private val context: Context) {
     }
 
     private fun failureDetail(e: Throwable): String? =
-        if (e is Fault || e is InputProbe.Failure || e is InterruptedException || e is SecurityException) null
+        if (e is InputProbe.Failure) e.observation?.encode()
+        else if (e is Fault || e is InterruptedException || e is SecurityException) null
         else e.javaClass.simpleName
 
     private fun dispatch(op: String?, request: Bundle, response: Bundle) {
@@ -186,6 +187,7 @@ class PrivilegedDisplayCore(private val context: Context) {
             owner = "__gate__"
             createDisplay(Bundle().apply { putInt(Proto.SHORT_SIDE, 360); putInt(Proto.ASPECT_W, 9); putInt(Proto.ASPECT_H, 20) }, probe = true)
             response.putInt(Proto.DISPLAY_ID, displayId())
+            var probeDetail: String? = null
             val injection = runCatching {
                 val window = BackgroundInputProbe(privileged, checkNotNull(display).display)
                 try {
@@ -195,13 +197,13 @@ class PrivilegedDisplayCore(private val context: Context) {
                     }
                 } finally {
                     // Cleanup failure must replace a delivery failure, not be hidden by use().
-                    window.close()
+                    try { window.close() } finally { probeDetail = window.failureDetail }
                 }
             }
             response.putBoolean(Proto.INJECT_OK, injection.isSuccess)
             injection.exceptionOrNull()?.let {
                 response.putString(Proto.INJECT_ERROR, failureCode(it))
-                failureDetail(it)?.let { detail -> response.putString(Proto.ERROR_DETAIL, detail) }
+                (probeDetail ?: failureDetail(it))?.let { detail -> response.putString(Proto.ERROR_DETAIL, detail) }
             }
         } finally {
             releaseAll()
