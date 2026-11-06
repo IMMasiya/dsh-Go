@@ -285,8 +285,8 @@ data class Decision(
  *   and for the rest of the day after 「今天不再显示」;
  * - pauses with the screen off or locked;
  * - collapses [IDLE_COLLAPSE_MS] after the last thing going on (not with 「一直显示」);
- * - dims after [DIM_AFTER_MS] without a touch or a new call for attention: whole where it docks,
- *   at [DIM_ALPHA], its animation paused;
+ * - stays lit while active; after activity ends, dims after [DIM_AFTER_MS] idle unless a touch
+ *   or a new call for attention restarts the wait: whole where it docks, at [DIM_ALPHA], animation paused;
  * - neither collapses nor dims while 问一句 is open ([holding]);
  * - keeps the process up with its own foreground service only when it is out and DshService is
  *   not running (remote hosts only).
@@ -317,7 +317,7 @@ class OverlayMachine {
     var lastActiveAt = 0L
         private set
 
-    /** Last touch or call for attention (a new bubble, a result, a request): back to full opacity. */
+    /** Idle starts when activity ends; touches and calls for attention restart the dim wait. */
     var lastCallAt = 0L
         private set
 
@@ -327,6 +327,7 @@ class OverlayMachine {
     fun onPush(p: PetPush, now: Long) {
         val prev = last
         last = p
+        if (prev?.active == true && !p.active) lastCallAt = now
         if (bubbles.set(p.bubble, inApp = appForeground)) {
             lastCallAt = now
             lastActiveAt = now
@@ -373,7 +374,7 @@ class OverlayMachine {
     }
 
     private fun withDim(d: Decision, now: Long): Decision {
-        if (d.bubble != null || holding) return d
+        if (last?.active == true || d.bubble != null || holding) return d
         val dimAt = lastCallAt + DIM_AFTER_MS
         if (now >= dimAt) return d.copy(dimmed = true)
         return d.copy(wakeAt = listOfNotNull(d.wakeAt, dimAt).minOrNull())
