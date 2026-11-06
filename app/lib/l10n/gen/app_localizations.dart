@@ -9491,7 +9491,7 @@ abstract class L10n {
   /// No description provided for @companionPersonaTextHelper.
   ///
   /// In zh, this message translates to:
-  /// **'性格、身份、说话方式都写在这里。表情动作的格式和安全边界由 App 自动加上，不用写，也删不掉。'**
+  /// **'性格、身份、说话方式、哪些话不说，都写在这里，删改随你。只有表情动作的标记格式由 App 自动加上。'**
   String get companionPersonaTextHelper;
 
   /// No description provided for @companionPersonaReset.
