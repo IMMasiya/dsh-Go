@@ -49,50 +49,100 @@ class _CompanionMemoryPageState extends ConsumerState<CompanionMemoryPage> {
   _Load _load = _Load.loading;
   CompanionMemories? _list;
   DshClient? _client;
+  late HostRef _bindingHost;
+  int _bindingEpoch = 0;
+  int _readSerial = 0;
   bool _busy = false;
 
   @override
   void initState() {
     super.initState();
+    _bindingHost = ref.read(activeHostProvider);
+    _client = ref.read(activeConnectionProvider).value?.client;
+    unawaited(_read());
+  }
+
+  /// A read, write or dialog belongs to this visit, including after A→B→A.
+  bool Function() _currentRoom() {
+    final epoch = _bindingEpoch;
+    final host = _bindingHost;
+    final client = _client;
+    return () =>
+        mounted &&
+        epoch == _bindingEpoch &&
+        host == ref.read(activeHostProvider) &&
+        identical(client, ref.read(activeConnectionProvider).value?.client);
+  }
+
+  void _bindingChanged() {
+    final host = ref.read(activeHostProvider);
+    final client = ref.read(activeConnectionProvider).value?.client;
+    if (host == _bindingHost && identical(client, _client)) return;
+    setState(() {
+      _bindingHost = host;
+      _client = client;
+      _bindingEpoch++;
+      _list = null;
+      _load = _Load.loading;
+      _busy = false;
+    });
     unawaited(_read());
   }
 
   Future<void> _read() async {
-    final client = ref.read(activeConnectionProvider).value?.client;
+    if (!mounted) return;
+    final owner = _currentRoom();
+    final serial = ++_readSerial;
+    bool current() => serial == _readSerial && owner();
+    final client = _client;
+    if (!current()) return;
     if (client == null) {
-      setState(() => _load = _Load.failed);
+      setState(() {
+        _list = null;
+        _load = _Load.failed;
+      });
       return;
     }
     try {
       final snapshot = await client.companionSnapshot();
+      if (!current()) return;
       if (snapshot == null || !snapshot.memories) {
-        if (mounted) setState(() => _load = _Load.unsupported);
+        setState(() {
+          _list = null;
+          _load = _Load.unsupported;
+        });
         return;
       }
       final list = await client.companionMemories();
-      if (!mounted) return;
+      if (!current()) return;
       setState(() {
-        _client = client;
         _list = list;
         _load = _Load.ready;
       });
     } on Object {
-      if (mounted) setState(() => _load = _Load.failed);
+      if (!current()) return;
+      setState(() {
+        _list = null;
+        _load = _Load.failed;
+      });
     }
   }
 
   /// One write, then the list as the Host now has it.
   Future<void> _write(Future<int> Function(DshClient client, CompanionMemories list) write) async {
+    if (!mounted) return;
+    final current = _currentRoom();
     final client = _client;
     final list = _list;
-    if (client == null || list == null || _busy) return;
+    if (!current() || client == null || list == null || _load != _Load.ready || _busy) return;
     final l10n = context.l10n;
     setState(() => _busy = true);
     try {
       await write(client, list);
+      if (!current()) return;
       await _read();
     } on DshRemoteException catch (error) {
-      if (!mounted) return;
+      if (!mounted || !current()) return;
       showBriefNotice(
         context,
         error.code.endsWith('conflict') || error.code.endsWith('store-changed')
@@ -103,21 +153,25 @@ class _CompanionMemoryPageState extends ConsumerState<CompanionMemoryPage> {
       );
       await _read();
     } on Object {
-      if (mounted) showBriefNotice(context, l10n.companionMemorySaveFailed);
+      if (mounted && current()) showBriefNotice(context, l10n.companionMemorySaveFailed);
     } finally {
-      if (mounted) setState(() => _busy = false);
+      if (current()) setState(() => _busy = false);
     }
   }
 
   Future<void> _edit([CompanionMemory? memory]) async {
+    if (!mounted) return;
+    final current = _currentRoom();
+    if (!current()) return;
     final l10n = context.l10n;
-    final input = TextEditingController(text: memory?.text ?? '');
+    var input = memory?.text ?? '';
     final text = await showAppDialog<String>(
       context: context,
       builder: (dialog) => AlertDialog(
         title: Text(memory == null ? l10n.companionMemoryAdd : l10n.companionMemoryEdit),
-        content: TextField(
-          controller: input,
+        content: TextFormField(
+          initialValue: input,
+          onChanged: (value) => input = value,
           autofocus: true,
           minLines: 2,
           maxLines: 5,
@@ -127,14 +181,13 @@ class _CompanionMemoryPageState extends ConsumerState<CompanionMemoryPage> {
         actions: [
           TextButton(onPressed: () => Navigator.pop(dialog), child: Text(dialog.l10n.commonCancel)),
           FilledButton(
-            onPressed: () => Navigator.pop(dialog, input.text.trim()),
+            onPressed: () => Navigator.pop(dialog, input.trim()),
             child: Text(dialog.l10n.companionMemorySave),
           ),
         ],
       ),
     );
-    input.dispose();
-    if (text == null || text.isEmpty || text == memory?.text) return;
+    if (!current() || text == null || text.isEmpty || text == memory?.text) return;
     final next = CompanionMemory(
       id: memory?.id ?? companionMemoryId(),
       text: text,
@@ -146,6 +199,9 @@ class _CompanionMemoryPageState extends ConsumerState<CompanionMemoryPage> {
   }
 
   Future<void> _delete(CompanionMemory memory) async {
+    if (!mounted) return;
+    final current = _currentRoom();
+    if (!current()) return;
     final l10n = context.l10n;
     final ok = await showAppDialog<bool>(
       context: context,
@@ -165,12 +221,14 @@ class _CompanionMemoryPageState extends ConsumerState<CompanionMemoryPage> {
         ],
       ),
     );
-    if (ok != true) return;
+    if (!current() || ok != true) return;
     await _write((client, list) => client.deleteCompanionMemory(list.storeId, list.revision, memory.id));
   }
 
   @override
   Widget build(BuildContext context) {
+    ref.listen(activeHostProvider, (_, _) => _bindingChanged());
+    ref.listen(activeConnectionProvider.select((value) => value.value?.client), (_, _) => _bindingChanged());
     final l10n = context.l10n;
     final theme = Theme.of(context);
     final host = ref.watch(activeHostProvider);
