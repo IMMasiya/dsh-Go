@@ -2576,6 +2576,36 @@ abstract class L10n {
   /// **'发送消息后显示'**
   String get activityUsageAfterMessage;
 
+  /// No description provided for @activityUsageWaiting.
+  ///
+  /// In zh, this message translates to:
+  /// **'等待上下文用量数据'**
+  String get activityUsageWaiting;
+
+  /// No description provided for @activityUsageProjected.
+  ///
+  /// In zh, this message translates to:
+  /// **'预计下次请求'**
+  String get activityUsageProjected;
+
+  /// No description provided for @activityUsageLastRequest.
+  ///
+  /// In zh, this message translates to:
+  /// **'上次请求'**
+  String get activityUsageLastRequest;
+
+  /// No description provided for @activityUsageBreakdownEstimate.
+  ///
+  /// In zh, this message translates to:
+  /// **'分项为独立估算，可能与总量不同'**
+  String get activityUsageBreakdownEstimate;
+
+  /// No description provided for @activityUsageCumulativeInput.
+  ///
+  /// In zh, this message translates to:
+  /// **'累计输入'**
+  String get activityUsageCumulativeInput;
+
   /// No description provided for @activityUsageContextFull.
   ///
   /// In zh, this message translates to:
@@ -17059,6 +17089,12 @@ abstract class L10n {
   /// In zh, this message translates to:
   /// **'重置运行环境？'**
   String get phoneEngineResetTitle;
+
+  /// No description provided for @phoneResetAlsoDeletes.
+  ///
+  /// In zh, this message translates to:
+  /// **'家目录（/root）里没有保留的内容也会一起删除，包括工作区里的文件、AGENTS.md，以及插件自己存的数据（比如记忆）。'**
+  String get phoneResetAlsoDeletes;
 
   /// No description provided for @phoneEngineKeepUiSkills.
   ///

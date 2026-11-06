@@ -1270,6 +1270,21 @@ class L10nZh extends L10n {
   String get activityUsageAfterMessage => '发送消息后显示';
 
   @override
+  String get activityUsageWaiting => '等待上下文用量数据';
+
+  @override
+  String get activityUsageProjected => '预计下次请求';
+
+  @override
+  String get activityUsageLastRequest => '上次请求';
+
+  @override
+  String get activityUsageBreakdownEstimate => '分项为独立估算，可能与总量不同';
+
+  @override
+  String get activityUsageCumulativeInput => '累计输入';
+
+  @override
   String get activityUsageContextFull => '上下文将满，发送 /compact 可压缩';
 
   @override
@@ -9245,6 +9260,9 @@ class L10nZh extends L10n {
 
   @override
   String get phoneEngineResetTitle => '重置运行环境？';
+
+  @override
+  String get phoneResetAlsoDeletes => '家目录（/root）里没有保留的内容也会一起删除，包括工作区里的文件、AGENTS.md，以及插件自己存的数据（比如记忆）。';
 
   @override
   String get phoneEngineKeepUiSkills => '保留界面配置和技能';

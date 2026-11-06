@@ -1276,6 +1276,22 @@ class L10nEn extends L10n {
   String get activityUsageAfterMessage => 'Appears after you send a message';
 
   @override
+  String get activityUsageWaiting => 'Waiting for context usage data';
+
+  @override
+  String get activityUsageProjected => 'Estimated next request';
+
+  @override
+  String get activityUsageLastRequest => 'Last request';
+
+  @override
+  String get activityUsageBreakdownEstimate =>
+      'Breakdown items are independent estimates and may differ from the total';
+
+  @override
+  String get activityUsageCumulativeInput => 'Total input';
+
+  @override
   String get activityUsageContextFull => 'Context nearly full. Send /compact to compact it';
 
   @override
@@ -9720,6 +9736,10 @@ class L10nEn extends L10n {
 
   @override
   String get phoneEngineResetTitle => 'Reset the runtime?';
+
+  @override
+  String get phoneResetAlsoDeletes =>
+      'Anything else in the home folder (/root) goes too, including files in your workspaces, AGENTS.md and data that plugins store themselves, such as memories.';
 
   @override
   String get phoneEngineKeepUiSkills => 'Keep interface settings and skills';
