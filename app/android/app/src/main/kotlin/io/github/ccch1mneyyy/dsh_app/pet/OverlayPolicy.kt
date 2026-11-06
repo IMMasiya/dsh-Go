@@ -94,10 +94,11 @@ enum class PetMenuItem {
     ASK, NEW_CHAT, SCREENSHOT, STOP, SWITCH_HOST, SNOOZE, SETTINGS;
 
     companion object {
-        fun of(push: PetPush?): List<PetMenuItem> = buildList {
+        /** [screenshots]: whether this Android can take one (the accessibility screenshot, Android 11+). */
+        fun of(push: PetPush?, screenshots: Boolean): List<PetMenuItem> = buildList {
             add(ASK)
             add(NEW_CHAT)
-            add(SCREENSHOT)
+            if (screenshots) add(SCREENSHOT)
             if (push?.canStop == true) add(STOP)
             if ((push?.hosts?.size ?: 0) > 1) add(SWITCH_HOST)
             add(SNOOZE)

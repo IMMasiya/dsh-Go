@@ -1262,7 +1262,7 @@ internal object PetOverlay {
         slideAnim?.cancel()
         removeBubble()
         val menuTarget = machine.last
-        val rows = PetMenuItem.of(menuTarget).map { item ->
+        val rows = menuItems(menuTarget).map { item ->
             PetMenuView.Row(menuLabel(item), item = item, shortLabel = wheelLabel(item)) { if (alive(ticket)) onMenu(item, ticket, menuTarget) }
         }
         val view = PetMenuView(ctx, rows, onOutside = { if (alive(ticket)) dismissMenu(animated = true) }, motion = ::animationsOn)
@@ -1288,7 +1288,7 @@ internal object PetOverlay {
         val rest = restPos(pv, pp)
         val body = loaded?.frames?.body?.at(rest) ?: return false
         val g = PetWheelGeometry.fit(
-            if (view.hosts) machine.last?.hosts?.size?.coerceAtLeast(1) ?: 1 else PetMenuItem.of(machine.last).size,
+            if (view.hosts) machine.last?.hosts?.size?.coerceAtLeast(1) ?: 1 else menuItems(machine.last).size,
             dock.side, body.centerX.toFloat(), body.centerY.toFloat(), safeArea(), ctx.resources.displayMetrics.density,
             if (view.hosts) 2f else ctx.resources.configuration.fontScale,
         )
@@ -1347,6 +1347,9 @@ internal object PetOverlay {
     }
 
     /** 切换主机: the menu's rows become the hosts, the one in use muted. */
+    /** The rows this phone can offer: the accessibility screenshot exists from Android 11. */
+    private fun menuItems(push: PetPush?) = PetMenuItem.of(push, screenshots = Build.VERSION.SDK_INT >= 30)
+
     private fun showHosts(ticket: OverlayWindowOwner.Ticket) {
         val view = menuView ?: return
         val params = menuParams ?: return
@@ -1358,7 +1361,9 @@ internal object PetOverlay {
                 }
             }
         })
-        if (placeMenu(view, params)) update(view, params)
+        // Rows and buttons only match again once placed; a list that can't be shown goes.
+        if (!placeMenu(view, params)) { dismissMenu(); return }
+        update(view, params)
         scheduleMenuTimeout(ticket)
     }
 
@@ -1406,7 +1411,9 @@ internal object PetOverlay {
         publishStatus()
         PetScreenshot.capture(app) { result ->
             val accepted = capture.finish(request) && alive(ticket) && interactive() && machine.enabled &&
-                started == 0 && !machine.appForeground && !machine.snoozed(now())
+                started == 0 && !machine.appForeground && !machine.snoozed(now()) &&
+                // A phone task that began meanwhile keeps the screen; DSH Go doesn't jump in front of it.
+                PhoneControl.peek()?.foregroundLine() == null
             val path = result.path
             if (accepted && path != null) {
                 openIntent(EntryActivity.screenshot(app, path), null)

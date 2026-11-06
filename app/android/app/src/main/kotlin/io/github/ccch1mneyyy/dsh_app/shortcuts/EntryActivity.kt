@@ -6,6 +6,7 @@ import android.content.Intent
 import android.os.Bundle
 import io.github.ccch1mneyyy.dsh_app.MainActivity
 import io.github.ccch1mneyyy.dsh_app.pet.PetOverlay
+import io.github.ccch1mneyyy.dsh_app.pet.PetScreenshot
 
 /**
  * Where the launcher shortcuts (res/xml/shortcuts.xml and the recent conversations) and the
@@ -21,6 +22,8 @@ class EntryActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         if (intent.hasExtra(EXTRA_PET_GENERATION) && !PetOverlay.acceptsOpen(intent.getStringExtra(EXTRA_PET_GENERATION))) {
+            // A screenshot nobody will open doesn't wait in the cache for the next one.
+            if (intent.action == ACTION_SCREENSHOT) intent.getStringExtra(EXTRA_PATH)?.let { PetScreenshot.discard(this, it) }
             finish()
             return
         }
