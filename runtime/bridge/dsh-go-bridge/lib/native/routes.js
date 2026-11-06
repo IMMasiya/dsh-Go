@@ -173,6 +173,7 @@ export function createNativeRoutes(core) {
     }
     if (!isPlainObject(view)) fail(500, "invalid-view", "static view must be an object");
     const json = toJson(view);
+    if (json && json.bytes > L.viewBytes) fail(500, "invalid-view", `static view exceeds ${L.viewBytes} bytes`);
     const normalized = json && { value: json.value, bytes: json.bytes };
     staticViews.set(file, { stamp, view: normalized });
     return normalized;
