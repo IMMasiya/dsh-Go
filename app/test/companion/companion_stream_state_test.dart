@@ -368,7 +368,7 @@ void main() {
   setUp(() {
     SharedPreferences.setMockInitialValues({
       'companion_sessions': jsonEncode({
-        '${HostRef.local.kind.name}:${HostRef.local.id}': {'id': _session},
+        '${HostRef.local.kind.name}:${HostRef.local.id}': {'id': _session, 'full': true},
       }),
     });
     temporary = Directory.systemTemp.createTempSync('c438-stream-');

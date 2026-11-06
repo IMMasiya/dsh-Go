@@ -79,6 +79,7 @@ class _CompanionPageState extends ConsumerState<CompanionPage> {
   _Phase _phase = _Phase.checking;
   String? _failure;
   bool _stageReady = false;
+  bool _greetingPending = true;
   bool _installing = false;
   String? _installError;
   bool _showTouchHint = false;
@@ -278,11 +279,20 @@ class _CompanionPageState extends ConsumerState<CompanionPage> {
     });
   }
 
+  /// A later intent owns this visit's response, even before it has words.
+  void _retireGreeting() => _greetingPending = false;
+
+  bool _takeGreeting(bool Function() current) {
+    if (!current() || !_greetingPending) return false;
+    _greetingPending = false;
+    return !_running && !_sending;
+  }
+
   Future<void> _greet(DateTime? lastVisit, bool Function() current) async {
     final now = DateTime.now();
     final greeting = companionGreeting(now, lastVisit ?? await companionLastSeen());
     unawaited(companionMarkSeen(now));
-    if (!mounted || !current()) return;
+    if (!mounted || !_takeGreeting(current)) return;
     final l10n = context.l10n;
     final (line, emotion, action) = switch (greeting) {
       CompanionGreeting.firstTime => (l10n.companionGreetFirst, 'shy', 'wave'),
@@ -300,6 +310,7 @@ class _CompanionPageState extends ConsumerState<CompanionPage> {
   }
 
   void _onTouch(String zone, String kind) {
+    _retireGreeting();
     if (_showTouchHint) {
       setState(() {
         _showTouchHint = false;
@@ -341,6 +352,7 @@ class _CompanionPageState extends ConsumerState<CompanionPage> {
   };
 
   void _onObject(String id) {
+    _retireGreeting();
     if (!_homeHintDone) {
       _homeHintDone = true;
       setState(() => _showHomeHint = false);
@@ -399,6 +411,7 @@ class _CompanionPageState extends ConsumerState<CompanionPage> {
   }
 
   void _showBubble(String text, {Duration? hold, bool error = false}) {
+    _retireGreeting();
     _bubbleTimer?.cancel();
     setState(() {
       _bubble = text;
@@ -489,6 +502,7 @@ class _CompanionPageState extends ConsumerState<CompanionPage> {
 
   void _unbind() {
     _bindingEpoch++;
+    _greetingPending = true;
     if (_voice.active) unawaited(_voice.cancel());
     _bubbleTimer?.cancel();
     _settleTimer?.cancel();
@@ -629,6 +643,7 @@ class _CompanionPageState extends ConsumerState<CompanionPage> {
     }
 
     if (user != _baselineUser) {
+      _retireGreeting();
       _baselineUser = user;
       _marksHandled = 0;
       _wordsSpoken = 0;
@@ -638,6 +653,7 @@ class _CompanionPageState extends ConsumerState<CompanionPage> {
     if (parts != null) _retainReplyProgress(parts);
     final reply = parseCompanionReply(text, streaming: running);
     for (final mark in reply.marks.skip(_marksHandled)) {
+      _retireGreeting();
       switch (mark.kind) {
         case CompanionMarkKind.emotion:
           _stage.command('emotion', {'name': mark.name});
@@ -656,6 +672,7 @@ class _CompanionPageState extends ConsumerState<CompanionPage> {
     _showReplyWords(reply.words, fresh);
 
     if (running) {
+      _retireGreeting();
       _settleTimer?.cancel();
       _stage.command('mood', {'mood': reply.words.isEmpty ? 'thinking' : 'speaking'});
     } else if (_running) {
@@ -682,6 +699,7 @@ class _CompanionPageState extends ConsumerState<CompanionPage> {
   Future<void> _send() async {
     final text = _input.text.trim();
     if (text.isEmpty || _sending || _lightReply != null) return;
+    _retireGreeting();
     if (_voice.active) unawaited(_voice.cancel());
     final current = _currentRoom();
     _input.clear();
