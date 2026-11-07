@@ -74,6 +74,10 @@ internal class PrivilegedKeepState(savedMode: String, phoneEnabled: Boolean, sup
         return true
     }
 
+    /** Unknown/retrying is not failure; completed failure or loss needs a live replacement. */
+    @Synchronized fun connectionUnavailable(alive: Boolean): Boolean =
+        selection.active && !alive && (phase == "failed" || phase == "connected")
+
     @Synchronized fun map(alive: Boolean): Map<String, Any?> {
         val s = selection
         // A published channel that died since reports waiting until the next event restores it.

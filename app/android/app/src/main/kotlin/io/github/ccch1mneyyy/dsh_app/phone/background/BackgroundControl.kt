@@ -123,6 +123,9 @@ class BackgroundControl private constructor(context: Context) {
     }
 
     private fun gateReason(): String? {
+        if (keep.connectionUnavailable(channel?.alive() == true)) {
+            return AppStrings.get(app, R.string.background_not_ready)
+        }
         val cached = gate.snapshot
         return when {
             cached.connectionError != null -> AppStrings.get(app, cached.connectionError)
