@@ -217,8 +217,10 @@ object SafeMode {
         return out
     }
 
-    /** Renames each listed file to `<name>.off-<stamp>`; returns `from → to` guest paths of what moved. */
-    fun moveAside(rootfs: File, guestPaths: List<String>, stamp: String): List<Pair<String, String>> {
+    data class MoveAsideResult(val moved: List<Pair<String, String>>, val failure: IOException? = null)
+
+    /** Stops at a failed rename; earlier successful moves remain available for the repair briefing. */
+    fun moveAside(rootfs: File, guestPaths: List<String>, stamp: String): MoveAsideResult {
         val moved = ArrayList<Pair<String, String>>()
         for (path in guestPaths.distinct()) {
             if (path !in MOVABLE) continue
@@ -227,9 +229,12 @@ object SafeMode {
             var target = File(file.parentFile, "${file.name}.off-$stamp")
             var n = 1
             while (target.exists()) target = File(file.parentFile, "${file.name}.off-$stamp-${n++}")
-            if (file.renameTo(target)) moved += path to (path.substringBeforeLast('/') + "/" + target.name)
+            if (!file.renameTo(target)) {
+                return MoveAsideResult(moved, IOException("could not move $path aside; ${moved.size} file(s) already moved"))
+            }
+            moved += path to (path.substringBeforeLast('/') + "/" + target.name)
         }
-        return moved
+        return MoveAsideResult(moved)
     }
 
     // ── Guest files ─────────────────────────────────────────────────────────────────

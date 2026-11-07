@@ -621,12 +621,14 @@ class RuntimeController private constructor(private val app: Context) : DshProce
         worker.execute {
             try {
                 checkRecoveryWrite(mainProfileOnly = false)
-                val moved = SafeMode.moveAside(installer.rootfs, paths, SafeMode.stamp())
+                val outcome = SafeMode.moveAside(installer.rootfs, paths, SafeMode.stamp())
+                val moved = outcome.moved
                 if (moved.isNotEmpty()) {
                     val record = JSONArray(movedAside() + moved.map { (from, to) -> "$from → $to" })
                     prefs.edit().putString(K_MOVED, record.toString()).apply()
                     moved.forEach { (from, to) -> log("[dsh-app] moved $from aside to $to", "system") }
                 }
+                outcome.failure?.let { throw it }
                 main.post { onDone(moved.map { (from, to) -> mapOf("from" to from, "to" to to) }, null) }
             } catch (e: Throwable) {
                 main.post { onDone(null, e) }
