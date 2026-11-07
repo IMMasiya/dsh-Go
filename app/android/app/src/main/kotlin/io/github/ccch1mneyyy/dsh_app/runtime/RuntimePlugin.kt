@@ -125,11 +125,11 @@ class RuntimePlugin :
             }
             "lastKnownGood" -> controller.lastKnownGoodStatus { result.success(it) }
             "restoreLastKnownGood" -> controller.restoreLastKnownGood { plan, error ->
-                if (error == null) result.success(plan) else result.error("restore_failed", error.message, null)
+                if (error == null) result.success(plan) else result.error(if (error is RuntimeNotStoppedException) "runtime_not_stopped" else "restore_failed", error.message, null)
             }
             "safePreflight" -> controller.safePreflight { result.success(it) }
             "moveAside" -> controller.moveAside(call.argument<List<String>>("paths") ?: emptyList()) { moved, error ->
-                if (error == null) result.success(moved) else result.error("move_failed", error.message, null)
+                if (error == null) result.success(moved) else result.error(if (error is RuntimeNotStoppedException) "runtime_not_stopped" else "move_failed", error.message, null)
             }
             "clearFailure" -> {
                 controller.clearFailure()

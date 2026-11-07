@@ -524,11 +524,9 @@ class RuntimeController private constructor(private val app: Context) : DshProce
 
     /** Puts the main profile's bundle list and settings layer back to the last good run's. */
     fun restoreLastKnownGood(onDone: (Map<String, Any?>?, Throwable?) -> Unit) {
-        if (!runSafe && (phase == Phase.RUNNING || phase == Phase.STARTING)) {
-            return onDone(null, IllegalStateException(AppStrings.get(app, R.string.safe_stop_engine_first)))
-        }
         worker.execute {
             try {
+                checkRecoveryWrite(mainProfileOnly = true)
                 val lkg = LastKnownGood.load(lkgFile) ?: throw IllegalStateException(AppStrings.get(app, R.string.safe_no_good_config))
                 val plan = LastKnownGood.restore(installer.rootfs, lkg.snapshot, SafeMode.stamp(),
                     AppStrings.get(app, R.string.safe_config_missing), AppStrings.get(app, R.string.safe_config_busy))
@@ -563,6 +561,7 @@ class RuntimeController private constructor(private val app: Context) : DshProce
     fun moveAside(paths: List<String>, onDone: (List<Map<String, Any?>>?, Throwable?) -> Unit) {
         worker.execute {
             try {
+                checkRecoveryWrite(mainProfileOnly = false)
                 val moved = SafeMode.moveAside(installer.rootfs, paths, SafeMode.stamp())
                 if (moved.isNotEmpty()) {
                     val record = JSONArray(movedAside() + moved.map { (from, to) -> "$from → $to" })
@@ -573,6 +572,17 @@ class RuntimeController private constructor(private val app: Context) : DshProce
             } catch (e: Throwable) {
                 main.post { onDone(null, e) }
             }
+        }
+    }
+
+    /** Worker-only: another physical launch or disk action cannot interleave with the write. */
+    private fun checkRecoveryWrite(mainProfileOnly: Boolean) {
+        val state = synchronized(this) {
+            RuntimeRecoveryGate.State(phase, process != null, runSafe, resetting)
+        }
+        RuntimeRecoveryGate.check(state, mainProfileOnly) {
+            // onExit can follow an incomplete sweep; inspect the shared captured identities again.
+            DshProcess(app, manifest, installer.rootfs, this).killStrays()
         }
     }
 
