@@ -78,7 +78,7 @@ class DshProcess(
      * [binds] are extra proot `-b host:guest` mounts, inserted before the guest command.
      * [safe] boots the rescue profile instead of `web` (see [SafeMode.profileArg]).
      */
-    fun start(guestEnv: Map<String, String>, binds: List<String> = emptyList(), safe: Boolean = false, phone: Boolean = false, directEngine: Boolean = false, directFailed: Boolean = false, onLaunchMethod: ((Boolean) -> Unit)? = null) {
+    fun start(guestEnv: Map<String, String>, binds: List<String> = emptyList(), safe: Boolean = false, phone: Boolean = false, directEngine: Boolean = false, directFailed: Boolean = false, searchOverlay: Boolean = false, authOverlay: Boolean = false, speechOverlay: Boolean = false, onLaunchMethod: ((Boolean) -> Unit)? = null) {
         check(process == null) { "already started" }
         var selection = DirectLaunch.select(rootfs, directEngine, safe, directFailed)
         // Only PRoot's fake hard links stand in Direct's way: tidy them once no runtime process is left.
@@ -120,12 +120,13 @@ class DshProcess(
         check(manifest.launchArgv.isNotEmpty()) { "runtime manifest has no launch.argv" }
         var bindsPlaced = false
         var profileSelected = false
-        // Message search: only with the overlay file in place (a missing --patch file stops DSH).
-        var searchPending = !safe && SessionSearchGuest.file(rootfs).isFile
+        // Only overlays successfully prepared for this launch; cleanup may leave an old file behind.
+        // Also require the file in place (a missing --patch file stops DSH).
+        var searchPending = !safe && searchOverlay && SessionSearchGuest.file(rootfs).isFile
         // Subscription sign-in: the same rule for the auth bridge overlay.
-        var authPending = !safe && AppAuthGuest.file(rootfs).isFile
+        var authPending = !safe && authOverlay && AppAuthGuest.file(rootfs).isFile
         // On-device voice input: the recognizer's phone settings, same rule.
-        var speechPending = !safe && SpeechGuest.file(rootfs).isFile
+        var speechPending = !safe && speechOverlay && SpeechGuest.file(rootfs).isFile
         for (arg in launchArgv) {
             if (!bindsPlaced && arg == "/usr/bin/env") {
                 allBinds.forEach { argv += "-b"; argv += it }

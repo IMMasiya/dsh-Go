@@ -336,13 +336,16 @@ class RuntimeController private constructor(private val app: Context) : DshProce
                 PhoneStorage.syncShortcut(installer.rootfs, storage)
                 // Phone control: bridge up and guest files written before DSH starts; off in safe mode.
                 val phone = PhoneControl.get(app).prepareLaunch(installer.rootfs, safe) { log(it, "system") }
-                if (!safe && !SessionSearchGuest.writeFiles(installer.rootfs)) {
+                val searchOverlay = !safe && SessionSearchGuest.writeFiles(installer.rootfs)
+                if (!safe && !searchOverlay) {
                     log("[dsh-app] message search overlay not written; searching matches titles only", "system")
                 }
-                if (!safe && !AppAuthGuest.writeFiles(app, installer.rootfs)) {
+                val authOverlay = !safe && AppAuthGuest.writeFiles(app, installer.rootfs)
+                if (!safe && !authOverlay) {
                     log("[dsh-app] subscription sign-in overlay not written; ChatGPT / Claude sign-in is unavailable", "system")
                 }
-                if (!safe && !SpeechGuest.writeFiles(installer.rootfs)) {
+                val speechOverlay = !safe && SpeechGuest.writeFiles(installer.rootfs)
+                if (!safe && !speechOverlay) {
                     log("[dsh-app] voice input overlay not written; the voice model keeps DSH's defaults", "system")
                 }
                 if (pendingPhoneStorage && !storage) log("[dsh-app] phone storage requested but permission not granted", "system")
@@ -379,7 +382,7 @@ class RuntimeController private constructor(private val app: Context) : DshProce
                 }
                 timeline.spawned()
                 val direct = directEngine()
-                p.start(env, if (storage) PhoneStorage.binds() else emptyList(), safe, phone, direct.requested, direct.failed) { actualDirect ->
+                p.start(env, if (storage) PhoneStorage.binds() else emptyList(), safe, phone, direct.requested, direct.failed, searchOverlay, authOverlay, speechOverlay) { actualDirect ->
                     // SafeMode.prepare writes its own briefing; leave the original home untouched.
                     if (!safe) GuestSetup.writeAgentsMd(installer.rootfs, storage, phone, pendingVisualReplies, actualDirect)
                 }
