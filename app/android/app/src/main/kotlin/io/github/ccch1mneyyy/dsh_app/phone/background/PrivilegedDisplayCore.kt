@@ -646,8 +646,8 @@ class PrivilegedDisplayCore(private val context: Context) {
         val p = when (dir) {
             "up" -> intArrayOf(cx, cy - span, cx, cy + span)
             "down" -> intArrayOf(cx, cy + span, cx, cy - span)
-            "left" -> intArrayOf(cx + span, cy, cx - span, cy)
-            "right" -> intArrayOf(cx - span, cy, cx + span, cy)
+            "left" -> intArrayOf(cx - span, cy, cx + span, cy)
+            "right" -> intArrayOf(cx + span, cy, cx - span, cy)
             else -> throw Fault("invalidArguments")
         }
         injectSwipe(p[0], p[1], p[2], p[3], 400)
