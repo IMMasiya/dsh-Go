@@ -69,7 +69,12 @@ class BackgroundDisplay(
             putBoolean(Proto.DETAIL, detail)
             putBoolean(Proto.WANT_IMAGE, image)
         }
-        val response = channel().execute(request)
+        val response = try {
+            channel().execute(request)
+        } catch (e: Exception) {
+            clearSnapshot()
+            throw e
+        }
         requireObservation(response.getBoolean(Proto.OK), response.getString(Proto.ERROR), response.getString(Proto.ERROR_DETAIL))
         return snapshot(response, markNew = false)
     }
