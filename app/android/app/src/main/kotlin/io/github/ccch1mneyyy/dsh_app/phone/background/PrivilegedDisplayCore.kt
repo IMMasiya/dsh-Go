@@ -36,6 +36,7 @@ import android.view.InputEvent
 import android.view.KeyCharacterMap
 import android.view.KeyEvent
 import android.view.MotionEvent
+import android.view.ViewConfiguration
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 import android.view.accessibility.AccessibilityWindowInfo
@@ -662,7 +663,19 @@ class PrivilegedDisplayCore(private val context: Context) {
             "right" -> intArrayOf(cx + span, cy, cx - span, cy)
             else -> throw Fault("invalidArguments")
         }
-        injectSwipe(p[0], p[1], p[2], p[3], 400)
+        val duration = 400
+        if (bounds != null) {
+            val vd = display ?: throw Fault("displayMissing")
+            val displayContext = context.createDisplayContext(vd.display)
+            val configured = displayContext.createConfigurationContext(displayContext.resources.configuration)
+            val slop = ViewConfiguration.get(configured).scaledTouchSlop
+            val steps = SwipeGeometry.steps(duration)
+            val lastX = SwipeGeometry.coordinate(p[0], p[2], steps - 1, steps)
+            val lastY = SwipeGeometry.coordinate(p[1], p[3], steps - 1, steps)
+            if (maxOf(kotlin.math.abs(lastX - p[0]), kotlin.math.abs(lastY - p[1])) <= slop)
+                throw Fault("inputRejected")
+        }
+        injectSwipe(p[0], p[1], p[2], p[3], duration)
     }
 
     private fun globalKey(key: String?) {
@@ -735,11 +748,11 @@ class PrivilegedDisplayCore(private val context: Context) {
     private fun injectSwipe(sx: Int, sy: Int, ex: Int, ey: Int, duration: Int) {
         val down = SystemClock.uptimeMillis()
         sendMotion(MotionEvent.ACTION_DOWN, sx, sy, down)
-        val steps = (duration / 16).coerceAtLeast(1)
+        val steps = SwipeGeometry.steps(duration)
         for (step in 1..steps) {
             sleepChecked((duration / steps).toLong())
-            val f = step.toFloat() / steps
-            val mx = (sx + (ex - sx) * f).toInt(); val my = (sy + (ey - sy) * f).toInt()
+            val mx = SwipeGeometry.coordinate(sx, ex, step, steps)
+            val my = SwipeGeometry.coordinate(sy, ey, step, steps)
             if (step < steps) sendMotion(MotionEvent.ACTION_MOVE, mx, my, down)
         }
         sendMotion(MotionEvent.ACTION_UP, ex, ey, down)
