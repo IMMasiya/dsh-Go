@@ -183,14 +183,38 @@ class LinksPlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandle
         private const val MAX_FILE_BYTES = 4L * 1024 * 1024
         private const val KEEP_FILES = 6
 
-        /** A file name without path separators or control characters. */
+        /** At most 120 UTF-16 units / 255 UTF-8 bytes, keeping a fitting suffix and whole code points. */
         fun safeName(name: String): String {
             val cleaned = name.substringAfterLast('/').replace(Regex("[\\u0000-\\u001f\\\\:*?\"<>|]"), "_").trim()
             val safe = cleaned.ifEmpty { "shared" }
-            if (safe.length <= 120) return safe
+            if (safe.length <= 120 && safe.toByteArray(Charsets.UTF_8).size <= 255) return safe
             val dot = safe.lastIndexOf('.')
             val suffix = if (dot > 0 && dot < safe.lastIndex) safe.substring(dot) else ""
-            return if (suffix.length in 1 until 120) safe.take(120 - suffix.length) + suffix else safe.take(120)
+            val suffixBytes = suffix.toByteArray(Charsets.UTF_8).size
+            if (suffix.length in 1 until 120 && suffixBytes in 1 until 255) {
+                val stem = namePrefix(safe.substring(0, dot), 120 - suffix.length, 255 - suffixBytes)
+                if (stem.isNotEmpty()) return stem + suffix
+            }
+            return namePrefix(safe, 120, 255)
+        }
+
+        private fun namePrefix(text: String, maxUnits: Int, maxBytes: Int): String {
+            var end = 0
+            var bytes = 0
+            while (end < text.length) {
+                val point = text.codePointAt(end)
+                val units = Character.charCount(point)
+                val size = when {
+                    point <= 0x7f -> 1
+                    point <= 0x7ff -> 2
+                    point <= 0xffff -> 3
+                    else -> 4
+                }
+                if (end + units > maxUnits || bytes + size > maxBytes) break
+                end += units
+                bytes += size
+            }
+            return text.substring(0, end)
         }
     }
 }
