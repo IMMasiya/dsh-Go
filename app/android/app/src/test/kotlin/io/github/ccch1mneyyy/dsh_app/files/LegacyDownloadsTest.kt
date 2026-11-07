@@ -156,6 +156,34 @@ class LegacyDownloadsTest {
         assertArrayEquals(byteArrayOf(1), File(dir, name).readBytes())
     }
 
+    @Test fun firstOpenBoundsLongChineseAndEmojiNamesWithoutSplittingCodePoints() {
+        val rocket = "\uD83D\uDE80"
+        val cases = listOf(
+            ("界".repeat(100) + ".txt") to ("界".repeat(83) + ".txt"),
+            (rocket.repeat(64) + ".zip") to (rocket.repeat(62) + ".zip"),
+            rocket.repeat(64) to rocket.repeat(63)
+        )
+        for ((name, expected) in cases) withDirectory { dir ->
+            val saved = ByteArrayInputStream(byteArrayOf(42)).use { LegacyDownloads.copy(it, dir, name) }
+            assertEquals(expected, saved.name)
+            assertTrue(saved.name.toByteArray(Charsets.UTF_8).size <= 255)
+            assertEquals(saved.name, saved.name.toByteArray(Charsets.UTF_8).toString(Charsets.UTF_8))
+            assertArrayEquals(byteArrayOf(42), saved.readBytes())
+        }
+    }
+
+    @Test fun collisionRetriesUseTheAlreadyBoundedInitialName() = withDirectory { dir ->
+        val rocket = "\uD83D\uDE80"
+        val name = rocket.repeat(64) + ".zip"
+        val first = File(dir, rocket.repeat(62) + ".zip").apply { writeText("original") }
+        val second = File(dir, rocket.repeat(61) + " (2).zip").apply { writeText("peer") }
+        val saved = ByteArrayInputStream(byteArrayOf(7)).use { LegacyDownloads.copy(it, dir, name) }
+        assertEquals(rocket.repeat(61) + " (3).zip", saved.name)
+        assertArrayEquals(byteArrayOf(7), saved.readBytes())
+        assertEquals("original", first.readText())
+        assertEquals("peer", second.readText())
+    }
+
     private fun withDirectory(block: (File) -> Unit) {
         val dir = Files.createTempDirectory("legacy-downloads-").toFile()
         try { block(dir) } finally { dir.deleteRecursively() }
