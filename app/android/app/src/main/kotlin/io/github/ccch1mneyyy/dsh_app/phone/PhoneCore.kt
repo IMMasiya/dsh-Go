@@ -210,6 +210,7 @@ class PhoneCore(
             target.packageName?.let { pkg ->
                 safety.checkOpen(pkg, target.appLabel)?.let { return Out(it.message, error = true, app = target.appLabel ?: pkg, summary = ui.get("phone_log_open_url", "打开链接"), decision = "refused:${it.rule}") } // l10n:keep test default
             }
+            if (!tasks.isCurrent(owner) || Thread.currentThread().isInterrupted) return stoppedOut("open")
             val r = env.system().openUrl(url, target)
             return afterSystem(r, ui.get("phone_log_open_url_scheme", "打开链接 %1\$s:", url.substringBefore(':')), target.appLabel ?: target.packageName) // l10n:keep test default
         }
@@ -221,6 +222,7 @@ class PhoneCore(
             return Out(it.message, error = true, app = app.label, summary = ui.get("phone_log_open_app", "打开 %1\$s", app.packageName), decision = "refused:${it.rule}") // l10n:keep test default
         }
         if (!background) {
+            if (!tasks.isCurrent(owner) || Thread.currentThread().isInterrupted) return stoppedOut("open")
             return afterSystem(env.system().launch(app), ui.get("phone_log_open_app", "打开 %1\$s", app.packageName), app.label) // l10n:keep test default
         }
         val driver = env.driver(PhoneScreen.BACKGROUND)
@@ -265,6 +267,7 @@ class PhoneCore(
     }
 
     private fun intent(a: Args): Out {
+        val owner = tasks.activeOwner() ?: return stoppedOut("intent")
         val spec = when (val p = IntentSpec.parse(a, env.zone())) {
             is Either.Left -> return Out(p.value, error = true)
             is Either.Right -> p.value
@@ -288,6 +291,7 @@ class PhoneCore(
                 }
             }
         }
+        if (!tasks.isCurrent(owner) || Thread.currentThread().isInterrupted) return stoppedOut("intent $kind")
         val r = env.system().intent(spec, shareTo)
         return afterSystem(r, "intent $kind", r.appLabel ?: shareTo?.label)
     }
