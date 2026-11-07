@@ -168,7 +168,9 @@ class BackgroundDisplay(
             is PhoneAction.TapXY -> return ActionResult(false, "后台屏按元素编号操作，不用坐标")
         }
         // l10n:keep agent screen protocol
-        return toResult(channel().execute(request), "已在后台屏执行")
+        val active = channel()
+        if (Thread.currentThread().isInterrupted) throw InterruptedException()
+        return toResult(active.execute(request), "已在后台屏执行")
     }
 
     override fun foregroundPackage(): String? = currentPackage
