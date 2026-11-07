@@ -478,7 +478,7 @@ class RuntimeController private constructor(private val app: Context) : DshProce
                 // A finished waiter may have reported incomplete cleanup. Captured identities
                 // outlive its launcher; do not retire their rootfs while any still remain.
                 val cleanup = DshProcess(app, manifest, installer.rootfs, this).reapStrays(allowObservationGap = true)
-                check(!cleanup.ownedRemaining) { "runtime stop incomplete; retry reset after cleanup" }
+                check(cleanup.complete) { "runtime stop incomplete; retry reset after cleanup" }
                 lastLaunch = null
                 try {
                     check(runtimeLogs.pauseDisk()) { "log reset pause timed out" }
