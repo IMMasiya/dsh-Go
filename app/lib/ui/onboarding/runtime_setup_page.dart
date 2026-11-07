@@ -281,8 +281,10 @@ class _RuntimeSetupPageState extends ConsumerState<RuntimeSetupPage> {
           ),
           const SizedBox(height: 8),
           Center(
+            // Quiet like the links below it: a way to get help, not the next step.
             child: TextButton(
               onPressed: () => unawaited(showDiagnosticsExportSheet(context)),
+              style: TextButton.styleFrom(foregroundColor: scheme.onSurfaceVariant),
               child: Text(l10n.phoneDiagnosticsExport),
             ),
           ),
