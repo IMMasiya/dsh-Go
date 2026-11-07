@@ -398,17 +398,33 @@ class RelayServerController extends Notifier<String?> {
   }
 
   /// Back to dsh.r2049.cn (each server keeps its own sign-in).
-  Future<void> useDefault() async {
-    await _set(null);
-    ref.invalidate(relayAccountProvider);
-  }
+  Future<void> useDefault() => ref.read(_relayServerActionsProvider).useDefault();
 
   /// Switches to [server] (normalized; throws [HostLinkError] when invalid)
   /// and signs in there with email + password.
+  Future<void> loginWithPassword({required String server, required String email, required String password}) =>
+      ref.read(_relayServerActionsProvider).loginWithPassword(server: server, email: email, password: password);
+}
+
+// Commands need their own Ref: the backend watches the server state, so the
+// server notifier cannot read/invalidate its downstream providers. This provider
+// does not watch the selection and remains alive when a login sheet closes.
+final _relayServerActionsProvider = Provider<_RelayServerActions>(_RelayServerActions.new);
+
+class _RelayServerActions {
+  _RelayServerActions(this.ref);
+
+  final Ref ref;
+
+  Future<void> useDefault() async {
+    await ref.read(relayServerProvider.notifier)._set(null);
+    ref.invalidate(relayAccountProvider);
+  }
+
   Future<void> loginWithPassword({required String server, required String email, required String password}) async {
     ref.read(readListCredentialEpochProvider.notifier).advance();
     final origin = DshRemoteRelayBackend.normalizeServer(server);
-    await _set(origin == defaultRelayServer ? null : origin);
+    await ref.read(relayServerProvider.notifier)._set(origin == defaultRelayServer ? null : origin);
     await ref.read(relayBackendProvider).loginWithPassword(email.trim(), password);
     ref.invalidate(relayAccountProvider);
   }
