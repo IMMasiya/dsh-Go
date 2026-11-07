@@ -1720,8 +1720,9 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
                         // A phone's conversation has no room for it beside its title: the
                         // model is shown and picked at the composer's foot while typing.
                         // A new chat's title is only 「新对话」, so the model takes the
-                        // header's right like on a wide window — picked before typing.
-                        trailing: narrow && sessionId != null
+                        // header's right like on a wide window — picked before typing,
+                        // once there is an engine to send to.
+                        trailing: narrow && (sessionId != null || !connected)
                             ? null
                             : ModelChip(
                                 selection: sessionId == null ? pendingModel : chat?.model,
