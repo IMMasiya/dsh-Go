@@ -625,8 +625,10 @@ class PrivilegedDisplayCore(private val context: Context) {
         val expectRole = request.getString(Proto.EXPECT_ROLE)
         val expectLabel = request.getString(Proto.EXPECT_LABEL)
         val expectViewId = request.getString(Proto.EXPECT_VIEW_ID)
+        // Role and view id identify the target; a label can carry a live counter ("消息 3"),
+        // so only its stable head has to match, as before.
         if (expectRole != null && expectRole != e.role ||
-            expectLabel != null && expectLabel != e.label ||
+            expectLabel != null && expectLabel.isNotEmpty() && !e.label.startsWith(expectLabel.take(12)) ||
             expectViewId != null && expectViewId != e.viewId) throw Fault("staleSnapshot")
         return e
     }

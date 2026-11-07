@@ -153,7 +153,11 @@ void main() {
     await pump(tester, const AgentPresetsPage());
     await tester.tap(find.text('Healthy preset'));
     await tester.pumpAndSettle();
-    expect(find.text('Saved custom preset'), findsWidgets);
+    // The list row shows the description too; look inside the sheet only.
+    expect(
+      find.descendant(of: find.byType(BottomSheet), matching: find.text('Saved custom preset')),
+      findsOneWidget,
+    );
   });
 
   testWidgets('新建: creator mode gets the bundle, the chat opens', (tester) async {
