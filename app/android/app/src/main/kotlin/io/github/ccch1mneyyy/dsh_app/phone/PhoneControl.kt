@@ -47,7 +47,7 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
     private val nm = app.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
     private val ticker = Executors.newSingleThreadScheduledExecutor { r -> Thread(r, "dsh-phone-status").apply { isDaemon = true } }
 
-    val tasks = PhoneTasks()
+    val tasks = PhoneTasks(clock = SystemClock::elapsedRealtime)
     val log = ActionLog()
     val system = SystemActions(app)
     private val localizedUi = PhoneUiText { key, args ->
