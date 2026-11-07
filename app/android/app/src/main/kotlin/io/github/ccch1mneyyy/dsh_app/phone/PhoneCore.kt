@@ -261,12 +261,26 @@ class PhoneCore(
 
     /** A system action that brought up another app's UI: attach the new main screen when we can read it. */
     private fun afterSystem(owner: PhoneTasks.Owner, r: SysResult, summary: String, app: String?): Out {
-        if (Thread.currentThread().isInterrupted || !tasks.isCurrent(owner)) return stoppedOut(summary)
-        if (r.ok && !tasks.setAppIfCurrent(owner, r.appLabel ?: app)) return stoppedOut(summary)
-        val screen = if (r.ok) mainScreenAfter(owner, SETTLE_AFTER_LAUNCH_MS) else null
-        if (!current(owner)) return stoppedOut(summary)
+        if (!current(owner)) return stoppedAfterSystem(r, summary, app)
+        if (r.ok && !tasks.setAppIfCurrent(owner, r.appLabel ?: app)) return stoppedAfterSystem(r, summary, app)
+        val screen = try {
+            if (r.ok) mainScreenAfter(owner, SETTLE_AFTER_LAUNCH_MS) else null
+        } catch (_: InterruptedException) {
+            Thread.currentThread().interrupt()
+            return stoppedAfterSystem(r, summary, app)
+        }
+        if (!current(owner)) return stoppedAfterSystem(r, summary, app)
         return Out(r.message, error = !r.ok, screen = screen, app = r.appLabel ?: app, summary = summary, decision = if (r.ok) "ok" else "failed")
     }
+
+    /** The system already returned; stopping the following observation cannot retract that result. */
+    private fun stoppedAfterSystem(r: SysResult, summary: String, app: String?): Out = Out(
+        PhoneTasks.STOPPED_MESSAGE + "。\n" + r.message, // l10n:keep agent tool result
+        error = true, app = r.appLabel ?: app,
+        summary = if (r.ok) ui.get("phone_log_system_returned_success", "%1\$s（系统返回成功；后续停止）", summary) // l10n:keep test default
+            else ui.get("phone_log_system_returned_failure", "%1\$s（系统返回失败；后续停止）", summary), // l10n:keep test default
+        decision = "stopped",
+    )
 
     private fun mainScreenAfter(owner: PhoneTasks.Owner, settleMs: Long): ScreenSnapshot? {
         if (!current(owner)) return null
@@ -437,6 +451,7 @@ class PhoneCore(
         say(ui.get("phone_reading_list", "DSH 正在滚动读取列表")) // l10n:keep test default
         if (!current(owner)) return stoppedOut(summary)
         val r = driver.collect(sid!!, list, pages, a.str("until"))
+        if (!current(owner)) return stoppedOut(summary)
         val screen = r.screen?.let { safety.filterScreen(it) }
         val text = buildString {
             // l10n:keep agent tool result
