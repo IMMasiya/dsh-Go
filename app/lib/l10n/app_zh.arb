@@ -11502,7 +11502,6 @@
   "viewTipAnswerInline": "AI 向你提问时，直接在输入框里打字就是回答",
   "viewTipWallpaper": "壁纸可以拖动、缩放，还能调模糊和明暗",
   "viewTipModelHere": "这里就能换模型、预设和权限，只对这次对话生效",
-  "viewNewChatModel": "模型",
   "viewNewChatFolder": "文件夹",
   "viewNewChatPresetTitle": "这次对话的预设",
   "viewNewChatPermissionTitle": "这次对话的权限",

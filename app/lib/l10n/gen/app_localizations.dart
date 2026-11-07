@@ -32894,12 +32894,6 @@ abstract class L10n {
   /// **'这里就能换模型、预设和权限，只对这次对话生效'**
   String get viewTipModelHere;
 
-  /// No description provided for @viewNewChatModel.
-  ///
-  /// In zh, this message translates to:
-  /// **'模型'**
-  String get viewNewChatModel;
-
   /// No description provided for @viewNewChatFolder.
   ///
   /// In zh, this message translates to:

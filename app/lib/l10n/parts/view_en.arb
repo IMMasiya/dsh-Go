@@ -186,7 +186,6 @@
   "viewTipAnswerInline": "When the AI asks you something, just type the answer in the composer",
   "viewTipWallpaper": "Wallpapers can be dragged, zoomed, blurred and dimmed",
   "viewTipModelHere": "Pick the model, preset and permissions right here — for this chat only",
-  "viewNewChatModel": "Model",
   "viewNewChatFolder": "Folder",
   "viewNewChatPresetTitle": "Preset for this chat",
   "viewNewChatPermissionTitle": "Permissions for this chat",

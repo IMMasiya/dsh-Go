@@ -19038,9 +19038,6 @@ class L10nEn extends L10n {
   String get viewTipModelHere => 'Pick the model, preset and permissions right here — for this chat only';
 
   @override
-  String get viewNewChatModel => 'Model';
-
-  @override
   String get viewNewChatFolder => 'Folder';
 
   @override

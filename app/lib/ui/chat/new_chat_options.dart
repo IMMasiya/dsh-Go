@@ -1,10 +1,9 @@
-// The new conversation's options on the empty state: the model, the agent
-// preset it starts with, its permissions and the drawer folder it is filed
-// in. One light row under the workspace chip; each item opens a short sheet.
-// The model pick is the composer's pending model; preset and permission picks
-// are held in pendingNewChatModesProvider. All are applied when the first
-// message creates the session (chat_screen.dart `_ensureSession`), before the
-// prompt.
+// The new conversation's options on the empty state: the agent preset it
+// starts with, its permissions and the drawer folder it is filed in. One light
+// row under the workspace chip; each item opens a short sheet. (The model is
+// the header's model chip.) Preset and permission picks are held in
+// pendingNewChatModesProvider and applied when the first message creates the
+// session (chat_screen.dart `_ensureSession`), before the prompt.
 
 import 'dart:async';
 
@@ -16,7 +15,7 @@ import '../../l10n/l10n.dart';
 import '../../runtime/runtime_state.dart';
 import '../../state/connection_state.dart';
 import '../../state/features_state.dart';
-import '../../state/models_state.dart' show currentModelCatalogProvider, modelSelectionScopeProvider;
+import '../../state/models_state.dart' show modelSelectionScopeProvider;
 import '../../state/new_chat_modes.dart';
 import '../../state/sessions_state.dart' show currentSessionProvider;
 import '../../state/settings_state.dart';
@@ -27,7 +26,6 @@ import '../features/feature_format.dart';
 import '../features/permission_page.dart' show confirmPermission;
 import '../theme/app_icons.dart';
 import 'empty_actions.dart';
-import 'model_sheet.dart' show effortLabel, modelShortName, showModelSheet;
 
 /// The longest a single option may grow before its label is cut.
 const _itemMaxWidth = 200.0;
@@ -69,23 +67,12 @@ String _readEffectivePermission(WidgetRef ref, PermissionState state) => effecti
   safeMode: ref.read(localRuntimeProvider).status.inSafeMode,
 );
 
-/// The options row: the model, the agent preset, the permissions and (with
-/// folders) the drawer folder this new chat starts with — light items in one
-/// centred line. The preset and permission items appear once the Host has
-/// said what it offers, and only when there is a real choice; the model item
-/// once the model catalog is current.
+/// The options row: the agent preset, the permissions and (with folders) the
+/// drawer folder this new chat starts with — light items in one centred line.
+/// The preset and permission items appear once the Host has said what it
+/// offers, and only when there is a real choice.
 class NewChatOptions extends ConsumerWidget {
-  const NewChatOptions({
-    super.key,
-    required this.model,
-    required this.onModel,
-    this.folderLabel,
-    this.onFolder,
-  });
-
-  /// The model picked for the new chat (null: the catalog default).
-  final ModelSelection? model;
-  final ValueChanged<ModelSelection> onModel;
+  const NewChatOptions({super.key, this.folderLabel, this.onFolder});
 
   /// The drawer-folder item, when there are folders.
   final String? folderLabel;
@@ -95,15 +82,6 @@ class NewChatOptions extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final l10n = context.l10n;
     final pending = ref.watch(pendingNewChatModesProvider);
-
-    final catalog = ref.watch(currentModelCatalogProvider);
-    final effectiveModel = model ?? catalog?.defaultSelection;
-    String? modelLabel;
-    if (effectiveModel != null) {
-      final effort = effectiveModel.reasoningEffort;
-      final name = modelShortName(effectiveModel, catalog);
-      modelLabel = effort == null ? name : '$name · ${effortLabel(effort)}';
-    }
 
     final presets = newChatPresets(ref.watch(agentPresetsProvider).value);
     final fallbackPreset = defaultPreset(presets);
@@ -143,10 +121,6 @@ class NewChatOptions extends ConsumerWidget {
     );
 
     final items = <Widget>[
-      if (modelLabel != null)
-        item(const ValueKey('new-chat-model'), AppIcons.model, modelLabel, l10n.viewNewChatModel, () {
-          unawaited(showModelSheet(context, current: effectiveModel, onSelected: onModel));
-        }),
       if (presets.length > 1 && shownPreset != null)
         item(
           const ValueKey('new-chat-preset'),

@@ -18028,9 +18028,6 @@ class L10nZh extends L10n {
   String get viewTipModelHere => '这里就能换模型、预设和权限，只对这次对话生效';
 
   @override
-  String get viewNewChatModel => '模型';
-
-  @override
   String get viewNewChatFolder => '文件夹';
 
   @override

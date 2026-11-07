@@ -1624,8 +1624,6 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
                                           : null,
                                       onSuggestion: _onSuggestion,
                                       options: NewChatOptions(
-                                        model: pendingModel,
-                                        onModel: _modelTarget(),
                                         folderLabel: !hasFolders
                                             ? null
                                             : newFolder == null
@@ -1719,9 +1717,11 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
                         onTitleTap: sessionId == null
                             ? null
                             : () => SessionDetailPage.open(context, sessionId, toggle: true),
-                        // A phone has no room for it: the model is shown and picked at the
-                        // composer's foot while typing.
-                        trailing: narrow
+                        // A phone's conversation has no room for it beside its title: the
+                        // model is shown and picked at the composer's foot while typing.
+                        // A new chat's title is only 「新对话」, so the model takes the
+                        // header's right like on a wide window — picked before typing.
+                        trailing: narrow && sessionId != null
                             ? null
                             : ModelChip(
                                 selection: sessionId == null ? pendingModel : chat?.model,
