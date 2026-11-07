@@ -5458,6 +5458,23 @@ class L10nEn extends L10n {
       'Light mode uses it from her next reply; full mode tells her with your next message.';
 
   @override
+  String get companionMenuMoves => 'Moves and faces';
+
+  @override
+  String get companionMovesHint =>
+      'These come with the model. The ones switched on are offered to the AI and she uses them in her replies; tap a name to give it a clearer one, tap ▶ to try it on her.';
+
+  @override
+  String get companionMovesNone =>
+      'This model brings no expressions or motions of its own; she uses her built-in ones.';
+
+  @override
+  String get companionMovesRename => 'Rename';
+
+  @override
+  String get companionMovesTry => 'Try it';
+
+  @override
   String get engineNewChatDefaultsLast => 'New chat defaults (last choice)';
 
   @override

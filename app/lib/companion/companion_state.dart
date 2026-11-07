@@ -257,8 +257,11 @@ String companionPersonaPart({String? custom, String? name, String? callMe}) {
 
 /// Her whole persona: the person's part, then the app's rules they can't
 /// remove; light mode adds that she has no tools.
-String companionPersona({String? custom, String? name, String? callMe, bool tools = false}) {
+String companionPersona({String? custom, String? name, String? callMe, bool tools = false, String? moves}) {
   final part = companionPersonaPart(custom: custom, name: name, callMe: callMe);
+  if (moves != null && moves.trim().isNotEmpty) {
+    return [part, '', companionPersonaRules, '', moves.trim(), if (!tools) _noToolsLine].join('\n');
+  }
   if ((custom?.trim() ?? '').isEmpty && (callMe?.trim() ?? '').isEmpty && part == companionPersonaDefault && !tools) {
     return companionPersonaCore;
   }

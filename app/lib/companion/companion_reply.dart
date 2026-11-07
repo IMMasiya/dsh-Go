@@ -58,6 +58,13 @@ const _actions = {
 
 enum CompanionMarkKind { emotion, action }
 
+/// Whether [name] is already one of her own marks, which a model's own move of
+/// the same name can't take over.
+bool companionMarkKnown(CompanionMarkKind kind, String name) {
+  final known = kind == CompanionMarkKind.emotion ? _emotions : _actions;
+  return known.containsKey(name) || known.containsKey(name.toLowerCase());
+}
+
 @immutable
 class CompanionMark {
   const CompanionMark(this.kind, this.name);
@@ -97,16 +104,24 @@ final _partialMark = RegExp(
 );
 
 /// Reads [text]. While [streaming], a trailing partial mark is held back.
-CompanionReply parseCompanionReply(String text, {bool streaming = false}) {
+/// [emotions] and [actions] map the labels of the model's own expressions and
+/// motions to their raw names (companion_moves.dart); hers come first, since
+/// they carry her pose as well as a face.
+CompanionReply parseCompanionReply(
+  String text, {
+  bool streaming = false,
+  Map<String, String> emotions = const {},
+  Map<String, String> actions = const {},
+}) {
   final marks = <CompanionMark>[];
   var words = text.replaceAllMapped(_mark, (m) {
     final kind = m[1]!.toLowerCase();
     final name = m[2]!;
     if (kind == '表情' || kind == 'emotion') {
-      final emotion = _emotions[name] ?? _emotions[name.toLowerCase()];
+      final emotion = _emotions[name] ?? _emotions[name.toLowerCase()] ?? emotions[name];
       if (emotion != null) marks.add(CompanionMark(CompanionMarkKind.emotion, emotion));
     } else {
-      final action = _actions[name] ?? _actions[name.toLowerCase()];
+      final action = _actions[name] ?? _actions[name.toLowerCase()] ?? actions[name];
       if (action != null) marks.add(CompanionMark(CompanionMarkKind.action, action));
     }
     return '';

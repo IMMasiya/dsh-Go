@@ -158,6 +158,8 @@
     constructor() {
       super();
       this.expressions = new Map();
+      // The model's own motions (model3.json), by group, numbered when a group has several.
+      this.motions = new Map();
       this.ids = new Map();
       this.tailIds = [];
     }
@@ -213,6 +215,42 @@
         );
       }
       await Promise.all(expressions);
+
+      // Its own motions, for the AI and the person to call by name. One that
+      // won't load is left out, not fatal.
+      const motions = [];
+      // The parameters its motions' blink and lip-sync curves move (the
+      // framework needs both lists, even empty, to update a motion at all).
+      const effectIds = (count, at) => {
+        const ids = [];
+        for (let i = 0; i < count; i++) ids.push(at(i));
+        return ids;
+      };
+      const blinkIds = effectIds(setting.getEyeBlinkParameterCount(), (i) => setting.getEyeBlinkParameterId(i));
+      const lipIds = effectIds(setting.getLipSyncParameterCount(), (i) => setting.getLipSyncParameterId(i));
+      for (let g = 0; g < setting.getMotionGroupCount(); g++) {
+        const group = setting.getMotionGroupName(g);
+        const count = setting.getMotionCount(group);
+        for (let i = 0; i < count; i++) {
+          const name = count > 1 ? `${group}_${i + 1}` : group;
+          motions.push(
+            bytes(setting.getMotionFileName(group, i))
+              .then((buffer) => {
+                const motion = this.loadMotion(buffer, buffer.byteLength, name);
+                if (!motion) return;
+                motion.setEffectIds(blinkIds, lipIds);
+                // The model's own fades when it gives them, else soft ones.
+                const fadeIn = setting.getMotionFadeInTimeValue(group, i);
+                const fadeOut = setting.getMotionFadeOutTimeValue(group, i);
+                motion.setFadeInTime(fadeIn >= 0 ? fadeIn : 0.35);
+                motion.setFadeOutTime(fadeOut >= 0 ? fadeOut : 0.45);
+                this.motions.set(name, motion);
+              })
+              .catch(() => {}),
+          );
+        }
+      }
+      await Promise.all(motions);
       // Relaxing a face is fading to an expression with nothing in it.
       const empty = new TextEncoder().encode('{"Type":"Live2D Expression","Parameters":[]}').buffer;
       this.neutral = this.loadExpression(empty, empty.byteLength, 'neutral');
@@ -249,6 +287,9 @@
       core.loadParameters();
       core.saveParameters();
       animate.before(this, dt);
+      // One of its own motions, while it plays, takes over from the pose she
+      // keeps herself; expressions and physics still come after.
+      if (!this._motionManager.isFinished()) this._motionManager.updateMotion(core, dt);
       this._expressionManager.updateMotion(core, dt);
       this._physics?.evaluate(core, dt);
       this._pose?.updateParameters(core, dt);
@@ -292,6 +333,18 @@
     startExpression(name) {
       const motion = name ? this.expressions.get(name) : this.neutral;
       if (motion) this._expressionManager.startMotion(motion, false);
+    }
+
+    /** Plays one of its own motions once; false when it has none by that name. */
+    playMotion(name) {
+      const motion = this.motions.get(name);
+      if (!motion) return false;
+      this._motionManager.startMotionPriority(motion, false, 2);
+      return true;
+    }
+
+    get moving() {
+      return !this._motionManager.isFinished();
     }
   }
 
@@ -395,7 +448,8 @@
   let transientEpoch = 0;
 
   function setEmotion(name, hold = EMOTION_HOLD) {
-    const def = emotions[name];
+    // Not one she knows: one of the model's own expressions, by its name.
+    const def = emotions[name] ?? (model?.expressions.has(name) ? { expression: name } : null);
     if (!def) return;
     const changed = life.emotion !== name;
     life.emotion = name;
@@ -1216,7 +1270,9 @@
     action: ({ name }) => {
       if (name === 'hop') hop();
       else if (name === 'tail') life.tailKick = 1;
-      else playAction(name);
+      else if (actions[name]) playAction(name);
+      // Not one of hers: one of the model's own motions, by its name.
+      else if (!REDUCED) model?.playMotion(name);
     },
     // New reply text arrived: the mouth keeps moving for about as long as
     // reading it aloud would take.
@@ -1302,6 +1358,7 @@
       life.mood === 'speaking' ||
       life.speech > 0 ||
       life.voice !== null ||
+      model?.moving ||
       life.patting ||
       home.show !== null ||
       scene.busy();
@@ -1501,7 +1558,13 @@
         life.waking = ['stretch', 'yawn'];
         life.flourishAt = performance.now() + 6000;
       }
-      post({ type: 'ready', ms: Math.round(performance.now() - started), name: character.name ?? null, expressions: [...model.expressions.keys()] });
+      post({
+        type: 'ready',
+        ms: Math.round(performance.now() - started),
+        name: character.name ?? null,
+        expressions: [...model.expressions.keys()],
+        motions: [...model.motions.keys()],
+      });
     } catch (error) {
       post({ type: 'error', message: String(error?.message ?? error) });
       document.documentElement.dataset.ready = 'error';

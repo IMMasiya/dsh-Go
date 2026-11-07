@@ -11,6 +11,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 
+import '../../companion/companion_moves.dart';
 import '../../companion/companion_pack.dart';
 import '../../companion/companion_server.dart';
 import '../plugins/islands/island_platform.dart';
@@ -48,9 +49,13 @@ class CompanionStageEvents {
     required this.onMood,
     required this.onObject,
     required this.onActivity,
+    this.onModel,
   });
 
   final VoidCallback onReady;
+
+  /// What the model brings of its own, as it finishes loading (before [onReady]).
+  final ValueChanged<CompanionModelInfo>? onModel;
   final ValueChanged<String> onFailed;
   final void Function(String zone, String kind) onTouch;
   final VoidCallback onWake;
@@ -165,6 +170,7 @@ class _CompanionStageState extends State<CompanionStage> with WidgetsBindingObse
         widget.controller._ready = true;
         _appliedPause = null;
         _syncVisibility();
+        events.onModel?.call(CompanionModelInfo.fromMessage(message));
         events.onReady();
       case 'error':
         _fail('${message['message']}');

@@ -21,6 +21,7 @@ import '../../companion/companion_bond.dart';
 import '../../companion/companion_initiative.dart';
 import '../../companion/companion_initiative_owner.dart';
 import '../../companion/companion_keeper.dart';
+import '../../companion/companion_moves.dart';
 import '../../companion/companion_light.dart';
 import '../../companion/companion_pack.dart';
 import '../../companion/companion_reply.dart';
@@ -159,6 +160,12 @@ class _CompanionPageState extends ConsumerState<CompanionPage> implements Compan
   Timer? _bubbleTimer;
   Timer? _settleTimer;
   Timer? _objectTimer;
+
+  /// What this model brings of its own (companion_moves.dart), once it has loaded.
+  CompanionMoves _moves = const CompanionMoves();
+
+  /// Whose moves these are: their names and choices are kept per character.
+  String get _movesKey => _character.name ?? 'default';
 
   // Her other work: conversations on the hosts that finish, fail or wait on
   // the person while they're here.
@@ -659,7 +666,20 @@ class _CompanionPageState extends ConsumerState<CompanionPage> implements Compan
       custom: persona.custom,
       name: ref.read(companionNameProvider) ?? _character.name,
       callMe: persona.callMe,
+      moves: _moves.rules(),
     );
+  }
+
+  Future<void> _onModel(CompanionModelInfo info) async {
+    final key = _movesKey;
+    final saved = await companionMovesSaved(key);
+    if (!mounted || key != _movesKey) return;
+    setState(() => _moves = CompanionMoves.from(info, saved));
+  }
+
+  void _changeMove(CompanionMove next) {
+    setState(() => _moves = _moves.replaced(next));
+    unawaited(companionMovesSave(_movesKey, _moves));
   }
 
   /// Renamed in 她的设定: back in the room, she answers to it.
@@ -670,6 +690,85 @@ class _CompanionPageState extends ConsumerState<CompanionPage> implements Compan
     _stage.command('emotion', {'name': 'happy', 'hold': 3200});
     _stage.command('action', {'name': 'hop'});
     _say(l10n.companionRenamed(name));
+  }
+
+  /// Her model's own expressions and motions: try one on her, rename it, and
+  /// say whether the AI may use it. A sheet, so she stays in view and plays them.
+  void _openMoves() {
+    unawaited(
+      showAppSheet<void>(
+        context,
+        builder: (sheet) => StatefulBuilder(
+          builder: (sheet, setSheet) {
+            final l10n = sheet.l10n;
+            void change(CompanionMove next) {
+              _changeMove(next);
+              setSheet(() {});
+            }
+
+            Widget row(CompanionMove move) => SettingsTile(
+              tinted: false,
+              title: move.label,
+              subtitle: move.label == move.raw ? null : move.raw,
+              chevron: false,
+              onTap: () async {
+                final label = await showAppDialog<String>(
+                  context: sheet,
+                  builder: (_) => _LabelDialog(initial: move.label, hint: companionMoveLabel(move.raw)),
+                );
+                if (label != null && label.trim().isNotEmpty) change(move.copyWith(label: label.trim()));
+              },
+              trailing: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  IconButton(
+                    tooltip: l10n.companionMovesTry,
+                    icon: const Icon(AppIcons.play, size: 20),
+                    onPressed: () => move.kind == CompanionMoveKind.expression
+                        ? _stage.command('emotion', {'name': move.raw, 'hold': 2600})
+                        : _stage.command('action', {'name': move.raw}),
+                  ),
+                  Switch(
+                    value: move.ai,
+                    onChanged: (ai) => change(move.copyWith(ai: ai)),
+                  ),
+                ],
+              ),
+            );
+
+            return SafeArea(
+              top: false,
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    SheetTitleBar(l10n.companionMenuMoves),
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(SheetTitleBar.inset + 8, 0, SheetTitleBar.inset + 8, 12),
+                      child: Text(
+                        _moves.isEmpty ? l10n.companionMovesNone : l10n.companionMovesHint,
+                        style: Theme.of(sheet).textTheme.bodySmall,
+                      ),
+                    ),
+                    if (_moves.expressions.isNotEmpty)
+                      SheetGroup(
+                        margin: const EdgeInsets.fromLTRB(SheetTitleBar.inset, 0, SheetTitleBar.inset, 12),
+                        children: [for (final move in _moves.expressions) row(move)],
+                      ),
+                    if (_moves.motions.isNotEmpty)
+                      SheetGroup(
+                        margin: const EdgeInsets.fromLTRB(SheetTitleBar.inset, 0, SheetTitleBar.inset, 12),
+                        children: [for (final move in _moves.motions) row(move)],
+                      ),
+                  ],
+                ),
+              ),
+            );
+          },
+        ),
+      ),
+    );
   }
 
   // ── Voice ────────────────────────────────────────────────────────────────
@@ -1026,7 +1125,12 @@ class _CompanionPageState extends ConsumerState<CompanionPage> implements Compan
     }
     final retainedText = prefix.join('\n');
     if (retainedText != _replyParts.map((part) => part.item.text).join('\n')) {
-      final retained = parseCompanionReply(retainedText, streaming: true);
+      final retained = parseCompanionReply(
+        retainedText,
+        streaming: true,
+        emotions: _moves.emotionLabels,
+        actions: _moves.actionLabels,
+      );
       _marksHandled = min(_marksHandled, retained.marks.length);
       _wordsSpoken = min(_wordsSpoken, retained.words.length);
     }
@@ -1065,7 +1169,7 @@ class _CompanionPageState extends ConsumerState<CompanionPage> implements Compan
       if (loading) return;
       _baselineSet = true;
       _baselineUser = user;
-      final old = parseCompanionReply(text);
+      final old = parseCompanionReply(text, emotions: _moves.emotionLabels, actions: _moves.actionLabels);
       _marksHandled = old.marks.length;
       _wordsSpoken = old.words.length;
       _spokenTo = old.words.length;
@@ -1087,7 +1191,12 @@ class _CompanionPageState extends ConsumerState<CompanionPage> implements Compan
     }
 
     if (parts != null) _retainReplyProgress(parts);
-    final reply = parseCompanionReply(text, streaming: running);
+    final reply = parseCompanionReply(
+      text,
+      streaming: running,
+      emotions: _moves.emotionLabels,
+      actions: _moves.actionLabels,
+    );
     for (final mark in reply.marks.skip(_marksHandled)) {
       _retireGreeting();
       switch (mark.kind) {
@@ -1173,9 +1282,14 @@ class _CompanionPageState extends ConsumerState<CompanionPage> implements Compan
       if (!current()) return;
       final firstInline = binding.inlinePersona && ref.read(chatProvider(binding.sessionId)).items.isEmpty;
       final persona = ref.read(companionPersonaProvider);
-      final update = companionPersonaUpdate(custom: persona.custom, callMe: persona.callMe);
-      final tell =
-          update != null && !firstInline && !await companionPersonaTold(binding.sessionId, persona.fingerprint);
+      final movesRules = _moves.rules();
+      final told = [
+        ?companionPersonaUpdate(custom: persona.custom, callMe: persona.callMe),
+        if (movesRules != null) '（$movesRules）',
+      ];
+      final update = told.isEmpty ? null : told.join('\n');
+      final fingerprint = '${persona.fingerprint}|${_moves.fingerprint}';
+      final tell = update != null && !firstInline && !await companionPersonaTold(binding.sessionId, fingerprint);
       if (!current()) return;
       final aside = companionAside(now: DateTime.now(), notes: List.of(_notes));
       final named = companionNameNote(ref.read(companionNameProvider));
@@ -1188,7 +1302,7 @@ class _CompanionPageState extends ConsumerState<CompanionPage> implements Compan
       ].join('\n');
       final sent = await chat.send(message);
       if (sent && (tell || (firstInline && update != null))) {
-        unawaited(companionPersonaMarkTold(binding.sessionId, persona.fingerprint));
+        unawaited(companionPersonaMarkTold(binding.sessionId, fingerprint));
       }
       if (!current()) return;
       if (sent) {
@@ -1514,6 +1628,16 @@ class _CompanionPageState extends ConsumerState<CompanionPage> implements Compan
                         );
                       },
                     ),
+                    SettingsTile(
+                      icon: AppIcons.generating,
+                      tinted: false,
+                      title: l10n.companionMenuMoves,
+                      value: Text('${_moves.expressions.length + _moves.motions.length}'),
+                      onTap: () {
+                        Navigator.of(sheet).pop();
+                        _openMoves();
+                      },
+                    ),
                     // Only where her state is kept: otherwise there is nothing to show.
                     if (_vitals case final vitals?)
                       SettingsTile(
@@ -1778,6 +1902,7 @@ class _CompanionPageState extends ConsumerState<CompanionPage> implements Compan
       onMood: _onMood,
       onObject: _onObject,
       onActivity: _onActivity,
+      onModel: (info) => unawaited(_onModel(info)),
     );
     return Scaffold(
       backgroundColor: const Color(0xFF0D2F55),
@@ -1924,6 +2049,46 @@ class _CompanionPageState extends ConsumerState<CompanionPage> implements Compan
             ),
         ],
       ),
+    );
+  }
+}
+
+/// A new name for one of her moves: the dialog owns its field.
+class _LabelDialog extends StatefulWidget {
+  const _LabelDialog({required this.initial, required this.hint});
+
+  final String initial;
+  final String hint;
+
+  @override
+  State<_LabelDialog> createState() => _LabelDialogState();
+}
+
+class _LabelDialogState extends State<_LabelDialog> {
+  late final _field = TextEditingController(text: widget.initial);
+
+  @override
+  void dispose() {
+    _field.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = context.l10n;
+    return AlertDialog(
+      title: Text(l10n.companionMovesRename),
+      content: TextField(
+        controller: _field,
+        autofocus: true,
+        maxLength: 16,
+        decoration: InputDecoration(hintText: widget.hint),
+        onSubmitted: (value) => Navigator.pop(context, value),
+      ),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(context), child: Text(l10n.commonCancel)),
+        FilledButton(onPressed: () => Navigator.pop(context, _field.text), child: Text(l10n.commonSave)),
+      ],
     );
   }
 }
