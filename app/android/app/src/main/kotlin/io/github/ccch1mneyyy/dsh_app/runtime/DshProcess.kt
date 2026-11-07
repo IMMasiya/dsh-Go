@@ -392,12 +392,12 @@ class DshProcess(
     /** Reap a captured process tree before releasing #17 ownership to another launch. */
     @Synchronized fun killStrays(): Boolean = reapStrays().complete
 
-    private data class CleanupResult(val complete: Boolean, val ownedRemaining: Boolean, val canPruneTemp: Boolean = false)
+    internal data class CleanupResult(val complete: Boolean, val ownedRemaining: Boolean, val canPruneTemp: Boolean = false)
 
     /** Unknown ambient processes are not proof of ownership. The default-mode
      * startup policy may continue after reaping every captured identity, while
      * killStrays itself still reports the observation as incomplete. */
-    @Synchronized private fun reapStrays(allowObservationGap: Boolean = false): CleanupResult = synchronized(cleanupState) {
+    @Synchronized internal fun reapStrays(allowObservationGap: Boolean = false): CleanupResult = synchronized(cleanupState) {
         reapStraysLocked(allowObservationGap)
     }
 
