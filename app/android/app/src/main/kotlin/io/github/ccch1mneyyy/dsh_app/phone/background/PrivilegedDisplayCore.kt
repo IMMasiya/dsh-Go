@@ -624,8 +624,10 @@ class PrivilegedDisplayCore(private val context: Context) {
         val e = elements.getOrNull(index - 1) ?: throw Fault("elementMissing")
         val expectRole = request.getString(Proto.EXPECT_ROLE)
         val expectLabel = request.getString(Proto.EXPECT_LABEL)
-        if (expectRole != null && expectRole != e.role) throw Fault("staleSnapshot")
-        if (expectLabel != null && expectLabel.isNotEmpty() && !e.label.startsWith(expectLabel.take(12))) throw Fault("staleSnapshot")
+        val expectViewId = request.getString(Proto.EXPECT_VIEW_ID)
+        if (expectRole != null && expectRole != e.role ||
+            expectLabel != null && expectLabel != e.label ||
+            expectViewId != null && expectViewId != e.viewId) throw Fault("staleSnapshot")
         return e
     }
 
