@@ -642,7 +642,7 @@ class PrivilegedDisplayCore(private val context: Context) {
     private fun scroll(request: Bundle) {
         val dir = request.getString(Proto.DIR) ?: "down"
         val cx = width / 2; val cy = height / 2
-        val span = height / 3
+        val span = (if (dir == "left" || dir == "right") width else height) / 3
         val p = when (dir) {
             "up" -> intArrayOf(cx, cy - span, cx, cy + span)
             "down" -> intArrayOf(cx, cy + span, cx, cy - span)
