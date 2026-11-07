@@ -1,9 +1,20 @@
 package io.github.ccch1mneyyy.dsh_app.share
 
 import java.io.File
+import java.nio.file.Files
+import java.nio.file.LinkOption.NOFOLLOW_LINKS
 
 /** File names for shared items (pure: unit-tested on the JVM). */
 internal object ShareNames {
+    /** Incoming-share slots only; the same root also holds outgoing share PNGs. */
+    fun pruneSlots(dir: File, keep: Int) {
+        val slotName = Regex("[0-9a-z]+-[0-9]+")
+        val slots = dir.listFiles()?.filter {
+            slotName.matches(it.name) && Files.isDirectory(it.toPath(), NOFOLLOW_LINKS)
+        }?.sortedByDescending { it.lastModified() } ?: return
+        for (old in slots.drop(keep)) old.deleteRecursively()
+    }
+
     /** A share-code file (lib/share_code/share_codec.dart `shareFileExtension`). */
     const val SHARE_CODE_MIME = "application/vnd.dshgo+json"
     const val SHARE_CODE_EXTENSION = "dshgo"
