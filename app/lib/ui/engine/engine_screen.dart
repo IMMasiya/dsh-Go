@@ -47,12 +47,19 @@ String engineDetail(RuntimeStatus status) => switch (status.phase) {
         : status.tidyingFiles
         ? appL10n.phoneEngineTidyingFilesEllipsis
         : appL10n.phoneEngineStartingEllipsis,
-  RuntimePhase.stopping => appL10n.phoneEngineStoppingEllipsis,
+  RuntimePhase.stopping =>
+    isLocalStartupFailure(status)
+        ? appL10n.phoneStartupFailureStoppingDetail(
+            humanizeRuntimeError(status.error) ?? appL10n.phoneEngineErrorSeeLogs,
+          )
+        : appL10n.phoneEngineStoppingEllipsis,
   RuntimePhase.installed => status.inSafeMode ? appL10n.phoneEngineStoppedNextSafe : appL10n.commonStopped,
   RuntimePhase.installing => appL10n.phoneEngineInstallingRuntime,
   RuntimePhase.notInstalled => appL10n.phoneEngineRuntimeNotInstalled,
   RuntimePhase.error =>
-    status.failure != null
+    isLocalStartupFailure(status)
+        ? humanizeRuntimeError(status.error) ?? appL10n.phoneEngineErrorSeeLogs
+        : status.failure != null
         ? failureOneLiner(status.failure!)
         : humanizeRuntimeError(status.error) ?? appL10n.phoneEngineErrorSeeLogs,
 };

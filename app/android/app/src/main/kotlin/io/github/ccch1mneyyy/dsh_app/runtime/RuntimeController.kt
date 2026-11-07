@@ -384,14 +384,20 @@ class RuntimeController private constructor(private val app: Context) : DshProce
                 // failure after spawning but before the waiter was allocated.
                 launched?.launchDiagnostics?.failed("startFailed")
                 launched?.let { p -> p.failStart(e.message ?: e.javaClass.simpleName); p.awaitExit() }
-                if (gen != runGen) return@execute
-                process = null
-                PhoneControl.get(app).onEngineStopped()
-                if (stopGen >= gen) return@execute
-                error = "start failed: ${e.message}"
-                log("[dsh-app] $error", "system")
-                setPhase(Phase.ERROR)
-                DshService.stopSelfIfRunning(app)
+                synchronized(this) {
+                    if (gen != runGen) return@execute
+                    process = null
+                    PhoneControl.get(app).onEngineStopped()
+                    val startupError = launched?.startupError
+                    if (startupError == null && stopGen >= gen) {
+                        // A cancelled preparation can throw before a waiter exists.
+                        if (!resetting && phase == Phase.STOPPING) setPhase(Phase.INSTALLED)
+                        return@execute
+                    }
+                    publishStartupFailure(startupError ?: e.message ?: e.javaClass.simpleName, ownerReleased = true)
+                    log("[dsh-app] $error", "system")
+                    if (!resetting) DshService.stopSelfIfRunning(app)
+                }
             }
         }
     }
@@ -449,7 +455,7 @@ class RuntimeController private constructor(private val app: Context) : DshProce
      * Stops DSH and waits for it to exit, then deletes the runtime with everything in /root except
      * [keep], which the next install puts back.
      */
-    fun reset(keep: Set<ResetKeep> = emptySet(), onDone: (Throwable?) -> Unit) {
+    @Synchronized fun reset(keep: Set<ResetKeep> = emptySet(), onDone: (Throwable?) -> Unit) {
         stopGen = runGen
         resetting = true
         setPhase(Phase.STOPPING)
@@ -467,35 +473,40 @@ class RuntimeController private constructor(private val app: Context) : DshProce
                     runtimeLogs.resumeDisk()
                 }
                 if (keep.isNotEmpty()) log("[dsh-app] reset keeps ${keep.joinToString { it.wire }}", "system")
-                baseUrl = null
-                token = null
-                error = null
-                // A fresh start: even kept plugins get a clean slate (auto safe mode still guards it).
-                strikes = 0
-                failure = null
-                mainFailure = null
-                safeState = SafeState.OFF
-                safeReason = null
                 workspaceRecovery.set(false) { next ->
                     val edit = prefs.edit().remove(K_SAFE_STATE).remove(K_SAFE_REASON).remove(K_STRIKES).remove(K_FAILURE)
                         .remove(K_MAIN_FAILURE).remove(K_MOVED)
                     if (next) edit.putBoolean(K_WORKSPACE_RECOVERY, true) else edit.remove(K_WORKSPACE_RECOVERY)
                     edit.commit()
                 }
-                setPhase(Phase.NOT_INSTALLED)
+                synchronized(this) {
+                    baseUrl = null
+                    token = null
+                    error = null
+                    // A fresh start: even kept plugins get a clean slate (auto safe mode still guards it).
+                    strikes = 0
+                    failure = null
+                    mainFailure = null
+                    safeState = SafeState.OFF
+                    safeReason = null
+                    resetting = false
+                    setPhase(Phase.NOT_INSTALLED)
+                }
                 main.post { onDone(null) }
             } catch (e: Throwable) {
                 log("[dsh-app] reset failed: ${e.message}", "system")
                 // Still stopping while the old process hasn't exited (its exit report moves the
                 // phase on); otherwise the runtime is either still whole or gone.
-                setPhase(when {
-                    process != null -> Phase.STOPPING
-                    runCatching { installer.isCurrent() }.getOrDefault(false) -> Phase.INSTALLED
-                    else -> Phase.NOT_INSTALLED
-                })
+                val installed = runCatching { installer.isCurrent() }.getOrDefault(false)
+                synchronized(this) {
+                    resetting = false
+                    setPhase(when {
+                        process != null -> Phase.STOPPING
+                        installed -> Phase.INSTALLED
+                        else -> Phase.NOT_INSTALLED
+                    })
+                }
                 main.post { onDone(e) }
-            } finally {
-                resetting = false
             }
         }
     }
@@ -752,9 +763,34 @@ class RuntimeController private constructor(private val app: Context) : DshProce
         emitStatus()
     }
 
+    override fun onStartupFailure(source: DshProcess) {
+        // failStart holds the process monitor; stopProcess takes controller -> process.
+        // Never take the controller monitor synchronously on that callback thread.
+        main.post {
+            synchronized(this) {
+                if (source !== process) return@synchronized
+                source.launchDiagnostics.failed("startFailed")
+                publishStartupFailure(source.startupError, ownerReleased = false)
+            }
+        }
+    }
+
+    /** Local startup errors supersede only the latest card, not the main-profile history or strikes. */
+    private fun publishStartupFailure(message: String?, ownerReleased: Boolean): Boolean {
+        val next = StartupFailureState.of(message, ownerReleased, resetting) ?: return false
+        error = next.error
+        if (failure != null) {
+            failure = null
+            prefs.edit().remove(K_FAILURE).apply()
+        }
+        setPhase(next.phase)
+        return true
+    }
+
     @Synchronized override fun onReady(source: DshProcess, baseUrl: String, token: String) {
         // A late report from a stopped or replaced process.
-        if (source !== process || phase == Phase.STOPPING) return
+        if (source !== process || phase == Phase.STOPPING || source.startupError != null ||
+            stopGen >= runGen || resetting) return
         DshService.cancelStoppedAlert(app)
         this.baseUrl = baseUrl
         this.token = token
@@ -785,26 +821,23 @@ class RuntimeController private constructor(private val app: Context) : DshProce
     @Synchronized override fun onExit(source: DshProcess, code: Int, expected: Boolean) {
         if (source !== process) return
         try {
-            if (!expected && stopGen < runGen) {
-                source.launchDiagnostics.failed(if (source.startupError != null) "startFailed" else "exit:$code")
-            }
+            if (source.startupError != null) source.launchDiagnostics.failed("startFailed")
+            else if (!expected && stopGen < runGen) source.launchDiagnostics.failed("exit:$code")
             process = null
             PhoneControl.get(app).onEngineStopped()
             baseUrl = null
             token = null
             healthyAt = null
             log("[dsh-app] DSH exited with code $code", "system")
-            if (expected || stopGen >= runGen) {
-                if (!resetting && phase == Phase.STOPPING) setPhase(Phase.INSTALLED)
+            if (publishStartupFailure(source.startupError, ownerReleased = true)) {
+                // An accepted failure survives a later STOP. Reset still owns its final state.
+                // Neither a deadline nor a local launch error is evidence against a plugin.
+                if (!resetting) DshService.postStoppedAlert(app)
                 DshService.stopSelfIfRunning(app)
                 return
             }
-            source.startupError?.let {
-                // A local startup failure is neither a user stop nor proof of a
-                // plugin failure; do not count it toward automatic safe mode.
-                error = "start failed: $it"
-                setPhase(Phase.ERROR)
-                DshService.postStoppedAlert(app)
+            if (expected || stopGen >= runGen) {
+                if (!resetting && phase == Phase.STOPPING) setPhase(Phase.INSTALLED)
                 DshService.stopSelfIfRunning(app)
                 return
             }
@@ -915,6 +948,18 @@ class RuntimeController private constructor(private val app: Context) : DshProce
             instance ?: synchronized(this) {
                 instance ?: RuntimeController(context.applicationContext).also { instance = it }
             }
+    }
+}
+
+/** The same accepted local failure while cleaning, after exit, or while reset still owns the disk. */
+internal data class StartupFailureState(val error: String, val phase: RuntimeController.Phase) {
+    companion object {
+        fun of(message: String?, ownerReleased: Boolean, resetting: Boolean): StartupFailureState? {
+            if (message == null) return null
+            val phase = if (ownerReleased && !resetting) RuntimeController.Phase.ERROR
+                else RuntimeController.Phase.STOPPING
+            return StartupFailureState("start failed: $message", phase)
+        }
     }
 }
 
