@@ -32,6 +32,8 @@ class DshProcess(
         fun onLog(line: String, stream: String)
         fun onReady(source: DshProcess, baseUrl: String, token: String)
         fun onExit(source: DshProcess, code: Int, expected: Boolean)
+        /** Called under the process monitor: enqueue owner updates without waiting for its lock. */
+        fun onStartupFailure(source: DshProcess)
         /** The start is busy turning PRoot's fake hard links into real files (true), or done (false). */
         fun onTidying(active: Boolean) {}
     }
@@ -256,6 +258,7 @@ class DshProcess(
         if (stopping) return
         startupError = message
         listener.onLog("[dsh-app] start failed: $message", "system")
+        listener.onStartupFailure(this)
         stop(expected = false)
     }
 

@@ -1316,6 +1316,18 @@
         }
       }
     },
+    "zzzzzzzzzzzzzzzzzzzzzzzzzzz-workspace-recovery-index.diff": {
+      "0.2.2-rc.1": {
+        "node_modules/@deepseek-ai/dsh-storage-domain/lib/index.js": {
+          "after": "910ceb1907427dc53f1444461c4b440610d99f5631ab7ccb05a2ff03a6d8f4b5",
+          "before": "a50f853f9cc1d4d4d2eea6c4f21498ef604ef11ae3131bc41e21189fc5f4483a"
+        },
+        "node_modules/@deepseek-ai/dsh-storage-json/lib/index.js": {
+          "after": "62827d69b251c0ee88c35293257dc2480a276227c7da01d6a21ab986936c9b05",
+          "before": "fd735487e2053434485efca3af8ee75f026ad23ed475136fd62864c5e0b41583"
+        }
+      }
+    },
     "zzzzzzzzzzzzzzzzzzzzzzzzzzzz-tool-result-codepoint-count.diff": {
       "0.2.2-rc.1": {
         "node_modules/@deepseek-ai/dsh-compaction-tool-result-pruner/lib/index.js": {

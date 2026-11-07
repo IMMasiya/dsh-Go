@@ -47,6 +47,7 @@ class RuntimeController private constructor(private val app: Context) : DshProce
     )
     private val lkgFile = File(app.filesDir, "runtime/lkg/lkg.json")
     private val prefs = app.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+    private val workspaceRecovery = WorkspaceRecoveryMode(prefs.getBoolean(K_WORKSPACE_RECOVERY, false))
 
     val manifest: RuntimeManifest by lazy { RuntimeManifest.load(app) }
     private val installer by lazy { RuntimeInstaller(app, manifest, ::note) }
@@ -133,6 +134,7 @@ class RuntimeController private constructor(private val app: Context) : DshProce
         "safeReason" to safeReason,
         "strikes" to strikes,
         "autoSafe" to autoSafe(),
+        "workspaceRecovery" to workspaceRecovery.enabled,
         "failure" to failure?.toMap(),
         "mainFailure" to mainFailure?.toMap(),
         "healthyAt" to healthyAt,
@@ -168,6 +170,28 @@ class RuntimeController private constructor(private val app: Context) : DshProce
         check(!enabled || directEngineAvailable()) { "this bundled runtime does not support direct launch" }
         prefs.edit().putBoolean(K_DIRECT_ENGINE, enabled).remove(K_DIRECT_FAILED).apply()
         emitStatus()
+    }
+
+    /** Selects a separate workspace index for the next launch; never opens either index here. */
+    fun setWorkspaceRecovery(enabled: Boolean, onDone: (Throwable?) -> Unit) {
+        worker.execute {
+            try {
+                try {
+                    checkRecoveryWrite(mainProfileOnly = false)
+                } catch (e: Exception) {
+                    // A failed observation is not proof that the old writer has stopped.
+                    throw if (e is RuntimeNotStoppedException) e
+                    else RuntimeNotStoppedException().apply { initCause(e) }
+                }
+                workspaceRecovery.set(enabled) { next ->
+                    prefs.edit().putBoolean(K_WORKSPACE_RECOVERY, next).commit()
+                }
+                emitStatus()
+                main.post { onDone(null) }
+            } catch (e: Throwable) {
+                main.post { onDone(e) }
+            }
+        }
     }
 
     /** While a process is up: its mode; otherwise the mode the next start will use. */
@@ -325,6 +349,7 @@ class RuntimeController private constructor(private val app: Context) : DshProce
                 val env = LinkedHashMap<String, String>()
                 env["TZ"] = java.util.TimeZone.getDefault().id
                 env.putAll(pendingEnv)
+                workspaceRecovery.applyEnvironment(env)
                 PerformancePolicy.applyEngineEnvironment(app, env, manifest.launchArgv, manifest.launchEnv)
                 if (safe) {
                     SafeMode.prepare(installer.rootfs, briefing())
@@ -359,14 +384,20 @@ class RuntimeController private constructor(private val app: Context) : DshProce
                 // failure after spawning but before the waiter was allocated.
                 launched?.launchDiagnostics?.failed("startFailed")
                 launched?.let { p -> p.failStart(e.message ?: e.javaClass.simpleName); p.awaitExit() }
-                if (gen != runGen) return@execute
-                process = null
-                PhoneControl.get(app).onEngineStopped()
-                if (stopGen >= gen) return@execute
-                error = "start failed: ${e.message}"
-                log("[dsh-app] $error", "system")
-                setPhase(Phase.ERROR)
-                DshService.stopSelfIfRunning(app)
+                synchronized(this) {
+                    if (gen != runGen) return@execute
+                    process = null
+                    PhoneControl.get(app).onEngineStopped()
+                    val startupError = launched?.startupError
+                    if (startupError == null && stopGen >= gen) {
+                        // A cancelled preparation can throw before a waiter exists.
+                        if (!resetting && phase == Phase.STOPPING) setPhase(Phase.INSTALLED)
+                        return@execute
+                    }
+                    publishStartupFailure(startupError ?: e.message ?: e.javaClass.simpleName, ownerReleased = true)
+                    log("[dsh-app] $error", "system")
+                    if (!resetting) DshService.stopSelfIfRunning(app)
+                }
             }
         }
     }
@@ -424,7 +455,7 @@ class RuntimeController private constructor(private val app: Context) : DshProce
      * Stops DSH and waits for it to exit, then deletes the runtime with everything in /root except
      * [keep], which the next install puts back.
      */
-    fun reset(keep: Set<ResetKeep> = emptySet(), onDone: (Throwable?) -> Unit) {
+    @Synchronized fun reset(keep: Set<ResetKeep> = emptySet(), onDone: (Throwable?) -> Unit) {
         stopGen = runGen
         resetting = true
         setPhase(Phase.STOPPING)
@@ -442,31 +473,45 @@ class RuntimeController private constructor(private val app: Context) : DshProce
                     runtimeLogs.resumeDisk()
                 }
                 if (keep.isNotEmpty()) log("[dsh-app] reset keeps ${keep.joinToString { it.wire }}", "system")
-                baseUrl = null
-                token = null
-                error = null
-                // A fresh start: even kept plugins get a clean slate (auto safe mode still guards it).
-                strikes = 0
-                failure = null
-                mainFailure = null
-                safeState = SafeState.OFF
-                safeReason = null
-                prefs.edit().remove(K_SAFE_STATE).remove(K_SAFE_REASON).remove(K_STRIKES).remove(K_FAILURE)
-                    .remove(K_MAIN_FAILURE).remove(K_MOVED).apply()
-                setPhase(Phase.NOT_INSTALLED)
+                // The runtime is gone. Its safe-mode and failure record goes with it, in
+                // memory first: the edit below drops the same keys from the preference
+                // cache even when its commit, or the rollback's, fails.
+                synchronized(this) {
+                    // A fresh start: even kept plugins get a clean slate (auto safe mode still guards it).
+                    strikes = 0
+                    failure = null
+                    mainFailure = null
+                    safeState = SafeState.OFF
+                    safeReason = null
+                }
+                workspaceRecovery.set(false) { next ->
+                    val edit = prefs.edit().remove(K_SAFE_STATE).remove(K_SAFE_REASON).remove(K_STRIKES).remove(K_FAILURE)
+                        .remove(K_MAIN_FAILURE).remove(K_MOVED)
+                    if (next) edit.putBoolean(K_WORKSPACE_RECOVERY, true) else edit.remove(K_WORKSPACE_RECOVERY)
+                    edit.commit()
+                }
+                synchronized(this) {
+                    baseUrl = null
+                    token = null
+                    error = null
+                    resetting = false
+                    setPhase(Phase.NOT_INSTALLED)
+                }
                 main.post { onDone(null) }
             } catch (e: Throwable) {
                 log("[dsh-app] reset failed: ${e.message}", "system")
                 // Still stopping while the old process hasn't exited (its exit report moves the
                 // phase on); otherwise the runtime is either still whole or gone.
-                setPhase(when {
-                    process != null -> Phase.STOPPING
-                    runCatching { installer.isCurrent() }.getOrDefault(false) -> Phase.INSTALLED
-                    else -> Phase.NOT_INSTALLED
-                })
+                val installed = runCatching { installer.isCurrent() }.getOrDefault(false)
+                synchronized(this) {
+                    resetting = false
+                    setPhase(when {
+                        process != null -> Phase.STOPPING
+                        installed -> Phase.INSTALLED
+                        else -> Phase.NOT_INSTALLED
+                    })
+                }
                 main.post { onDone(e) }
-            } finally {
-                resetting = false
             }
         }
     }
@@ -524,11 +569,9 @@ class RuntimeController private constructor(private val app: Context) : DshProce
 
     /** Puts the main profile's bundle list and settings layer back to the last good run's. */
     fun restoreLastKnownGood(onDone: (Map<String, Any?>?, Throwable?) -> Unit) {
-        if (!runSafe && (phase == Phase.RUNNING || phase == Phase.STARTING)) {
-            return onDone(null, IllegalStateException(AppStrings.get(app, R.string.safe_stop_engine_first)))
-        }
         worker.execute {
             try {
+                checkRecoveryWrite(mainProfileOnly = true)
                 val lkg = LastKnownGood.load(lkgFile) ?: throw IllegalStateException(AppStrings.get(app, R.string.safe_no_good_config))
                 val plan = LastKnownGood.restore(installer.rootfs, lkg.snapshot, SafeMode.stamp(),
                     AppStrings.get(app, R.string.safe_config_missing), AppStrings.get(app, R.string.safe_config_busy))
@@ -563,6 +606,7 @@ class RuntimeController private constructor(private val app: Context) : DshProce
     fun moveAside(paths: List<String>, onDone: (List<Map<String, Any?>>?, Throwable?) -> Unit) {
         worker.execute {
             try {
+                checkRecoveryWrite(mainProfileOnly = false)
                 val moved = SafeMode.moveAside(installer.rootfs, paths, SafeMode.stamp())
                 if (moved.isNotEmpty()) {
                     val record = JSONArray(movedAside() + moved.map { (from, to) -> "$from → $to" })
@@ -573,6 +617,17 @@ class RuntimeController private constructor(private val app: Context) : DshProce
             } catch (e: Throwable) {
                 main.post { onDone(null, e) }
             }
+        }
+    }
+
+    /** Worker-only: another physical launch or disk action cannot interleave with the write. */
+    private fun checkRecoveryWrite(mainProfileOnly: Boolean) {
+        val state = synchronized(this) {
+            RuntimeRecoveryGate.State(phase, process != null, runSafe, resetting)
+        }
+        RuntimeRecoveryGate.check(state, mainProfileOnly) {
+            // onExit can follow an incomplete sweep; inspect the shared captured identities again.
+            DshProcess(app, manifest, installer.rootfs, this).killStrays()
         }
     }
 
@@ -713,9 +768,34 @@ class RuntimeController private constructor(private val app: Context) : DshProce
         emitStatus()
     }
 
+    override fun onStartupFailure(source: DshProcess) {
+        // failStart holds the process monitor; stopProcess takes controller -> process.
+        // Never take the controller monitor synchronously on that callback thread.
+        main.post {
+            synchronized(this) {
+                if (source !== process) return@synchronized
+                source.launchDiagnostics.failed("startFailed")
+                publishStartupFailure(source.startupError, ownerReleased = false)
+            }
+        }
+    }
+
+    /** Local startup errors supersede only the latest card, not the main-profile history or strikes. */
+    private fun publishStartupFailure(message: String?, ownerReleased: Boolean): Boolean {
+        val next = StartupFailureState.of(message, ownerReleased, resetting) ?: return false
+        error = next.error
+        if (failure != null) {
+            failure = null
+            prefs.edit().remove(K_FAILURE).apply()
+        }
+        setPhase(next.phase)
+        return true
+    }
+
     @Synchronized override fun onReady(source: DshProcess, baseUrl: String, token: String) {
         // A late report from a stopped or replaced process.
-        if (source !== process || phase == Phase.STOPPING) return
+        if (source !== process || phase == Phase.STOPPING || source.startupError != null ||
+            stopGen >= runGen || resetting) return
         DshService.cancelStoppedAlert(app)
         this.baseUrl = baseUrl
         this.token = token
@@ -746,26 +826,23 @@ class RuntimeController private constructor(private val app: Context) : DshProce
     @Synchronized override fun onExit(source: DshProcess, code: Int, expected: Boolean) {
         if (source !== process) return
         try {
-            if (!expected && stopGen < runGen) {
-                source.launchDiagnostics.failed(if (source.startupError != null) "startFailed" else "exit:$code")
-            }
+            if (source.startupError != null) source.launchDiagnostics.failed("startFailed")
+            else if (!expected && stopGen < runGen) source.launchDiagnostics.failed("exit:$code")
             process = null
             PhoneControl.get(app).onEngineStopped()
             baseUrl = null
             token = null
             healthyAt = null
             log("[dsh-app] DSH exited with code $code", "system")
-            if (expected || stopGen >= runGen) {
-                if (!resetting && phase == Phase.STOPPING) setPhase(Phase.INSTALLED)
+            if (publishStartupFailure(source.startupError, ownerReleased = true)) {
+                // An accepted failure survives a later STOP. Reset still owns its final state.
+                // Neither a deadline nor a local launch error is evidence against a plugin.
+                if (!resetting) DshService.postStoppedAlert(app)
                 DshService.stopSelfIfRunning(app)
                 return
             }
-            source.startupError?.let {
-                // A local startup failure is neither a user stop nor proof of a
-                // plugin failure; do not count it toward automatic safe mode.
-                error = "start failed: $it"
-                setPhase(Phase.ERROR)
-                DshService.postStoppedAlert(app)
+            if (expected || stopGen >= runGen) {
+                if (!resetting && phase == Phase.STOPPING) setPhase(Phase.INSTALLED)
                 DshService.stopSelfIfRunning(app)
                 return
             }
@@ -863,6 +940,7 @@ class RuntimeController private constructor(private val app: Context) : DshProce
         private const val K_MAIN_FAILURE = "mainFailure"
         private const val K_MOVED = "movedAside"
         private const val K_AUTO_SAFE = "autoSafe"
+        private const val K_WORKSPACE_RECOVERY = "workspaceRecovery"
         private const val K_DIRECT_ENGINE = "directEngine"
         /** Runtime version Direct failed to launch with (see [SafePolicy.directLaunchFailed]). */
         private const val K_DIRECT_FAILED = "directEngineFailedRuntime"
@@ -875,5 +953,44 @@ class RuntimeController private constructor(private val app: Context) : DshProce
             instance ?: synchronized(this) {
                 instance ?: RuntimeController(context.applicationContext).also { instance = it }
             }
+    }
+}
+
+/** The same accepted local failure while cleaning, after exit, or while reset still owns the disk. */
+internal data class StartupFailureState(val error: String, val phase: RuntimeController.Phase) {
+    companion object {
+        fun of(message: String?, ownerReleased: Boolean, resetting: Boolean): StartupFailureState? {
+            if (message == null) return null
+            val phase = if (ownerReleased && !resetting) RuntimeController.Phase.ERROR
+                else RuntimeController.Phase.STOPPING
+            return StartupFailureState("start failed: $message", phase)
+        }
+    }
+}
+
+internal class WorkspaceRecoverySaveException(cause: Throwable? = null) :
+    IllegalStateException("could not save workspace recovery mode; retry before starting", cause)
+
+/** Worker-owned changes; status and launch use only the last successfully committed value. */
+internal class WorkspaceRecoveryMode(initial: Boolean) {
+    @Volatile var enabled: Boolean = initial
+        private set
+
+    fun set(next: Boolean, persist: (Boolean) -> Boolean) {
+        val previous = enabled
+        try {
+            if (!persist(next)) throw WorkspaceRecoverySaveException()
+        } catch (error: Exception) {
+            // SharedPreferences updates its memory cache even when commit returns false.
+            // Best-effort rollback avoids a later unrelated edit persisting that failed change.
+            // A failed rollback still does not change this runtime owner's confirmed value.
+            runCatching { persist(previous) }
+            throw if (error is WorkspaceRecoverySaveException) error else WorkspaceRecoverySaveException(error)
+        }
+        enabled = next
+    }
+
+    fun applyEnvironment(environment: MutableMap<String, String>) {
+        environment["DSH_APP_WORKSPACE_RECOVERY"] = if (enabled) "1" else "0"
     }
 }
