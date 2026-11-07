@@ -102,11 +102,18 @@ void main() {
       expect(cells[1].left - cells[0].right, moreOrLessEquals(SuggestionCardMetrics.gap));
       expect(cells[2].top - cells[0].bottom, moreOrLessEquals(SuggestionCardMetrics.gap));
 
-      // Left-aligned on the card's inset; nothing cut.
+      // The badge on the card's inset, the text beside it; nothing cut.
       for (final s in defaultSuggestions) {
         final card = _card(tester, s.label);
         final title = tester.getRect(find.text(s.label));
-        expect(title.left - card.left, moreOrLessEquals(SuggestionCardMetrics.padH, epsilon: 0.5), reason: s.label);
+        expect(
+          title.left - card.left,
+          moreOrLessEquals(
+            SuggestionCardMetrics.padH + SuggestionCardMetrics.badge + SuggestionCardMetrics.badgeGap,
+            epsilon: 0.5,
+          ),
+          reason: s.label,
+        );
         expect(_cut(tester, s.label), isFalse, reason: '${s.label} is cut');
         expect(_cut(tester, s.detail!), isFalse, reason: '${s.detail} is cut');
       }
@@ -131,7 +138,7 @@ void main() {
       expect(chevron.center.dy, moreOrLessEquals(chip.center.dy, epsilon: 0.5));
     });
 
-    testWidgets('360dp with large text: still two columns, titles wrap, nothing cut', (tester) async {
+    testWidgets('360dp with large text: still two columns, titles only, nothing cut', (tester) async {
       await _pumpChat(tester, size: const Size(360, 780), textScale: 1.3);
       expect(tester.takeException(), isNull);
       final composer = tester.getRect(find.byType(Composer));
@@ -139,9 +146,10 @@ void main() {
       expect(cells[0].left, moreOrLessEquals(composer.left, epsilon: 0.5));
       expect(cells[1].right, moreOrLessEquals(composer.right, epsilon: 0.5));
       expect(cells[0].top, cells[1].top);
+      // A detail would wrap here, so every card keeps just its title.
       for (final s in defaultSuggestions) {
         expect(_cut(tester, s.label), isFalse, reason: s.label);
-        expect(_cut(tester, s.detail!), isFalse, reason: s.detail);
+        expect(find.text(s.detail!), findsNothing, reason: s.detail);
       }
       // The workspace chip grows with the text, like the chips always did.
       expect(_rect(tester, _workspaceLabel).height, greaterThan(EmptyActions.height));
@@ -285,7 +293,6 @@ void main() {
         ChatEmptyState(connected: true, onSuggestion: (_) {}, tips: const ['甲', '乙'], tipStart: 0),
       );
       expect(find.text('甲'), findsOneWidget);
-      expect(find.text('1/2'), findsOneWidget);
       final semantics = tester.getSemantics(find.byType(TipLine));
       expect(semantics.label, '小技巧：甲');
       expect(semantics.hintOverrides?.onTapHint, '下一条小技巧');
@@ -293,10 +300,50 @@ void main() {
       await pumpFrames(tester, 6);
       expect(find.text('乙'), findsOneWidget);
       expect(find.text('甲'), findsNothing);
-      expect(find.text('2/2'), findsOneWidget);
       await tester.tap(find.byType(TipLine));
       await pumpFrames(tester, 6);
       expect(find.text('甲'), findsOneWidget, reason: 'wraps around');
+    });
+
+    testWidgets('tips turn on their own; a tap restarts the wait', (tester) async {
+      await _pumpState(
+        tester,
+        ChatEmptyState(connected: true, onSuggestion: (_) {}, tips: const ['甲', '乙', '丙'], tipStart: 0),
+      );
+      expect(find.text('甲'), findsOneWidget);
+      await tester.pump(tipDwell - const Duration(seconds: 1));
+      expect(find.text('甲'), findsOneWidget, reason: 'not before the dwell');
+      await tester.pump(const Duration(seconds: 1));
+      await pumpFrames(tester, 6);
+      expect(find.text('乙'), findsOneWidget);
+      // A tap shows the next one now and waits a full dwell again.
+      await tester.pump(tipDwell - const Duration(seconds: 2));
+      await tester.tap(find.byType(TipLine));
+      await pumpFrames(tester, 6);
+      expect(find.text('丙'), findsOneWidget);
+      await tester.pump(const Duration(seconds: 3));
+      expect(find.text('丙'), findsOneWidget);
+    });
+
+    testWidgets('with reduced motion the tip stays until tapped', (tester) async {
+      usePhoneView(tester);
+      await tester.pumpWidget(
+        testApp(
+          MediaQuery(
+            data: const MediaQueryData(disableAnimations: true, size: Size(390, 844)),
+            child: Scaffold(
+              body: Center(
+                child: ChatEmptyState(connected: true, onSuggestion: (_) {}, tips: const ['甲', '乙'], tipStart: 0),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pump(tipDwell * 3);
+      expect(find.text('甲'), findsOneWidget);
+      await tester.tap(find.byType(TipLine));
+      await tester.pump();
+      expect(find.text('乙'), findsOneWidget);
     });
 
     testWidgets('the default tips are all there, each fits two lines', (tester) async {

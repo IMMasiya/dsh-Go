@@ -18931,7 +18931,7 @@ class L10nEn extends L10n {
   String get viewSuggestWordCountHint => 'Count words, then run it';
 
   @override
-  String get viewSuggestNodeHint => 'Node.js + TypeScript';
+  String get viewSuggestNodeHint => 'Node.js with tests';
 
   @override
   String get viewSuggestGitHint => 'Rebase or merge?';
@@ -18979,6 +18979,69 @@ class L10nEn extends L10n {
 
   @override
   String get viewTipSettingsSearch => 'Long-press Settings in the sidebar to search settings';
+
+  @override
+  String get viewTipQuickPanel => 'Swipe left on a chat to open the quick panel';
+
+  @override
+  String get viewTipFolderNewChat => 'Long-press a folder in the sidebar to start a chat inside it';
+
+  @override
+  String get viewTipSwitchHost => 'Tap the host name at the sidebar\'s foot to switch to DSH on your computer';
+
+  @override
+  String get viewTipPasteImage => 'Screenshots and stickers from your keyboard can go straight into the composer';
+
+  @override
+  String get viewTipLauncher => 'Long-press the app icon to ask by voice or start a new chat';
+
+  @override
+  String get viewTipPetBubble => 'When the pet pops a bubble, tap it to jump to the chat that\'s waiting';
+
+  @override
+  String get viewTipPetPlay => 'Tap the pet three times to tickle it; long-press to swap it';
+
+  @override
+  String get viewTipActivityStrip => 'While it works, tap the status strip to see this turn\'s full trace';
+
+  @override
+  String get viewTipImageZoom => 'In the image viewer, double-tap or pinch to zoom; long-press to save';
+
+  @override
+  String get viewTipQueuedRecall => 'A queued message can be pulled back into the composer to edit';
+
+  @override
+  String get viewTipKeyboard => 'With a keyboard: Ctrl+Enter sends, Esc twice stops';
+
+  @override
+  String get viewTipShareIn => 'Share text or images to DSH Go from another app to start a new chat with them';
+
+  @override
+  String get viewTipShareSelect => 'When sharing a chat, long-press and slide to pick several messages at once';
+
+  @override
+  String get viewTipChartDrag => 'Drag across a chart in a reply to read each point';
+
+  @override
+  String get viewTipCopyPath => 'Long-press a file in a changes card to copy its path';
+
+  @override
+  String get viewTipCompanion => 'The Companion Room lives in the Switch Host sheet';
+
+  @override
+  String get viewTipAnswerInline => 'When the AI asks you something, just type the answer in the composer';
+
+  @override
+  String get viewTipWallpaper => 'Wallpapers can be dragged, zoomed, blurred and dimmed';
+
+  @override
+  String get viewTipModelHere => 'Pick the model, preset and permissions right here — for this chat only';
+
+  @override
+  String get viewNewChatModel => 'Model';
+
+  @override
+  String get viewNewChatFolder => 'Folder';
 
   @override
   String get viewNewChatPresetTitle => 'Preset for this chat';

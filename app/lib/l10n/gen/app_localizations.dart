@@ -32687,13 +32687,13 @@ abstract class L10n {
   /// No description provided for @viewSuggestNodeHint.
   ///
   /// In zh, this message translates to:
-  /// **'Node.js + TypeScript'**
+  /// **'Node.js 带测试'**
   String get viewSuggestNodeHint;
 
   /// No description provided for @viewSuggestGitHint.
   ///
   /// In zh, this message translates to:
-  /// **'rebase 和 merge 怎么选'**
+  /// **'rebase 和 merge'**
   String get viewSuggestGitHint;
 
   /// No description provided for @viewTipNext.
@@ -32779,6 +32779,132 @@ abstract class L10n {
   /// In zh, this message translates to:
   /// **'长按侧栏的设置键，可以直接搜索设置项'**
   String get viewTipSettingsSearch;
+
+  /// No description provided for @viewTipQuickPanel.
+  ///
+  /// In zh, this message translates to:
+  /// **'在对话页向左滑，打开快捷入口'**
+  String get viewTipQuickPanel;
+
+  /// No description provided for @viewTipFolderNewChat.
+  ///
+  /// In zh, this message translates to:
+  /// **'长按侧栏的文件夹，可以直接在里面开新对话'**
+  String get viewTipFolderNewChat;
+
+  /// No description provided for @viewTipSwitchHost.
+  ///
+  /// In zh, this message translates to:
+  /// **'点侧栏底部的主机名，可以切到电脑上的 DSH'**
+  String get viewTipSwitchHost;
+
+  /// No description provided for @viewTipPasteImage.
+  ///
+  /// In zh, this message translates to:
+  /// **'输入法里的截图和贴图，可以直接贴进输入框'**
+  String get viewTipPasteImage;
+
+  /// No description provided for @viewTipLauncher.
+  ///
+  /// In zh, this message translates to:
+  /// **'长按桌面图标，可以直接语音提问或开新对话'**
+  String get viewTipLauncher;
+
+  /// No description provided for @viewTipPetBubble.
+  ///
+  /// In zh, this message translates to:
+  /// **'宠物冒泡时点一下，就跳到等你的那个对话'**
+  String get viewTipPetBubble;
+
+  /// No description provided for @viewTipPetPlay.
+  ///
+  /// In zh, this message translates to:
+  /// **'连点宠物三下会挠痒痒，长按可以换宠物'**
+  String get viewTipPetPlay;
+
+  /// No description provided for @viewTipActivityStrip.
+  ///
+  /// In zh, this message translates to:
+  /// **'生成时点一下状态条，看这一轮的完整轨迹'**
+  String get viewTipActivityStrip;
+
+  /// No description provided for @viewTipImageZoom.
+  ///
+  /// In zh, this message translates to:
+  /// **'看图时双击放大、双指缩放，长按可以保存'**
+  String get viewTipImageZoom;
+
+  /// No description provided for @viewTipQueuedRecall.
+  ///
+  /// In zh, this message translates to:
+  /// **'排队中的消息可以撤回到输入框再改'**
+  String get viewTipQueuedRecall;
+
+  /// No description provided for @viewTipKeyboard.
+  ///
+  /// In zh, this message translates to:
+  /// **'接了键盘：Ctrl+Enter 发送，连按两次 Esc 停止'**
+  String get viewTipKeyboard;
+
+  /// No description provided for @viewTipShareIn.
+  ///
+  /// In zh, this message translates to:
+  /// **'在别的 App 里分享文字或图片给 DSH Go，会填进新对话'**
+  String get viewTipShareIn;
+
+  /// No description provided for @viewTipShareSelect.
+  ///
+  /// In zh, this message translates to:
+  /// **'分享对话时长按再滑动，可以一次选中多条消息'**
+  String get viewTipShareSelect;
+
+  /// No description provided for @viewTipChartDrag.
+  ///
+  /// In zh, this message translates to:
+  /// **'回复里的图表可以左右拖动，看每个点的数值'**
+  String get viewTipChartDrag;
+
+  /// No description provided for @viewTipCopyPath.
+  ///
+  /// In zh, this message translates to:
+  /// **'改动卡里长按某个文件，可以复制它的路径'**
+  String get viewTipCopyPath;
+
+  /// No description provided for @viewTipCompanion.
+  ///
+  /// In zh, this message translates to:
+  /// **'「伙伴小屋」藏在切换主机的面板里'**
+  String get viewTipCompanion;
+
+  /// No description provided for @viewTipAnswerInline.
+  ///
+  /// In zh, this message translates to:
+  /// **'AI 向你提问时，直接在输入框里打字就是回答'**
+  String get viewTipAnswerInline;
+
+  /// No description provided for @viewTipWallpaper.
+  ///
+  /// In zh, this message translates to:
+  /// **'壁纸可以拖动、缩放，还能调模糊和明暗'**
+  String get viewTipWallpaper;
+
+  /// No description provided for @viewTipModelHere.
+  ///
+  /// In zh, this message translates to:
+  /// **'这里就能换模型、预设和权限，只对这次对话生效'**
+  String get viewTipModelHere;
+
+  /// No description provided for @viewNewChatModel.
+  ///
+  /// In zh, this message translates to:
+  /// **'模型'**
+  String get viewNewChatModel;
+
+  /// No description provided for @viewNewChatFolder.
+  ///
+  /// In zh, this message translates to:
+  /// **'文件夹'**
+  String get viewNewChatFolder;
 
   /// No description provided for @viewNewChatPresetTitle.
   ///

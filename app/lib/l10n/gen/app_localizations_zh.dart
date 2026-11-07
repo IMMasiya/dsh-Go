@@ -17921,10 +17921,10 @@ class L10nZh extends L10n {
   String get viewSuggestWordCountHint => '统计词频并跑一次';
 
   @override
-  String get viewSuggestNodeHint => 'Node.js + TypeScript';
+  String get viewSuggestNodeHint => 'Node.js 带测试';
 
   @override
-  String get viewSuggestGitHint => 'rebase 和 merge 怎么选';
+  String get viewSuggestGitHint => 'rebase 和 merge';
 
   @override
   String get viewTipNext => '下一条小技巧';
@@ -17969,6 +17969,69 @@ class L10nZh extends L10n {
 
   @override
   String get viewTipSettingsSearch => '长按侧栏的设置键，可以直接搜索设置项';
+
+  @override
+  String get viewTipQuickPanel => '在对话页向左滑，打开快捷入口';
+
+  @override
+  String get viewTipFolderNewChat => '长按侧栏的文件夹，可以直接在里面开新对话';
+
+  @override
+  String get viewTipSwitchHost => '点侧栏底部的主机名，可以切到电脑上的 DSH';
+
+  @override
+  String get viewTipPasteImage => '输入法里的截图和贴图，可以直接贴进输入框';
+
+  @override
+  String get viewTipLauncher => '长按桌面图标，可以直接语音提问或开新对话';
+
+  @override
+  String get viewTipPetBubble => '宠物冒泡时点一下，就跳到等你的那个对话';
+
+  @override
+  String get viewTipPetPlay => '连点宠物三下会挠痒痒，长按可以换宠物';
+
+  @override
+  String get viewTipActivityStrip => '生成时点一下状态条，看这一轮的完整轨迹';
+
+  @override
+  String get viewTipImageZoom => '看图时双击放大、双指缩放，长按可以保存';
+
+  @override
+  String get viewTipQueuedRecall => '排队中的消息可以撤回到输入框再改';
+
+  @override
+  String get viewTipKeyboard => '接了键盘：Ctrl+Enter 发送，连按两次 Esc 停止';
+
+  @override
+  String get viewTipShareIn => '在别的 App 里分享文字或图片给 DSH Go，会填进新对话';
+
+  @override
+  String get viewTipShareSelect => '分享对话时长按再滑动，可以一次选中多条消息';
+
+  @override
+  String get viewTipChartDrag => '回复里的图表可以左右拖动，看每个点的数值';
+
+  @override
+  String get viewTipCopyPath => '改动卡里长按某个文件，可以复制它的路径';
+
+  @override
+  String get viewTipCompanion => '「伙伴小屋」藏在切换主机的面板里';
+
+  @override
+  String get viewTipAnswerInline => 'AI 向你提问时，直接在输入框里打字就是回答';
+
+  @override
+  String get viewTipWallpaper => '壁纸可以拖动、缩放，还能调模糊和明暗';
+
+  @override
+  String get viewTipModelHere => '这里就能换模型、预设和权限，只对这次对话生效';
+
+  @override
+  String get viewNewChatModel => '模型';
+
+  @override
+  String get viewNewChatFolder => '文件夹';
 
   @override
   String get viewNewChatPresetTitle => '这次对话的预设';

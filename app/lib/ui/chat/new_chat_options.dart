@@ -1,8 +1,10 @@
-// The new conversation's options on the empty state: the drawer folder it is
-// filed in, the agent preset it starts with and its permissions. One row of
-// quiet chips under the workspace chip; each opens a short sheet. Picks are
-// held in pendingNewChatModesProvider until the first message creates the
-// session (chat_screen.dart `_ensureSession`), then applied before the prompt.
+// The new conversation's options on the empty state: the model, the agent
+// preset it starts with, its permissions and the drawer folder it is filed
+// in. One light row under the workspace chip; each item opens a short sheet.
+// The model pick is the composer's pending model; preset and permission picks
+// are held in pendingNewChatModesProvider. All are applied when the first
+// message creates the session (chat_screen.dart `_ensureSession`), before the
+// prompt.
 
 import 'dart:async';
 
@@ -14,7 +16,7 @@ import '../../l10n/l10n.dart';
 import '../../runtime/runtime_state.dart';
 import '../../state/connection_state.dart';
 import '../../state/features_state.dart';
-import '../../state/models_state.dart' show modelSelectionScopeProvider;
+import '../../state/models_state.dart' show currentModelCatalogProvider, modelSelectionScopeProvider;
 import '../../state/new_chat_modes.dart';
 import '../../state/sessions_state.dart' show currentSessionProvider;
 import '../../state/settings_state.dart';
@@ -25,9 +27,10 @@ import '../features/feature_format.dart';
 import '../features/permission_page.dart' show confirmPermission;
 import '../theme/app_icons.dart';
 import 'empty_actions.dart';
+import 'model_sheet.dart' show effortLabel, modelShortName, showModelSheet;
 
-/// The longest a single option chip may grow before its label is cut.
-const _chipMaxWidth = 220.0;
+/// The longest a single option may grow before its label is cut.
+const _itemMaxWidth = 200.0;
 
 /// Presets a new chat can start with, in the Host's order.
 List<AgentPresetInfo> newChatPresets(List<AgentPresetInfo>? all) => [
@@ -66,18 +69,41 @@ String _readEffectivePermission(WidgetRef ref, PermissionState state) => effecti
   safeMode: ref.read(localRuntimeProvider).status.inSafeMode,
 );
 
-/// The options row. [folder] is the drawer-folder chip when there are
-/// folders; the preset and permission chips appear once the Host has said
-/// what it offers (and only when there is a real choice).
+/// The options row: the model, the agent preset, the permissions and (with
+/// folders) the drawer folder this new chat starts with — light items in one
+/// centred line. The preset and permission items appear once the Host has
+/// said what it offers, and only when there is a real choice; the model item
+/// once the model catalog is current.
 class NewChatOptions extends ConsumerWidget {
-  const NewChatOptions({super.key, this.folder});
+  const NewChatOptions({
+    super.key,
+    required this.model,
+    required this.onModel,
+    this.folderLabel,
+    this.onFolder,
+  });
 
-  final Widget? folder;
+  /// The model picked for the new chat (null: the catalog default).
+  final ModelSelection? model;
+  final ValueChanged<ModelSelection> onModel;
+
+  /// The drawer-folder item, when there are folders.
+  final String? folderLabel;
+  final VoidCallback? onFolder;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final l10n = context.l10n;
     final pending = ref.watch(pendingNewChatModesProvider);
+
+    final catalog = ref.watch(currentModelCatalogProvider);
+    final effectiveModel = model ?? catalog?.defaultSelection;
+    String? modelLabel;
+    if (effectiveModel != null) {
+      final effort = effectiveModel.reasoningEffort;
+      final name = modelShortName(effectiveModel, catalog);
+      modelLabel = effort == null ? name : '$name · ${effortLabel(effort)}';
+    }
 
     final presets = newChatPresets(ref.watch(agentPresetsProvider).value);
     final fallbackPreset = defaultPreset(presets);
@@ -104,42 +130,44 @@ class NewChatOptions extends ConsumerWidget {
       permissionLabel = permissionName(permission, hostName);
     }
 
-    final chips = <Widget>[
-      ?folder,
+    Widget item(Key key, IconData icon, String label, String name, VoidCallback onTap) => ConstrainedBox(
+      key: key,
+      constraints: const BoxConstraints(maxWidth: _itemMaxWidth),
+      child: SetupItem(
+        icon: icon,
+        label: label,
+        semanticsLabel: '$name: $label',
+        onTapHint: l10n.viewNewChatChange,
+        onTap: onTap,
+      ),
+    );
+
+    final items = <Widget>[
+      if (modelLabel != null)
+        item(const ValueKey('new-chat-model'), AppIcons.model, modelLabel, l10n.viewNewChatModel, () {
+          unawaited(showModelSheet(context, current: effectiveModel, onSelected: onModel));
+        }),
       if (presets.length > 1 && shownPreset != null)
-        ConstrainedBox(
-          key: const ValueKey('new-chat-preset'),
-          constraints: const BoxConstraints(maxWidth: _chipMaxWidth),
-          child: QuietChip(
-            icon: presetIcon(shownPreset.id),
-            label: agentPresetName(shownPreset),
-            semanticsLabel: '${l10n.featuresAgentPresets}: ${agentPresetName(shownPreset)}',
-            trailing: AppIcons.expand,
-            onTapHint: l10n.viewNewChatChange,
-            onTap: () => unawaited(_pickPreset(context, ref)),
-          ),
+        item(
+          const ValueKey('new-chat-preset'),
+          presetIcon(shownPreset.id),
+          agentPresetName(shownPreset),
+          l10n.featuresAgentPresets,
+          () => unawaited(_pickPreset(context, ref)),
         ),
       if (permissionLabel != null)
-        ConstrainedBox(
-          key: const ValueKey('new-chat-permission'),
-          constraints: const BoxConstraints(maxWidth: _chipMaxWidth),
-          child: QuietChip(
-            icon: AppIcons.permissions,
-            label: permissionLabel,
-            semanticsLabel: '${l10n.featuresPermissions}: $permissionLabel',
-            trailing: AppIcons.expand,
-            onTapHint: l10n.viewNewChatChange,
-            onTap: () => unawaited(_pickPermission(context, ref)),
-          ),
+        item(
+          const ValueKey('new-chat-permission'),
+          AppIcons.permissions,
+          permissionLabel,
+          l10n.featuresPermissions,
+          () => unawaited(_pickPermission(context, ref)),
         ),
+      if (folderLabel != null && onFolder != null)
+        item(const ValueKey('new-chat-folder'), AppIcons.folder, folderLabel!, l10n.viewNewChatFolder, onFolder!),
     ];
-    if (chips.isEmpty) return const SizedBox.shrink();
-    return Wrap(
-      alignment: WrapAlignment.center,
-      spacing: EmptyActions.gap,
-      runSpacing: EmptyActions.gap,
-      children: chips,
-    );
+    if (items.isEmpty) return const SizedBox.shrink();
+    return Wrap(alignment: WrapAlignment.center, spacing: 2, children: items);
   }
 
   /// A pick belongs to the screen it was made on: the same host/connection

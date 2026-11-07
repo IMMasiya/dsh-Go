@@ -10,6 +10,7 @@
 // The pill and the chips share the height, the side insets and the type
 // metrics, so a state change (connected ↔ failed) swaps them in place.
 
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
@@ -256,16 +257,16 @@ abstract final class SuggestionCardMetrics {
   static const padH = 12.0;
   static const padV = 12.0;
 
-  /// The tinted square behind the glyph.
-  static const badge = 28.0;
-  static const glyph = 16.0;
+  /// The tinted square at the card's start, and the glyph in it.
+  static const badge = 34.0;
+  static const glyph = 18.0;
 
-  /// Badge → title.
-  static const badgeGap = 10.0;
+  /// Badge → text.
+  static const badgeGap = 12.0;
 
-  /// Below this a cell is too narrow for a two-line title at the current text
-  /// size, and the cards go one per row instead.
-  static const minCell = 128.0;
+  /// Below this a cell leaves the text too little room beside the badge, and
+  /// the cards go one per row instead.
+  static const minCell = 150.0;
 }
 
 /// The hairline around a quiet card: the same weight as the chips' fill.
@@ -273,14 +274,26 @@ Color quietCardRim(ThemeData theme) => theme.brightness == Brightness.dark
     ? Colors.white.withValues(alpha: 0.08)
     : theme.colorScheme.onSurface.withValues(alpha: 0.06);
 
-/// One suggestion: a tinted glyph badge, a short title and one line of what
-/// it will do, left-aligned in a quiet card. The whole card is the target.
+/// One suggestion: a tinted glyph badge at the start, and beside it a short
+/// title over one line of what it will do, in a low quiet card. The whole
+/// card is the target.
 class SuggestionCard extends StatelessWidget {
-  const SuggestionCard({super.key, required this.suggestion, required this.onTap, this.enabled = true});
+  const SuggestionCard({
+    super.key,
+    required this.suggestion,
+    required this.onTap,
+    this.enabled = true,
+    this.showDetail = true,
+  });
 
   final ChatSuggestion suggestion;
   final VoidCallback onTap;
   final bool enabled;
+
+  /// The line under the title; the grid turns it off for every card at once
+  /// when one of them would wrap (a narrow phone, large text). Screen readers
+  /// hear it either way.
+  final bool showDetail;
 
   @override
   Widget build(BuildContext context) {
@@ -310,13 +323,11 @@ class SuggestionCard extends StatelessWidget {
                 horizontal: SuggestionCardMetrics.padH,
                 vertical: SuggestionCardMetrics.padV,
               ),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
+              child: Row(
                 children: [
                   DecoratedBox(
                     decoration: ShapeDecoration(
-                      color: tint.withValues(alpha: 0.16),
+                      color: tint.withValues(alpha: 0.14),
                       shape: const SquircleBorder(borderRadius: AppShape.radiusSm),
                     ),
                     child: SizedBox.square(
@@ -324,22 +335,30 @@ class SuggestionCard extends StatelessWidget {
                       child: Icon(suggestion.icon, size: SuggestionCardMetrics.glyph, color: tint),
                     ),
                   ),
-                  const SizedBox(height: SuggestionCardMetrics.badgeGap),
-                  Text(
-                    suggestion.label,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: theme.textTheme.titleSmall?.copyWith(color: theme.colorScheme.onSurface),
-                  ),
-                  if (detail != null) ...[
-                    const SizedBox(height: 2),
-                    Text(
-                      detail,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: theme.textTheme.bodySmall?.copyWith(color: dsh.textTertiary),
+                  const SizedBox(width: SuggestionCardMetrics.badgeGap),
+                  Expanded(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          suggestion.label,
+                          maxLines: showDetail && detail != null ? 1 : 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: theme.textTheme.titleSmall?.copyWith(color: theme.colorScheme.onSurface),
+                        ),
+                        if (showDetail && detail != null) ...[
+                          const SizedBox(height: 1),
+                          Text(
+                            detail,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: theme.textTheme.bodySmall?.copyWith(color: dsh.textTertiary),
+                          ),
+                        ],
+                      ],
                     ),
-                  ],
+                  ),
                 ],
               ),
             ),
@@ -379,6 +398,26 @@ class SuggestionCards extends StatelessWidget {
         const gap = SuggestionCardMetrics.gap;
         final cell = (constraints.maxWidth - gap) / 2;
         final columns = cell >= SuggestionCardMetrics.minCell ? 2 : 1;
+        // The room beside the badge; every detail on one line, or none.
+        final textWidth =
+            (columns == 2 ? cell : constraints.maxWidth) -
+            2 * SuggestionCardMetrics.padH -
+            SuggestionCardMetrics.badge -
+            SuggestionCardMetrics.badgeGap;
+        final detailStyle = Theme.of(context).textTheme.bodySmall;
+        bool fits(String text) {
+          final painter = TextPainter(
+            text: TextSpan(text: text, style: detailStyle),
+            textDirection: Directionality.of(context),
+            textScaler: MediaQuery.textScalerOf(context),
+            maxLines: 1,
+          )..layout(maxWidth: math.max(0, textWidth));
+          final ok = !painter.didExceedMaxLines;
+          painter.dispose();
+          return ok;
+        }
+
+        final showDetails = suggestions.every((s) => s.detail == null || fits(s.detail!));
 
         Widget card(int i) {
           final s = suggestions[i];
@@ -387,7 +426,12 @@ class SuggestionCards extends StatelessWidget {
             child: AnimatedOpacity(
               opacity: enabled ? 1 : 0.5,
               duration: AppMotion.of(context, AppMotion.quick),
-              child: SuggestionCard(suggestion: s, enabled: enabled, onTap: () => onSuggestion(s)),
+              child: SuggestionCard(
+                suggestion: s,
+                enabled: enabled,
+                showDetail: showDetails,
+                onTap: () => onSuggestion(s),
+              ),
             ),
           );
         }
@@ -423,9 +467,13 @@ class SuggestionCards extends StatelessWidget {
 @visibleForTesting
 int Function(int count) tipStart = (count) => math.Random().nextInt(count);
 
-/// One quiet line under the suggestions: a small bulb, one tip about using
-/// DSH Go, and where it is in the list. A tap shows the next tip, rising in
-/// as the old one fades; nothing turns on its own.
+/// How long one tip stays before the next rises in.
+const tipDwell = Duration(seconds: 7);
+
+/// One quiet line under the suggestions: a small bulb and one tip about using
+/// DSH Go. The tips turn on their own every [tipDwell]; a tap shows the next
+/// one at once and starts the wait again. With reduced motion they stay put
+/// until tapped. Screen readers get the tip shown, not a live region.
 class TipLine extends StatefulWidget {
   const TipLine({super.key, required this.tips, this.start});
 
@@ -440,14 +488,44 @@ class TipLine extends StatefulWidget {
 
 class _TipLineState extends State<TipLine> {
   late int _index = widget.tips.isEmpty ? 0 : (widget.start ?? tipStart(widget.tips.length)) % widget.tips.length;
+  Timer? _turn;
+
+  bool get _many => widget.tips.length > 1;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _schedule();
+  }
 
   @override
   void didUpdateWidget(TipLine old) {
     super.didUpdateWidget(old);
     if (widget.tips.isNotEmpty) _index %= widget.tips.length;
+    _schedule();
   }
 
-  void _next() => setState(() => _index = (_index + 1) % widget.tips.length);
+  @override
+  void dispose() {
+    _turn?.cancel();
+    super.dispose();
+  }
+
+  /// (Re)starts the wait for the next tip, or stops it where tips don't turn.
+  void _schedule() {
+    _turn?.cancel();
+    _turn = null;
+    if (!_many || AppMotion.reduced(context)) return;
+    _turn = Timer(tipDwell, () {
+      if (!mounted) return;
+      _next();
+    });
+  }
+
+  void _next() {
+    setState(() => _index = (_index + 1) % widget.tips.length);
+    _schedule();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -457,17 +535,16 @@ class _TipLineState extends State<TipLine> {
     final l10n = context.l10n;
     final tip = widget.tips[_index];
     final style = theme.textTheme.bodySmall?.copyWith(color: dsh.textTertiary);
-    final many = widget.tips.length > 1;
     return Semantics(
-      button: many,
+      button: _many,
       label: l10n.viewTipLabel(tip),
-      onTapHint: many ? l10n.viewTipNext : null,
-      onTap: many ? _next : null,
+      onTapHint: _many ? l10n.viewTipNext : null,
+      onTap: _many ? _next : null,
       excludeSemantics: true,
       child: Material(
         type: MaterialType.transparency,
         child: InkWell(
-          onTap: many ? _next : null,
+          onTap: _many ? _next : null,
           customBorder: const SquircleBorder(borderRadius: AppShape.radiusMd),
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
@@ -482,7 +559,7 @@ class _TipLineState extends State<TipLine> {
                 const SizedBox(width: 8),
                 Expanded(
                   child: AnimatedSwitcher(
-                    duration: AppMotion.of(context, AppMotion.standard),
+                    duration: AppMotion.of(context, AppMotion.slow),
                     switchInCurve: AppMotion.enter,
                     switchOutCurve: AppMotion.exit,
                     layoutBuilder: (current, previous) => Stack(
@@ -492,28 +569,87 @@ class _TipLineState extends State<TipLine> {
                     transitionBuilder: (child, animation) => FadeTransition(
                       opacity: animation,
                       child: SlideTransition(
-                        position: Tween(begin: const Offset(0, 0.35), end: Offset.zero).animate(animation),
+                        position: Tween(begin: const Offset(0, 0.3), end: Offset.zero).animate(animation),
                         child: child,
                       ),
                     ),
                     child: Text(tip, key: ValueKey(_index), maxLines: 2, overflow: TextOverflow.ellipsis, style: style),
                   ),
                 ),
-                if (many) ...[
-                  const SizedBox(width: 8),
-                  // The count and its caret sit on the first line together.
-                  Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        '${_index + 1}/${widget.tips.length}',
-                        style: style?.copyWith(fontFeatures: const [FontFeature.tabularFigures()]),
-                      ),
-                      Icon(AppIcons.disclosure, size: 14, color: dsh.textTertiary),
-                    ],
+                if (_many) ...[
+                  const SizedBox(width: 6),
+                  Padding(
+                    padding: const EdgeInsets.only(top: 1),
+                    child: Icon(AppIcons.disclosure, size: 14, color: dsh.textTertiary),
                   ),
                 ],
               ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// One of the new chat's options, light: a small glyph, its value and a
+/// caret, with no fill until pressed. A row of them reads as this chat's
+/// settings rather than as more buttons.
+class SetupItem extends StatelessWidget {
+  const SetupItem({
+    super.key,
+    required this.icon,
+    required this.label,
+    required this.semanticsLabel,
+    required this.onTap,
+    this.onTapHint,
+  });
+
+  final IconData icon;
+  final String label;
+  final String semanticsLabel;
+  final VoidCallback onTap;
+  final String? onTapHint;
+
+  static const height = 32.0;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final dsh = DshColors.of(context);
+    final muted = theme.colorScheme.onSurfaceVariant;
+    return Semantics(
+      button: true,
+      label: semanticsLabel,
+      onTapHint: onTapHint,
+      onTap: onTap,
+      excludeSemantics: true,
+      child: Material(
+        type: MaterialType.transparency,
+        child: InkWell(
+          onTap: onTap,
+          customBorder: const SquircleBorder(borderRadius: AppShape.radiusSm),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(minHeight: height),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(icon, size: 14, color: muted),
+                  const SizedBox(width: 5),
+                  Flexible(
+                    child: Text(
+                      label,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.bodySmall?.copyWith(fontSize: 13, color: muted),
+                    ),
+                  ),
+                  const SizedBox(width: 2),
+                  Icon(AppIcons.expand, size: 14, color: dsh.textTertiary),
+                ],
+              ),
             ),
           ),
         ),

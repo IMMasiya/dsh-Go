@@ -80,7 +80,6 @@ import 'composer_toast.dart';
 import 'dock/chat_dock.dart';
 import 'dock/dock_stack.dart';
 import 'empty_state.dart';
-import 'empty_actions.dart';
 import 'new_chat_options.dart';
 import 'media/generate_mode.dart';
 import 'media/generate_sheet.dart';
@@ -1625,19 +1624,14 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
                                           : null,
                                       onSuggestion: _onSuggestion,
                                       options: NewChatOptions(
-                                        folder: hasFolders
-                                            ? ConstrainedBox(
-                                                constraints: const BoxConstraints(maxWidth: 220),
-                                                child: QuietChip(
-                                                  icon: AppIcons.folder,
-                                                  label: newFolder == null
-                                                      ? context.l10n.shellFolders
-                                                      : context.l10n.shellFolderLabel(newFolder.name),
-                                                  trailing: AppIcons.expand,
-                                                  onTap: _pickNewChatFolder,
-                                                ),
-                                              )
-                                            : null,
+                                        model: pendingModel,
+                                        onModel: _modelTarget(),
+                                        folderLabel: !hasFolders
+                                            ? null
+                                            : newFolder == null
+                                            ? context.l10n.shellFolders
+                                            : context.l10n.shellFolderLabel(newFolder.name),
+                                        onFolder: hasFolders ? _pickNewChatFolder : null,
                                       ),
                                       workspace: workspace != null
                                           ? workspaceTitle(workspace)

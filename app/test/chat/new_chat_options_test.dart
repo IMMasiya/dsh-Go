@@ -4,6 +4,7 @@
 // did not choose when applying fails.
 
 import 'package:dsh_app/state/connection_state.dart';
+import 'package:dsh_app/state/models_state.dart' show pendingModelProvider;
 import 'package:dsh_app/state/new_chat_modes.dart';
 import 'package:dsh_app/state/features_state.dart' show PermissionState;
 import 'package:dsh_app/ui/chat/chat_screen.dart';
@@ -164,6 +165,30 @@ void main() {
     await pumpFrames(tester, 8);
     expect(host.calls('agentPresets/select'), hasLength(1), reason: 'the preset already applied');
     expect(host.calls('commands/execute'), hasLength(2));
+    expect(harness.controllers['fresh']!.sent, ['你好']);
+  });
+
+  testWidgets('the model is picked right here and goes with the first message', (tester) async {
+    final host = _Host();
+    final harness = ChatHarness(created: 'fresh', newChatCatalogs: true);
+    await _pump(tester, harness, host);
+    expect(find.byKey(const ValueKey('new-chat-model')), findsOneWidget);
+
+    await tester.tap(find.byKey(const ValueKey('new-chat-model')));
+    await pumpFrames(tester, 6);
+    expect(find.text('选择模型'), findsOneWidget);
+    await tester.tap(find.text('V41 Flash'));
+    await pumpFrames(tester, 2);
+    expect(_container(tester).read(pendingModelProvider)?.model, 'deepseek-flash');
+    await tester.tapAt(const Offset(20, 120)); // dismiss the sheet
+    await pumpFrames(tester, 4);
+    expect(
+      find.descendant(of: find.byKey(const ValueKey('new-chat-model')), matching: find.textContaining('V41 Flash')),
+      findsOneWidget,
+    );
+
+    await _send(tester, '你好');
+    expect(harness.controllers['fresh']!.models.single.model, 'deepseek-flash');
     expect(harness.controllers['fresh']!.sent, ['你好']);
   });
 
