@@ -1187,7 +1187,7 @@
     "zzzzzzzzzzz-plugin-operations-log-utf8.diff": {
       "0.2.2-rc.1": {
         "node_modules/@deepseek-ai/dsh-plugin-manager/lib/types/operations.js": {
-          "after": "26d19f89dc5c5909e90e843c249ed65f0ba154a0bbdf851ec7dd0aad54c908af",
+          "after": "c7d72b35b81443a16f6a57f91087ba2f88812d0e5db7b9cdf131d852adcff9c8",
           "before": "5886367b89cde0db08f4f9645afeb6c8a21ecb0be8a3f92d2459b433c9019661"
         }
       }
