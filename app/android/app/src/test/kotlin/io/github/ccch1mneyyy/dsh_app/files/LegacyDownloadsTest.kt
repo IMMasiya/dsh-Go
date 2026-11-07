@@ -123,7 +123,7 @@ class LegacyDownloadsTest {
         }
     }
 
-    @Test fun aHugeExtensionFallsBackToABoundedFullNameBeforeTheNumber() = withDirectory { dir ->
+    @Test fun aFittingHugeExtensionSurvivesEvenWhenNoStemCodePointFits() = withDirectory { dir ->
         val rocket = "\uD83D\uDE80"
         val name = rocket + "." + "x".repeat(250)
         assertEquals(255, name.toByteArray(Charsets.UTF_8).size)
@@ -131,7 +131,7 @@ class LegacyDownloadsTest {
         val saved = ByteArrayInputStream(byteArrayOf(7)).use {
             LegacyDownloads.copy(it, dir, name)
         }
-        assertEquals(rocket + "." + "x".repeat(246) + " (2)", saved.name)
+        assertEquals(" (2)." + "x".repeat(250), saved.name)
         assertEquals(255, saved.name.toByteArray(Charsets.UTF_8).size)
         assertArrayEquals(byteArrayOf(7), saved.readBytes())
         assertEquals("original", File(dir, name).readText())
@@ -182,6 +182,29 @@ class LegacyDownloadsTest {
         assertArrayEquals(byteArrayOf(7), saved.readBytes())
         assertEquals("original", first.readText())
         assertEquals("peer", second.readText())
+    }
+
+    @Test fun aStemCodePointTooWideForTheRemainingBytesDoesNotDiscardTheExtension() = withDirectory { dir ->
+        val name = "\uD83D\uDE80." + "x".repeat(248)
+        File(dir, name).writeText("original")
+        val saved = ByteArrayInputStream(byteArrayOf(8)).use { LegacyDownloads.copy(it, dir, name) }
+        assertEquals(" (2)." + "x".repeat(248), saved.name)
+        assertTrue(saved.name.toByteArray(Charsets.UTF_8).size <= 255)
+        assertArrayEquals(byteArrayOf(8), saved.readBytes())
+        assertEquals("original", File(dir, name).readText())
+    }
+
+    @Test fun anExtensionTooLargeForTheNumberStillUsesTheBoundedFallback() = withDirectory { dir ->
+        val rocket = "\uD83D\uDE80"
+        val name = rocket + "." + "x".repeat(250)
+        File(dir, name).writeText("original")
+        for (number in 2..9) File(dir, " ($number)." + "x".repeat(250)).writeText("peer")
+        val saved = ByteArrayInputStream(byteArrayOf(9)).use { LegacyDownloads.copy(it, dir, name) }
+        assertEquals(rocket + "." + "x".repeat(245) + " (10)", saved.name)
+        assertEquals(255, saved.name.toByteArray(Charsets.UTF_8).size)
+        assertArrayEquals(byteArrayOf(9), saved.readBytes())
+        assertEquals("original", File(dir, name).readText())
+        for (number in 2..9) assertEquals("peer", File(dir, " ($number)." + "x".repeat(250)).readText())
     }
 
     private fun withDirectory(block: (File) -> Unit) {
