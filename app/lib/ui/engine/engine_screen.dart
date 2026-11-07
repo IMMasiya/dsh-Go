@@ -128,7 +128,6 @@ class EngineScreen extends ConsumerWidget {
               ),
             const EngineFailureCard(padding: EdgeInsets.fromLTRB(16, 0, 16, 16)),
             const SafeModeCard(padding: EdgeInsets.fromLTRB(16, 0, 16, 16)),
-            if (!missing) const WorkspaceRecoverySettings(),
             SettingsSection(
               title: l10n.hubEngineStartup,
               children: [
@@ -177,6 +176,8 @@ class EngineScreen extends ConsumerWidget {
                 InfoRow(label: l10n.phoneEngineArchitecture, value: status.abi ?? '—', mono: true),
               ],
             ),
+            // A way around a broken index, next to the other ways out of trouble.
+            if (!missing) const WorkspaceRecoverySettings(),
             if (!missing)
               SettingsSection(
                 children: [

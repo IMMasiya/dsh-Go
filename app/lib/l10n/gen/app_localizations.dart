@@ -26768,6 +26768,12 @@ abstract class L10n {
   /// **'卸载,删除运行环境,释放空间'**
   String get searchKwEngineUninstall;
 
+  /// No description provided for @searchKwWorkspaceRecovery.
+  ///
+  /// In zh, this message translates to:
+  /// **'工作区,索引,救援,对话打不开,对话不见了,恢复对话'**
+  String get searchKwWorkspaceRecovery;
+
   /// No description provided for @searchKwAddProvider.
   ///
   /// In zh, this message translates to:

@@ -107,6 +107,11 @@ void main() {
       describeSettingsError(const DshRemoteException('gateway/internal', 'expected number >= 2')),
       appL10n.stateSettingsMinimum('2'),
     );
+    // A bound that is not a number is never copied into the sentence.
+    expect(
+      describeSettingsError(const DshRemoteException('gateway/internal', privateMessage)),
+      isNot(contains('private-key')),
+    );
     expect(
       describeSettingsError(const DshRemoteException('settings/rejected', 'read-only')),
       appL10n.stateSettingsReadOnly,

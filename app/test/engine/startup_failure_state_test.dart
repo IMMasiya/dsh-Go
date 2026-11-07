@@ -244,8 +244,6 @@ void main() {
     for (final label in [appL10n.phoneEngineStart, appL10n.commonStop, appL10n.phoneEngineRestart]) {
       expect(actionWidget(tester, label).onTap, isNull);
     }
-    final rescue = tester.widget<SettingsTile>(find.byKey(const ValueKey('workspace-recovery')));
-    expect(rescue.onTap, isNull);
     await tester.scrollUntilVisible(
       find.text(appL10n.phoneEngineReset),
       500,
@@ -253,6 +251,9 @@ void main() {
       continuous: true,
       scrollable: find.byType(Scrollable).first,
     );
+    // The rescue row sits just above reset, with the other ways out of trouble.
+    final rescue = tester.widget<SettingsTile>(find.byKey(const ValueKey('workspace-recovery')));
+    expect(rescue.onTap, isNull);
     expect(tileFor(tester, appL10n.phoneEngineReset).onTap, isNull);
     expect(runtime.starts, isEmpty);
     expect(runtime.stops, 0);

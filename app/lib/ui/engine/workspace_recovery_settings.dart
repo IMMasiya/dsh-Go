@@ -36,6 +36,7 @@ class _WorkspaceRecoverySettingsState extends ConsumerState<WorkspaceRecoverySet
       children: [
         SettingsTile(
           key: const ValueKey('workspace-recovery'),
+          spot: Spots.workspaceRecovery,
           title: active ? l10n.workspaceRecoveryDisable : l10n.workspaceRecoveryEnable,
           subtitle: active ? l10n.workspaceRecoveryActive : l10n.workspaceRecoveryHint,
           value: _busy ? Text(l10n.workspaceRecoveryWorking) : null,

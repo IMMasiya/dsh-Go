@@ -141,7 +141,14 @@ void main() {
     return f;
   }
 
+  // The row sits near the foot of the page, below what the list builds up front.
+  Future<void> toBottom(WidgetTester tester) async {
+    await tester.drag(find.byType(Scrollable).first, const Offset(0, -6000));
+    await tester.pumpAndSettle();
+  }
+
   Future<void> open(WidgetTester tester) async {
+    await toBottom(tester);
     expect(
       find.byKey(_tile),
       findsOneWidget,
@@ -340,6 +347,7 @@ void main() {
 
   testWidgets('not installed has no rescue action', (tester) async {
     final f = await pump(tester, runtime: _Runtime(phase: RuntimePhase.notInstalled));
+    await toBottom(tester);
     expect(find.byKey(_tile), findsNothing);
     expect(f.native, isEmpty);
   });

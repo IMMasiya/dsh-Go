@@ -14,9 +14,8 @@ abstract final class EngineControl {
   /// Stops the local DSH, waits for exit, then requests a new start.
   /// An incomplete stop leaves the engine stopping; no new start is requested.
   /// [mode] null keeps the current mode (a restart in safe mode stays in safe mode).
-  static Future<void> restart(ProviderContainer container, {EngineMode? mode}) async {
-    await _restart(container, mode: mode);
-  }
+  /// Returns false when the stop did not finish, so no start was requested.
+  static Future<bool> restart(ProviderContainer container, {EngineMode? mode}) => _restart(container, mode: mode);
 
   static Future<bool> _restart(ProviderContainer container, {EngineMode? mode}) async {
     final runtime = container.read(localRuntimeProvider.notifier);
@@ -59,7 +58,10 @@ abstract final class EngineControl {
 
   /// Stops before renaming home-level files, then starts the safe profile.
   static Future<void> enterSafeMode(ProviderContainer container, {List<String> moveAside = const []}) async {
-    if (moveAside.isEmpty) return restart(container, mode: EngineMode.safe);
+    if (moveAside.isEmpty) {
+      if (!await _restart(container, mode: EngineMode.safe)) throw PlatformException(code: 'runtime_not_stopped');
+      return;
+    }
     if (!await _stopAndWait(container)) throw PlatformException(code: 'runtime_not_stopped');
     await container.read(runtimeBridgeProvider).moveAside(moveAside);
     if (!await _restart(container, mode: EngineMode.safe)) {

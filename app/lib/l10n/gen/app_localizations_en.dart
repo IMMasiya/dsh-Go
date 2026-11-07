@@ -15319,6 +15319,9 @@ class L10nEn extends L10n {
   String get searchKwEngineUninstall => 'uninstall,remove,free space';
 
   @override
+  String get searchKwWorkspaceRecovery => 'workspace,index,recovery,rescue,missing chats,chats won\'t open';
+
+  @override
   String get searchKwAddProvider => 'add model,new provider,custom model,base url';
 
   @override

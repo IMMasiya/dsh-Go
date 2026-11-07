@@ -473,6 +473,17 @@ class RuntimeController private constructor(private val app: Context) : DshProce
                     runtimeLogs.resumeDisk()
                 }
                 if (keep.isNotEmpty()) log("[dsh-app] reset keeps ${keep.joinToString { it.wire }}", "system")
+                // The runtime is gone. Its safe-mode and failure record goes with it, in
+                // memory first: the edit below drops the same keys from the preference
+                // cache even when its commit, or the rollback's, fails.
+                synchronized(this) {
+                    // A fresh start: even kept plugins get a clean slate (auto safe mode still guards it).
+                    strikes = 0
+                    failure = null
+                    mainFailure = null
+                    safeState = SafeState.OFF
+                    safeReason = null
+                }
                 workspaceRecovery.set(false) { next ->
                     val edit = prefs.edit().remove(K_SAFE_STATE).remove(K_SAFE_REASON).remove(K_STRIKES).remove(K_FAILURE)
                         .remove(K_MAIN_FAILURE).remove(K_MOVED)
@@ -483,12 +494,6 @@ class RuntimeController private constructor(private val app: Context) : DshProce
                     baseUrl = null
                     token = null
                     error = null
-                    // A fresh start: even kept plugins get a clean slate (auto safe mode still guards it).
-                    strikes = 0
-                    failure = null
-                    mainFailure = null
-                    safeState = SafeState.OFF
-                    safeReason = null
                     resetting = false
                     setPhase(Phase.NOT_INSTALLED)
                 }

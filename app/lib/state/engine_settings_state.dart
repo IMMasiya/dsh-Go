@@ -388,9 +388,10 @@ class EngineSettingsFailure implements Exception {
   String toString() => message;
 }
 
-String _bound(String raw) {
+/// A schema bound in plain digits, or null when the Host text there is not a number.
+String? _bound(String raw) {
   final n = num.tryParse(raw);
-  if (n == null) return raw;
+  if (n == null || !n.isFinite) return null;
   return n == n.roundToDouble() ? n.round().toString() : n.toString();
 }
 
@@ -408,13 +409,14 @@ String describeSettingsError(Object error) {
     if (engineErrorReason(error) case final reason?) return reason;
     if (message.contains('overridden by a home patch')) return appL10n.stateSettingsFromFile;
     if (RegExp(r'expected number >= (\S+)').firstMatch(message) case final m?) {
-      return appL10n.stateSettingsMinimum(_bound(m[1]!));
+      if (_bound(m[1]!) case final bound?) return appL10n.stateSettingsMinimum(bound);
     }
     if (RegExp(r'expected number <= (\S+)').firstMatch(message) case final m?) {
-      return appL10n.stateSettingsMaximum(_bound(m[1]!));
+      if (_bound(m[1]!) case final bound?) return appL10n.stateSettingsMaximum(bound);
     }
     if (RegExp(r'multiple of (\S+)').firstMatch(message) case final m?) {
-      return m[1] == '1' ? appL10n.stateSettingsInteger : appL10n.stateSettingsMultiple(_bound(m[1]!));
+      if (m[1] == '1') return appL10n.stateSettingsInteger;
+      if (_bound(m[1]!) case final bound?) return appL10n.stateSettingsMultiple(bound);
     }
     if (message.contains('to match regexp')) return appL10n.stateSettingsInvalidFormat;
     if (RegExp(r'string length >= (\d+)').firstMatch(message) case final m?) {
