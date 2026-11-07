@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="ime_diagnostics_consent_title">采集系统输入法证据？</string>
+    <string name="ime_diagnostics_consent_body">本次只读操作仅复用已连接的手机操控权限通道。会短暂限读最多1000条固定输入法标签的现存日志，总预算128 KiB；原始行可能包含隐私信息，也可能早于2分钟。仅保留最近2分钟与本App关联的已知结构化事件、时间、可用时的用户操作标记及固定原因。不导出输入内容、候选词、原始日志或应用清单；不启动屏幕、不注入输入、不授予权限。离开即取消本次请求，已发出的读取结果会丢弃，不关闭共享通道。日志子进程启动后运行最长1.5秒，不包含等待共享通道的时间。部分Android版本（包括Android 12）可能没有相关日志，0事件不代表输入法正常。</string>
+    <string name="ime_diagnostics_consent_cancel">取消</string>
+    <string name="ime_diagnostics_consent_collect">仅采集本次</string>
+</resources>
