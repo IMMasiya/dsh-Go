@@ -6,6 +6,7 @@
 // holds.
 
 import 'dart:async';
+import 'dart:io';
 
 import 'package:dsh_client/dsh_client.dart';
 import 'package:flutter/services.dart';
@@ -22,8 +23,10 @@ import '../state/session_attention_state.dart';
 import '../ui/chat/run_info.dart';
 import 'pet_mood.dart';
 import 'pet_overlay_actions.dart';
+import 'pet_library.dart';
 import 'pet_pack.dart';
 import 'pet_prefs.dart';
+import 'pet_sheets.dart';
 import 'pet_state.dart';
 
 /// The pet's clock (tests drive it by hand).
@@ -32,10 +35,44 @@ final petClockProvider = Provider<DateTime Function()>((ref) => DateTime.now);
 /// Where packs load from (tests swap in a file bundle).
 final petAssetBundleProvider = Provider<AssetBundle>((ref) => rootBundle);
 
-/// One pack, loaded once per id.
+/// One pack, loaded once per id: a brought one from its folder, a built-in
+/// one from the assets.
 final petPackProvider = FutureProvider.family<PetPack, String>(
-  (ref, id) => PetPack.load(id, ref.watch(petAssetBundleProvider)),
+  (ref, id) =>
+      isUserPet(id) ? ref.watch(petLibraryProvider).load(id) : PetPack.load(id, ref.watch(petAssetBundleProvider)),
 );
+
+/// The brought pets, oldest first, for the picker.
+class UserPetsController extends AsyncNotifier<List<PetPack>> {
+  @override
+  Future<List<PetPack>> build() => ref.watch(petLibraryProvider).list();
+
+  /// Checks and unpacks [zip] (pet_library.dart). Returns the pet and whether
+  /// it replaced one of the same id; throws [PetImportException].
+  Future<({PetPack pack, bool replaced})> import(File zip) async {
+    final library = ref.read(petLibraryProvider);
+    final (:id, :replaced) = await library.install(zip);
+    // A pet brought again: nothing of the old one may linger.
+    PetSheets.instance.forget(id);
+    ref.invalidate(petPackProvider(id));
+    final pack = await ref.read(petPackProvider(id).future);
+    state = AsyncData(await library.list());
+    return (pack: pack, replaced: replaced);
+  }
+
+  /// Removes a brought pet; when it was the chosen one, the default comes back.
+  Future<void> remove(String id) async {
+    if (!isUserPet(id)) return;
+    if (ref.read(petPrefsProvider).packId == id) await ref.read(petPrefsProvider.notifier).setPack(defaultPetId);
+    final library = ref.read(petLibraryProvider);
+    await library.remove(id);
+    PetSheets.instance.forget(id);
+    ref.invalidate(petPackProvider(id));
+    state = AsyncData(await library.list());
+  }
+}
+
+final userPetsProvider = AsyncNotifierProvider<UserPetsController, List<PetPack>>(UserPetsController.new);
 
 /// The chosen pack; null for none (or while it loads, or when it is broken).
 final currentPetPackProvider = Provider<PetPack?>((ref) {
