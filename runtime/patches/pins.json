@@ -84,6 +84,14 @@
         }
       }
     },
+    "preset-legacy-delegation.diff": {
+      "0.2.2-rc.1": {
+        "node_modules/@deepseek-ai/dsh-agent-preset/lib/index.js": {
+          "after": "5c8452bdb9954acd98737297512a3d8cb8d4ea534ee6e6ea5c2050aba8cf08e9",
+          "before": "23cd2dd62ac3b27522a2d377e14b5a93f80c2189e733937dcdd02b73a6d3d1da"
+        }
+      }
+    },
     "route-guard.diff": {
       "0.2.1-rc.2": {
         "node_modules/@deepseek-ai/dsh-host-webserver/lib/index.js": {
@@ -443,7 +451,7 @@
       },
       "0.2.2-rc.1": {
         "node_modules/@deepseek-ai/dsh-agent-loop/lib/index.js": {
-          "after": "57e84969b6f73a01acd7702b188323e012e7c6328a29d65133ace4c6bc5da608",
+          "after": "1dde69bfc2270468bda6897a29277f3b3fb3b46c4b1844268f6fd35f563ab514",
           "before": "a6fa8e0c7c90191caf5f4a3bb5c624a86e9845cf3c79d020b71420d0e20ae4c1"
         },
         "node_modules/@deepseek-ai/dsh-schedule/lib/index.js": {
@@ -579,8 +587,8 @@
       },
       "0.2.2-rc.1": {
         "node_modules/@deepseek-ai/dsh-agent-loop/lib/index.js": {
-          "after": "d6ebbb703d0a9236e15f4a9c65d079f70ce67d24c81756f83a3ba1cd8353815b",
-          "before": "57e84969b6f73a01acd7702b188323e012e7c6328a29d65133ace4c6bc5da608"
+          "after": "927efc78e67b6203502892f1ebef4d198c9b95dfc8f8432692ba28f41eb511bf",
+          "before": "1dde69bfc2270468bda6897a29277f3b3fb3b46c4b1844268f6fd35f563ab514"
         },
         "node_modules/@deepseek-ai/dsh-api-session-controller/lib/index.js": {
           "after": "cd7fd35ee3f4cc3c0d8d6121361bf81fc12549ed04be12818ca00ba70ac70353",
@@ -1165,6 +1173,14 @@
         "node_modules/@deepseek-ai/dsh-api-workspace-files/lib/index.js": {
           "after": "8f0f14f1699e177509f421466ad28a5b84f4274610f58b4ab84b536f1e59439a",
           "before": "1cdd038c3fd7ebc60642280a86ef6eadae43ff05a7bf7eb263a2e47d06676869"
+        }
+      }
+    },
+    "zzzzzzzzzzz-plugin-operations-log-utf8.diff": {
+      "0.2.2-rc.1": {
+        "node_modules/@deepseek-ai/dsh-plugin-manager/lib/types/operations.js": {
+          "after": "26d19f89dc5c5909e90e843c249ed65f0ba154a0bbdf851ec7dd0aad54c908af",
+          "before": "5886367b89cde0db08f4f9645afeb6c8a21ecb0be8a3f92d2459b433c9019661"
         }
       }
     },
