@@ -4748,6 +4748,84 @@ abstract class L10n {
   /// **'来自 DSH-TUI'**
   String get botsPetSource;
 
+  /// No description provided for @botsPetImport.
+  ///
+  /// In zh, this message translates to:
+  /// **'导入'**
+  String get botsPetImport;
+
+  /// No description provided for @botsPetImportHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'导入你自己的像素宠物：一个 zip，里面是 pack.json 和序列帧 PNG，格式见仓库里的 docs/design/pets.md。长按导入的宠物可以删除。'**
+  String get botsPetImportHint;
+
+  /// No description provided for @botsPetImportDone.
+  ///
+  /// In zh, this message translates to:
+  /// **'「{name}」来了'**
+  String botsPetImportDone(String name);
+
+  /// No description provided for @botsPetImportReplaced.
+  ///
+  /// In zh, this message translates to:
+  /// **'「{name}」换成了新的'**
+  String botsPetImportReplaced(String name);
+
+  /// No description provided for @botsPetImportNotZip.
+  ///
+  /// In zh, this message translates to:
+  /// **'这不是 zip 文件'**
+  String get botsPetImportNotZip;
+
+  /// No description provided for @botsPetImportNoPack.
+  ///
+  /// In zh, this message translates to:
+  /// **'zip 里没有 pack.json'**
+  String get botsPetImportNoPack;
+
+  /// No description provided for @botsPetImportBadPack.
+  ///
+  /// In zh, this message translates to:
+  /// **'pack.json 有问题：{detail}'**
+  String botsPetImportBadPack(String detail);
+
+  /// No description provided for @botsPetImportMissingSheet.
+  ///
+  /// In zh, this message translates to:
+  /// **'zip 里少了序列帧图 {name}'**
+  String botsPetImportMissingSheet(String name);
+
+  /// No description provided for @botsPetImportBadSheet.
+  ///
+  /// In zh, this message translates to:
+  /// **'序列帧图不对：{name}（要 PNG，每边不超过 4096 像素，每一帧都在图内）'**
+  String botsPetImportBadSheet(String name);
+
+  /// No description provided for @botsPetImportTooLarge.
+  ///
+  /// In zh, this message translates to:
+  /// **'这个宠物包太大了'**
+  String get botsPetImportTooLarge;
+
+  /// No description provided for @botsPetImportStorage.
+  ///
+  /// In zh, this message translates to:
+  /// **'没能存到手机上，再试一次'**
+  String get botsPetImportStorage;
+
+  /// No description provided for @botsPetRemoveTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'删除「{name}」？'**
+  String botsPetRemoveTitle(String name);
+
+  /// No description provided for @botsPetRemoveBody.
+  ///
+  /// In zh, this message translates to:
+  /// **'删除后可以再导入。'**
+  String get botsPetRemoveBody;
+
   /// No description provided for @botsPetSize.
   ///
   /// In zh, this message translates to:
@@ -8405,7 +8483,7 @@ abstract class L10n {
   /// No description provided for @companionPackNoModel.
   ///
   /// In zh, this message translates to:
-  /// **'包里没有找到 Live2D 模型（.model3.json）。'**
+  /// **'包里没有找到 Live2D 模型（.model3.json）。把模型的整个文件夹打成 zip 再试。'**
   String get companionPackNoModel;
 
   /// No description provided for @companionPackUnsafe.
@@ -8945,7 +9023,7 @@ abstract class L10n {
   /// No description provided for @companionSetupBodyBundled.
   ///
   /// In zh, this message translates to:
-  /// **'她就在 App 里，点一下就到，素材只解压到这台手机上。也可以导入别的素材包（zip）。'**
+  /// **'她就在 App 里，点一下就到，素材只解压到这台手机上。也可以导入别的素材包，或者把 Live2D 模型的文件夹打成 zip 直接导入。'**
   String get companionSetupBodyBundled;
 
   /// No description provided for @companionSetupImportOther.

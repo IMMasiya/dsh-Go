@@ -1499,7 +1499,24 @@ class _CompanionPageState extends ConsumerState<CompanionPage> implements Compan
     try {
       final zip = await bring((path) => temp = File(path));
       if (zip == null) return;
-      await store.install(zip.path);
+      try {
+        await store.install(zip.path);
+      } on CompanionPackException catch (error) {
+        // A model on its own needs the runtime, which the pack inside the app
+        // brings: unpack that first, then the model over it.
+        final bundled = error.problem == CompanionPackProblem.noRuntime ? await _bundled() : null;
+        if (bundled == null) rethrow;
+        final runtime = File(
+          '${store.root.parent.path}/companion-runtime-${DateTime.now().microsecondsSinceEpoch}.zip',
+        );
+        try {
+          await runtime.writeAsBytes(bundled, flush: true);
+          await store.install(runtime.path);
+        } finally {
+          if (await runtime.exists()) await runtime.delete();
+        }
+        await store.install(zip.path);
+      }
       final character = await store.character();
       // She's back: the pack inside the app may come by itself again.
       unawaited(SharedPreferences.getInstance().then((p) => p.remove(_packRemovedKey)));

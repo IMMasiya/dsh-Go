@@ -23,6 +23,18 @@
   const MAX_TEXTURE = Number(query.get('maxTexture')) || 4096;
   const REDUCED = query.get('reduceMotion') === '1';
   const DPR_CAP = 2;
+  // Clip masks: the renderer packs them into textures of four channels, at
+  // most 36 different masks in one texture, 32 each when there are several.
+  // A model that needs more (a detailed one: 49 for 大肥鱼 4096) gets more
+  // textures, and past MASK_TEXTURES_MAX each mask drawn as it's needed.
+  const MASKS_IN_ONE = 36;
+  const MASKS_PER_TEXTURE = 32;
+  const MASK_TEXTURES_MAX = 4;
+  // Each mask gets a share of its texture: 256 (the framework's) blurs the
+  // edges of small clipped parts on a detailed model.
+  const MASK_SIZE = Number(query.get('maskSize')) || 1024;
+  // The pack's own files beyond what model3.json lists, at most this many of each kind.
+  const EXTRA_FILES_MAX = 64;
   const SLEEP_AFTER_MS = 3 * 60 * 1000;
 
   const canvas = document.getElementById('stage');
@@ -201,19 +213,43 @@
       if (!this._model) throw new Error('moc');
       // The model matrix already fits the canvas to y −1…1, centred.
 
-      const expressions = [];
-      for (let i = 0; i < setting.getExpressionCount(); i++) {
-        expressions.push(
-          bytes(setting.getExpressionFileName(i)).then((buffer) => {
-            const motion = this.loadExpression(buffer, buffer.byteLength, setting.getExpressionName(i));
-            if (motion) {
-              motion.setFadeInTime(0.25);
-              motion.setFadeOutTime(0.4);
-              this.expressions.set(setting.getExpressionName(i), motion);
-            }
-          }),
-        );
+      // Models made for other apps often carry expressions and motions their
+      // model3.json doesn't list (the other app wires them up itself): the
+      // pack's own .exp3/.motion3 files are offered all the same, by file name.
+      const listed = new Set();
+      const own = (name) => listed.add(new URL(encodePath(name), home).href);
+      for (let i = 0; i < setting.getExpressionCount(); i++) own(setting.getExpressionFileName(i));
+      for (let g = 0; g < setting.getMotionGroupCount(); g++) {
+        const group = setting.getMotionGroupName(g);
+        for (let i = 0; i < setting.getMotionCount(group); i++) own(setting.getMotionFileName(group, i));
       }
+      const files = await packIndex();
+      const extra = (ending) =>
+        files
+          .filter((f) => f.toLowerCase().endsWith(ending) && !listed.has(new URL(encodePath(f), CHARACTER).href))
+          .slice(0, EXTRA_FILES_MAX)
+          .map((f) => ({ url: new URL(encodePath(f), CHARACTER).href, name: f.split('/').pop().slice(0, -ending.length) }));
+
+      const expressions = [];
+      const addExpression = (name, load) =>
+        expressions.push(
+          load
+            .then((buffer) => {
+              if (this.expressions.has(name)) return;
+              const motion = this.loadExpression(buffer, buffer.byteLength, name);
+              if (motion) {
+                motion.setFadeInTime(0.25);
+                motion.setFadeOutTime(0.4);
+                this.expressions.set(name, motion);
+              }
+            })
+            .catch(() => {}),
+        );
+      for (let i = 0; i < setting.getExpressionCount(); i++) {
+        addExpression(setting.getExpressionName(i), bytes(setting.getExpressionFileName(i)));
+      }
+      await Promise.all(expressions);
+      for (const { url, name } of extra('.exp3.json')) addExpression(name, fetchBytes(url));
       await Promise.all(expressions);
 
       // Its own motions, for the AI and the person to call by name. One that
@@ -251,6 +287,22 @@
         }
       }
       await Promise.all(motions);
+      for (const { url, name } of extra('.motion3.json')) {
+        if (this.motions.has(name)) continue;
+        motions.push(
+          fetchBytes(url)
+            .then((buffer) => {
+              const motion = this.loadMotion(buffer, buffer.byteLength, name);
+              if (!motion) return;
+              motion.setEffectIds(blinkIds, lipIds);
+              motion.setFadeInTime(0.35);
+              motion.setFadeOutTime(0.45);
+              this.motions.set(name, motion);
+            })
+            .catch(() => {}),
+        );
+      }
+      await Promise.all(motions);
       // Relaxing a face is fading to an expression with nothing in it.
       const empty = new TextEncoder().encode('{"Type":"Live2D Expression","Parameters":[]}').buffer;
       this.neutral = this.loadExpression(empty, empty.byteLength, 'neutral');
@@ -265,8 +317,13 @@
         this.loadPose(buffer, buffer.byteLength);
       }
 
-      this.createRenderer(canvas.width, canvas.height);
+      const masks = clipSets(this._model);
+      const textures = masks > MASKS_IN_ONE ? Math.ceil(masks / MASKS_PER_TEXTURE) : 1;
+      this.createRenderer(canvas.width, canvas.height, Math.min(textures, MASK_TEXTURES_MAX));
       const renderer = this.getRenderer();
+      if (textures > MASK_TEXTURES_MAX) renderer.useHighPrecisionMask(true);
+      else if (this._model.isUsingMasking()) renderer.setClippingMaskBufferSize(MASK_SIZE);
+      this.masks = { sets: masks, textures: Math.min(textures, MASK_TEXTURES_MAX), precise: renderer.isUsingHighPrecisionMask() };
       renderer.startUp(gl);
       renderer.loadShaders(SHADERS);
       renderer.setIsPremultipliedAlpha(true);
@@ -350,6 +407,32 @@
 
   const encodePath = (path) => path.split('/').map(encodeURIComponent).join('/');
 
+  /**
+   * How many different clip masks a model needs: drawables clipped by the same
+   * set of drawables share one, in any order (as the framework's clipping
+   * manager groups them).
+   */
+  function clipSets(core) {
+    const counts = core.getDrawableMaskCounts();
+    const masks = core.getDrawableMasks();
+    const sets = new Set();
+    for (let i = 0; i < core.getDrawableCount(); i++) {
+      if (counts[i] <= 0) continue;
+      sets.add([...masks[i]].slice(0, counts[i]).sort((a, b) => a - b).join(','));
+    }
+    return sets.size;
+  }
+
+  /** The character's files, as the app listed them when it unpacked the pack. */
+  let packFiles = null;
+  function packIndex() {
+    packFiles ??= fetch(`${CHARACTER}index.json`)
+      .then((response) => (response.ok ? response.json() : []))
+      .then((files) => (Array.isArray(files) ? files.filter((f) => typeof f === 'string') : []))
+      .catch(() => []);
+    return packFiles;
+  }
+
   async function fetchBytes(url) {
     const response = await fetch(url);
     if (!response.ok) throw new Error(`${response.status} ${url}`);
@@ -359,8 +442,7 @@
   /** The configured model file, else the first `*.model3.json` the app lists. */
   async function resolveModelFile(config) {
     if (typeof config.model === 'string') return config.model;
-    const response = await fetch(`${CHARACTER}index.json`);
-    const files = response.ok ? await response.json() : [];
+    const files = await packIndex();
     const found = files.find((f) => f.endsWith('.model3.json'));
     if (!found) throw new Error('model3');
     return found;
@@ -1336,9 +1418,14 @@
   let drawn = 0;
   let fpsAt = performance.now();
   let fps = 0;
+  // Share of the full resolution drawn: steps down while frames can't keep
+  // up with what was asked (an old phone, a heavy model), never below half.
+  let quality = 1;
+  let slowSeconds = 0;
+  let asked = 30;
 
   function resize() {
-    const dpr = Math.min(window.devicePixelRatio || 1, DPR_CAP);
+    const dpr = Math.min(window.devicePixelRatio || 1, DPR_CAP) * quality;
     const width = Math.round(canvas.clientWidth * dpr);
     const height = Math.round(canvas.clientHeight * dpr);
     if (width === canvas.width && height === canvas.height) return;
@@ -1363,6 +1450,7 @@
       home.show !== null ||
       scene.busy();
     const target = life.sleep > 0.9 ? 12 : busy ? 60 : 30;
+    asked = Math.max(asked, target);
     if (ts - last < 1000 / target - 2) return;
     const dt = clamp((ts - last) / 1000, 0.001, 0.05);
     last = ts;
@@ -1380,9 +1468,18 @@
     parallax(dt);
     drawn++;
     if (ts - fpsAt > 1000) {
-      fps = (drawn * 1000) / (ts - fpsAt);
+      // A gap (paused, hidden) says nothing about how fast she draws.
+      if (ts - fpsAt < 2000) {
+        fps = (drawn * 1000) / (ts - fpsAt);
+        slowSeconds = fps < Math.min(asked, 60) * 0.7 ? slowSeconds + 1 : 0;
+        if (slowSeconds >= 3 && quality > 0.5) {
+          quality = Math.max(0.5, quality - 0.15);
+          slowSeconds = 0;
+        }
+      }
       drawn = 0;
       fpsAt = ts;
+      asked = 12;
     }
   }
 
@@ -1534,7 +1631,10 @@
       Fw.CubismFramework.startUp(Object.assign(new Fw.Option(), { logFunction: () => {}, loggingLevel: Fw.LogLevel?.LogLevel_Off ?? 5 }));
       Fw.CubismFramework.initialize();
 
-      const options = { alpha: true, premultipliedAlpha: true, antialias: true, preserveDrawingBuffer: query.get('capture') === '1' };
+      // MSAA costs a lot of fill on a phone (13 → 24 fps on an old one) and
+      // shows little on a dense screen, where the canvas is drawn at 2×.
+      const antialias = query.get('antialias') === '1' || (query.get('antialias') !== '0' && (window.devicePixelRatio || 1) < 1.5);
+      const options = { alpha: true, premultipliedAlpha: true, antialias, preserveDrawingBuffer: query.get('capture') === '1' };
       gl = canvas.getContext('webgl2', options) || canvas.getContext('webgl', options);
       if (!gl) throw new Error('webgl');
       canvas.width = canvas.height = 0;
@@ -1590,6 +1690,8 @@
     // For the verification harness; nothing in the app reads it.
     debug: () => ({
       fps,
+      quality,
+      masks: model?.masks ?? null,
       mood: life.mood,
       emotion: life.emotion,
       patting: life.patting,

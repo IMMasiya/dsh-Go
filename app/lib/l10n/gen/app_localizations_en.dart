@@ -2727,6 +2727,58 @@ class L10nEn extends L10n {
   String get botsPetSource => 'From DSH-TUI';
 
   @override
+  String get botsPetImport => 'Import';
+
+  @override
+  String get botsPetImportHint =>
+      'Bring your own pixel pet: a zip with pack.json and PNG frame sheets; the format is in docs/design/pets.md in the repository. Long-press an imported pet to delete it.';
+
+  @override
+  String botsPetImportDone(String name) {
+    return '$name is here';
+  }
+
+  @override
+  String botsPetImportReplaced(String name) {
+    return '$name was updated';
+  }
+
+  @override
+  String get botsPetImportNotZip => 'That isn\'t a zip file';
+
+  @override
+  String get botsPetImportNoPack => 'There\'s no pack.json in the zip';
+
+  @override
+  String botsPetImportBadPack(String detail) {
+    return 'pack.json has a problem: $detail';
+  }
+
+  @override
+  String botsPetImportMissingSheet(String name) {
+    return 'The zip is missing the sheet $name';
+  }
+
+  @override
+  String botsPetImportBadSheet(String name) {
+    return 'A sheet isn\'t right: $name (PNG, at most 4096 pixels a side, every frame inside it)';
+  }
+
+  @override
+  String get botsPetImportTooLarge => 'This pet pack is too big';
+
+  @override
+  String get botsPetImportStorage => 'Couldn\'t save it on the phone. Try again';
+
+  @override
+  String botsPetRemoveTitle(String name) {
+    return 'Delete $name?';
+  }
+
+  @override
+  String get botsPetRemoveBody => 'You can import it again later.';
+
+  @override
   String get botsPetSize => 'Size';
 
   @override
@@ -4856,7 +4908,8 @@ class L10nEn extends L10n {
       'This pack only has a character and there\'s no runtime on this phone yet. Import a full asset pack first.';
 
   @override
-  String get companionPackNoModel => 'No Live2D model (.model3.json) found in the pack.';
+  String get companionPackNoModel =>
+      'No Live2D model (.model3.json) found in the pack. Zip the model\'s whole folder and try again.';
 
   @override
   String get companionPackUnsafe => 'The pack has files or paths that aren\'t allowed, so it wasn\'t imported.';
@@ -5135,7 +5188,7 @@ class L10nEn extends L10n {
 
   @override
   String get companionSetupBodyBundled =>
-      'She comes with the app: one tap and she\'s here, unpacked only on this phone. You can also import another asset pack (zip).';
+      'She comes with the app: one tap and she\'s here, unpacked only on this phone. You can also import another asset pack, or zip up a Live2D model\'s folder and import that.';
 
   @override
   String get companionSetupImportOther => 'Import another pack';
