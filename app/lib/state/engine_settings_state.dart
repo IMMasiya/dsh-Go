@@ -405,6 +405,7 @@ String describeSettingsError(Object error) {
       case 'credential/rejected':
         return appL10n.stateCredentialFromEnvironment;
     }
+    if (engineErrorReason(error) case final reason?) return reason;
     if (message.contains('overridden by a home patch')) return appL10n.stateSettingsFromFile;
     if (RegExp(r'expected number >= (\S+)').firstMatch(message) case final m?) {
       return appL10n.stateSettingsMinimum(_bound(m[1]!));
@@ -427,7 +428,6 @@ String describeSettingsError(Object error) {
       return appL10n.statePluginDisabled;
     }
     if (message.contains('not volatile')) return appL10n.stateSettingsRestartRequired;
-    if (error.code.startsWith('gateway/') && error.code != 'gateway/internal') return appL10n.stateEngineUnsupported;
     if (message.contains('expected')) return appL10n.stateSettingsInvalidValue;
     return appL10n.stateSettingsRejected;
   }
