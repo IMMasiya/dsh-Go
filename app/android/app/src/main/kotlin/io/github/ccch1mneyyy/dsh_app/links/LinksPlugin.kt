@@ -176,7 +176,7 @@ class LinksPlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandle
 
         /** At most 120 UTF-16 units / 255 UTF-8 bytes, keeping a fitting suffix and whole code points. */
         fun safeName(name: String): String {
-            val cleaned = name.substringAfterLast('/').replace(Regex("[\\u0000-\\u001f\\\\:*?\"<>|]"), "_").trim()
+            val cleaned = wellFormedName(name.substringAfterLast('/')).replace(Regex("[\\u0000-\\u001f\\\\:*?\"<>|]"), "_").trim()
             val safe = cleaned.ifEmpty { "shared" }
             if (safe == "." || safe == "..") return "shared"
             if (safe.length <= 120 && safe.toByteArray(Charsets.UTF_8).size <= 255) return safe
@@ -188,6 +188,20 @@ class LinksPlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandle
                 if (stem.isNotEmpty()) return stem + suffix
             }
             return namePrefix(safe, 120, 255)
+        }
+
+        /** Filesystem encoders need not replace malformed UTF-16 like CharsetEncoder does. */
+        private fun wellFormedName(text: String): String = buildString(text.length) {
+            var index = 0
+            while (index < text.length) {
+                val current = text[index++]
+                if (Character.isHighSurrogate(current)) {
+                    if (index < text.length && Character.isLowSurrogate(text[index])) {
+                        append(current)
+                        append(text[index++])
+                    } else append('\uFFFD')
+                } else append(if (Character.isLowSurrogate(current)) '\uFFFD' else current)
+            }
         }
 
         private fun namePrefix(text: String, maxUnits: Int, maxBytes: Int): String {
