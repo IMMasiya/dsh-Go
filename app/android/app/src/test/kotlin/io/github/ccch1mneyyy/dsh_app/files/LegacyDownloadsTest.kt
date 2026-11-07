@@ -88,6 +88,74 @@ class LegacyDownloadsTest {
         }
     }
 
+    @Test fun longCollisionKeepsItsExtensionAndSkipsAnotherReservedName() = withDirectory { dir ->
+        val name = "a".repeat(251) + ".txt"
+        val original = File(dir, name).apply { writeText("original") }
+        val occupied = File(dir, "a".repeat(247) + " (2).txt").apply { writeText("peer") }
+        val saved = ByteArrayInputStream("new".toByteArray()).use {
+            LegacyDownloads.copy(it, dir, name)
+        }
+        assertEquals("a".repeat(247) + " (3).txt", saved.name)
+        assertEquals(255, saved.name.toByteArray(Charsets.UTF_8).size)
+        assertEquals("new", saved.readText())
+        assertEquals("original", original.readText())
+        assertEquals("peer", occupied.readText())
+    }
+
+    @Test fun longCollisionNamesKeepWholeUtf8CodePoints() {
+        val rocket = "\uD83D\uDE80"
+        val cases = listOf(
+            ("界".repeat(82) + "a" + rocket + ".txt") to ("界".repeat(82) + "a (2).txt"),
+            ("界".repeat(81) + rocket + "bcde.txt") to ("界".repeat(81) + rocket + " (2).txt"),
+            "界".repeat(85) to ("界".repeat(83) + " (2)")
+        )
+        for ((name, expected) in cases) withDirectory { dir ->
+            assertEquals(255, name.toByteArray(Charsets.UTF_8).size)
+            File(dir, name).writeText("original")
+            val saved = ByteArrayInputStream(byteArrayOf(42)).use {
+                LegacyDownloads.copy(it, dir, name)
+            }
+            assertEquals(expected, saved.name)
+            assertTrue(saved.name.toByteArray(Charsets.UTF_8).size <= 255)
+            assertEquals(saved.name, saved.name.toByteArray(Charsets.UTF_8).toString(Charsets.UTF_8))
+            assertArrayEquals(byteArrayOf(42), saved.readBytes())
+            assertEquals("original", File(dir, name).readText())
+        }
+    }
+
+    @Test fun aHugeExtensionFallsBackToABoundedFullNameBeforeTheNumber() = withDirectory { dir ->
+        val rocket = "\uD83D\uDE80"
+        val name = rocket + "." + "x".repeat(250)
+        assertEquals(255, name.toByteArray(Charsets.UTF_8).size)
+        File(dir, name).writeText("original")
+        val saved = ByteArrayInputStream(byteArrayOf(7)).use {
+            LegacyDownloads.copy(it, dir, name)
+        }
+        assertEquals(rocket + "." + "x".repeat(246) + " (2)", saved.name)
+        assertEquals(255, saved.name.toByteArray(Charsets.UTF_8).size)
+        assertArrayEquals(byteArrayOf(7), saved.readBytes())
+        assertEquals("original", File(dir, name).readText())
+    }
+
+    @Test fun growingCollisionNumbersRecomputeTheNameBudget() = withDirectory { dir ->
+        val name = "a".repeat(251) + ".txt"
+        for (number in 1..10) {
+            val saved = ByteArrayInputStream(byteArrayOf(number.toByte())).use {
+                LegacyDownloads.copy(it, dir, name)
+            }
+            val expected = when (number) {
+                1 -> name
+                10 -> "a".repeat(246) + " (10).txt"
+                else -> "a".repeat(247) + " ($number).txt"
+            }
+            assertEquals(expected, saved.name)
+            assertEquals(255, saved.name.toByteArray(Charsets.UTF_8).size)
+            assertArrayEquals(byteArrayOf(number.toByte()), saved.readBytes())
+        }
+        assertEquals(10, dir.listFiles()!!.size)
+        assertArrayEquals(byteArrayOf(1), File(dir, name).readBytes())
+    }
+
     private fun withDirectory(block: (File) -> Unit) {
         val dir = Files.createTempDirectory("legacy-downloads-").toFile()
         try { block(dir) } finally { dir.deleteRecursively() }

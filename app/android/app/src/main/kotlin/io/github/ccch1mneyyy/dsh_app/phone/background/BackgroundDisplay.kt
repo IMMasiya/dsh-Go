@@ -69,7 +69,12 @@ class BackgroundDisplay(
             putBoolean(Proto.DETAIL, detail)
             putBoolean(Proto.WANT_IMAGE, image)
         }
-        val response = channel().execute(request)
+        val response = try {
+            channel().execute(request)
+        } catch (e: Exception) {
+            clearSnapshot()
+            throw e
+        }
         requireObservation(response.getBoolean(Proto.OK), response.getString(Proto.ERROR), response.getString(Proto.ERROR_DETAIL))
         return snapshot(response, markNew = false)
     }
@@ -82,6 +87,7 @@ class BackgroundDisplay(
     }
 
     override fun collect(screenId: String, listElementId: Int, maxPages: Int, until: String?): CollectResult {
+        check(screenId == lastScreenId) { Reasons.of("staleSnapshot") }
         val seen = LinkedHashSet<String>()
         var pages = 0
         var stop = "listEnd"
@@ -128,7 +134,7 @@ class BackgroundDisplay(
         }
         // Explicit element ids are checked by PhoneCore before perform; collect owns its internal scrolls.
         if (action is PhoneAction.Scroll && action.elementId == null && action.screenId != lastScreenId) {
-            return ActionResult(false, Reasons.of("staleSnapshot"))
+            return ActionResult(false, Reasons.of("staleSnapshot"), staleSnapshot = true)
         }
         val request = Bundle().apply {
             putString(Proto.OWNER, "task")

@@ -54,8 +54,29 @@ class BackgroundDisplayTest {
             val result = display.perform(PhoneAction.Scroll(screenId, null, PhoneAction.Direction.DOWN))
             assertFalse(result.ok)
             assertEquals(Reasons.of("staleSnapshot"), result.message)
+            org.junit.Assert.assertTrue(result.staleSnapshot)
         }
         assertStale("b6")
+        assertThrows(IllegalStateException::class.java) {
+            display.requireObservation(false, "treeUnavailable", null)
+        }
+        assertStale("b7")
+    }
+
+    @Test fun collectRejectsAnOldOrInvalidatedScreenBeforeItsFirstObservation() {
+        val display = withLastElement()
+        BackgroundDisplay::class.java.getDeclaredField("currentPackage").apply {
+            isAccessible = true
+            set(display, "example.opened")
+        }
+        fun assertStale(id: String) {
+            val error = assertThrows(IllegalStateException::class.java) {
+                display.collect(id, 1, 2, null)
+            }
+            assertEquals(Reasons.of("staleSnapshot"), error.message)
+        }
+        assertStale("b6")
+        assertNotNull(display.target("b7", 1))
         assertThrows(IllegalStateException::class.java) {
             display.requireObservation(false, "treeUnavailable", null)
         }

@@ -118,4 +118,23 @@ class SystemDispatchTest {
         } finally { reader.shutdownNow() }
     }
 
+    @Test fun appLabelNotificationMayRetireOwnerBeforeSetterReturns() {
+        val tasks = tasks()
+        val original = tasks.activeOwner()!!
+        var armed = true
+        tasks.addListener { snapshot ->
+            if (armed && snapshot.app == "old result") {
+                armed = false
+                tasks.endTask()
+                tasks.begin()
+                tasks.setApp("successor")
+            }
+        }
+        // Publication was valid; the listener can retire it before this method returns.
+        assertTrue(tasks.setAppIfCurrent(original, "old result"))
+        assertFalse(tasks.isCurrent(original))
+        assertFalse(tasks.systemDispatch(original).commitStart())
+        assertEquals("successor", tasks.snapshot().app)
+    }
+
 }

@@ -377,10 +377,13 @@ class BackgroundControl private constructor(context: Context) {
 
     private fun activeChannel(mayStart: () -> Boolean = { true }, explicit: Boolean = false): PrivilegedChannel? {
         if (!mayStart()) return null
+        val selected = mode
+        // Disabling keep does not authorize a different shared-API provider.
+        if ((selected == "shizuku" || selected == "sui") && shizuku.status().provider != selected) return null
         val observed = gate.snapshot
         channel?.takeIf { it.alive() }?.let { gate.connected(observed, it); return it }
         if (keep.enabled && !explicit) return null
-        channel = when (mode) {
+        channel = when (selected) {
             "shizuku", "sui" -> shizuku.connect(mayStart = mayStart)
             "root" -> root.connect()
             "adb" -> adb.connect(mayStart = mayStart)

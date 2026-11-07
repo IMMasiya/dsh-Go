@@ -17,7 +17,7 @@ internal object LegacyDownloads {
         val extension = name.substring(dot)
         var number = 1
         while (true) {
-            val target = File(directory, if (number == 1) name else "$stem ($number)$extension")
+            val target = File(directory, if (number == 1) name else collisionName(stem, extension, number))
             val output = try {
                 Files.newOutputStream(target.toPath(), CREATE_NEW, WRITE)
             } catch (_: FileAlreadyExistsException) {
@@ -38,5 +38,32 @@ internal object LegacyDownloads {
                 throw error
             }
         }
+    }
+
+    /** Adding a collision suffix must not exceed the usual filesystem component byte limit. */
+    private fun collisionName(stem: String, extension: String, number: Int): String {
+        val suffix = " ($number)"
+        val budget = 255 - suffix.length // The numeric suffix is ASCII.
+        val prefix = utf8Prefix(stem, budget - extension.toByteArray(Charsets.UTF_8).size)
+        return if (prefix.isNotEmpty()) "$prefix$suffix$extension"
+            else utf8Prefix(stem + extension, budget) + suffix
+    }
+
+    private fun utf8Prefix(text: String, budget: Int): String {
+        var end = 0
+        var bytes = 0
+        while (end < text.length) {
+            val point = text.codePointAt(end)
+            val size = when {
+                point <= 0x7f -> 1
+                point <= 0x7ff -> 2
+                point <= 0xffff -> 3
+                else -> 4
+            }
+            if (bytes + size > budget) break
+            bytes += size
+            end += Character.charCount(point)
+        }
+        return text.substring(0, end)
     }
 }

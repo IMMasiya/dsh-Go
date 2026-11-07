@@ -300,27 +300,34 @@ class SystemActions(private val app: Context) : SystemApi {
         }
         val exempt = AppVisibility.visible || PhoneRegistry.mainDriver != null || Build.VERSION.SDK_INT < Build.VERSION_CODES.Q
         if (exempt) return SysResult(true, done, pkg, label)
-        postOpen(dispatch, intent, noticeWhat)
+        val noticeRequested = postOpen(dispatch, intent, noticeWhat)
         return SysResult(
             true,
             // l10n:keep agent tool result
-            "$done（DSH 不在前台，系统可能拦下后台弹出的界面；已发通知「$what」，用户点一下就能打开。）",
+            if (noticeRequested) "$done（DSH 不在前台，系统可能拦下后台弹出的界面；已发通知「$what」，用户点一下就能打开。）"
+            // l10n:keep agent tool result
+            else "已尝试$what（DSH 不在前台，系统可能拦下后台弹出的界面；应用通知或打开操作的通知渠道已关闭，无法提供通知点击入口。请用户查看目标界面是否已打开。）",
             pkg,
             label,
         )
     }
 
-    private fun postOpen(dispatch: PhoneTasks.SystemDispatch, intent: Intent, what: String) {
+    private fun postOpen(dispatch: PhoneTasks.SystemDispatch, intent: Intent, what: String): Boolean {
         ensureChannel(CHANNEL_OPEN, AppStrings.get(app, R.string.phone_open_channel), NotificationManager.IMPORTANCE_HIGH)
+        val available = nm.areNotificationsEnabled() &&
+            (Build.VERSION.SDK_INT < Build.VERSION_CODES.O ||
+                nm.getNotificationChannel(CHANNEL_OPEN)?.importance != NotificationManager.IMPORTANCE_NONE)
         val notification = builder(CHANNEL_OPEN)
             .setContentTitle(AppStrings.get(app, R.string.phone_open_notice, what))
             .setContentText(AppStrings.get(app, R.string.phone_tap_open)).setAutoCancel(true)
         // A separate commitment: a stop during startActivity must not publish a new notice.
         // Create the PendingIntent only after commitment; never cancel a potentially reused one.
         if (!dispatch.commitNotice()) throw InterruptedException(PhoneTasks.STOPPED_MESSAGE)
+        if (!available) return false
         val id = ids.incrementAndGet()
         val pi = PendingIntent.getActivity(app, id, intent, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
         nm.notify(TAG, id, notification.setContentIntent(pi).build())
+        return true
     }
 
     override fun notify(title: String, text: String): SysResult {
@@ -329,6 +336,11 @@ class SystemActions(private val app: Context) : SystemApi {
             return SysResult(false, "DSH 没有通知权限，通知发不出去。请用户在系统设置里允许 DSH 发通知。")
         }
         ensureChannel(CHANNEL_NOTIFY, AppStrings.get(app, R.string.phone_reminder_channel), NotificationManager.IMPORTANCE_DEFAULT)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O &&
+            nm.getNotificationChannel(CHANNEL_NOTIFY)?.importance == NotificationManager.IMPORTANCE_NONE) {
+            // l10n:keep agent tool result
+            return SysResult(false, "DSH 的「${AppStrings.get(app, R.string.phone_reminder_channel)}」通知渠道已关闭。请用户在系统设置中开启该渠道后再试。")
+        }
         val open = PendingIntent.getActivity(
             app, 0, Intent(app, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP),
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,

@@ -22,8 +22,14 @@ class SafeMoveAsideTest {
     }
 
     private fun lock(dir: File) {
-        assertTrue(dir.setWritable(false, false))
-        assumeFalse("directory write permissions are not enforced", dir.canWrite())
+        // Create before removing write access; probe the same rename operation as production.
+        // Both paths stay in fixture's root and are removed after permissions are restored.
+        val probe = Files.createTempFile(dir.toPath(), "rename-probe-", ".tmp").toFile()
+        val moved = File(dir, "${probe.name}.renamed")
+        assertTrue(probe.isFile)
+        assertFalse(moved.exists())
+        dir.setWritable(false, false)
+        assumeFalse("this filesystem still permits rename in the read-only directory", probe.renameTo(moved))
     }
 
     @Test fun successfulMovesKeepCollisionAndSelectionRules() = fixture { root ->
@@ -47,8 +53,9 @@ class SafeMoveAsideTest {
         val result = SafeMode.moveAside(root, listOf(path), "test")
         assertTrue(result.moved.isEmpty())
         assertNotNull(result.failure)
-        assertTrue(result.failure!!.message!!.contains(path))
-        assertTrue(result.failure!!.message!!.contains("0 file(s) already moved"))
+        val message = result.failure!!.message!!
+        assertTrue(message.contains(path))
+        assertTrue(message.contains("0 file(s) already moved"))
         assertEquals(path, source.readText())
         assertFalse(File(source.parentFile, "${source.name}.off-test").exists())
     }

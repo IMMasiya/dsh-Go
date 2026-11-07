@@ -475,7 +475,9 @@ object SafeMode {
 
     /** A real directory at [dir]: a symlink or file planted there is removed first (never followed). */
     private fun realDir(dir: File): File {
-        if (Files.isSymbolicLink(dir.toPath()) || (dir.exists() && !dir.isDirectory)) dir.delete()
+        if (Files.isSymbolicLink(dir.toPath()) || (dir.exists() && !dir.isDirectory)) {
+            if (!dir.delete()) throw IOException("could not remove ${dir.path}")
+        }
         if (!dir.isDirectory && !dir.mkdirs()) throw IOException("could not create ${dir.path}")
         return dir
     }

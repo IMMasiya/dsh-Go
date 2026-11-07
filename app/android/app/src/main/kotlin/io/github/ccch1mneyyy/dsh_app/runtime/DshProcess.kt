@@ -57,6 +57,9 @@ class DshProcess(
     @Volatile var startupError: String? = null
         private set
 
+    @Volatile var startupTokenTimedOut: Boolean = false
+        private set
+
     /** The launch command got the phone-control overlay (see [PhoneGuest.launchArg]). */
     var phoneMounted: Boolean = false
         private set
@@ -208,6 +211,7 @@ class DshProcess(
             synchronized(this) {
                 // Token detection and stop share this lock; a late deadline cannot retire either.
                 if (process === p && p.isAlive && !readyReported && !stopping) {
+                    startupTokenTimedOut = true
                     failStart("no startup token received within ${TOKEN_TIMEOUT_MS / 1000}s")
                 }
             }
@@ -255,7 +259,12 @@ class DshProcess(
 
     /** Preserve a startup failure through cleanup and the service's later STOP. */
     @Synchronized fun failStart(message: String) {
-        if (stopping) return
+        if (stopping) {
+            // STOP may have preceded spawn, then setup failed before start's final stop().
+            // Preserve its expected-exit/error facts while cleaning any process now present.
+            stop(expected = false)
+            return
+        }
         startupError = message
         listener.onLog("[dsh-app] start failed: $message", "system")
         listener.onStartupFailure(this)
