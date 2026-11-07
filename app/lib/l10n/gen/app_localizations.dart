@@ -32771,7 +32771,7 @@ abstract class L10n {
   /// No description provided for @viewTipSearch.
   ///
   /// In zh, this message translates to:
-  /// **'搜索对话能搜到聊天内容，不只是标题'**
+  /// **'主机支持时，搜索对话还能搜到聊天内容，不只是标题'**
   String get viewTipSearch;
 
   /// No description provided for @viewTipSettingsSearch.

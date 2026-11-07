@@ -17965,7 +17965,7 @@ class L10nZh extends L10n {
   String get viewTipDrawerMenu => '长按侧栏里的对话，可以置顶、改名或归档';
 
   @override
-  String get viewTipSearch => '搜索对话能搜到聊天内容，不只是标题';
+  String get viewTipSearch => '主机支持时，搜索对话还能搜到聊天内容，不只是标题';
 
   @override
   String get viewTipSettingsSearch => '长按侧栏的设置键，可以直接搜索设置项';

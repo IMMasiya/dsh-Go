@@ -18975,7 +18975,7 @@ class L10nEn extends L10n {
   String get viewTipDrawerMenu => 'Long-press a chat in the sidebar to pin, rename or archive it';
 
   @override
-  String get viewTipSearch => 'Chat search matches message content, not just titles';
+  String get viewTipSearch => 'Where the host supports it, chat search matches message content, not just titles';
 
   @override
   String get viewTipSettingsSearch => 'Long-press Settings in the sidebar to search settings';

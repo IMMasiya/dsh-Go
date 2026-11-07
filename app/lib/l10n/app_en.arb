@@ -5446,7 +5446,7 @@
   "viewTipTitleDetails": "Tap the chat title for changes, files and a terminal",
   "viewTipContextRing": "The ring by Send shows context use — tap it for details",
   "viewTipDrawerMenu": "Long-press a chat in the sidebar to pin, rename or archive it",
-  "viewTipSearch": "Chat search matches message content, not just titles",
+  "viewTipSearch": "Where the host supports it, chat search matches message content, not just titles",
   "viewTipSettingsSearch": "Long-press Settings in the sidebar to search settings",
   "viewTipQuickPanel": "Swipe left on a chat to open the quick panel",
   "viewTipFolderNewChat": "Long-press a folder in the sidebar to start a chat inside it",

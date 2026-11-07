@@ -13,6 +13,7 @@
 import 'dart:async';
 import 'dart:math' as math;
 
+import 'package:flutter/foundation.dart' show listEquals;
 import 'package:flutter/material.dart';
 
 import '../../l10n/l10n.dart';
@@ -473,7 +474,9 @@ const tipDwell = Duration(seconds: 7);
 /// One quiet line under the suggestions: a small bulb and one tip about using
 /// DSH Go. The tips turn on their own every [tipDwell]; a tap shows the next
 /// one at once and starts the wait again. With reduced motion they stay put
-/// until tapped. Screen readers get the tip shown, not a live region.
+/// until tapped. Screen readers get the tip shown, not a live region. Every
+/// tip is shown whole: the line is as tall as the longest tip at this width
+/// and text size, so nothing is cut and nothing below shifts as tips turn.
 class TipLine extends StatefulWidget {
   const TipLine({super.key, required this.tips, this.start});
 
@@ -490,7 +493,29 @@ class _TipLineState extends State<TipLine> {
   late int _index = widget.tips.isEmpty ? 0 : (widget.start ?? tipStart(widget.tips.length)) % widget.tips.length;
   Timer? _turn;
 
+  /// The longest tip's height, for the tips and layout it was measured with.
+  (List<String>, Object, double)? _tallest;
+
   bool get _many => widget.tips.length > 1;
+
+  double _tallestTip(BuildContext context, double width, TextStyle style) {
+    final scaler = MediaQuery.textScalerOf(context);
+    final direction = Directionality.of(context);
+    final layout = (width, style, scaler, direction);
+    if (_tallest case (final tips, final l, final h) when l == layout && listEquals(tips, widget.tips)) return h;
+    var tallest = 0.0;
+    for (final tip in widget.tips) {
+      final painter = TextPainter(
+        text: TextSpan(text: tip, style: style),
+        textDirection: direction,
+        textScaler: scaler,
+      )..layout(maxWidth: width);
+      if (painter.height > tallest) tallest = painter.height;
+      painter.dispose();
+    }
+    _tallest = (List.of(widget.tips), layout, tallest.ceilToDouble());
+    return _tallest!.$3;
+  }
 
   @override
   void didChangeDependencies() {
@@ -534,7 +559,8 @@ class _TipLineState extends State<TipLine> {
     final dsh = DshColors.of(context);
     final l10n = context.l10n;
     final tip = widget.tips[_index];
-    final style = theme.textTheme.bodySmall?.copyWith(color: dsh.textTertiary);
+    final style = DefaultTextStyle.of(context).style
+        .merge(theme.textTheme.bodySmall?.copyWith(color: dsh.textTertiary));
     return Semantics(
       button: _many,
       label: l10n.viewTipLabel(tip),
@@ -558,22 +584,25 @@ class _TipLineState extends State<TipLine> {
                 ),
                 const SizedBox(width: 8),
                 Expanded(
-                  child: AnimatedSwitcher(
-                    duration: AppMotion.of(context, AppMotion.slow),
-                    switchInCurve: AppMotion.enter,
-                    switchOutCurve: AppMotion.exit,
-                    layoutBuilder: (current, previous) => Stack(
-                      alignment: AlignmentDirectional.topStart,
-                      children: [...previous, ?current],
-                    ),
-                    transitionBuilder: (child, animation) => FadeTransition(
-                      opacity: animation,
-                      child: SlideTransition(
-                        position: Tween(begin: const Offset(0, 0.3), end: Offset.zero).animate(animation),
-                        child: child,
+                  child: LayoutBuilder(
+                    builder: (context, constraints) => SizedBox(
+                      height: _tallestTip(context, constraints.maxWidth, style),
+                      child: AnimatedSwitcher(
+                        duration: AppMotion.of(context, AppMotion.slow),
+                        switchInCurve: AppMotion.enter,
+                        switchOutCurve: AppMotion.exit,
+                        layoutBuilder: (current, previous) =>
+                            Stack(alignment: AlignmentDirectional.topStart, children: [...previous, ?current]),
+                        transitionBuilder: (child, animation) => FadeTransition(
+                          opacity: animation,
+                          child: SlideTransition(
+                            position: Tween(begin: const Offset(0, 0.3), end: Offset.zero).animate(animation),
+                            child: child,
+                          ),
+                        ),
+                        child: Text(tip, key: ValueKey(_index), style: style),
                       ),
                     ),
-                    child: Text(tip, key: ValueKey(_index), maxLines: 2, overflow: TextOverflow.ellipsis, style: style),
                   ),
                 ),
                 if (_many) ...[

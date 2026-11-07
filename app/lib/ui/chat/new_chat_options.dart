@@ -36,12 +36,35 @@ List<AgentPresetInfo> newChatPresets(List<AgentPresetInfo>? all) => [
     if (!hiddenNewChatPresets.contains(preset.id)) preset,
 ];
 
-/// The Host's default preset among [presets] (the first when none is marked).
+/// The Host's default preset among [presets] (the first when none is marked,
+/// or when the marked one is hidden from new chats).
 AgentPresetInfo? defaultPreset(List<AgentPresetInfo> presets) {
   for (final preset in presets) {
     if (preset.isDefault) return preset;
   }
   return presets.isEmpty ? null : presets.first;
+}
+
+/// The preset to apply to a new session for [picked] (null: the offered
+/// default), given the Host's whole list [all]. A pick the Host no longer
+/// offers falls back to the default, as its chip already shows. When the
+/// Host's own default is a hidden preset, the offered default is applied
+/// explicitly: the session would otherwise start in the hidden one. Null
+/// keeps the Host default.
+String? newChatPresetToApply(List<AgentPresetInfo>? all, String? picked) {
+  if (all == null) return picked;
+  final presets = newChatPresets(all);
+  if (picked != null && presets.any((p) => p.id == picked && p.broken == null)) return picked;
+  final hiddenDefault = all.any((p) => p.isDefault && hiddenNewChatPresets.contains(p.id));
+  final fallback = defaultPreset(presets);
+  return hiddenDefault && fallback != null && fallback.broken == null ? fallback.id : null;
+}
+
+/// The permission to apply to a new session for [picked]: null (keep the
+/// effective default) when nothing is picked or the Host no longer offers it.
+String? newChatPermissionToApply(PermissionState? state, String? picked) {
+  if (picked == null || state == null) return picked;
+  return state.options.any((o) => o.value == picked) ? picked : null;
 }
 
 IconData presetIcon(String id) => switch (id) {
@@ -56,8 +79,12 @@ IconData presetIcon(String id) => switch (id) {
 /// 自动批准命令 on (and outside safe mode) session creation switches to full
 /// access (sessions_state.dart `createForConnection`); elsewhere the Host's
 /// default for new sessions.
-String effectiveNewChatPermission(PermissionState state, {required bool local, required bool autoApprove, required bool safeMode}) =>
-    local && autoApprove && !safeMode ? 'danger-full-access' : state.hostDefault;
+String effectiveNewChatPermission(
+  PermissionState state, {
+  required bool local,
+  required bool autoApprove,
+  required bool safeMode,
+}) => local && autoApprove && !safeMode ? 'danger-full-access' : state.hostDefault;
 
 /// [effectiveNewChatPermission] for this screen, read once (callbacks).
 String _readEffectivePermission(WidgetRef ref, PermissionState state) => effectiveNewChatPermission(
@@ -87,7 +114,7 @@ class NewChatOptions extends ConsumerWidget {
     final fallbackPreset = defaultPreset(presets);
     AgentPresetInfo? shownPreset = fallbackPreset;
     for (final preset in presets) {
-      if (preset.id == pending.preset) shownPreset = preset;
+      if (preset.id == pending.preset && preset.broken == null) shownPreset = preset;
     }
 
     final permissions = ref.watch(permissionStateProvider(null)).value;
@@ -148,8 +175,7 @@ class NewChatOptions extends ConsumerWidget {
   /// and still no session.
   static bool Function() _owner(WidgetRef ref) {
     final scope = ref.read(modelSelectionScopeProvider);
-    return () =>
-        identical(ref.read(modelSelectionScopeProvider), scope) && ref.read(currentSessionProvider) == null;
+    return () => identical(ref.read(modelSelectionScopeProvider), scope) && ref.read(currentSessionProvider) == null;
   }
 
   Future<void> _pickPreset(BuildContext context, WidgetRef ref) async {
@@ -177,7 +203,8 @@ class NewChatOptions extends ConsumerWidget {
         selected: selected,
       ),
     );
-    if (pick == null || !current() || !context.mounted) return;
+    // The options may be gone by now (a session opened): `ref` with them.
+    if (pick == null || !context.mounted || !current()) return;
     ref.read(pendingNewChatModesProvider.notifier).selectPreset(pick == fallback.id ? null : pick);
   }
 
@@ -207,10 +234,10 @@ class NewChatOptions extends ConsumerWidget {
         selected: selected,
       ),
     );
-    if (pick == null || pick == selected || !current() || !context.mounted) return;
+    if (pick == null || pick == selected || !context.mounted || !current()) return;
     // Full access and auto review ask once, as on the 权限 page.
     if (pick != fallback && !await confirmPermission(context, pick)) return;
-    if (!current()) return;
+    if (!context.mounted || !current()) return;
     ref.read(pendingNewChatModesProvider.notifier).selectPermission(pick == fallback ? null : pick);
   }
 }
