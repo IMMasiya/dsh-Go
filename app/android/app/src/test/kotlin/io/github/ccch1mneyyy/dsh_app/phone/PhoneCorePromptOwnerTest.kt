@@ -58,6 +58,9 @@ class PhoneCorePromptOwnerTest {
         var opens = 0
         var observing: () -> Unit = {}
         var observedText = "Example"
+        var collects = 0
+        var collecting: () -> Unit = {}
+        var collectScreen = true
         val actions = mutableListOf<PhoneAction>()
         override fun availability() = Availability(true)
         override fun foregroundPackage() = "example.app"
@@ -66,7 +69,13 @@ class PhoneCorePromptOwnerTest {
             observing()
             return ScreenSnapshot("${screen.prefix}1", observedText, "Example", "example.app")
         }
-        override fun collect(screenId: String, listElementId: Int, maxPages: Int, until: String?) = error("unexpected collect")
+        override fun collect(screenId: String, listElementId: Int, maxPages: Int, until: String?): CollectResult {
+            collects++
+            collecting()
+            val snapshot = if (collectScreen) ScreenSnapshot("${screen.prefix}2", "late collected screen",
+                "Example", "example.app", image = byteArrayOf(1, 2, 3), imageMime = "image/png") else null
+            return CollectResult(listOf("late collected item"), 1, "pageLimit", snapshot)
+        }
         override fun target(screenId: String, elementId: Int) = TargetInfo(screenId, elementId,
             "按钮", "发送", "example.app", "Example", false, false, false)
         override fun perform(action: PhoneAction): ActionResult { actions += action; writes++; return ActionResult(true, "done") }
@@ -88,6 +97,58 @@ class PhoneCorePromptOwnerTest {
     private fun openUrl() = core.call(PhoneToolCatalog.OPEN, mapOf("url" to "https://example.com"))
     private fun shareIntent() = core.call(PhoneToolCatalog.INTENT,
         mapOf("kind" to "share", "app" to "example.app", "text" to "example"))
+
+    private fun collectCall(screen: String) = core.call(PhoneToolCatalog.COLLECT,
+        mapOf("screen" to screen, "list" to 1, "max_pages" to 3))
+
+    private fun assertCollectStopped(result: ToolOutput) {
+        assertTrue(result.text, result.isError)
+        assertTrue(result.text.startsWith(PhoneTasks.STOPPED_MESSAGE))
+        assertFalse(result.text.contains("late collected item"))
+        assertFalse(result.text.contains("late collected screen"))
+        assertNull(result.image)
+        assertEquals("stopped", core.log.last()?.decision)
+    }
+
+    @Test fun aStopDuringCollectDiscardsItsPartialItemsAndScreen() {
+        background.collecting = { tasks.stop("stopped while collecting") }
+        assertCollectStopped(collectCall("b1"))
+        assertEquals(1, background.collects)
+        assertTrue(tasks.isStopped())
+    }
+
+    @Test fun aReplacedCollectCannotPublishItsContentToTheSuccessor() {
+        main.collecting = { replace(); tasks.setApp("successor") }
+        assertCollectStopped(collectCall("s1"))
+        assertEquals(1, main.collects)
+        assertEquals("successor", tasks.snapshot().app)
+        assertTrue(tasks.isActive)
+        assertFalse(tasks.isStopped())
+    }
+
+    @Test fun clearingAStopDoesNotReviveTheOldCollectResult() {
+        background.collecting = { tasks.stop("stop"); tasks.clearStop(); tasks.begin() }
+        assertCollectStopped(collectCall("b1"))
+        assertEquals(1, background.collects)
+        assertTrue(tasks.isActive)
+        assertFalse(tasks.isStopped())
+    }
+
+    @Test fun aCurrentCollectKeepsItsItemsAndOptionalScreen() {
+        val mainResult = collectCall("s1")
+        assertFalse(mainResult.text, mainResult.isError)
+        assertTrue(mainResult.text.contains("late collected item"))
+        assertTrue(mainResult.text.contains("late collected screen"))
+        assertArrayEquals(byteArrayOf(1, 2, 3), mainResult.image)
+        assertEquals("ok", core.log.last()?.decision)
+        background.collectScreen = false
+        val backgroundResult = collectCall("b1")
+        assertFalse(backgroundResult.text, backgroundResult.isError)
+        assertTrue(backgroundResult.text.contains("late collected item"))
+        assertNull(backgroundResult.image)
+        assertEquals(1, main.collects)
+        assertEquals(1, background.collects)
+    }
 
     @Test fun replacedTaskCannotLaunchAnApplicationAfterLookupReturns() {
         lookup = ::replace

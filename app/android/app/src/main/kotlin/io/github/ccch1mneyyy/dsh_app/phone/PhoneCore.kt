@@ -437,6 +437,7 @@ class PhoneCore(
         say(ui.get("phone_reading_list", "DSH 正在滚动读取列表")) // l10n:keep test default
         if (!current(owner)) return stoppedOut(summary)
         val r = driver.collect(sid!!, list, pages, a.str("until"))
+        if (!current(owner)) return stoppedOut(summary)
         val screen = r.screen?.let { safety.filterScreen(it) }
         val text = buildString {
             // l10n:keep agent tool result
