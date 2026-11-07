@@ -31,7 +31,11 @@ class _Sessions extends SessionsController {
   Future<List<SessionSummary>> build() async => const [];
 
   @override
-  Future<String> create({bool autoApprove = true}) async {
+  Future<String> createForConnection(
+    HostConnection conn, {
+    required bool Function() isCurrent,
+    bool autoApprove = true,
+  }) async {
     creates++;
     return 'new-1';
   }
