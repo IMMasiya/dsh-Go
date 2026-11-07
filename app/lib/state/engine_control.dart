@@ -32,6 +32,16 @@ abstract final class EngineControl {
     return true;
   }
 
+  /// Changes the local index mode only after stopping, then requests a start
+  /// in the existing normal/safe profile. A rejected stop or write cannot start.
+  static Future<void> setWorkspaceRecovery(ProviderContainer container, {required bool enabled}) async {
+    if (!await _stopAndWait(container)) throw PlatformException(code: 'runtime_not_stopped');
+    await container.read(runtimeBridgeProvider).setWorkspaceRecovery(enabled);
+    if (!await _restart(container)) {
+      throw PlatformException(code: 'runtime_not_stopped_after_recovery');
+    }
+  }
+
   /// Starts the engine unless it is already starting or running.
   static Future<void> ensureStarted(ProviderContainer container) async {
     final phase = container.read(localRuntimeProvider).status.phase;

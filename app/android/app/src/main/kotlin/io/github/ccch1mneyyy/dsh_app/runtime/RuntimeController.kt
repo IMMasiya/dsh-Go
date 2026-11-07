@@ -47,6 +47,7 @@ class RuntimeController private constructor(private val app: Context) : DshProce
     )
     private val lkgFile = File(app.filesDir, "runtime/lkg/lkg.json")
     private val prefs = app.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+    private val workspaceRecovery = WorkspaceRecoveryMode(prefs.getBoolean(K_WORKSPACE_RECOVERY, false))
 
     val manifest: RuntimeManifest by lazy { RuntimeManifest.load(app) }
     private val installer by lazy { RuntimeInstaller(app, manifest, ::note) }
@@ -133,6 +134,7 @@ class RuntimeController private constructor(private val app: Context) : DshProce
         "safeReason" to safeReason,
         "strikes" to strikes,
         "autoSafe" to autoSafe(),
+        "workspaceRecovery" to workspaceRecovery.enabled,
         "failure" to failure?.toMap(),
         "mainFailure" to mainFailure?.toMap(),
         "healthyAt" to healthyAt,
@@ -168,6 +170,28 @@ class RuntimeController private constructor(private val app: Context) : DshProce
         check(!enabled || directEngineAvailable()) { "this bundled runtime does not support direct launch" }
         prefs.edit().putBoolean(K_DIRECT_ENGINE, enabled).remove(K_DIRECT_FAILED).apply()
         emitStatus()
+    }
+
+    /** Selects a separate workspace index for the next launch; never opens either index here. */
+    fun setWorkspaceRecovery(enabled: Boolean, onDone: (Throwable?) -> Unit) {
+        worker.execute {
+            try {
+                try {
+                    checkRecoveryWrite(mainProfileOnly = false)
+                } catch (e: Exception) {
+                    // A failed observation is not proof that the old writer has stopped.
+                    throw if (e is RuntimeNotStoppedException) e
+                    else RuntimeNotStoppedException().apply { initCause(e) }
+                }
+                workspaceRecovery.set(enabled) { next ->
+                    prefs.edit().putBoolean(K_WORKSPACE_RECOVERY, next).commit()
+                }
+                emitStatus()
+                main.post { onDone(null) }
+            } catch (e: Throwable) {
+                main.post { onDone(e) }
+            }
+        }
     }
 
     /** While a process is up: its mode; otherwise the mode the next start will use. */
@@ -325,6 +349,7 @@ class RuntimeController private constructor(private val app: Context) : DshProce
                 val env = LinkedHashMap<String, String>()
                 env["TZ"] = java.util.TimeZone.getDefault().id
                 env.putAll(pendingEnv)
+                workspaceRecovery.applyEnvironment(env)
                 PerformancePolicy.applyEngineEnvironment(app, env, manifest.launchArgv, manifest.launchEnv)
                 if (safe) {
                     SafeMode.prepare(installer.rootfs, briefing())
@@ -451,8 +476,12 @@ class RuntimeController private constructor(private val app: Context) : DshProce
                 mainFailure = null
                 safeState = SafeState.OFF
                 safeReason = null
-                prefs.edit().remove(K_SAFE_STATE).remove(K_SAFE_REASON).remove(K_STRIKES).remove(K_FAILURE)
-                    .remove(K_MAIN_FAILURE).remove(K_MOVED).apply()
+                workspaceRecovery.set(false) { next ->
+                    val edit = prefs.edit().remove(K_SAFE_STATE).remove(K_SAFE_REASON).remove(K_STRIKES).remove(K_FAILURE)
+                        .remove(K_MAIN_FAILURE).remove(K_MOVED)
+                    if (next) edit.putBoolean(K_WORKSPACE_RECOVERY, true) else edit.remove(K_WORKSPACE_RECOVERY)
+                    edit.commit()
+                }
                 setPhase(Phase.NOT_INSTALLED)
                 main.post { onDone(null) }
             } catch (e: Throwable) {
@@ -873,6 +902,7 @@ class RuntimeController private constructor(private val app: Context) : DshProce
         private const val K_MAIN_FAILURE = "mainFailure"
         private const val K_MOVED = "movedAside"
         private const val K_AUTO_SAFE = "autoSafe"
+        private const val K_WORKSPACE_RECOVERY = "workspaceRecovery"
         private const val K_DIRECT_ENGINE = "directEngine"
         /** Runtime version Direct failed to launch with (see [SafePolicy.directLaunchFailed]). */
         private const val K_DIRECT_FAILED = "directEngineFailedRuntime"
@@ -885,5 +915,32 @@ class RuntimeController private constructor(private val app: Context) : DshProce
             instance ?: synchronized(this) {
                 instance ?: RuntimeController(context.applicationContext).also { instance = it }
             }
+    }
+}
+
+internal class WorkspaceRecoverySaveException(cause: Throwable? = null) :
+    IllegalStateException("could not save workspace recovery mode; retry before starting", cause)
+
+/** Worker-owned changes; status and launch use only the last successfully committed value. */
+internal class WorkspaceRecoveryMode(initial: Boolean) {
+    @Volatile var enabled: Boolean = initial
+        private set
+
+    fun set(next: Boolean, persist: (Boolean) -> Boolean) {
+        val previous = enabled
+        try {
+            if (!persist(next)) throw WorkspaceRecoverySaveException()
+        } catch (error: Exception) {
+            // SharedPreferences updates its memory cache even when commit returns false.
+            // Best-effort rollback avoids a later unrelated edit persisting that failed change.
+            // A failed rollback still does not change this runtime owner's confirmed value.
+            runCatching { persist(previous) }
+            throw if (error is WorkspaceRecoverySaveException) error else WorkspaceRecoverySaveException(error)
+        }
+        enabled = next
+    }
+
+    fun applyEnvironment(environment: MutableMap<String, String>) {
+        environment["DSH_APP_WORKSPACE_RECOVERY"] = if (enabled) "1" else "0"
     }
 }

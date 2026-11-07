@@ -139,6 +139,18 @@ class RuntimePlugin :
                 controller.setAutoSafe(call.argument<Boolean>("enabled") != false)
                 result.success(null)
             }
+            "setWorkspaceRecovery" -> {
+                val enabled = (call.arguments as? Map<*, *>)?.get("enabled") as? Boolean
+                if (enabled == null) result.error("workspace_recovery_invalid", "enabled must be a boolean", null)
+                else controller.setWorkspaceRecovery(enabled) { error ->
+                    if (error == null) result.success(null)
+                    else result.error(
+                        if (error is RuntimeNotStoppedException) "runtime_not_stopped" else "workspace_recovery_save_failed",
+                        error.message,
+                        null,
+                    )
+                }
+            }
             "setDirectEngine" -> {
                 try {
                     controller.setDirectEngine(call.argument<Boolean>("enabled") == true)

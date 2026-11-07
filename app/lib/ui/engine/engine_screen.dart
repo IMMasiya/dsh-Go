@@ -26,6 +26,7 @@ import '../web/local_web_screen.dart';
 import 'engine_status.dart';
 import 'local_uninstall.dart';
 import 'log_view.dart';
+import 'workspace_recovery_settings.dart';
 
 /// `rN-dsh…-HASH` → `rN · HASH8`; anything else is shown as is.
 String shortRuntimeVersion(String? v) {
@@ -120,6 +121,7 @@ class EngineScreen extends ConsumerWidget {
               ),
             const EngineFailureCard(padding: EdgeInsets.fromLTRB(16, 0, 16, 16)),
             const SafeModeCard(padding: EdgeInsets.fromLTRB(16, 0, 16, 16)),
+            if (!missing) const WorkspaceRecoverySettings(),
             SettingsSection(
               title: l10n.hubEngineStartup,
               children: [
@@ -135,7 +137,11 @@ class EngineScreen extends ConsumerWidget {
             if (!missing)
               Padding(
                 padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
-                child: TerminalCard(title: l10n.phoneEngineLogs, lines: ref.watch(localRuntimeLogsProvider), height: logHeight),
+                child: TerminalCard(
+                  title: l10n.phoneEngineLogs,
+                  lines: ref.watch(localRuntimeLogsProvider),
+                  height: logHeight,
+                ),
               ),
             // Their home is 设置; the way in from here keeps the name.
             SettingsSection(
