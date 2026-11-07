@@ -178,6 +178,7 @@ class LinksPlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandle
         fun safeName(name: String): String {
             val cleaned = name.substringAfterLast('/').replace(Regex("[\\u0000-\\u001f\\\\:*?\"<>|]"), "_").trim()
             val safe = cleaned.ifEmpty { "shared" }
+            if (safe == "." || safe == "..") return "shared"
             if (safe.length <= 120 && safe.toByteArray(Charsets.UTF_8).size <= 255) return safe
             val dot = safe.lastIndexOf('.')
             val suffix = if (dot > 0 && dot < safe.lastIndex) safe.substring(dot) else ""
