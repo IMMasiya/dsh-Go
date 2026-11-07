@@ -1,6 +1,7 @@
 package io.github.ccch1mneyyy.dsh_app.phone
 
 import java.time.ZoneId
+import java.util.concurrent.atomic.AtomicReference
 
 enum class A11yState { CONNECTED, ENABLED_NOT_CONNECTED, DISABLED }
 
@@ -68,15 +69,16 @@ class PhoneCore(
 
     fun call(name: String, args: Map<String, Any?>): ToolOutput {
         // In flight from here until the result goes back: no turn ends while a call runs (PhoneTasks.finish).
+        val owner = AtomicReference<PhoneTasks.Owner?>(null)
         tasks.callStarted()
         try {
-            return runCall(name, args)
+            return runCall(name, args, owner)
         } finally {
-            tasks.callEnded()
+            tasks.callEnded(owner.get())
         }
     }
 
-    private fun runCall(name: String, args: Map<String, Any?>): ToolOutput {
+    private fun runCall(name: String, args: Map<String, Any?>, callOwner: AtomicReference<PhoneTasks.Owner?>): ToolOutput {
         if (name !in PhoneToolCatalog.names) {
             // l10n:keep agent tool result
             return ToolOutput("没有这个手机工具：$name。可用：${PhoneToolCatalog.names.joinToString("、")}", isError = true)
@@ -85,8 +87,9 @@ class PhoneCore(
             // l10n:keep agent tool result
             return ToolOutput("手机操控已在 DSH 设置里关闭。请用户在 设置 → 手机操控 里打开后重启引擎。", isError = true)
         }
-        val outcome = worker.run(budgetMs(name), MAX_TOTAL_MS) { scope -> execute(name, Args(args), scope) }
-        tasks.touch()
+        val outcome = worker.run(budgetMs(name), MAX_TOTAL_MS) { scope -> execute(name, Args(args), scope, callOwner) }
+        val owner = callOwner.get()
+        tasks.touch(owner)
         val out = when (outcome) {
             is SerialWorker.Outcome.Done -> outcome.value
             is SerialWorker.Outcome.TimedOut -> {
@@ -109,8 +112,11 @@ class PhoneCore(
             )
         }
         out.summary?.let { log.add(name, out.app, it, out.decision ?: if (out.error) "error" else "ok") }
-        noteRefusal(name, out.decision)
-        val interjections = tasks.drainInterjections()
+        var interjections = emptyList<String>()
+        if (owner != null) tasks.runIfCurrent(owner) {
+            noteRefusal(name, out.decision, owner)
+            interjections = tasks.drainInterjections()
+        }
         val text = buildString {
             // l10n:keep agent tool result
             for (line in interjections) append("用户插话：「").append(line).append("」\n\n")
@@ -121,8 +127,7 @@ class PhoneCore(
         return ToolOutput(text, out.error, image, if (image != null) out.screen.imageMime else null)
     }
 
-    private fun noteRefusal(tool: String, decision: String?) {
-        val owner = tasks.activeOwner() ?: run { refusal = null; return }
+    private fun noteRefusal(tool: String, decision: String?, owner: PhoneTasks.Owner) {
         val cause = HandoffCause.ofDecision(decision)
         if (cause != null) {
             refusal = owner to cause
@@ -131,10 +136,10 @@ class PhoneCore(
         }
     }
 
-    private fun execute(name: String, a: Args, scope: SerialWorker.Scope): Out {
+    private fun execute(name: String, a: Args, scope: SerialWorker.Scope, callOwner: AtomicReference<PhoneTasks.Owner?>): Out {
         when (val b = tasks.begin()) {
             is PhoneTasks.Begin.Refused -> return Out(b.message + "。", error = true, summary = name, decision = "stopped")
-            is PhoneTasks.Begin.Go -> Unit
+            is PhoneTasks.Begin.Go -> callOwner.set(b.owner)
         }
         if (tasks.isPaused) {
             val go = scope.userWait { tasks.awaitResume(PAUSE_WAIT_MS) }
@@ -609,8 +614,11 @@ class PhoneCore(
             summary = ui.get("phone_log_handoff", "交还用户"), // l10n:keep test default
             decision = "refused:no-gate",
         )
-        val cause = refusal?.takeIf { (who, _) -> tasks.isCurrent(who) && who.taskId == owner.taskId }?.second
-        refusal = null
+        var cause: HandoffCause? = null
+        if (!tasks.runIfCurrent(owner) {
+            cause = refusal?.takeIf { (who, _) -> tasks.isCurrent(who) && who.taskId == owner.taskId }?.second
+            refusal = null
+        }) return stoppedOut("handoff")
         val note = env.beforeHandoff(lastScreen)
         if (!tasks.isCurrent(owner)) return stoppedOut("handoff")
         val result = scope.userWait { gate.handoff(reason, HANDOFF_MS, cause) }
