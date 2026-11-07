@@ -239,6 +239,7 @@ class _MediaVideoViewerPageState extends State<MediaVideoViewerPage> with Widget
       messenger.showSnackBar(
         SnackBar(
           content: Text(permission ? l10n.chatImageStorageDenied : l10n.mediaVideoSaveFailed),
+          persist: false,
           action: permission
               ? SnackBarAction(label: l10n.chatGoToSettings, onPressed: widget.gallery.openSettings)
               : null,
