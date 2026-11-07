@@ -206,7 +206,7 @@ void main() {
     for (final code in ['noEvents', 'unavailable', 'denied', 'failed']) {
       final snapshot = _snapshot(evidence: systemImeEvidence(code: code, count: 0));
       final markdown = diagnosticsMarkdown(snapshot);
-      expect(markdown, contains('code: ' + code));
+      expect(markdown, contains('code: $code'));
       expect(markdown, contains('NOT evidence that the system behaved normally'));
       expect(markdown, isNot(contains('fromUser=false reason=')));
     }
