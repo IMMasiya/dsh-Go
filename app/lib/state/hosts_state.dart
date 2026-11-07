@@ -415,18 +415,35 @@ class _RelayServerActions {
   _RelayServerActions(this.ref);
 
   final Ref ref;
+  int _operation = 0;
+
+  bool _owns(int operation, String? selection) =>
+      ref.mounted && operation == _operation && ref.read(relayServerProvider) == selection;
 
   Future<void> useDefault() async {
+    final operation = ++_operation;
     await ref.read(relayServerProvider.notifier)._set(null);
-    ref.invalidate(relayAccountProvider);
+    if (_owns(operation, null)) ref.invalidate(relayAccountProvider);
   }
 
   Future<void> loginWithPassword({required String server, required String email, required String password}) async {
     ref.read(readListCredentialEpochProvider.notifier).advance();
     final origin = DshRemoteRelayBackend.normalizeServer(server);
-    await ref.read(relayServerProvider.notifier)._set(origin == defaultRelayServer ? null : origin);
-    await ref.read(relayBackendProvider).loginWithPassword(email.trim(), password);
-    ref.invalidate(relayAccountProvider);
+    final selection = origin == defaultRelayServer ? null : origin;
+    final operation = ++_operation;
+    await ref.read(relayServerProvider.notifier)._set(selection);
+    // Persistence may yield to another server action, including A -> B -> A.
+    // Never resolve a retired request against the newly selected backend.
+    if (!_owns(operation, selection)) {
+      throw HostLinkError(HostLinkErrorKind.other, appL10n.remoteSignInCancelled);
+    }
+    final backend = ref.read(relayBackendProvider);
+    await backend.loginWithPassword(email.trim(), password);
+    // The captured account may have completed successfully after selection
+    // changed. Keep that result, but do not rebuild/cancel its successor login.
+    if (_owns(operation, selection) && identical(backend, ref.read(relayBackendProvider))) {
+      ref.invalidate(relayAccountProvider);
+    }
   }
 }
 
