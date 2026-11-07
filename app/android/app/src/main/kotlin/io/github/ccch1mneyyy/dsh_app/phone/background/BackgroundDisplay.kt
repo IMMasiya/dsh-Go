@@ -128,7 +128,7 @@ class BackgroundDisplay(
         }
         // Explicit element ids are checked by PhoneCore before perform; collect owns its internal scrolls.
         if (action is PhoneAction.Scroll && action.elementId == null && action.screenId != lastScreenId) {
-            return ActionResult(false, Reasons.of("staleSnapshot"))
+            return ActionResult(false, Reasons.of("staleSnapshot"), staleSnapshot = true)
         }
         val request = Bundle().apply {
             putString(Proto.OWNER, "task")

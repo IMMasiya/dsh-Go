@@ -54,6 +54,7 @@ class BackgroundDisplayTest {
             val result = display.perform(PhoneAction.Scroll(screenId, null, PhoneAction.Direction.DOWN))
             assertFalse(result.ok)
             assertEquals(Reasons.of("staleSnapshot"), result.message)
+            org.junit.Assert.assertTrue(result.staleSnapshot)
         }
         assertStale("b6")
         assertThrows(IllegalStateException::class.java) {
