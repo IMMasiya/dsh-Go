@@ -116,13 +116,18 @@ class BackgroundControl private constructor(context: Context) {
     private fun readiness(): String? = when {
         mode == "off" -> AppStrings.get(app, R.string.background_off)
         !androidOk() -> AppStrings.get(app, R.string.background_requires_android)
-        mode == "shizuku" || mode == "sui" -> shizuku.reason() ?: gateReason()
+        mode == "shizuku" || mode == "sui" -> shizuku.reason() ?: if (shizuku.status().provider != mode) {
+            AppStrings.get(app, R.string.background_not_ready)
+        } else gateReason()
         mode == "root" -> rootReason() ?: gateReason()
         mode == "adb" -> adb.reason() ?: gateReason()
         else -> AppStrings.get(app, R.string.background_unknown_mode)
     }
 
     private fun gateReason(): String? {
+        if (keep.connectionUnavailable(channel?.alive() == true)) {
+            return AppStrings.get(app, R.string.background_not_ready)
+        }
         val cached = gate.snapshot
         return when {
             cached.connectionError != null -> AppStrings.get(app, cached.connectionError)

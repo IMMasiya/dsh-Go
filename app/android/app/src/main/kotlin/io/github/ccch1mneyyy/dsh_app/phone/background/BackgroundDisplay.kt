@@ -97,7 +97,8 @@ class BackgroundDisplay(
             if (until != null && seen.any { it.contains(until) }) { stop = "untilMatched"; break }
             if (seen.size == before) { stop = "listEnd"; break }
             if (pages >= maxPages) { stop = "pageLimit"; break }
-            perform(PhoneAction.Scroll(screenId, listElementId, PhoneAction.Direction.DOWN))
+            val result = perform(PhoneAction.Scroll(screenId, listElementId, PhoneAction.Direction.DOWN))
+            if (!result.ok) { stop = result.message; break }
         }
         return CollectResult(seen.toList(), pages, stop, last)
     }
@@ -125,6 +126,10 @@ class BackgroundDisplay(
         if (action is PhoneAction.Key && action.key != PhoneAction.GlobalKey.BACK) {
             // l10n:keep agent screen protocol
             return ActionResult(false, "后台屏不支持该系统键，未执行；请用返回或打开指定应用")
+        }
+        // Explicit element ids are checked by PhoneCore before perform; collect owns its internal scrolls.
+        if (action is PhoneAction.Scroll && action.elementId == null && action.screenId != lastScreenId) {
+            return ActionResult(false, Reasons.of("staleSnapshot"))
         }
         val request = Bundle().apply {
             putString(Proto.OWNER, "task")

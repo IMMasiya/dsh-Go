@@ -624,8 +624,12 @@ class PrivilegedDisplayCore(private val context: Context) {
         val e = elements.getOrNull(index - 1) ?: throw Fault("elementMissing")
         val expectRole = request.getString(Proto.EXPECT_ROLE)
         val expectLabel = request.getString(Proto.EXPECT_LABEL)
-        if (expectRole != null && expectRole != e.role) throw Fault("staleSnapshot")
-        if (expectLabel != null && expectLabel.isNotEmpty() && !e.label.startsWith(expectLabel.take(12))) throw Fault("staleSnapshot")
+        val expectViewId = request.getString(Proto.EXPECT_VIEW_ID)
+        // The whole label is part of the identity: safety was checked against the observed
+        // target, so "Invoice 12 view" turning into "Invoice 12 delete" must not pass.
+        if (expectRole != null && expectRole != e.role ||
+            expectLabel != null && expectLabel != e.label ||
+            expectViewId != null && expectViewId != e.viewId) throw Fault("staleSnapshot")
         return e
     }
 
@@ -640,12 +644,12 @@ class PrivilegedDisplayCore(private val context: Context) {
     private fun scroll(request: Bundle) {
         val dir = request.getString(Proto.DIR) ?: "down"
         val cx = width / 2; val cy = height / 2
-        val span = height / 3
+        val span = (if (dir == "left" || dir == "right") width else height) / 3
         val p = when (dir) {
             "up" -> intArrayOf(cx, cy - span, cx, cy + span)
             "down" -> intArrayOf(cx, cy + span, cx, cy - span)
-            "left" -> intArrayOf(cx + span, cy, cx - span, cy)
-            "right" -> intArrayOf(cx - span, cy, cx + span, cy)
+            "left" -> intArrayOf(cx - span, cy, cx + span, cy)
+            "right" -> intArrayOf(cx + span, cy, cx - span, cy)
             else -> throw Fault("invalidArguments")
         }
         injectSwipe(p[0], p[1], p[2], p[3], 400)
@@ -656,7 +660,7 @@ class PrivilegedDisplayCore(private val context: Context) {
         val now = SystemClock.uptimeMillis()
         injectKey(KeyEvent(now, now, KeyEvent.ACTION_DOWN, code, 0))
         sleepChecked(4)
-        injectKey(KeyEvent(SystemClock.uptimeMillis(), now, KeyEvent.ACTION_UP, code, 0))
+        injectKey(KeyEvent(now, SystemClock.uptimeMillis(), KeyEvent.ACTION_UP, code, 0))
     }
 
     private fun typeText(pkg: String, request: Bundle, response: Bundle) {

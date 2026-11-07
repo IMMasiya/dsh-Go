@@ -661,15 +661,19 @@ function disable (names) {
 
 function enable (names) {
   if (!names.length) die('用法：dsh-app-plugins enable <包名>...')
-  const deps = depsOf(readManifest())
-  for (const name of names) {
-    if (!Object.prototype.hasOwnProperty.call(deps, name) && name.indexOf(SHIPPED) !== 0) die(name + ' 没有安装在 web 里（不在 dependencies 中），不能启用')
+  let changed
+  try {
+    changed = updateBundles(function (bundles, deps) {
+      for (const name of names) {
+        if (!Object.prototype.hasOwnProperty.call(deps, name) && name.indexOf(SHIPPED) !== 0) throw new Error(name + ' 没有安装在 web 里（不在 dependencies 中），不能启用')
+      }
+      const next = bundles.slice()
+      for (const name of names) if (next.indexOf(name) < 0) next.push(name)
+      return next
+    })
+  } catch (e) {
+    die(e.message)
   }
-  const changed = updateBundles(function (bundles) {
-    const next = bundles.slice()
-    for (const name of names) if (next.indexOf(name) < 0) next.push(name)
-    return next
-  })
   out(changed ? '已启用：' + names.join('、') + '。重启到正常模式后生效。' : '这些包本来就是启用的')
 }
 
