@@ -24,6 +24,7 @@ class DshService : Service() {
 
     private var wakeLock: PowerManager.WakeLock? = null
     private var networkCallback: ConnectivityManager.NetworkCallback? = null
+    private var networkWatch: NetworkAccess.Watch? = null
     private var installSink: RuntimeController.EventSink? = null
     private var installPercent = -1
     private var installUpgrade = false
@@ -102,12 +103,13 @@ class DshService : Service() {
         running = false
         installSink?.let { RuntimeController.get(this).removeSink(it) }
         installSink = null
+        networkWatch?.let { RuntimeController.get(this).onNetworkWatchStopped(it) }
+        networkWatch = null
         networkCallback?.let { callback ->
             val cm = getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
             runCatching { cm.unregisterNetworkCallback(callback) }
         }
         networkCallback = null
-        RuntimeController.get(this).onNetworkWatchStopped()
         wakeLock?.let { if (it.isHeld) it.release() }
         wakeLock = null
         super.onDestroy()
@@ -124,17 +126,24 @@ class DshService : Service() {
     private fun registerNetworkCallback(controller: RuntimeController) {
         if (networkCallback != null) return
         val cm = getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+        val watch = controller.onNetworkWatchStarted()
+        networkWatch = watch
         val callback = object : ConnectivityManager.NetworkCallback() {
             override fun onLinkPropertiesChanged(network: Network, properties: LinkProperties) {
-                controller.refreshDns(properties)
+                controller.refreshDns(watch, properties)
             }
 
             // API 29+: the system cut (or restored) this uid's network, e.g. a vendor background policy.
             override fun onBlockedStatusChanged(network: Network, blocked: Boolean) {
-                controller.onNetworkBlocked(blocked, MainActivity.inForeground)
+                controller.onNetworkBlocked(watch, blocked, MainActivity.inForeground)
             }
         }
-        if (runCatching { cm.registerDefaultNetworkCallback(callback) }.isSuccess) networkCallback = callback
+        if (runCatching { cm.registerDefaultNetworkCallback(callback) }.isSuccess) {
+            networkCallback = callback
+        } else {
+            controller.onNetworkWatchStopped(watch)
+            networkWatch = null
+        }
     }
 
     private fun logBackgroundPolicy(controller: RuntimeController) {

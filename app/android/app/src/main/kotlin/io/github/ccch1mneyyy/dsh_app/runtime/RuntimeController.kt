@@ -425,10 +425,14 @@ class RuntimeController private constructor(private val app: Context) : DshProce
     }
 
     /** The default network changed: point the guest's resolv.conf at its DNS. */
-    fun refreshDns(properties: LinkProperties) {
+    internal fun refreshDns(watch: NetworkAccess.Watch, properties: LinkProperties) {
+        val gen = runGen
         val servers = GuestSetup.pickDns(properties.dnsServers)
         worker.execute {
             if ((phase == Phase.RUNNING || phase == Phase.STARTING) && installer.isCurrent()) {
+                // Check ownership where this queued write executes, not only in the callback.
+                // If a stop/start follows this check, its startup DNS write is later on this worker.
+                if (gen != runGen || stopGen >= gen || !networkAccess.isCurrent(watch)) return@execute
                 noteDns(GuestSetup.writeResolvConf(installer.rootfs, servers), DnsConfigSource.NETWORK)
             }
         }
@@ -439,14 +443,16 @@ class RuntimeController private constructor(private val app: Context) : DshProce
     }
 
     /** The system blocked or restored this app's network (DshService's default network callback). */
-    internal fun onNetworkBlocked(blocked: Boolean, inForeground: Boolean) {
-        val line = networkAccess.onBlocked(blocked, inForeground) ?: return
+    internal fun onNetworkBlocked(watch: NetworkAccess.Watch, blocked: Boolean, inForeground: Boolean) {
+        val line = networkAccess.onBlocked(watch, blocked, inForeground) ?: return
         log(line, "system")
         emitStatus()
     }
 
-    /** DshService stopped watching the network. */
-    internal fun onNetworkWatchStopped() = networkAccess.reset()
+    internal fun onNetworkWatchStarted() = networkAccess.startWatch()
+
+    /** Retire only this registration; a late old service must not reset its replacement. */
+    internal fun onNetworkWatchStopped(watch: NetworkAccess.Watch) = networkAccess.reset(watch)
 
     /** A line of the app's own into the runtime log. */
     internal fun note(line: String) = log(line, "system")
