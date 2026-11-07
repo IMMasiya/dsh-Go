@@ -2,6 +2,9 @@ import 'dart:async';
 
 import 'package:dsh_app/diagnostics/diagnostics_bundle.dart';
 import 'package:dsh_app/diagnostics/diagnostics_channel.dart';
+import 'package:dsh_app/diagnostics/diagnostics_export.dart';
+import 'package:dsh_app/diagnostics/system_ime_diagnostics.dart';
+import 'package:dsh_app/diagnostics/system_ime_evidence.dart';
 import 'package:dsh_app/diagnostics/diagnostics_publish.dart';
 import 'package:dsh_app/runtime/runtime_bridge.dart';
 import 'package:dsh_app/runtime/runtime_state.dart';
@@ -15,6 +18,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_riverpod/misc.dart' show Override;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+
+import 'support/system_ime_fixture.dart';
 
 class _Runtime extends LocalRuntimeController {
   @override
@@ -58,6 +63,19 @@ class _Channel extends DiagnosticsChannel {
 
   @override
   Future<List<String>> engineLog({int maxBytes = 512 * 1024}) async => const [];
+}
+
+class _SystemChannel extends DiagnosticsChannel {
+  int collections = 0;
+
+  @override
+  Future<SystemImeEvidence> collectSystemIme() async {
+    collections++;
+    return systemImeEvidence();
+  }
+
+  @override
+  Future<void> cancelSystemIme() async {}
 }
 
 class _Phone extends PhoneChannel {
@@ -326,6 +344,102 @@ void main() {
     expect(await second, isA<PublishedDiagnostics>());
     expect(written.single, contains('- state：connected'));
   });
+
+  testWidgets('automatic snapshots omit retained IME evidence; manual publication and ZIP opt in', (tester) async {
+    final channel = _SystemChannel();
+    final evidence = SystemImeDiagnostics(channel);
+    addTearDown(evidence.dispose);
+    await evidence.collect(isCurrent: () => true);
+    final f = _Fixture(extra: [systemImeDiagnosticsProvider.overrideWithValue(evidence)]);
+    await f.publisher.publish();
+    expect(written.single, isNot(contains('System IME evidence')));
+    await f.publisher.publish(includeSystemIme: true);
+    expect(written.last, contains('System IME evidence'));
+    final zipSnapshot = await f.container.read(diagnosticsExporterProvider).collect(systemImeAt);
+    expect(zipSnapshot.systemIme, same(evidence.evidence));
+    expect(DiagnosticsBundle.entries(zipSnapshot).map((e) => e.name), contains('system-ime.json'));
+    await f.publisher.publish();
+    expect(written.last, isNot(contains('System IME evidence')));
+    expect(channel.collections, 1, reason: 'publication/export cannot start a new capture');
+  });
+
+  testWidgets('a first manual collection still tracks connection changes during its await', (tester) async {
+    final hold = Completer<VoiceMode>();
+    final evidence = SystemImeDiagnostics(_SystemChannel());
+    addTearDown(evidence.dispose);
+    await evidence.collect(isCurrent: () => true);
+    final f = _Fixture(
+      voice: _Voice(hold),
+      extra: [systemImeDiagnosticsProvider.overrideWithValue(evidence)],
+    )..observe();
+    final manual = f.publisher.publish(includeSystemIme: true);
+    await _flush(tester);
+    f.ready.complete(f.connected);
+    await _flush(tester);
+    hold.complete(VoiceMode.auto);
+    await manual;
+    await _flush(tester);
+    expect(written, hasLength(2));
+    expect(written.first, contains('System IME evidence'));
+    expect(written.last, contains('- state：connected'));
+    expect(written.last, isNot(contains('System IME evidence')));
+  });
+
+  testWidgets('clearing during manual collection cannot put old evidence in the eventual snapshot', (tester) async {
+    final hold = Completer<VoiceMode>();
+    final evidence = SystemImeDiagnostics(_SystemChannel());
+    addTearDown(evidence.dispose);
+    await evidence.collect(isCurrent: () => true);
+    final voice = _Voice(hold);
+    final f = _Fixture(
+      voice: voice,
+      extra: [systemImeDiagnosticsProvider.overrideWithValue(evidence)],
+    );
+    final manual = f.publisher.publish(includeSystemIme: true);
+    await _flush(tester);
+    expect(voice.reads, 1);
+    evidence.clear();
+    hold.complete(VoiceMode.auto);
+    await manual;
+    expect(written.single, isNot(contains('System IME evidence')));
+  });
+
+  for (final manualFirst in [true, false]) {
+    testWidgets('queued manual opt-in survives coalesced automatic owner changes (manualFirst=$manualFirst)', (tester) async {
+      final held = Completer<DiagnosticsSnapshot>();
+      var collections = 0;
+      var manualCollections = 0;
+      var current = true;
+      final publisher = DiagnosticsPublisher(
+        collect: (_) => ++collections == 1 ? held.future : Future.value(_snapshot('connected')),
+        collectManual: (_) async {
+          manualCollections++;
+          return DiagnosticsSnapshot(
+            at: systemImeAt,
+            status: const RuntimeStatus(phase: RuntimePhase.running),
+            settings: const AppSettings(),
+            systemIme: systemImeEvidence(),
+          );
+        },
+      );
+      addTearDown(publisher.dispose);
+      final initial = publisher.publish();
+      final first = manualFirst ? publisher.publish(includeSystemIme: true) : publisher.publish(isCurrent: () => current);
+      final second = manualFirst ? publisher.publish(isCurrent: () => current) : publisher.publish(includeSystemIme: true);
+      current = false;
+      held.complete(_snapshot('connecting'));
+      await initial;
+      expect(await first, isA<PublishedDiagnostics>());
+      expect(await second, isA<PublishedDiagnostics>());
+      expect(written, hasLength(2));
+      expect(manualCollections, 1);
+      expect(written.first, isNot(contains('System IME evidence')));
+      expect(written.last, contains('System IME evidence'));
+      await publisher.publish();
+      expect(written.last, isNot(contains('System IME evidence')));
+      expect(manualCollections, 1, reason: 'manual opt-in must reset after draining the queue');
+    });
+  }
 
   testWidgets('disposing the publisher owner during the final collection await prevents a late write', (tester) async {
     final hold = Completer<VoiceMode>();

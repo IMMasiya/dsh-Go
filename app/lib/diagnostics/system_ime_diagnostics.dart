@@ -1,5 +1,3 @@
-import 'dart:async';
-
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -44,7 +42,7 @@ class SystemImeDiagnostics extends ChangeNotifier {
     ++_generation;
     final wasCollecting = _collecting;
     _collecting = false;
-    unawaited(_channel.cancelSystemIme().ignore());
+    _channel.cancelSystemIme().ignore();
     if (wasCollecting && notify) notifyListeners();
   }
 

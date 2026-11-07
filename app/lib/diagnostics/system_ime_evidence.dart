@@ -62,7 +62,7 @@ class SystemImeEvidence {
         _ => false,
       };
       if (!valid) return invalid();
-      events.add(SystemImeEvent._(timestamp, event, fromUser as bool?, reason, origin));
+      events.add(SystemImeEvent._(timestamp, event, fromUser, reason, origin));
     }
     events.sort((a, b) => a.timestamp.compareTo(b.timestamp));
     return SystemImeEvidence._(code, capturedAt, events);
