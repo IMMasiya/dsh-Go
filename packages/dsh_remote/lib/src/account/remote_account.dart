@@ -780,9 +780,10 @@ class RemoteAccount {
     final previous = _active;
     _active = null;
     await previous?.close();
-    final carrier = RemoteTunnelCarrier(
+    late final RemoteTunnelCarrier carrier;
+    carrier = RemoteTunnelCarrier(
       hostId: host.id,
-      open: (last) => _openHostSession(host, last, confirmNewHost, historyMode),
+      open: (last) => _openHostSession(host, last, confirmNewHost, historyMode, () => carrier.isClosed),
       healthInterval: healthInterval,
       healthTimeout: healthTimeout,
       tracer: tracer,
@@ -830,9 +831,10 @@ class RemoteAccount {
     RemoteFailure? previous,
     HostTrustPrompt? confirm,
     _HistoryMode historyMode,
+    bool Function() isCancelled,
   ) async {
     try {
-      return await _openHostSessionOnce(host, previous, confirm, historyMode);
+      return await _openHostSessionOnce(host, previous, confirm, historyMode, isCancelled);
     } on RemoteConnectException {
       rethrow;
     } on Object catch (error) {
@@ -845,6 +847,7 @@ class RemoteAccount {
     RemoteFailure? previous,
     HostTrustPrompt? confirm,
     _HistoryMode historyMode,
+    bool Function() isCancelled,
   ) async {
     final identity = _identity;
     if (identity == null || _credentials == null) {
@@ -880,11 +883,11 @@ class RemoteAccount {
     // (refresh once when the token is refused).
     _TransportSelection selection;
     try {
-      selection = await _connectTransport(token, host.id);
+      selection = await _connectTransport(token, host.id, isCancelled);
     } on RemoteTransportException catch (error) {
       if (error.code != 'AUTH_INVALID' && error.code != 'TOKEN_EXPIRED') rethrow;
       token = await accessToken(forceRefresh: true);
-      selection = await _connectTransport(token, host.id);
+      selection = await _connectTransport(token, host.id, isCancelled);
     }
     final transport = selection.transport;
 
@@ -1029,10 +1032,13 @@ class RemoteAccount {
   /// the Host may still hold state for the old one. Noise always starts only
   /// after the final data plane is chosen. Recent failures skip the bad path
   /// for 45 seconds; a changed native network hint clears that cooldown.
-  Future<_TransportSelection> _connectTransport(String token, String hostId) async {
+  Future<_TransportSelection> _connectTransport(String token, String hostId, bool Function() isCancelled) async {
     final connector = peerConnector;
     if (connector == null) {
-      return _TransportSelection(await _connectRelay(token, hostId), RemoteNetworkFallbackReason.webrtcUnavailable);
+      return _TransportSelection(
+        await _connectRelay(token, hostId, isCancelled: isCancelled),
+        RemoteNetworkFallbackReason.webrtcUnavailable,
+      );
     }
     var preferred = RemoteTransportMode.values;
     try {
@@ -1059,8 +1065,10 @@ class RemoteAccount {
     // must not suppress a fresh lookup on the separately authorized TURN stage.
     Future<List<RemoteIceServer>> fetchIce(String id) => api.turnCredentials(token, id);
 
-    if (!wantDirect && !wantTurn) return _TransportSelection(await _connectRelay(token, hostId), reason);
-    var control = await _connectRelay(token, hostId, direct: true, preferred: preferred);
+    if (!wantDirect && !wantTurn) {
+      return _TransportSelection(await _connectRelay(token, hostId, isCancelled: isCancelled), reason);
+    }
+    var control = await _connectRelay(token, hostId, direct: true, preferred: preferred, isCancelled: isCancelled);
     if (control.directTransports.isEmpty) {
       return _TransportSelection(control, RemoteNetworkFallbackReason.webrtcUnavailable);
     }
@@ -1083,7 +1091,9 @@ class RemoteAccount {
         _directCooldown[hostId] = DateTime.now().add(const Duration(seconds: 45));
         _notifyFallback(reason);
       }
-      if (wantTurn) control = await _connectRelay(token, hostId, direct: true, preferred: preferred);
+      if (wantTurn) {
+        control = await _connectRelay(token, hostId, direct: true, preferred: preferred, isCancelled: isCancelled);
+      }
     }
     if (wantTurn) {
       try {
@@ -1111,7 +1121,7 @@ class RemoteAccount {
     } else if (!wantDirect) {
       await control.close();
     }
-    return _TransportSelection(await _connectRelay(token, hostId), reason);
+    return _TransportSelection(await _connectRelay(token, hostId, isCancelled: isCancelled), reason);
   }
 
   void _notifyFallback(RemoteNetworkFallbackReason reason) {
@@ -1125,6 +1135,7 @@ class RemoteAccount {
   Future<RelayTransport> _connectRelay(
     String token,
     String hostId, {
+    required bool Function() isCancelled,
     bool direct = false,
     List<RemoteTransportMode>? preferred,
   }) => RelayTransport.connect(
@@ -1134,6 +1145,7 @@ class RemoteAccount {
     hostDeviceId: hostId,
     clientVersion: clientVersion,
     connector: _socketConnector,
+    isCancelled: isCancelled,
     tracer: controlTracer,
     offerDirect: direct,
     preferredTransports: preferred,
