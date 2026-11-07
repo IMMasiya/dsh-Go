@@ -88,6 +88,16 @@ class BackgroundDisplay(
 
     override fun collect(screenId: String, listElementId: Int, maxPages: Int, until: String?): CollectResult {
         check(screenId == lastScreenId) { Reasons.of("staleSnapshot") }
+        if (maxPages.coerceIn(1, 30) == 1) {
+            val selected = lastElements.getOrNull(listElementId - 1)
+                ?: throw IllegalStateException(Reasons.of("elementMissing"))
+            check(selected.isScrollable) { Reasons.of("inputRejected") }
+            val labels = lastElements.drop(listElementId)
+                .takeWhile { it.indent > selected.indent }
+                .map { it.label }.filter { it.isNotEmpty() }.distinct()
+            val stop = if (until != null && labels.any { it.contains(until) }) "untilMatched" else "pageLimit"
+            return CollectResult(labels, 1, stop, null)
+        }
         val seen = LinkedHashSet<String>()
         var pages = 0
         var stop = "listEnd"
@@ -278,6 +288,7 @@ class BackgroundDisplay(
                     isSecretField = f and Proto.FLAG_SECRET != 0,
                     isEditable = f and Proto.FLAG_EDITABLE != 0,
                     viewId = viewIds?.getOrNull(i),
+                    isScrollable = f and Proto.FLAG_SCROLLABLE != 0,
                 ),
             )
         }
