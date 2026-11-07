@@ -97,7 +97,8 @@ class BackgroundDisplay(
             if (until != null && seen.any { it.contains(until) }) { stop = "untilMatched"; break }
             if (seen.size == before) { stop = "listEnd"; break }
             if (pages >= maxPages) { stop = "pageLimit"; break }
-            perform(PhoneAction.Scroll(screenId, listElementId, PhoneAction.Direction.DOWN))
+            val result = perform(PhoneAction.Scroll(screenId, listElementId, PhoneAction.Direction.DOWN))
+            if (!result.ok) { stop = result.message; break }
         }
         return CollectResult(seen.toList(), pages, stop, last)
     }
