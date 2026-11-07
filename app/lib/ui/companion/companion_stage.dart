@@ -11,6 +11,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 
+import '../../companion/companion_adapt.dart';
 import '../../companion/companion_moves.dart';
 import '../../companion/companion_pack.dart';
 import '../../companion/companion_server.dart';
@@ -50,9 +51,14 @@ class CompanionStageEvents {
     required this.onObject,
     required this.onActivity,
     this.onModel,
+    this.onProbe,
   });
 
   final VoidCallback onReady;
+
+  /// What the model is (stage.js `probeReport`), when it loads and whenever
+  /// an adapter is worn or taken off (companion_adapt.dart).
+  final ValueChanged<CompanionProbe>? onProbe;
 
   /// What the model brings of its own, as it finishes loading (before [onReady]).
   final ValueChanged<CompanionModelInfo>? onModel;
@@ -171,7 +177,10 @@ class _CompanionStageState extends State<CompanionStage> with WidgetsBindingObse
         _appliedPause = null;
         _syncVisibility();
         events.onModel?.call(CompanionModelInfo.fromMessage(message));
+        if (CompanionProbe.fromJson(message['probe']) case final probe?) events.onProbe?.call(probe);
         events.onReady();
+      case 'adapted':
+        if (CompanionProbe.fromJson(message['probe']) case final probe?) events.onProbe?.call(probe);
       case 'error':
         _fail('${message['message']}');
       case 'touch':

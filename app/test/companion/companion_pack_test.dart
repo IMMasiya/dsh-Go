@@ -164,24 +164,60 @@ void main() {
 
   test('a bare model with no folder, or in folders of its own', () async {
     await store.install(zip({..._runtime(), ..._character()}));
-    await store.install(zip({'m.model3.json': utf8.encode('{}'), 'm.moc3': [1]}));
+    await store.install(
+      zip({
+        'm.model3.json': utf8.encode('{}'),
+        'm.moc3': [1],
+      }),
+    );
     expect((await store.character()).name, 'm');
-    await store.install(zip({'a/x.model3.json': utf8.encode('{}'), 'b/x.moc3': [1]}));
+    await store.install(
+      zip({
+        'a/x.model3.json': utf8.encode('{}'),
+        'b/x.moc3': [1],
+      }),
+    );
     final character = jsonDecode(File('${store.pack.path}/character/character.json').readAsStringSync()) as Map;
     expect(character['model'], 'a/x.model3.json');
   });
 
   test('a bare model gets the same checks', () async {
     await store.install(zip({..._runtime(), ..._character()}));
-    await expectLater(store.install(zip({'m.moc3': [1], 'readme.txt': [2]})), problem(CompanionPackProblem.noModel));
     await expectLater(
-      store.install(zip({'m.model3.json': utf8.encode('{}'), '../evil.png': [1]})),
+      store.install(
+        zip({
+          'm.moc3': [1],
+          'readme.txt': [2],
+        }),
+      ),
+      problem(CompanionPackProblem.noModel),
+    );
+    await expectLater(
+      store.install(
+        zip({
+          'm.model3.json': utf8.encode('{}'),
+          '../evil.png': [1],
+        }),
+      ),
       problem(CompanionPackProblem.unsafePath),
     );
     expect(File('${root.path}/evil.png').existsSync(), isFalse);
     // Scripts never land, even left behind quietly.
     await store.install(zip({'m.model3.json': utf8.encode('{}'), 'run.js': utf8.encode('x')}));
     expect(File('${store.pack.path}/character/run.js').existsSync(), isFalse);
+  });
+
+  test('a Cubism 2 model is told apart from a zip with no model', () async {
+    await store.install(zip({..._runtime(), ..._character()}));
+    await expectLater(
+      store.install(
+        zip({
+          'old/model.json': utf8.encode('{}'),
+          'old/old.moc': [1, 2],
+        }),
+      ),
+      problem(CompanionPackProblem.legacyModel),
+    );
   });
 
   test('a bare model needs a runtime first', () async {

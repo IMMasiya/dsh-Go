@@ -17,6 +17,7 @@ import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../../companion/companion_adapt.dart';
 import '../../companion/companion_bond.dart';
 import '../../companion/companion_initiative.dart';
 import '../../companion/companion_initiative_owner.dart';
@@ -163,6 +164,12 @@ class _CompanionPageState extends ConsumerState<CompanionPage> implements Compan
 
   /// What this model brings of its own (companion_moves.dart), once it has loaded.
   CompanionMoves _moves = const CompanionMoves();
+
+  /// What the model is (companion_adapt.dart), from the stage.
+  CompanionProbe? _probe;
+
+  /// Her own AI is fitting the model to her.
+  bool _adapting = false;
 
   /// Whose moves these are: their names and choices are kept per character.
   String get _movesKey => _character.name ?? 'default';
@@ -667,6 +674,104 @@ class _CompanionPageState extends ConsumerState<CompanionPage> implements Compan
       name: ref.read(companionNameProvider) ?? _character.name,
       callMe: persona.callMe,
       moves: _moves.rules(),
+    );
+  }
+
+  /// A model that still needs judgement gets fitted once, on its own, with
+  /// the person's model; after that only when they ask (menu).
+  void _onProbe(CompanionProbe probe) {
+    _probe = probe;
+    if (_adapting || companionAdaptWanted(probe).isEmpty) return;
+    unawaited(_autoAdapt(probe));
+  }
+
+  Future<void> _autoAdapt(CompanionProbe probe) async {
+    final store = _store;
+    if (store == null || !await companionAdaptAuto()) return;
+    // Nothing to ask with: the menu says how to get it.
+    if (ref.read(settingsProvider).apiKey.trim().isEmpty) return;
+    final fingerprint = await companionMocFingerprint(store.pack, probe) ?? probe.moc;
+    if (await companionAdaptTried(fingerprint)) return;
+    await companionAdaptMarkTried(fingerprint);
+    if (!mounted || _probe != probe) return;
+    await _adapt();
+  }
+
+  /// Asks her own AI for an adapter, checks it, and she wears it at once.
+  /// [note]: what the person said is off, for another go.
+  Future<void> _adapt({String? note}) async {
+    final store = _store;
+    final probe = _probe;
+    if (store == null || probe == null || _adapting) return;
+    final l10n = context.l10n;
+    final key = ref.read(settingsProvider).apiKey.trim();
+    if (key.isEmpty) {
+      _say(l10n.companionAdaptNoKey);
+      return;
+    }
+    setState(() => _adapting = true);
+    _say(l10n.companionAdaptStart);
+    _stage.command('mood', {'mood': 'thinking'});
+    final client = ref.read(companionLightClientProvider)();
+    try {
+      final adapter = await companionAdaptAsk(
+        client: client,
+        apiKey: key,
+        probe: probe,
+        note: note,
+        current: probe.adapted ? await companionAdapterRead(store.pack) : null,
+      );
+      await companionAdapterWrite(store.pack, probe, adapter);
+      if (!mounted) return;
+      _stage.command('adapter');
+      _stage.command('mood', {'mood': 'idle'});
+      _stage.command('emotion', {'name': 'happy', 'hold': 3200});
+      _stage.command('action', {'name': 'hop'});
+      final notes = adapter['notes'];
+      _say(notes is String && notes.isNotEmpty ? l10n.companionAdaptDoneNote(notes) : l10n.companionAdaptDone);
+    } on Object catch (error) {
+      if (!mounted) return;
+      _stage.command('mood', {'mood': 'idle'});
+      _say(switch (error) {
+        CompanionLightError(failure: CompanionLightFailure.noKey) => l10n.companionAdaptNoKey,
+        CompanionLightError(failure: CompanionLightFailure.badKey) => l10n.companionLightBadKey,
+        CompanionLightError(failure: CompanionLightFailure.busy) => l10n.companionLightBusy,
+        CompanionAdaptError(reason: 'empty') => l10n.companionAdaptFailed(l10n.companionAdaptEmpty),
+        CompanionAdaptError() => l10n.companionAdaptFailed(l10n.companionAdaptUnreadable),
+        _ => l10n.companionAdaptFailed(l10n.companionAdaptNetwork),
+      });
+    } finally {
+      client.close();
+      if (mounted) setState(() => _adapting = false);
+    }
+  }
+
+  Future<void> _undoAdapt() async {
+    final store = _store;
+    if (store == null) return;
+    await companionAdapterRemove(store.pack);
+    if (!mounted) return;
+    _stage.command('adapter');
+    _say(context.l10n.companionAdaptUndone);
+  }
+
+  void _openAdapt() {
+    unawaited(
+      showAppSheet<void>(
+        context,
+        isScrollControlled: true,
+        builder: (sheet) => _AdaptSheet(
+          adapted: _probe?.adapted ?? false,
+          onRun: (note) {
+            Navigator.of(sheet).pop();
+            unawaited(_adapt(note: note));
+          },
+          onUndo: () {
+            Navigator.of(sheet).pop();
+            unawaited(_undoAdapt());
+          },
+        ),
+      ),
     );
   }
 
@@ -1546,12 +1651,21 @@ class _CompanionPageState extends ConsumerState<CompanionPage> implements Compan
     }
   }
 
+  /// Why she couldn't load, in words: a model too new for the runtime says so.
+  String _loadFailureText(L10n l10n) {
+    final why = _failure ?? '';
+    final version = RegExp(r'moc-version (\d+)/(\d+)').firstMatch(why);
+    if (version != null) return l10n.companionFailedMocVersion(version[1]!, version[2]!);
+    return l10n.companionFailedBody(why);
+  }
+
   String _problemText(CompanionPackProblem problem) {
     final l10n = context.l10n;
     return switch (problem) {
       CompanionPackProblem.runtimeMismatch => l10n.companionPackRuntimeMismatch,
       CompanionPackProblem.noRuntime => l10n.companionPackNoRuntime,
       CompanionPackProblem.noModel => l10n.companionPackNoModel,
+      CompanionPackProblem.legacyModel => l10n.companionPackLegacyModel,
       CompanionPackProblem.forbiddenFile || CompanionPackProblem.unsafePath => l10n.companionPackUnsafe,
       CompanionPackProblem.tooLarge => l10n.companionPackTooLarge,
       CompanionPackProblem.storage => l10n.companionPackStorage,
@@ -1643,6 +1757,18 @@ class _CompanionPageState extends ConsumerState<CompanionPage> implements Compan
                             MaterialPageRoute<void>(builder: (_) => CompanionPersonaPage(packName: _character.name)),
                           ),
                         );
+                      },
+                    ),
+                    SettingsTile(
+                      icon: AppIcons.configure,
+                      tinted: false,
+                      title: l10n.companionMenuAdapt,
+                      value: _adapting
+                          ? const SizedBox.square(dimension: 16, child: CircularProgressIndicator(strokeWidth: 2))
+                          : null,
+                      onTap: () {
+                        Navigator.of(sheet).pop();
+                        _openAdapt();
                       },
                     ),
                     SettingsTile(
@@ -1920,6 +2046,7 @@ class _CompanionPageState extends ConsumerState<CompanionPage> implements Compan
       onObject: _onObject,
       onActivity: _onActivity,
       onModel: (info) => unawaited(_onModel(info)),
+      onProbe: _onProbe,
     );
     return Scaffold(
       backgroundColor: const Color(0xFF0D2F55),
@@ -1954,7 +2081,7 @@ class _CompanionPageState extends ConsumerState<CompanionPage> implements Compan
           if (_phase == _Phase.failed)
             CompanionWelcome(
               title: l10n.companionFailedTitle,
-              message: l10n.companionFailedBody(_failure ?? ''),
+              message: _loadFailureText(l10n),
               action: l10n.companionSetupImport,
               state: PetStateName.error,
               busy: _installing,
@@ -2106,6 +2233,107 @@ class _LabelDialogState extends State<_LabelDialog> {
         TextButton(onPressed: () => Navigator.pop(context), child: Text(l10n.commonCancel)),
         FilledButton(onPressed: () => Navigator.pop(context, _field.text), child: Text(l10n.commonSave)),
       ],
+    );
+  }
+}
+
+/// 适配这个模型: what to tell her AI, and whether new models are fitted on
+/// their own. The sheet owns its field.
+class _AdaptSheet extends StatefulWidget {
+  const _AdaptSheet({required this.adapted, required this.onRun, required this.onUndo});
+
+  final bool adapted;
+  final ValueChanged<String> onRun;
+  final VoidCallback onUndo;
+
+  @override
+  State<_AdaptSheet> createState() => _AdaptSheetState();
+}
+
+class _AdaptSheetState extends State<_AdaptSheet> {
+  final _note = TextEditingController();
+  bool? _auto;
+
+  @override
+  void initState() {
+    super.initState();
+    unawaited(
+      companionAdaptAuto().then((on) {
+        if (mounted) setState(() => _auto = on);
+      }),
+    );
+  }
+
+  @override
+  void dispose() {
+    _note.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = context.l10n;
+    const inset = EdgeInsets.fromLTRB(SheetTitleBar.inset + 8, 0, SheetTitleBar.inset + 8, 12);
+    return Padding(
+      padding: EdgeInsets.only(bottom: MediaQuery.viewInsetsOf(context).bottom),
+      child: SafeArea(
+        top: false,
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              SheetTitleBar(l10n.companionMenuAdapt),
+              Padding(
+                padding: inset,
+                child: Text(l10n.companionAdaptHint, style: Theme.of(context).textTheme.bodySmall),
+              ),
+              Padding(
+                padding: inset,
+                child: TextField(
+                  controller: _note,
+                  minLines: 1,
+                  maxLines: 3,
+                  maxLength: 200,
+                  decoration: InputDecoration(
+                    labelText: l10n.companionAdaptNote,
+                    hintText: l10n.companionAdaptNoteHint,
+                  ),
+                ),
+              ),
+              SheetGroup(
+                margin: const EdgeInsets.fromLTRB(SheetTitleBar.inset, 0, SheetTitleBar.inset, 12),
+                children: [
+                  SettingsTile(
+                    tinted: false,
+                    title: l10n.companionAdaptAuto,
+                    chevron: false,
+                    trailing: Switch(
+                      value: _auto ?? true,
+                      onChanged: _auto == null
+                          ? null
+                          : (on) {
+                              setState(() => _auto = on);
+                              unawaited(companionAdaptSetAuto(on));
+                            },
+                    ),
+                  ),
+                ],
+              ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(SheetTitleBar.inset, 0, SheetTitleBar.inset, 16),
+                child: Row(
+                  children: [
+                    if (widget.adapted) TextButton(onPressed: widget.onUndo, child: Text(l10n.companionAdaptUndo)),
+                    const Spacer(),
+                    FilledButton(onPressed: () => widget.onRun(_note.text), child: Text(l10n.companionAdaptRun)),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }

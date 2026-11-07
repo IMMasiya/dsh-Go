@@ -66,6 +66,9 @@ enum CompanionPackProblem {
   runtimeMismatch,
   noRuntime,
   noModel,
+
+  /// A Cubism 2 model (`.moc` and `model.json`): the runtime only reads moc3.
+  legacyModel,
   storage,
 }
 
@@ -185,7 +188,8 @@ Future<void> _install((String, String, String) args) async {
       }
     } else {
       if (!files.any((f) => f.name.toLowerCase().endsWith('.model3.json'))) {
-        throw const CompanionPackException(CompanionPackProblem.noModel);
+        final legacy = files.any((f) => f.name.toLowerCase().endsWith('.moc'));
+        throw CompanionPackException(legacy ? CompanionPackProblem.legacyModel : CompanionPackProblem.noModel);
       }
       final tops = {for (final f in files) f.name.split('/').first};
       final strip = tops.length == 1 && files.every((f) => f.name.contains('/')) ? '${tops.single}/' : '';

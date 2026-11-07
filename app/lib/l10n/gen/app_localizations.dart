@@ -9644,6 +9644,114 @@ abstract class L10n {
   /// **'试一下'**
   String get companionMovesTry;
 
+  /// No description provided for @companionPackLegacyModel.
+  ///
+  /// In zh, this message translates to:
+  /// **'这是 Cubism 2 的旧模型（.moc 和 model.json），手机上的运行库只认 Cubism 3 以后的 .moc3。用 Cubism Editor 打开后导出成 moc3 再导入就行。'**
+  String get companionPackLegacyModel;
+
+  /// No description provided for @companionFailedMocVersion.
+  ///
+  /// In zh, this message translates to:
+  /// **'这个模型是用更新版本的 Cubism 导出的（moc 版本 {version}），手机上的运行库最高只认到 {latest}。在 Cubism Editor 里导出成旧一点的版本再导入就行。'**
+  String companionFailedMocVersion(String version, String latest);
+
+  /// No description provided for @companionMenuAdapt.
+  ///
+  /// In zh, this message translates to:
+  /// **'适配这个模型'**
+  String get companionMenuAdapt;
+
+  /// No description provided for @companionAdaptHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'用你配好的模型看一遍这个角色的参数，把转头、眨眼、表情和摸哪里对上。只发参数名单，不发模型文件。'**
+  String get companionAdaptHint;
+
+  /// No description provided for @companionAdaptNote.
+  ///
+  /// In zh, this message translates to:
+  /// **'哪里不对？（可以不填）'**
+  String get companionAdaptNote;
+
+  /// No description provided for @companionAdaptNoteHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'比如：摸头没反应，开心的时候脸是黑的'**
+  String get companionAdaptNoteHint;
+
+  /// No description provided for @companionAdaptRun.
+  ///
+  /// In zh, this message translates to:
+  /// **'让 AI 适配'**
+  String get companionAdaptRun;
+
+  /// No description provided for @companionAdaptUndo.
+  ///
+  /// In zh, this message translates to:
+  /// **'撤销适配'**
+  String get companionAdaptUndo;
+
+  /// No description provided for @companionAdaptAuto.
+  ///
+  /// In zh, this message translates to:
+  /// **'导入新模型时自动适配'**
+  String get companionAdaptAuto;
+
+  /// No description provided for @companionAdaptStart.
+  ///
+  /// In zh, this message translates to:
+  /// **'让我适应一下这个新身体……'**
+  String get companionAdaptStart;
+
+  /// No description provided for @companionAdaptDone.
+  ///
+  /// In zh, this message translates to:
+  /// **'好啦，这个身体我会用了。'**
+  String get companionAdaptDone;
+
+  /// No description provided for @companionAdaptDoneNote.
+  ///
+  /// In zh, this message translates to:
+  /// **'好啦，这个身体我会用了。{note}'**
+  String companionAdaptDoneNote(String note);
+
+  /// No description provided for @companionAdaptUndone.
+  ///
+  /// In zh, this message translates to:
+  /// **'好，换回原来的样子了。'**
+  String get companionAdaptUndone;
+
+  /// No description provided for @companionAdaptNoKey.
+  ///
+  /// In zh, this message translates to:
+  /// **'要用你的模型帮我适配，先在设置里填上 API Key。'**
+  String get companionAdaptNoKey;
+
+  /// No description provided for @companionAdaptFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'这次没适应好（{reason}），可以在菜单的「适配这个模型」里再试一次。'**
+  String companionAdaptFailed(String reason);
+
+  /// No description provided for @companionAdaptUnreadable.
+  ///
+  /// In zh, this message translates to:
+  /// **'模型的回答看不懂'**
+  String get companionAdaptUnreadable;
+
+  /// No description provided for @companionAdaptEmpty.
+  ///
+  /// In zh, this message translates to:
+  /// **'模型没找到能用的对应'**
+  String get companionAdaptEmpty;
+
+  /// No description provided for @companionAdaptNetwork.
+  ///
+  /// In zh, this message translates to:
+  /// **'网络不通'**
+  String get companionAdaptNetwork;
+
   /// No description provided for @engineNewChatDefaultsLast.
   ///
   /// In zh, this message translates to:
