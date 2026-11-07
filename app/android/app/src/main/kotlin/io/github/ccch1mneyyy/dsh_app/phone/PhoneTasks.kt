@@ -193,6 +193,29 @@ class PhoneTasks(
         true
     }
 
+    /** A single system start and its optional fallback notice, bound to the original call owner.
+     * Task cancellation and each commitment share [lock]; platform work runs AFTER this lock.
+     * Committed work may finish after stop returns. Thread interruption is only sampled here.
+     */
+    inner class SystemDispatch internal constructor(private val owner: Owner) {
+        private var startCommitted = false
+        private var noticeCommitted = false
+
+        fun commitStart(): Boolean = synchronized(lock) {
+            if (startCommitted || !owner.active || !currentLocked(owner) || Thread.currentThread().isInterrupted) return false
+            startCommitted = true
+            true
+        }
+
+        fun commitNotice(): Boolean = synchronized(lock) {
+            if (!startCommitted || noticeCommitted || !currentLocked(owner) || Thread.currentThread().isInterrupted) return false
+            noticeCommitted = true
+            true
+        }
+    }
+
+    fun systemDispatch(owner: Owner): SystemDispatch = SystemDispatch(owner)
+
     private fun currentLocked(owner: Owner): Boolean =
         owner.taskId == taskId && owner.lifecycle == lifecycle && owner.active == active &&
             clock() >= stoppedUntil && (!active || !idleLocked(clock()))
@@ -315,6 +338,17 @@ class PhoneTasks(
             app = label
         }
         fire()
+    }
+
+    /** A completed system start must not rename a replacement task. Notify outside [lock]. */
+    fun setAppIfCurrent(owner: Owner, label: String?): Boolean {
+        var changed = false
+        synchronized(lock) {
+            if (!owner.active || !currentLocked(owner)) return false
+            if (label != null && app != label) { app = label; changed = true }
+        }
+        if (changed) fire()
+        return true
     }
 
     fun interject(text: String) {

@@ -72,10 +72,10 @@ class PhoneCallTailOwnerTest {
             override fun system() = object : SystemApi {
                 override fun apps() = listOf(AppEntry("Blocked", "blocked.app"))
                 override fun isInstalled(pkg: String) = true
-                override fun launch(app: AppEntry) = error("the deny list must prevent launch")
+                override fun launch(app: AppEntry, dispatch: PhoneTasks.SystemDispatch) = error("the deny list must prevent launch")
                 override fun urlTarget(url: String) = error("unexpected URL")
-                override fun openUrl(url: String, target: UrlTarget) = error("unexpected URL open")
-                override fun intent(spec: IntentSpec, shareTo: AppEntry?) = error("unexpected intent")
+                override fun openUrl(url: String, target: UrlTarget, dispatch: PhoneTasks.SystemDispatch) = error("unexpected URL open")
+                override fun intent(spec: IntentSpec, shareTo: AppEntry?, dispatch: PhoneTasks.SystemDispatch) = error("unexpected intent")
                 override fun notify(title: String, text: String) = error("unexpected notification")
                 override fun clipboardSet(text: String) = error("unexpected clipboard")
                 override fun clipboardGet() = error("unexpected clipboard")

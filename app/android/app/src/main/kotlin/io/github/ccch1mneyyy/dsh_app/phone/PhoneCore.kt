@@ -216,8 +216,8 @@ class PhoneCore(
                 safety.checkOpen(pkg, target.appLabel)?.let { return Out(it.message, error = true, app = target.appLabel ?: pkg, summary = ui.get("phone_log_open_url", "打开链接"), decision = "refused:${it.rule}") } // l10n:keep test default
             }
             if (!tasks.isCurrent(owner) || Thread.currentThread().isInterrupted) return stoppedOut("open")
-            val r = env.system().openUrl(url, target)
-            return afterSystem(r, ui.get("phone_log_open_url_scheme", "打开链接 %1\$s:", url.substringBefore(':')), target.appLabel ?: target.packageName) // l10n:keep test default
+            val r = env.system().openUrl(url, target, tasks.systemDispatch(owner))
+            return afterSystem(owner, r, ui.get("phone_log_open_url_scheme", "打开链接 %1\$s:", url.substringBefore(':')), target.appLabel ?: target.packageName) // l10n:keep test default
         }
         val app = when (val r = resolveApp(appQ!!)) {
             is Either.Left -> return Out(r.value, error = true)
@@ -228,7 +228,7 @@ class PhoneCore(
         }
         if (!background) {
             if (!tasks.isCurrent(owner) || Thread.currentThread().isInterrupted) return stoppedOut("open")
-            return afterSystem(env.system().launch(app), ui.get("phone_log_open_app", "打开 %1\$s", app.packageName), app.label) // l10n:keep test default
+            return afterSystem(owner, env.system().launch(app, tasks.systemDispatch(owner)), ui.get("phone_log_open_app", "打开 %1\$s", app.packageName), app.label) // l10n:keep test default
         }
         val driver = env.driver(PhoneScreen.BACKGROUND)
             ?: return Out(env.backgroundUnavailable(), error = true, app = app.label, summary = ui.get("phone_log_open_background", "后台屏打开 %1\$s", app.packageName), decision = "unavailable") // l10n:keep test default
@@ -252,8 +252,9 @@ class PhoneCore(
     }
 
     /** A system action that brought up another app's UI: attach the new main screen when we can read it. */
-    private fun afterSystem(r: SysResult, summary: String, app: String?): Out {
-        if (r.ok) tasks.setApp(r.appLabel ?: app)
+    private fun afterSystem(owner: PhoneTasks.Owner, r: SysResult, summary: String, app: String?): Out {
+        if (Thread.currentThread().isInterrupted || !tasks.isCurrent(owner)) return stoppedOut(summary)
+        if (r.ok && !tasks.setAppIfCurrent(owner, r.appLabel ?: app)) return stoppedOut(summary)
         val screen = if (r.ok) mainScreenAfter(SETTLE_AFTER_LAUNCH_MS) else null
         return Out(r.message, error = !r.ok, screen = screen, app = r.appLabel ?: app, summary = summary, decision = if (r.ok) "ok" else "failed")
     }
@@ -297,8 +298,8 @@ class PhoneCore(
             }
         }
         if (!tasks.isCurrent(owner) || Thread.currentThread().isInterrupted) return stoppedOut("intent $kind")
-        val r = env.system().intent(spec, shareTo)
-        return afterSystem(r, "intent $kind", r.appLabel ?: shareTo?.label)
+        val r = env.system().intent(spec, shareTo, tasks.systemDispatch(owner))
+        return afterSystem(owner, r, "intent $kind", r.appLabel ?: shareTo?.label)
     }
 
     private fun notify(a: Args): Out {
