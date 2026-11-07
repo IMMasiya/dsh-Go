@@ -658,7 +658,7 @@ class PrivilegedDisplayCore(private val context: Context) {
         val now = SystemClock.uptimeMillis()
         injectKey(KeyEvent(now, now, KeyEvent.ACTION_DOWN, code, 0))
         sleepChecked(4)
-        injectKey(KeyEvent(SystemClock.uptimeMillis(), now, KeyEvent.ACTION_UP, code, 0))
+        injectKey(KeyEvent(now, SystemClock.uptimeMillis(), KeyEvent.ACTION_UP, code, 0))
     }
 
     private fun typeText(pkg: String, request: Bundle, response: Bundle) {
