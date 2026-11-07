@@ -126,6 +126,36 @@ void main() {
     return ((request['content']! as List).single as Map)['text']! as String;
   }
 
+  for (final description in <String?>['Saved custom preset', null]) {
+    testWidgets('loading diagnostic is visible with description=$description', (tester) async {
+      const broken = 'Cannot resolve @deepseek-ai/dsh-tool-subagent-control/list-agents';
+      carrier.handlers['agentPresets/list'] = (_) => {
+        'presets': [
+          {'id': 'review', 'name': 'Broken preset', 'description': description, 'broken': broken},
+        ],
+      };
+      await pump(tester, const AgentPresetsPage());
+      await tester.tap(find.text('Broken preset'));
+      await tester.pumpAndSettle();
+      expect(find.text(broken), findsOneWidget);
+      await tester.tap(find.text('设为新对话默认'));
+      await tester.pumpAndSettle();
+      expect(carrier.argsOf('settings/update'), isEmpty);
+    });
+  }
+
+  testWidgets('healthy preset keeps its description', (tester) async {
+    carrier.handlers['agentPresets/list'] = (_) => {
+      'presets': [
+        {'id': 'review', 'name': 'Healthy preset', 'description': 'Saved custom preset'},
+      ],
+    };
+    await pump(tester, const AgentPresetsPage());
+    await tester.tap(find.text('Healthy preset'));
+    await tester.pumpAndSettle();
+    expect(find.text('Saved custom preset'), findsWidgets);
+  });
+
   testWidgets('新建: creator mode gets the bundle, the chat opens', (tester) async {
     await pump(tester, const AgentPresetsPage());
     await tester.tap(find.byTooltip('新建'));
