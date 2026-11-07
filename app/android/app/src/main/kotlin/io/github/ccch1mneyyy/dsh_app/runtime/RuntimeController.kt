@@ -314,7 +314,7 @@ class RuntimeController private constructor(private val app: Context) : DshProce
         if (!installer.isCurrent()) {
             error = "runtime not installed"
             setPhase(Phase.ERROR)
-            DshService.stopSelfIfRunning(app)
+            DshService.stopSelfIfRunning(app, runGen)
             return
         }
         baseUrl = null
@@ -396,14 +396,17 @@ class RuntimeController private constructor(private val app: Context) : DshProce
                     }
                     publishStartupFailure(startupError ?: e.message ?: e.javaClass.simpleName, ownerReleased = true)
                     log("[dsh-app] $error", "system")
-                    if (!resetting) DshService.stopSelfIfRunning(app)
+                    if (!resetting) DshService.stopSelfIfRunning(app, gen)
                 }
             }
         }
     }
 
-    @Synchronized internal fun stopProcess() {
-        if (phase == Phase.INSTALLING) return
+    @Synchronized internal fun stopProcess(expectedGeneration: Int? = null): Boolean {
+        // An automatic stop can arrive after a newer START service intent.
+        // Check under the same monitor that advances runGen and retires the process.
+        if (expectedGeneration != null && expectedGeneration != runGen) return false
+        if (phase == Phase.INSTALLING) return false
         stopGen = runGen
         val p = process
         if (p == null) {
@@ -418,10 +421,11 @@ class RuntimeController private constructor(private val app: Context) : DshProce
                 // Keep ERROR: the service's own stop after a crash must not hide the failure.
                 setPhase(Phase.INSTALLED)
             }
-            return
+            return true
         }
         setPhase(Phase.STOPPING)
         p.stop()
+        return true
     }
 
     /** The default network changed: point the guest's resolv.conf at its DNS. */
@@ -848,12 +852,12 @@ class RuntimeController private constructor(private val app: Context) : DshProce
                 // An accepted failure survives a later STOP. Reset still owns its final state.
                 // Neither a deadline nor a local launch error is evidence against a plugin.
                 if (!resetting) DshService.postStoppedAlert(app)
-                DshService.stopSelfIfRunning(app)
+                DshService.stopSelfIfRunning(app, runGen)
                 return
             }
             if (expected || stopGen >= runGen) {
                 if (!resetting && phase == Phase.STOPPING) setPhase(Phase.INSTALLED)
-                DshService.stopSelfIfRunning(app)
+                DshService.stopSelfIfRunning(app, runGen)
                 return
             }
             val tail = synchronized(runTail) { runTail.toList() }
@@ -898,7 +902,7 @@ class RuntimeController private constructor(private val app: Context) : DshProce
             } else {
                 setPhase(Phase.ERROR)
                 DshService.postStoppedAlert(app)
-                DshService.stopSelfIfRunning(app)
+                DshService.stopSelfIfRunning(app, runGen)
             }
         } finally {
             runtimeLogs.flush()

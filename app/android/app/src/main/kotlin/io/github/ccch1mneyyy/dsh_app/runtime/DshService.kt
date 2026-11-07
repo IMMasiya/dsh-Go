@@ -79,7 +79,9 @@ class DshService : Service() {
             }
             ACTION_STOP -> {
                 if (controller.phase == RuntimeController.Phase.INSTALLING) return START_NOT_STICKY
-                controller.stopProcess()
+                val expected = if (intent.hasExtra(EXTRA_STOP_GENERATION))
+                    intent.getIntExtra(EXTRA_STOP_GENERATION, -1) else null
+                if (!controller.stopProcess(expected)) return START_NOT_STICKY
                 running = false
                 stopForegroundCompat()
                 stopSelf()
@@ -180,6 +182,7 @@ class DshService : Service() {
         const val ACTION_START = "io.github.ccch1mneyyy.dsh_app.START"
         const val ACTION_STOP = "io.github.ccch1mneyyy.dsh_app.STOP"
         const val ACTION_PHONE_STOP = "io.github.ccch1mneyyy.dsh_app.PHONE_STOP"
+        private const val EXTRA_STOP_GENERATION = "stopGeneration"
 
         /** With [ACTION_INSTALL_DONE]: the unpack finished (true) or stopped. */
         const val EXTRA_INSTALL_OK = "ok"
@@ -275,8 +278,9 @@ class DshService : Service() {
             nm.notify(NOTIFICATION_ID, buildNotification(context, RuntimeController.get(context)))
         }
 
-        fun stopSelfIfRunning(context: Context) {
-            if (running) context.startService(Intent(context, DshService::class.java).setAction(ACTION_STOP))
+        fun stopSelfIfRunning(context: Context, generation: Int) {
+            if (running) context.startService(Intent(context, DshService::class.java).setAction(ACTION_STOP)
+                .putExtra(EXTRA_STOP_GENERATION, generation))
         }
 
         private fun ensureChannel(context: Context) {
