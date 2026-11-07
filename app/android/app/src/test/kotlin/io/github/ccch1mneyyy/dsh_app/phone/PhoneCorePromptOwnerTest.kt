@@ -56,12 +56,15 @@ class PhoneCorePromptOwnerTest {
         var reads = 0
         var writes = 0
         var opens = 0
+        var observing: () -> Unit = {}
+        var observedText = "Example"
         val actions = mutableListOf<PhoneAction>()
         override fun availability() = Availability(true)
         override fun foregroundPackage() = "example.app"
         override fun observe(detail: Boolean, image: Boolean): ScreenSnapshot {
             reads++
-            return ScreenSnapshot("${screen.prefix}1", "Example", "Example", "example.app")
+            observing()
+            return ScreenSnapshot("${screen.prefix}1", observedText, "Example", "example.app")
         }
         override fun collect(screenId: String, listElementId: Int, maxPages: Int, until: String?) = error("unexpected collect")
         override fun target(screenId: String, elementId: Int) = TargetInfo(screenId, elementId,
@@ -230,4 +233,75 @@ class PhoneCorePromptOwnerTest {
             assertEquals(1, driver.writes)
         }
     }
+    private fun replaceDuringNextBegin() {
+        var armed = true
+        tasks.addListener { snapshot ->
+            if (armed && snapshot.active) {
+                armed = false
+                tasks.stop("listener replaced the original begin")
+                tasks.clearStop()
+                tasks.begin()
+                tasks.setApp("successor")
+            }
+        }
+    }
+
+    @Test fun beginListenerCannotLendSuccessorOwnerToOldLaunch() {
+        replaceDuringNextBegin()
+        val result = openApp()
+        assertTrue(result.text, result.isError)
+        assertTrue(result.text.startsWith(PhoneTasks.STOPPED_MESSAGE))
+        assertEquals(0, launches)
+        assertEquals(0, main.reads)
+        assertEquals("successor", tasks.snapshot().app)
+    }
+
+    @Test fun beginListenerCannotLendSuccessorOwnerToOldWrite() {
+        replaceDuringNextBegin()
+        val result = tapCall()
+        assertTrue(result.text, result.isError)
+        assertTrue(result.text.startsWith(PhoneTasks.STOPPED_MESSAGE))
+        assertEquals(0, asked)
+        assertEquals(0, main.writes)
+        assertEquals("successor", tasks.snapshot().app)
+    }
+
+    @Test fun launchObservationStoppedWhileReadingDiscardsOldScreen() {
+        main.observedText = "late private screen"
+        main.observing = { tasks.stop("stopped while observing") }
+        val result = openApp()
+        assertTrue(result.text, result.isError)
+        assertTrue(result.text.startsWith(PhoneTasks.STOPPED_MESSAGE))
+        assertFalse(result.text.contains("late private screen"))
+        assertEquals(1, launches)
+        assertEquals(1, main.reads)
+    }
+
+    @Test fun lateScreenCannotRenameReplacementTaskOrReturnItsContent() {
+        main.observedText = "late private screen"
+        main.observing = { replace(); tasks.setApp("successor") }
+        val result = core.call(PhoneToolCatalog.SCREEN, emptyMap())
+        assertTrue(result.text, result.isError)
+        assertTrue(result.text.startsWith(PhoneTasks.STOPPED_MESSAGE))
+        assertFalse(result.text.contains("late private screen"))
+        assertEquals("successor", tasks.snapshot().app)
+        assertEquals(1, main.reads)
+    }
+
+    @Test fun appLabelListenerReplacementPreventsPostLaunchObservation() {
+        var armed = true
+        tasks.addListener { snapshot ->
+            if (armed && snapshot.app == "Example") {
+                armed = false
+                replace()
+                tasks.setApp("successor")
+            }
+        }
+        val result = openApp()
+        assertTrue(result.text, result.isError)
+        assertEquals(1, launches)
+        assertEquals(0, main.reads)
+        assertEquals("successor", tasks.snapshot().app)
+    }
+
 }
