@@ -220,6 +220,8 @@
     <string name="phone_log_open_url">打开链接</string>
     <string name="phone_log_open_url_scheme">打开链接 %1$s:</string>
     <string name="phone_log_open_app">打开 %1$s</string>
+    <string name="phone_log_system_returned_success">%1$s（系统返回成功；后续停止）</string>
+    <string name="phone_log_system_returned_failure">%1$s（系统返回失败；后续停止）</string>
     <string name="phone_log_open_background">后台屏打开 %1$s</string>
     <string name="phone_log_notify">通知</string>
     <string name="phone_log_clipboard_read">读剪贴板</string>

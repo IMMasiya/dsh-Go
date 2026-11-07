@@ -15,6 +15,8 @@ class PhoneCorePromptOwnerTest {
     private var lookup: () -> Unit = {}
     private var prepareSystem: () -> Unit = {}
     private var afterStart: () -> Unit = {}
+    private var settle: () -> Unit = {}
+    private var launchResult = SysResult(true, "launched")
     private var launches = 0
     private var urls = 0
     private var intents = 0
@@ -35,11 +37,11 @@ class PhoneCorePromptOwnerTest {
         override fun zone() = ZoneId.of("UTC")
         override fun notifyFix(kind: String) {}
         override fun beforeHandoff(screen: PhoneScreen): String? { beforeHandoff(); return null }
-        override fun sleep(ms: Long) {}
+        override fun sleep(ms: Long) { settle() }
         override fun system() = object : SystemApi {
             override fun apps(): List<AppEntry> { lookup(); return listOf(AppEntry("Example", "example.app")) }
             override fun isInstalled(pkg: String) = true
-            override fun launch(app: AppEntry, dispatch: PhoneTasks.SystemDispatch): SysResult { commit(dispatch); launches++; afterStart(); return SysResult(true, "launched") }
+            override fun launch(app: AppEntry, dispatch: PhoneTasks.SystemDispatch): SysResult { commit(dispatch); launches++; afterStart(); return launchResult }
             override fun urlTarget(url: String): UrlTarget {
                 lookup()
                 return UrlTarget(packageName = "example.app", appLabel = "Example")
@@ -58,6 +60,7 @@ class PhoneCorePromptOwnerTest {
         var opens = 0
         var observing: () -> Unit = {}
         var observedText = "Example"
+        var observedImage: ByteArray? = null
         var collects = 0
         var collecting: () -> Unit = {}
         var collectScreen = true
@@ -67,7 +70,7 @@ class PhoneCorePromptOwnerTest {
         override fun observe(detail: Boolean, image: Boolean): ScreenSnapshot {
             reads++
             observing()
-            return ScreenSnapshot("${screen.prefix}1", observedText, "Example", "example.app")
+            return ScreenSnapshot("${screen.prefix}1", observedText, "Example", "example.app", image = observedImage)
         }
         override fun collect(screenId: String, listElementId: Int, maxPages: Int, until: String?): CollectResult {
             collects++
@@ -329,11 +332,16 @@ class PhoneCorePromptOwnerTest {
 
     @Test fun launchObservationStoppedWhileReadingDiscardsOldScreen() {
         main.observedText = "late private screen"
+        main.observedImage = byteArrayOf(1, 2, 3)
         main.observing = { tasks.stop("stopped while observing") }
         val result = openApp()
         assertTrue(result.text, result.isError)
         assertTrue(result.text.startsWith(PhoneTasks.STOPPED_MESSAGE))
         assertFalse(result.text.contains("late private screen"))
+        assertTrue(result.text.contains("launched"))
+        assertNull(result.image)
+        assertEquals("stopped", core.log.last()!!.decision)
+        assertTrue(core.log.last()!!.summary.contains("系统返回成功"))
         assertEquals(1, launches)
         assertEquals(1, main.reads)
     }
@@ -363,6 +371,47 @@ class PhoneCorePromptOwnerTest {
         assertEquals(1, launches)
         assertEquals(0, main.reads)
         assertEquals("successor", tasks.snapshot().app)
+    }
+
+    @Test fun stoppingDuringSettlePreservesTheReturnedSystemResultWithoutReading() {
+        settle = { tasks.stop("stop during settle") }
+        val result = openApp()
+        assertTrue(result.isError)
+        assertTrue(result.text.startsWith(PhoneTasks.STOPPED_MESSAGE))
+        assertTrue(result.text.contains("launched"))
+        assertNull(result.image)
+        assertEquals(1, launches)
+        assertEquals(0, main.reads)
+        assertEquals("stopped", core.log.last()!!.decision)
+        assertTrue(core.log.last()!!.summary.contains("系统返回成功"))
+        assertFalse(core.log.last()!!.summary.contains("launched"))
+    }
+
+    @Test fun interruptedSettlePreservesTheReturnedSystemResult() {
+        settle = { throw InterruptedException("settle interrupted") }
+        val result = openApp()
+        assertTrue(result.isError)
+        assertTrue(result.text.startsWith(PhoneTasks.STOPPED_MESSAGE))
+        assertTrue(result.text.contains("launched"))
+        assertEquals(1, launches)
+        assertEquals(0, main.reads)
+        assertEquals("stopped", core.log.last()!!.decision)
+        assertTrue(core.log.last()!!.summary.contains("系统返回成功"))
+    }
+
+    @Test fun aFailedSystemReturnIsPreservedWhenItsOwnerWasReplaced() {
+        launchResult = SysResult(false, "platform rejected private payload")
+        afterStart = { replace(); tasks.setApp("successor") }
+        val result = openApp()
+        assertTrue(result.isError)
+        assertTrue(result.text.startsWith(PhoneTasks.STOPPED_MESSAGE))
+        assertTrue(result.text.contains(launchResult.message))
+        assertEquals("successor", tasks.snapshot().app)
+        assertEquals(0, main.reads)
+        assertEquals(1, launches)
+        assertEquals("stopped", core.log.last()!!.decision)
+        assertTrue(core.log.last()!!.summary.contains("系统返回失败"))
+        assertFalse(core.log.last()!!.summary.contains("private payload"))
     }
 
 }
