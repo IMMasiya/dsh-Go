@@ -13,6 +13,8 @@ class PhoneCorePromptOwnerTest {
     private var beforeHandoff: () -> Unit = {}
     private var asked = 0
     private var lookup: () -> Unit = {}
+    private var prepareSystem: () -> Unit = {}
+    private var afterStart: () -> Unit = {}
     private var launches = 0
     private var urls = 0
     private var intents = 0
@@ -37,13 +39,13 @@ class PhoneCorePromptOwnerTest {
         override fun system() = object : SystemApi {
             override fun apps(): List<AppEntry> { lookup(); return listOf(AppEntry("Example", "example.app")) }
             override fun isInstalled(pkg: String) = true
-            override fun launch(app: AppEntry): SysResult { launches++; return SysResult(true, "launched") }
+            override fun launch(app: AppEntry, dispatch: PhoneTasks.SystemDispatch): SysResult { commit(dispatch); launches++; afterStart(); return SysResult(true, "launched") }
             override fun urlTarget(url: String): UrlTarget {
                 lookup()
                 return UrlTarget(packageName = "example.app", appLabel = "Example")
             }
-            override fun openUrl(url: String, target: UrlTarget): SysResult { urls++; return SysResult(true, "opened") }
-            override fun intent(spec: IntentSpec, shareTo: AppEntry?): SysResult { intents++; return SysResult(true, "sent") }
+            override fun openUrl(url: String, target: UrlTarget, dispatch: PhoneTasks.SystemDispatch): SysResult { commit(dispatch); urls++; afterStart(); return SysResult(true, "opened") }
+            override fun intent(spec: IntentSpec, shareTo: AppEntry?, dispatch: PhoneTasks.SystemDispatch): SysResult { commit(dispatch); intents++; afterStart(); return SysResult(true, "sent") }
             override fun notify(title: String, text: String) = error("unexpected notification")
             override fun clipboardSet(text: String) = error("unexpected clipboard")
             override fun clipboardGet() = error("unexpected clipboard")
@@ -66,6 +68,12 @@ class PhoneCorePromptOwnerTest {
             "按钮", "发送", "example.app", "Example", false, false, false)
         override fun perform(action: PhoneAction): ActionResult { actions += action; writes++; return ActionResult(true, "done") }
         override fun open(packageName: String): ActionResult { opens++; return ActionResult(true, "opened") }
+    }
+
+    // Models the mandatory SystemApi ticket contract, not Android PM or Binder execution.
+    private fun commit(dispatch: PhoneTasks.SystemDispatch) {
+        prepareSystem()
+        if (!dispatch.commitStart()) throw InterruptedException(PhoneTasks.STOPPED_MESSAGE)
     }
 
     private fun replace() { tasks.endTask(); tasks.begin() }
@@ -111,6 +119,22 @@ class PhoneCorePromptOwnerTest {
         assertEquals(0, intents)
         assertTrue(tasks.isActive)
         assertFalse(tasks.isStopped())
+    }
+
+    @Test fun originalOwnerReachesAllThreeFinalSystemEntries() {
+        prepareSystem = ::replace
+        assertTrue(openApp().isError)
+        assertTrue(openUrl().isError)
+        assertTrue(shareIntent().isError)
+        assertEquals(0, launches + urls + intents)
+    }
+
+    @Test fun aCommittedLateStartCannotRenameOrReadTheSuccessor() {
+        afterStart = { replace(); tasks.setApp("successor") }
+        assertTrue(openApp().isError)
+        assertEquals(1, launches)
+        assertEquals("successor", tasks.snapshot().app)
+        assertEquals(0, main.reads)
     }
 
     @Test fun currentSystemLaunchesStillDispatchExactlyOnce() {

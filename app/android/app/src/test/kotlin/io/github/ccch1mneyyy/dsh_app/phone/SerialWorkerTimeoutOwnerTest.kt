@@ -9,6 +9,7 @@ import java.util.concurrent.RunnableFuture
 import java.util.concurrent.ThreadPoolExecutor
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.TimeoutException
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.atomic.AtomicReference
@@ -183,4 +184,84 @@ class SerialWorkerTimeoutOwnerTest {
             assertTrue(original.awaitTermination(5, TimeUnit.SECONDS))
         }
     }
+
+    @Test fun interruptedGraceStillRetiresAStuckJobAndCancelsItsQueue() = interruptedGrace(false)
+
+    @Test fun interruptedGraceDoesNotRetireAnAlreadyFinishedJobsSuccessor() = interruptedGrace(true)
+
+    private fun interruptedGrace(finishBeforeInterrupt: Boolean) {
+        val clock = AtomicLong(1_000)
+        val firstEntered = CountDownLatch(1)
+        val secondSubmitted = CountDownLatch(1)
+        val secondEntered = CountDownLatch(1)
+        val releaseFirst = CountDownLatch(1)
+        val releaseSecond = CountDownLatch(1)
+        val firstDone = CountDownLatch(1)
+        val secondDone = CountDownLatch(1)
+        val firstResult = AtomicReference<SerialWorker.Outcome<String>>()
+        val secondResult = AtomicReference<SerialWorker.Outcome<String>>()
+        val escaped = AtomicReference<Throwable>()
+        val callerInterrupted = AtomicBoolean()
+        val worker = SerialWorker("grace-interrupt", clock::get) {
+            if (finishBeforeInterrupt) {
+                releaseFirst.countDown()
+                await(secondEntered) // A's finally is complete; B reuses the original worker.
+            }
+            // A real interruptible latch wait clears the flag and throws; no elapsed-time wait.
+            Thread.currentThread().interrupt()
+            CountDownLatch(1).await()
+            false
+        }
+        val original = ControlledExecutor(clock, firstEntered, secondSubmitted) {}
+        install(worker, original)
+        val firstCaller = Thread {
+            try {
+                firstResult.set(worker.run(10, 100_000) {
+                    firstEntered.countDown()
+                    while (releaseFirst.count != 0L) {
+                        try { releaseFirst.await() } catch (_: InterruptedException) { /* hold A */ }
+                    }
+                    "first"
+                })
+                callerInterrupted.set(Thread.currentThread().isInterrupted)
+            } catch (error: Throwable) { escaped.set(error) }
+            finally { firstDone.countDown() }
+        }
+        val secondCaller = Thread {
+            try {
+                secondResult.set(worker.run(100_000, 100_000) {
+                    secondEntered.countDown()
+                    releaseSecond.await()
+                    "second"
+                })
+            } finally { secondDone.countDown() }
+        }
+        try {
+            firstCaller.start(); await(firstEntered)
+            secondCaller.start(); await(firstDone)
+            assertNull("grace interruption must be returned, not escape run", escaped.get())
+            assertSame(SerialWorker.Outcome.Interrupted, firstResult.get())
+            assertTrue("caller interruption must be restored", callerInterrupted.get())
+            if (finishBeforeInterrupt) {
+                assertSame(original, executor(worker))
+                assertFalse(original.isShutdown)
+                releaseSecond.countDown(); await(secondDone)
+                assertEquals("second", (secondResult.get() as SerialWorker.Outcome.Done<*>).value)
+            } else {
+                assertNotSame(original, executor(worker))
+                assertTrue(original.isShutdown)
+                await(secondDone)
+                assertTrue((secondResult.get() as SerialWorker.Outcome.TimedOut).queued)
+                assertEquals(1L, secondEntered.count)
+                assertEquals("new", (worker.run(100_000, 100_000) { "new" } as SerialWorker.Outcome.Done<*>).value)
+            }
+        } finally {
+            releaseFirst.countDown(); releaseSecond.countDown()
+            worker.shutdown(); original.shutdownNow()
+            firstCaller.join(5_000); secondCaller.join(5_000)
+            assertFalse(firstCaller.isAlive); assertFalse(secondCaller.isAlive)
+            assertTrue(original.awaitTermination(5, TimeUnit.SECONDS))
+        }
+    }
+
 }

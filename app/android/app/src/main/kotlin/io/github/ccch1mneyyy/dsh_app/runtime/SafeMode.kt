@@ -217,8 +217,10 @@ object SafeMode {
         return out
     }
 
-    /** Renames each listed file to `<name>.off-<stamp>`; returns `from → to` guest paths of what moved. */
-    fun moveAside(rootfs: File, guestPaths: List<String>, stamp: String): List<Pair<String, String>> {
+    data class MoveAsideResult(val moved: List<Pair<String, String>>, val failure: IOException? = null)
+
+    /** Stops at a failed rename; earlier successful moves remain available for the repair briefing. */
+    fun moveAside(rootfs: File, guestPaths: List<String>, stamp: String): MoveAsideResult {
         val moved = ArrayList<Pair<String, String>>()
         for (path in guestPaths.distinct()) {
             if (path !in MOVABLE) continue
@@ -227,9 +229,12 @@ object SafeMode {
             var target = File(file.parentFile, "${file.name}.off-$stamp")
             var n = 1
             while (target.exists()) target = File(file.parentFile, "${file.name}.off-$stamp-${n++}")
-            if (file.renameTo(target)) moved += path to (path.substringBeforeLast('/') + "/" + target.name)
+            if (!file.renameTo(target)) {
+                return MoveAsideResult(moved, IOException("could not move $path aside; ${moved.size} file(s) already moved"))
+            }
+            moved += path to (path.substringBeforeLast('/') + "/" + target.name)
         }
-        return moved
+        return MoveAsideResult(moved)
     }
 
     // ── Guest files ─────────────────────────────────────────────────────────────────
@@ -573,6 +578,43 @@ function installedVersion (name) {
   return pkg && typeof pkg.version === 'string' ? pkg.version : null
 }
 
+// Match DSH's installation-first package lookup without requiring a package
+// to export package.json. Resolve metadata only; enabling does not boot code.
+function requireInstalledBundle (name) {
+  if (!/^(@[^/\\]+\/)?[^/\\]+$/.test(name) || name.split('/').some(function (part) { return part === '.' || part === '..' })) {
+    throw new Error('不是有效的包名：' + name)
+  }
+  const createRequire = require('module').createRequire
+  const anchors = ['/opt/dsh/node_modules/@deepseek-ai/dsh/package.json', manifestPath()]
+  for (const anchor of anchors) {
+    const paths = createRequire(anchor).resolve.paths(name) || []
+    for (const directory of paths) {
+      const file = path.join(directory, name, 'package.json')
+      try {
+        fs.statSync(file)
+      } catch (e) {
+        if (e.code === 'ENOENT' || e.code === 'ENOTDIR') continue
+        throw e
+      }
+      // A broken installation copy must not silently select a profile copy.
+      const pkg = JSON.parse(fs.readFileSync(file, 'utf8'))
+      const bundle = pkg && pkg.dsh && pkg.dsh.bundle
+      if (!bundle || typeof bundle !== 'object' || Array.isArray(bundle)) {
+        throw new Error(name + ' 的 package.json 没有有效的 dsh.bundle，不能启用')
+      }
+      // Reuse the installed runtime's read-only patch dialect (including !!js
+      // data and ordered/empty arrays). Never boot plugins or rewrite layers.
+      // Keep this import lazy: a damaged runtime must not break list/disable.
+      const boot = createRequire(anchors[0])('@deepseek-ai/dsh-app-boot')
+      for (const patch of boot.bundlePatchFiles(bundle)) {
+        boot.loadOverlayPatches('dsh-app-plugins', path.join(path.dirname(file), patch))
+      }
+      return
+    }
+  }
+  throw new Error(name + ' 在 DSH 安装和 web profile 中都无法解析，不能启用')
+}
+
 // Same protocol as DSH's own writers: a `wx`-created <file>.lock holding the writer's pid,
 // taken over when that pid no longer exists; the new content lands by rename.
 function withLock (file, fn) {
@@ -666,6 +708,7 @@ function enable (names) {
     changed = updateBundles(function (bundles, deps) {
       for (const name of names) {
         if (!Object.prototype.hasOwnProperty.call(deps, name) && name.indexOf(SHIPPED) !== 0) throw new Error(name + ' 没有安装在 web 里（不在 dependencies 中），不能启用')
+        requireInstalledBundle(name)
       }
       const next = bundles.slice()
       for (const name of names) if (next.indexOf(name) < 0) next.push(name)

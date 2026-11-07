@@ -18,6 +18,13 @@ function run(t, { uninstall = false, names = ['local-plugin'] } = {}) {
   const file = join(home, 'profiles/web/package.json');
   const manifest = { dependencies: { 'local-plugin': '1.0.0' }, dsh: { profile: { bundles: ['@deepseek-ai/dsh-base'] } } };
   fs.writeFileSync(file, JSON.stringify(manifest));
+  // Installed means resolvable package metadata, not only a dependency entry.
+  for (const name of ['local-plugin', '@deepseek-ai/dsh-web-app']) {
+    const dir = join(home, 'profiles/web/node_modules', name);
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(join(dir, 'package.json'), JSON.stringify({ name, dsh: { bundle: { patch: './cordis.patch.yml' } } }));
+    fs.writeFileSync(join(dir, 'cordis.patch.yml'), '[]\n');
+  }
   if (uninstall) fs.writeFileSync(file + '.lock', String(process.pid));
   let completed = false;
   let stderr = '';
@@ -38,7 +45,20 @@ function run(t, { uninstall = false, names = ['local-plugin'] } = {}) {
   } };
   try {
     runInNewContext(script, {
-      require: name => name === 'fs' ? scheduledFs : require(name),
+      require: name => {
+        if (name === 'fs') return scheduledFs;
+        if (name === 'module') return { createRequire: anchor => {
+          const local = createRequire(anchor);
+          const selected = name => name === '@deepseek-ai/dsh-app-boot'
+            ? { // Pure lock tests isolate boot parsing; the *-live suite uses the real runtime parser.
+                bundlePatchFiles: bundle => typeof bundle.patch === 'string' ? [bundle.patch] : bundle.patch,
+                loadOverlayPatches: (_, file) => { fs.readFileSync(file, 'utf8'); return []; },
+              } : local(name);
+          selected.resolve = local.resolve;
+          return selected;
+        } };
+        return require(name);
+      },
       process: { pid: process.pid, argv: ['node', 'helper', 'enable', ...names], env: { DSH_HOME: home },
         stdout: { write: text => { stdout += text; } }, stderr: { write: text => { stderr += text; } },
         exit: code => { status = code; throw exit; }, kill: process.kill.bind(process) },

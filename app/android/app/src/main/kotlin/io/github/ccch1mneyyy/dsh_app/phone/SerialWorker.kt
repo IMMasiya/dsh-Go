@@ -112,7 +112,7 @@ class SerialWorker internal constructor(
                 if (scope.charged(started, t) > budgetMs || t - submitted > maxTotalMs) {
                     future.cancel(true)
                     abandonIfStuck(exec, finished)
-                    return Outcome.TimedOut(queued = false)
+                    return if (Thread.currentThread().isInterrupted) Outcome.Interrupted else Outcome.TimedOut(queued = false)
                 }
             } catch (e: ExecutionException) {
                 val cause = e.cause ?: e
@@ -154,7 +154,13 @@ class SerialWorker internal constructor(
 
     /** Cancellation completes the Future before its body exits; wait for this job's own finally. */
     private fun abandonIfStuck(exec: ExecutorService, finished: CountDownLatch) {
-        if (finished.count == 0L || awaitFinished(finished)) return
+        if (finished.count == 0L) return
+        try {
+            if (awaitFinished(finished)) return
+        } catch (_: InterruptedException) {
+            // Cancellation of the caller must not skip this job's retirement check.
+            Thread.currentThread().interrupt()
+        }
         synchronized(retirementLock) {
             // The job can finish as its grace period expires. Its successor may reuse the same
             // thread, so only this completion signal can authorize retiring the executor.
