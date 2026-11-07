@@ -130,6 +130,7 @@ class MediaPlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandle
     }
 
     private fun ask(result: MethodChannel.Result, then: () -> Unit) {
+        if (pendingSave != null) return result.error("failed", "a save is waiting for the storage permission", null)
         val host = activity?.activity ?: return result.error("permission", "no activity to ask for permission", null)
         pendingSave = then
         pendingDenied = { result.error("permission", "storage permission denied", null) }
