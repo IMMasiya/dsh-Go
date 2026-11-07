@@ -16628,6 +16628,186 @@ abstract class L10n {
   /// **'关闭后不再用这个服务生成'**
   String get mediaSettingsEnabledHint;
 
+  /// No description provided for @mediaConfigKeySaved.
+  ///
+  /// In zh, this message translates to:
+  /// **'已保存 · 未验证'**
+  String get mediaConfigKeySaved;
+
+  /// No description provided for @mediaConfigKeyUnknown.
+  ///
+  /// In zh, this message translates to:
+  /// **'状态未知'**
+  String get mediaConfigKeyUnknown;
+
+  /// No description provided for @mediaConfigKeyNote.
+  ///
+  /// In zh, this message translates to:
+  /// **'密钥是否存在以主机返回为准。保存不代表已验证身份或模型权限。'**
+  String get mediaConfigKeyNote;
+
+  /// No description provided for @mediaConfigConsumers.
+  ///
+  /// In zh, this message translates to:
+  /// **'使用此密钥的媒体服务：{services}。修改或移除会影响这些服务；主机上的其他集成也可能使用它。'**
+  String mediaConfigConsumers(String services);
+
+  /// No description provided for @mediaConfigCheck.
+  ///
+  /// In zh, this message translates to:
+  /// **'检查已保存配置'**
+  String get mediaConfigCheck;
+
+  /// No description provided for @mediaConfigCheckNote.
+  ///
+  /// In zh, this message translates to:
+  /// **'仅检查本地配置快照，不请求供应商，不产生生成费用。不验证密钥、连通性、余额、模型权限或地区；配置是否接受仍以主机为准。'**
+  String get mediaConfigCheckNote;
+
+  /// No description provided for @mediaConfigCheckReady.
+  ///
+  /// In zh, this message translates to:
+  /// **'未发现本地配置问题'**
+  String get mediaConfigCheckReady;
+
+  /// No description provided for @mediaConfigCheckMissingKey.
+  ///
+  /// In zh, this message translates to:
+  /// **'主机尚未报告已保存的密钥。'**
+  String get mediaConfigCheckMissingKey;
+
+  /// No description provided for @mediaConfigCheckModels.
+  ///
+  /// In zh, this message translates to:
+  /// **'未选择模型，或部分已选模型不在目录中、协议不匹配。'**
+  String get mediaConfigCheckModels;
+
+  /// No description provided for @mediaConfigCheckDisabled.
+  ///
+  /// In zh, this message translates to:
+  /// **'此服务已关闭。'**
+  String get mediaConfigCheckDisabled;
+
+  /// No description provided for @mediaConfigUrlInvalid.
+  ///
+  /// In zh, this message translates to:
+  /// **'请输入含主机名的 HTTPS API 根地址，不得包含凭据、查询参数、片段或空白。'**
+  String get mediaConfigUrlInvalid;
+
+  /// No description provided for @mediaConfigUrlEndpoint.
+  ///
+  /// In zh, this message translates to:
+  /// **'这看起来是请求端点。请填写 API 根地址，主机会自动追加请求路径。'**
+  String get mediaConfigUrlEndpoint;
+
+  /// No description provided for @mediaConfigUrlRoot.
+  ///
+  /// In zh, this message translates to:
+  /// **'此协议只需来源地址（https://主机名），不要填写 API 路径。'**
+  String get mediaConfigUrlRoot;
+
+  /// No description provided for @mediaConfigUrlHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'填写 API 根地址，而非生成端点。OpenAI 兼容服务保留其路径前缀（如 /v1）。'**
+  String get mediaConfigUrlHint;
+
+  /// No description provided for @mediaConfigPreview.
+  ///
+  /// In zh, this message translates to:
+  /// **'创建请求预览'**
+  String get mediaConfigPreview;
+
+  /// No description provided for @mediaConfigPreviewNote.
+  ///
+  /// In zh, this message translates to:
+  /// **'仅预览生成/创建请求；编辑和查询状态可能使用不同路径。预览不代表连通或已获主机接受。'**
+  String get mediaConfigPreviewNote;
+
+  /// No description provided for @mediaConfigPreviewUnavailable.
+  ///
+  /// In zh, this message translates to:
+  /// **'此主机目录未提供请求路径。'**
+  String get mediaConfigPreviewUnavailable;
+
+  /// No description provided for @mediaConfigTargetTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'将密钥用于不同目标？'**
+  String get mediaConfigTargetTitle;
+
+  /// No description provided for @mediaConfigTargetBody.
+  ///
+  /// In zh, this message translates to:
+  /// **'目标将从 {before} 更改为 {after}。后续请求可能向新目标发送所引用的密钥，仅在信任该目标时继续。主机仍会校验此更改。'**
+  String mediaConfigTargetBody(String before, String after);
+
+  /// No description provided for @mediaConfigTargetConfirm.
+  ///
+  /// In zh, this message translates to:
+  /// **'信任目标并继续'**
+  String get mediaConfigTargetConfirm;
+
+  /// No description provided for @mediaVideoLoading.
+  ///
+  /// In zh, this message translates to:
+  /// **'正在加载视频…'**
+  String get mediaVideoLoading;
+
+  /// No description provided for @mediaVideoCannotPlay.
+  ///
+  /// In zh, this message translates to:
+  /// **'无法在 App 内播放此视频，请重试或使用其他应用打开。'**
+  String get mediaVideoCannotPlay;
+
+  /// No description provided for @mediaVideoPlay.
+  ///
+  /// In zh, this message translates to:
+  /// **'播放'**
+  String get mediaVideoPlay;
+
+  /// No description provided for @mediaVideoPause.
+  ///
+  /// In zh, this message translates to:
+  /// **'暂停'**
+  String get mediaVideoPause;
+
+  /// No description provided for @mediaVideoSaveFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'视频保存失败，请重试。'**
+  String get mediaVideoSaveFailed;
+
+  /// No description provided for @mediaImageLoading.
+  ///
+  /// In zh, this message translates to:
+  /// **'正在加载图片'**
+  String get mediaImageLoading;
+
+  /// No description provided for @mediaImageReload.
+  ///
+  /// In zh, this message translates to:
+  /// **'重新加载'**
+  String get mediaImageReload;
+
+  /// No description provided for @mediaImageReloadHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'只重新读取文件，不会重新生成或收费'**
+  String get mediaImageReloadHint;
+
+  /// No description provided for @mediaVideoNoPoster.
+  ///
+  /// In zh, this message translates to:
+  /// **'轻点播放视频'**
+  String get mediaVideoNoPoster;
+
+  /// No description provided for @mediaSavedFilesCount.
+  ///
+  /// In zh, this message translates to:
+  /// **'已保存 {count} 个文件到相册'**
+  String mediaSavedFilesCount(int count);
+
   /// No description provided for @nearbyThisChat.
   ///
   /// In zh, this message translates to:

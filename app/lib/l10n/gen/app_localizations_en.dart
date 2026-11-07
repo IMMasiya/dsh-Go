@@ -9500,6 +9500,109 @@ class L10nEn extends L10n {
   String get mediaSettingsEnabledHint => 'Turns this service off for generation';
 
   @override
+  String get mediaConfigKeySaved => 'Saved · not verified';
+
+  @override
+  String get mediaConfigKeyUnknown => 'Status unavailable';
+
+  @override
+  String get mediaConfigKeyNote =>
+      'Key presence is reported by the host. Saving a key does not verify authentication or model access.';
+
+  @override
+  String mediaConfigConsumers(String services) {
+    return 'Media services using this key: $services. Changing or removing it affects all of them; other host integrations may also use it.';
+  }
+
+  @override
+  String get mediaConfigCheck => 'Check saved configuration';
+
+  @override
+  String get mediaConfigCheckNote =>
+      'Local snapshot only; no provider request or generation charge. Does not verify the key, connectivity, balance, model access, or region. The host remains the authority on accepted settings.';
+
+  @override
+  String get mediaConfigCheckReady => 'No local configuration issues found';
+
+  @override
+  String get mediaConfigCheckMissingKey => 'The host has not reported a saved key.';
+
+  @override
+  String get mediaConfigCheckModels =>
+      'No selected models, or some selected models are missing or use a different protocol.';
+
+  @override
+  String get mediaConfigCheckDisabled => 'This service is switched off.';
+
+  @override
+  String get mediaConfigUrlInvalid =>
+      'Enter an HTTPS API root with a host, without credentials, query, fragment, or whitespace.';
+
+  @override
+  String get mediaConfigUrlEndpoint =>
+      'This looks like a request endpoint. Enter the API root instead; the host appends the request path.';
+
+  @override
+  String get mediaConfigUrlRoot => 'This protocol needs the origin only (https://host), without an API path.';
+
+  @override
+  String get mediaConfigUrlHint =>
+      'Enter the API root, not a generation endpoint. OpenAI-compatible roots keep their prefix (for example /v1).';
+
+  @override
+  String get mediaConfigPreview => 'Create request preview';
+
+  @override
+  String get mediaConfigPreviewNote =>
+      'Generation/create request only; edits and status requests may use different paths. Preview is not proof of connectivity or host acceptance.';
+
+  @override
+  String get mediaConfigPreviewUnavailable => 'Request path unavailable in this host catalogue.';
+
+  @override
+  String get mediaConfigTargetTitle => 'Reuse key at a different target?';
+
+  @override
+  String mediaConfigTargetBody(String before, String after) {
+    return 'Target changes from $before to $after. Future requests may send the referenced key to the new target. Only continue if you trust it. The host still validates the change.';
+  }
+
+  @override
+  String get mediaConfigTargetConfirm => 'Trust target and continue';
+
+  @override
+  String get mediaVideoLoading => 'Loading video…';
+
+  @override
+  String get mediaVideoCannotPlay => 'This video could not be played here. Retry or open it in another app.';
+
+  @override
+  String get mediaVideoPlay => 'Play';
+
+  @override
+  String get mediaVideoPause => 'Pause';
+
+  @override
+  String get mediaVideoSaveFailed => 'Couldn’t save the video. Try again.';
+
+  @override
+  String get mediaImageLoading => 'Loading image';
+
+  @override
+  String get mediaImageReload => 'Reload image';
+
+  @override
+  String get mediaImageReloadHint => 'Reads the file again; does not generate again or incur generation charges';
+
+  @override
+  String get mediaVideoNoPoster => 'Tap to play video';
+
+  @override
+  String mediaSavedFilesCount(int count) {
+    return 'Saved $count files to gallery';
+  }
+
+  @override
   String get nearbyThisChat => 'This chat';
 
   @override

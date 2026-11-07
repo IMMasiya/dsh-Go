@@ -9027,6 +9027,102 @@ class L10nZh extends L10n {
   String get mediaSettingsEnabledHint => '关闭后不再用这个服务生成';
 
   @override
+  String get mediaConfigKeySaved => '已保存 · 未验证';
+
+  @override
+  String get mediaConfigKeyUnknown => '状态未知';
+
+  @override
+  String get mediaConfigKeyNote => '密钥是否存在以主机返回为准。保存不代表已验证身份或模型权限。';
+
+  @override
+  String mediaConfigConsumers(String services) {
+    return '使用此密钥的媒体服务：$services。修改或移除会影响这些服务；主机上的其他集成也可能使用它。';
+  }
+
+  @override
+  String get mediaConfigCheck => '检查已保存配置';
+
+  @override
+  String get mediaConfigCheckNote => '仅检查本地配置快照，不请求供应商，不产生生成费用。不验证密钥、连通性、余额、模型权限或地区；配置是否接受仍以主机为准。';
+
+  @override
+  String get mediaConfigCheckReady => '未发现本地配置问题';
+
+  @override
+  String get mediaConfigCheckMissingKey => '主机尚未报告已保存的密钥。';
+
+  @override
+  String get mediaConfigCheckModels => '未选择模型，或部分已选模型不在目录中、协议不匹配。';
+
+  @override
+  String get mediaConfigCheckDisabled => '此服务已关闭。';
+
+  @override
+  String get mediaConfigUrlInvalid => '请输入含主机名的 HTTPS API 根地址，不得包含凭据、查询参数、片段或空白。';
+
+  @override
+  String get mediaConfigUrlEndpoint => '这看起来是请求端点。请填写 API 根地址，主机会自动追加请求路径。';
+
+  @override
+  String get mediaConfigUrlRoot => '此协议只需来源地址（https://主机名），不要填写 API 路径。';
+
+  @override
+  String get mediaConfigUrlHint => '填写 API 根地址，而非生成端点。OpenAI 兼容服务保留其路径前缀（如 /v1）。';
+
+  @override
+  String get mediaConfigPreview => '创建请求预览';
+
+  @override
+  String get mediaConfigPreviewNote => '仅预览生成/创建请求；编辑和查询状态可能使用不同路径。预览不代表连通或已获主机接受。';
+
+  @override
+  String get mediaConfigPreviewUnavailable => '此主机目录未提供请求路径。';
+
+  @override
+  String get mediaConfigTargetTitle => '将密钥用于不同目标？';
+
+  @override
+  String mediaConfigTargetBody(String before, String after) {
+    return '目标将从 $before 更改为 $after。后续请求可能向新目标发送所引用的密钥，仅在信任该目标时继续。主机仍会校验此更改。';
+  }
+
+  @override
+  String get mediaConfigTargetConfirm => '信任目标并继续';
+
+  @override
+  String get mediaVideoLoading => '正在加载视频…';
+
+  @override
+  String get mediaVideoCannotPlay => '无法在 App 内播放此视频，请重试或使用其他应用打开。';
+
+  @override
+  String get mediaVideoPlay => '播放';
+
+  @override
+  String get mediaVideoPause => '暂停';
+
+  @override
+  String get mediaVideoSaveFailed => '视频保存失败，请重试。';
+
+  @override
+  String get mediaImageLoading => '正在加载图片';
+
+  @override
+  String get mediaImageReload => '重新加载';
+
+  @override
+  String get mediaImageReloadHint => '只重新读取文件，不会重新生成或收费';
+
+  @override
+  String get mediaVideoNoPoster => '轻点播放视频';
+
+  @override
+  String mediaSavedFilesCount(int count) {
+    return '已保存 $count 个文件到相册';
+  }
+
+  @override
   String get nearbyThisChat => '本对话';
 
   @override
