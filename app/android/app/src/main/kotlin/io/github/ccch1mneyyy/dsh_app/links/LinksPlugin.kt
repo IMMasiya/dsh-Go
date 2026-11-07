@@ -186,7 +186,11 @@ class LinksPlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandle
         /** A file name without path separators or control characters. */
         fun safeName(name: String): String {
             val cleaned = name.substringAfterLast('/').replace(Regex("[\\u0000-\\u001f\\\\:*?\"<>|]"), "_").trim()
-            return cleaned.ifEmpty { "shared" }.take(120)
+            val safe = cleaned.ifEmpty { "shared" }
+            if (safe.length <= 120) return safe
+            val dot = safe.lastIndexOf('.')
+            val suffix = if (dot > 0 && dot < safe.lastIndex) safe.substring(dot) else ""
+            return if (suffix.length in 1 until 120) safe.take(120 - suffix.length) + suffix else safe.take(120)
         }
     }
 }
