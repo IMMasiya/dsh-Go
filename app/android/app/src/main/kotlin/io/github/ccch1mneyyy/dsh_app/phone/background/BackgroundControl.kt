@@ -116,9 +116,14 @@ class BackgroundControl private constructor(context: Context) {
     private fun readiness(): String? = when {
         mode == "off" -> AppStrings.get(app, R.string.background_off)
         !androidOk() -> AppStrings.get(app, R.string.background_requires_android)
-        mode == "shizuku" || mode == "sui" -> shizuku.reason() ?: if (shizuku.status().provider != mode) {
-            AppStrings.get(app, R.string.background_not_ready)
-        } else gateReason()
+        mode == "shizuku" || mode == "sui" -> shizuku.reason() ?: run {
+            val provider = shizuku.status().provider
+            if (provider == mode) gateReason() else when (provider) {
+                ShizukuStatus.SUI -> AppStrings.get(app, R.string.background_provider_mismatch, "Shizuku", "Sui")
+                ShizukuStatus.SHIZUKU -> AppStrings.get(app, R.string.background_provider_mismatch, "Sui", "Shizuku")
+                else -> AppStrings.get(app, R.string.background_not_ready)
+            }
+        }
         mode == "root" -> rootReason() ?: gateReason()
         mode == "adb" -> adb.reason() ?: gateReason()
         else -> AppStrings.get(app, R.string.background_unknown_mode)
