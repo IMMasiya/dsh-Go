@@ -18904,25 +18904,99 @@ class L10nEn extends L10n {
       'Check what files and projects are in the workspace and give me a brief overview.';
 
   @override
-  String get viewSuggestWordCount => 'Count words';
+  String get viewSuggestWordCount => 'Write a script';
 
   @override
   String get viewSuggestWordCountPrompt =>
       'Write a Python script that finds the 20 most frequent words in a text file, then run it and show me the results.';
 
   @override
-  String get viewSuggestNode => 'Start Node.js';
+  String get viewSuggestNode => 'New project';
 
   @override
   String get viewSuggestNodePrompt =>
       'Create a Node.js project in the workspace with TypeScript and a minimal unit test.';
 
   @override
-  String get viewSuggestGit => 'Rebase or merge';
+  String get viewSuggestGit => 'Explain Git';
 
   @override
   String get viewSuggestGitPrompt =>
       'Use a concrete example to explain the difference between git rebase and git merge, and when to use each.';
+
+  @override
+  String get viewSuggestWorkspaceHint => 'List files and projects';
+
+  @override
+  String get viewSuggestWordCountHint => 'Count words, then run it';
+
+  @override
+  String get viewSuggestNodeHint => 'Node.js + TypeScript';
+
+  @override
+  String get viewSuggestGitHint => 'Rebase or merge?';
+
+  @override
+  String get viewTipNext => 'Next tip';
+
+  @override
+  String viewTipLabel(String value) {
+    return 'Tip: $value';
+  }
+
+  @override
+  String get viewTipSteer => 'While it works, long-press Send to steer, queue or interrupt';
+
+  @override
+  String get viewTipMidRun => 'You can message mid-run — it reads it at the next step';
+
+  @override
+  String get viewTipSlash => 'Type / for commands: compact the context, switch models and more';
+
+  @override
+  String get viewTipMention => 'Type @ to reference a workspace file or another chat';
+
+  @override
+  String get viewTipReplyMenu => 'Long-press a reply to copy, quote or regenerate it';
+
+  @override
+  String get viewTipEditResend => 'Long-press your own message to edit and resend — the original stays';
+
+  @override
+  String get viewTipQuote => 'Select part of a reply and tap Quote to ask about just that';
+
+  @override
+  String get viewTipTitleDetails => 'Tap the chat title for changes, files and a terminal';
+
+  @override
+  String get viewTipContextRing => 'The ring by Send shows context use — tap it for details';
+
+  @override
+  String get viewTipDrawerMenu => 'Long-press a chat in the sidebar to pin, rename or archive it';
+
+  @override
+  String get viewTipSearch => 'Chat search matches message content, not just titles';
+
+  @override
+  String get viewTipSettingsSearch => 'Long-press Settings in the sidebar to search settings';
+
+  @override
+  String get viewNewChatPresetTitle => 'Preset for this chat';
+
+  @override
+  String get viewNewChatPermissionTitle => 'Permissions for this chat';
+
+  @override
+  String get viewNewChatDefault => 'Default';
+
+  @override
+  String get viewNewChatUnavailable => 'Unavailable';
+
+  @override
+  String get viewNewChatChange => 'Change';
+
+  @override
+  String get viewNewChatModesFailed => 'Couldn’t set the preset or permissions. The message wasn’t sent.';
 
   @override
   String get viewGreetingMorning => 'Good morning';

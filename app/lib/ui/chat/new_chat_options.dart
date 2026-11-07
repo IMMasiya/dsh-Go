@@ -1,0 +1,279 @@
+// The new conversation's options on the empty state: the drawer folder it is
+// filed in, the agent preset it starts with and its permissions. One row of
+// quiet chips under the workspace chip; each opens a short sheet. Picks are
+// held in pendingNewChatModesProvider until the first message creates the
+// session (chat_screen.dart `_ensureSession`), then applied before the prompt.
+
+import 'dart:async';
+
+import 'package:dsh_client/dsh_client.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+
+import '../../l10n/l10n.dart';
+import '../../runtime/runtime_state.dart';
+import '../../state/connection_state.dart';
+import '../../state/features_state.dart';
+import '../../state/models_state.dart' show modelSelectionScopeProvider;
+import '../../state/new_chat_modes.dart';
+import '../../state/sessions_state.dart' show currentSessionProvider;
+import '../../state/settings_state.dart';
+import '../common/app_sheet.dart';
+import '../common/list_page_row.dart';
+import '../common/sheet_title_bar.dart';
+import '../features/feature_format.dart';
+import '../features/permission_page.dart' show confirmPermission;
+import '../theme/app_icons.dart';
+import 'empty_actions.dart';
+
+/// The longest a single option chip may grow before its label is cut.
+const _chipMaxWidth = 220.0;
+
+/// Presets a new chat can start with, in the Host's order.
+List<AgentPresetInfo> newChatPresets(List<AgentPresetInfo>? all) => [
+  for (final preset in all ?? const <AgentPresetInfo>[])
+    if (!hiddenNewChatPresets.contains(preset.id)) preset,
+];
+
+/// The Host's default preset among [presets] (the first when none is marked).
+AgentPresetInfo? defaultPreset(List<AgentPresetInfo> presets) {
+  for (final preset in presets) {
+    if (preset.isDefault) return preset;
+  }
+  return presets.isEmpty ? null : presets.first;
+}
+
+IconData presetIcon(String id) => switch (id) {
+  'standard' => AppIcons.presetStandard,
+  'ptc' => AppIcons.presetPtc,
+  'minimal' => AppIcons.presetMinimal,
+  'cordis' => AppIcons.presetCordis,
+  _ => AppIcons.configure,
+};
+
+/// The permission a new session gets without a pick: on this device with
+/// 自动批准命令 on (and outside safe mode) session creation switches to full
+/// access (sessions_state.dart `createForConnection`); elsewhere the Host's
+/// default for new sessions.
+String effectiveNewChatPermission(PermissionState state, {required bool local, required bool autoApprove, required bool safeMode}) =>
+    local && autoApprove && !safeMode ? 'danger-full-access' : state.hostDefault;
+
+/// [effectiveNewChatPermission] for this screen, read once (callbacks).
+String _readEffectivePermission(WidgetRef ref, PermissionState state) => effectiveNewChatPermission(
+  state,
+  local: ref.read(activeConnectionProvider).value?.isLocal ?? false,
+  autoApprove: ref.read(settingsProvider).autoApproveCommands,
+  safeMode: ref.read(localRuntimeProvider).status.inSafeMode,
+);
+
+/// The options row. [folder] is the drawer-folder chip when there are
+/// folders; the preset and permission chips appear once the Host has said
+/// what it offers (and only when there is a real choice).
+class NewChatOptions extends ConsumerWidget {
+  const NewChatOptions({super.key, this.folder});
+
+  final Widget? folder;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final l10n = context.l10n;
+    final pending = ref.watch(pendingNewChatModesProvider);
+
+    final presets = newChatPresets(ref.watch(agentPresetsProvider).value);
+    final fallbackPreset = defaultPreset(presets);
+    AgentPresetInfo? shownPreset = fallbackPreset;
+    for (final preset in presets) {
+      if (preset.id == pending.preset) shownPreset = preset;
+    }
+
+    final permissions = ref.watch(permissionStateProvider(null)).value;
+    final hasPermissions = permissions != null && permissions.options.isNotEmpty;
+    final local = ref.watch(activeConnectionProvider.select((c) => c.value?.isLocal ?? false));
+    final autoApprove = ref.watch(settingsProvider.select((s) => s.autoApproveCommands));
+    final safeMode = ref.watch(localRuntimeProvider.select((s) => s.status.inSafeMode));
+    final permission = hasPermissions
+        ? pending.permission ??
+              effectiveNewChatPermission(permissions, local: local, autoApprove: autoApprove, safeMode: safeMode)
+        : null;
+    String? permissionLabel;
+    if (permissions != null && permission != null) {
+      String? hostName;
+      for (final option in permissions.options) {
+        if (option.value == permission) hostName = option.name;
+      }
+      permissionLabel = permissionName(permission, hostName);
+    }
+
+    final chips = <Widget>[
+      ?folder,
+      if (presets.length > 1 && shownPreset != null)
+        ConstrainedBox(
+          key: const ValueKey('new-chat-preset'),
+          constraints: const BoxConstraints(maxWidth: _chipMaxWidth),
+          child: QuietChip(
+            icon: presetIcon(shownPreset.id),
+            label: agentPresetName(shownPreset),
+            semanticsLabel: '${l10n.featuresAgentPresets}: ${agentPresetName(shownPreset)}',
+            trailing: AppIcons.expand,
+            onTapHint: l10n.viewNewChatChange,
+            onTap: () => unawaited(_pickPreset(context, ref)),
+          ),
+        ),
+      if (permissionLabel != null)
+        ConstrainedBox(
+          key: const ValueKey('new-chat-permission'),
+          constraints: const BoxConstraints(maxWidth: _chipMaxWidth),
+          child: QuietChip(
+            icon: AppIcons.permissions,
+            label: permissionLabel,
+            semanticsLabel: '${l10n.featuresPermissions}: $permissionLabel',
+            trailing: AppIcons.expand,
+            onTapHint: l10n.viewNewChatChange,
+            onTap: () => unawaited(_pickPermission(context, ref)),
+          ),
+        ),
+    ];
+    if (chips.isEmpty) return const SizedBox.shrink();
+    return Wrap(
+      alignment: WrapAlignment.center,
+      spacing: EmptyActions.gap,
+      runSpacing: EmptyActions.gap,
+      children: chips,
+    );
+  }
+
+  /// A pick belongs to the screen it was made on: the same host/connection
+  /// and still no session.
+  static bool Function() _owner(WidgetRef ref) {
+    final scope = ref.read(modelSelectionScopeProvider);
+    return () =>
+        identical(ref.read(modelSelectionScopeProvider), scope) && ref.read(currentSessionProvider) == null;
+  }
+
+  Future<void> _pickPreset(BuildContext context, WidgetRef ref) async {
+    final current = _owner(ref);
+    final presets = newChatPresets(ref.read(agentPresetsProvider).value);
+    final fallback = defaultPreset(presets);
+    if (presets.isEmpty || fallback == null) return;
+    final selected = ref.read(pendingNewChatModesProvider).preset ?? fallback.id;
+    final pick = await showAppSheet<String>(
+      context,
+      isScrollControlled: true,
+      builder: (sheet) => _ChoiceSheet(
+        title: sheet.l10n.viewNewChatPresetTitle,
+        rows: [
+          for (final preset in presets)
+            _Choice(
+              value: preset.id,
+              icon: presetIcon(preset.id),
+              title: agentPresetName(preset),
+              subtitle: preset.broken != null ? sheet.l10n.viewNewChatUnavailable : agentPresetDescription(preset),
+              meta: preset.id == fallback.id ? sheet.l10n.viewNewChatDefault : null,
+              enabled: preset.broken == null,
+            ),
+        ],
+        selected: selected,
+      ),
+    );
+    if (pick == null || !current() || !context.mounted) return;
+    ref.read(pendingNewChatModesProvider.notifier).selectPreset(pick == fallback.id ? null : pick);
+  }
+
+  Future<void> _pickPermission(BuildContext context, WidgetRef ref) async {
+    final current = _owner(ref);
+    final state = ref.read(permissionStateProvider(null)).value;
+    if (state == null || state.options.isEmpty) return;
+    final fallback = _readEffectivePermission(ref, state);
+    final selected = ref.read(pendingNewChatModesProvider).permission ?? fallback;
+    final pick = await showAppSheet<String>(
+      context,
+      isScrollControlled: true,
+      builder: (sheet) => _ChoiceSheet(
+        title: sheet.l10n.viewNewChatPermissionTitle,
+        rows: [
+          for (final option in state.options)
+            _Choice(
+              value: option.value,
+              icon: option.value == 'danger-full-access' || option.value == 'auto'
+                  ? AppIcons.securityWarning
+                  : AppIcons.permissions,
+              title: permissionName(option.value, option.name),
+              subtitle: permissionHint(option.value, option.description),
+              meta: option.value == fallback ? sheet.l10n.viewNewChatDefault : null,
+            ),
+        ],
+        selected: selected,
+      ),
+    );
+    if (pick == null || pick == selected || !current() || !context.mounted) return;
+    // Full access and auto review ask once, as on the 权限 page.
+    if (pick != fallback && !await confirmPermission(context, pick)) return;
+    if (!current()) return;
+    ref.read(pendingNewChatModesProvider.notifier).selectPermission(pick == fallback ? null : pick);
+  }
+}
+
+class _Choice {
+  const _Choice({
+    required this.value,
+    required this.icon,
+    required this.title,
+    this.subtitle,
+    this.meta,
+    this.enabled = true,
+  });
+
+  final String value;
+  final IconData icon;
+  final String title;
+  final String? subtitle;
+  final String? meta;
+  final bool enabled;
+}
+
+/// One short list to pick from: the rows, a check on the selected one.
+class _ChoiceSheet extends StatelessWidget {
+  const _ChoiceSheet({required this.title, required this.rows, required this.selected});
+
+  final String title;
+  final List<_Choice> rows;
+  final String selected;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return SafeArea(
+      top: false,
+      child: ConstrainedBox(
+        constraints: BoxConstraints(maxHeight: MediaQuery.sizeOf(context).height * 0.8),
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              SheetTitleBar(title),
+              SheetGroup(
+                margin: const EdgeInsets.fromLTRB(SheetTitleBar.inset, 0, SheetTitleBar.inset, 12),
+                children: [
+                  for (final row in rows)
+                    ListPageRow(
+                      icon: row.icon,
+                      title: row.title,
+                      subtitle: row.subtitle,
+                      subtitleMaxLines: 2,
+                      meta: row.meta,
+                      trailing: row.value == selected
+                          ? Icon(AppIcons.selected, size: 20, color: scheme.primary)
+                          : const SizedBox(width: 20),
+                      onTap: row.enabled ? () => Navigator.of(context).pop(row.value) : null,
+                    ),
+                ],
+              ),
+              const SizedBox(height: 4),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}

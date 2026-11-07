@@ -33,6 +33,7 @@ import '../../state/hosts_state.dart' show HostKind, activeHostProvider;
 import '../../state/media_generation.dart';
 import '../../state/mention_state.dart';
 import '../../state/models_state.dart';
+import '../../state/new_chat_modes.dart';
 import '../../state/session_search.dart' show folderLabel;
 import '../../state/safe_mode_state.dart';
 import '../../state/session_modes.dart';
@@ -80,6 +81,7 @@ import 'dock/chat_dock.dart';
 import 'dock/dock_stack.dart';
 import 'empty_state.dart';
 import 'empty_actions.dart';
+import 'new_chat_options.dart';
 import 'media/generate_mode.dart';
 import 'media/generate_sheet.dart';
 import 'media/media_card.dart' show MediaCardActions, mediaItemBytes;
@@ -194,6 +196,13 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
 
   /// Only this creation may own the composer's busy state.
   Object? _creating;
+
+  /// The new-chat preset/permission still owed to the session this screen
+  /// created (a failed apply is retried on the next send, never skipped).
+  (String, NewChatModes)? _unappliedModes;
+
+  /// Only this apply may write the owed modes.
+  Object? _applyingModes;
 
   /// A page/client change retires an intent even when its draft key returns.
   Object _draftScope = Object();
@@ -398,7 +407,11 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
   Future<String?> _ensureSession({required bool Function() isCurrent}) async {
     if (!isCurrent()) return null;
     final current = ref.read(currentSessionProvider);
-    if (current != null) return current;
+    if (current != null) {
+      final owed = _unappliedModes;
+      if (owed != null && owed.$1 == current && !await _applyNewChatModes(current, owed.$2, isCurrent)) return null;
+      return current;
+    }
     if (_creating != null) return null;
     final pendingFolder = ref.read(pendingSessionFolderProvider);
     final attempt = Object();
@@ -432,6 +445,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
         if (!ownsCreation() || ref.read(pendingSessionFolderProvider) != pendingFolder) return null;
       }
       final pendingModel = ref.read(pendingModelProvider);
+      final pendingModes = ref.read(pendingNewChatModesProvider);
       _draftKey = sessionId;
       _saveDraft();
       if (!ownsCreation() || _draftKey != sessionId) return null;
@@ -441,6 +455,14 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
       ref.read(generateModeProvider.notifier).move('new', sessionId);
       if (!ownsCreation() || _draftKey != sessionId) return null;
       _draftStore.clear('new');
+      // Preset first (it may bring its own defaults), then the explicit model
+      // and permission picks on top; all before the first prompt.
+      if (!pendingModes.isEmpty) {
+        if (!ownsCreation()) return null;
+        ref.read(pendingNewChatModesProvider.notifier).clear();
+        _unappliedModes = (sessionId, pendingModes);
+        if (!await _applyNewChatModes(sessionId, pendingModes, ownsCreation)) return null;
+      }
       if (pendingModel != null) {
         if (!ownsCreation()) return null;
         ref.read(pendingModelProvider.notifier).select(null);
@@ -451,6 +473,45 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
       return sessionId;
     } finally {
       if (mounted && identical(_creating, attempt)) setState(() => _creating = null);
+    }
+  }
+
+  /// Applies the preset and permission picked on the new-chat screen to
+  /// [sessionId], before its first prompt. What failed stays owed in
+  /// [_unappliedModes] and is retried on the next send: the message must not
+  /// go out under permissions the person did not choose.
+  Future<bool> _applyNewChatModes(String sessionId, NewChatModes modes, bool Function() isCurrent) async {
+    if (_applyingModes != null) return false;
+    final client = ref.read(activeConnectionProvider).value?.client;
+    if (client == null) return false;
+    final attempt = Object();
+    _applyingModes = attempt;
+    bool current() => identical(_applyingModes, attempt) && mounted && isCurrent();
+    var owed = modes;
+    try {
+      final preset = owed.preset;
+      if (preset != null) {
+        await client.selectAgentPreset(sessionId, preset);
+        if (!current()) return false;
+        owed = owed.withPreset(null);
+        _unappliedModes = (sessionId, owed);
+      }
+      final permission = owed.permission;
+      if (permission != null) {
+        final result = await client.setPermissionPreset(sessionId, permission);
+        if (!current()) return false;
+        if (!result.success) throw DshRemoteException('permission', result.text ?? permission);
+        owed = owed.withPermission(null);
+      }
+      if (_unappliedModes?.$1 == sessionId) _unappliedModes = null;
+      return true;
+    } catch (e) {
+      // The session exists by now, so the new-chat error slot is gone: say it
+      // where the person is looking. The message stays in the composer.
+      if (current()) _toast(chatErrorText(e, action: appL10n.viewNewChatModesFailed));
+      return false;
+    } finally {
+      if (identical(_applyingModes, attempt)) _applyingModes = null;
     }
   }
 
@@ -1563,16 +1624,21 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
                                           ? _reconnect
                                           : null,
                                       onSuggestion: _onSuggestion,
-                                      folderPicker: hasFolders
-                                          ? QuietChip(
-                                              icon: AppIcons.folder,
-                                              label: newFolder == null
-                                                  ? context.l10n.shellFolders
-                                                  : context.l10n.shellFolderLabel(newFolder.name),
-                                              trailing: AppIcons.expand,
-                                              onTap: _pickNewChatFolder,
-                                            )
-                                          : null,
+                                      options: NewChatOptions(
+                                        folder: hasFolders
+                                            ? ConstrainedBox(
+                                                constraints: const BoxConstraints(maxWidth: 220),
+                                                child: QuietChip(
+                                                  icon: AppIcons.folder,
+                                                  label: newFolder == null
+                                                      ? context.l10n.shellFolders
+                                                      : context.l10n.shellFolderLabel(newFolder.name),
+                                                  trailing: AppIcons.expand,
+                                                  onTap: _pickNewChatFolder,
+                                                ),
+                                              )
+                                            : null,
+                                      ),
                                       workspace: workspace != null
                                           ? workspaceTitle(workspace)
                                           : inHostDefault

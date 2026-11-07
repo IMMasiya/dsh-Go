@@ -1,19 +1,23 @@
-// The controls of the new-chat empty state, in two tiers.
+// The controls of the new-chat empty state.
 //
 // - Primary: at most one, and only when the screen has a way forward of its
 //   own (「重新连接」). A brand-filled pill.
-// - Secondary: everything else — the workspace chip and the suggestions —
-//   quiet chips of one size: a faint fill, no shadow, muted text.
+// - Secondary: the workspace chip and the new chat's options (folder, preset,
+//   permissions) — quiet chips of one size: a faint fill, no shadow, muted text.
+// - Suggestions: quiet cards with a tinted glyph, a title and one line of
+//   what they do; under them one tip line.
 //
-// Both tiers share the height, the side insets and the type metrics, so a
-// state change (connected ↔ failed) swaps the pill and the chip in place.
+// The pill and the chips share the height, the side insets and the type
+// metrics, so a state change (connected ↔ failed) swaps them in place.
 
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
+import '../../l10n/l10n.dart';
 import '../common/fade_in.dart';
 import '../common/pressable.dart';
+import '../theme/app_icons.dart';
 import '../theme/theme.dart';
 import 'empty_state.dart' show ChatSuggestion;
 
@@ -228,12 +232,131 @@ class QuietChip extends StatelessWidget {
   }
 }
 
-/// The suggestions as quiet chips: a 2×2 grid of equal cells, edge to edge
-/// with the composer, [EmptyActions.gap] apart both ways. When one label
-/// would not fit its cell (a narrow phone with large text) every chip takes
-/// the full width instead, one per row — still equal, never cut.
-class SuggestionChips extends StatelessWidget {
-  const SuggestionChips({
+/// The colour family of a suggestion's glyph badge. Each suggestion is its own
+/// kind of start, so each carries one calm hue; none of them is an accent.
+enum SuggestionTint { teal, violet, amber, blue }
+
+/// The badge colour of [tint], readable on the card in both themes.
+Color suggestionTintColor(BuildContext context, SuggestionTint tint) {
+  final dark = Theme.of(context).brightness == Brightness.dark;
+  final dsh = DshColors.of(context);
+  return switch (tint) {
+    SuggestionTint.teal => dsh.success,
+    SuggestionTint.violet => dark ? DshPalette.duskLift : DshPalette.dusk,
+    SuggestionTint.amber => dsh.warning,
+    SuggestionTint.blue => dsh.info,
+  };
+}
+
+/// Sizes of the suggestion cards (measured in `test/chat/empty_actions_test.dart`).
+abstract final class SuggestionCardMetrics {
+  /// Between cards, across and down.
+  static const gap = 10.0;
+
+  static const padH = 12.0;
+  static const padV = 12.0;
+
+  /// The tinted square behind the glyph.
+  static const badge = 28.0;
+  static const glyph = 16.0;
+
+  /// Badge → title.
+  static const badgeGap = 10.0;
+
+  /// Below this a cell is too narrow for a two-line title at the current text
+  /// size, and the cards go one per row instead.
+  static const minCell = 128.0;
+}
+
+/// The hairline around a quiet card: the same weight as the chips' fill.
+Color quietCardRim(ThemeData theme) => theme.brightness == Brightness.dark
+    ? Colors.white.withValues(alpha: 0.08)
+    : theme.colorScheme.onSurface.withValues(alpha: 0.06);
+
+/// One suggestion: a tinted glyph badge, a short title and one line of what
+/// it will do, left-aligned in a quiet card. The whole card is the target.
+class SuggestionCard extends StatelessWidget {
+  const SuggestionCard({super.key, required this.suggestion, required this.onTap, this.enabled = true});
+
+  final ChatSuggestion suggestion;
+  final VoidCallback onTap;
+  final bool enabled;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final dsh = DshColors.of(context);
+    final tint = suggestionTintColor(context, suggestion.tint);
+    final detail = suggestion.detail;
+    final shape = AppShape.outlined(quietCardRim(theme), radius: AppShape.lg, width: 0.5);
+    final tap = enabled ? onTap : null;
+    return Semantics(
+      button: true,
+      enabled: tap != null,
+      label: detail == null ? suggestion.label : '${suggestion.label}, $detail',
+      onTap: tap,
+      excludeSemantics: true,
+      child: Pressable(
+        enabled: tap != null,
+        child: Material(
+          color: quietChipFill(theme),
+          shape: shape,
+          clipBehavior: Clip.antiAlias,
+          child: InkWell(
+            onTap: tap,
+            customBorder: shape,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(
+                horizontal: SuggestionCardMetrics.padH,
+                vertical: SuggestionCardMetrics.padV,
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  DecoratedBox(
+                    decoration: ShapeDecoration(
+                      color: tint.withValues(alpha: 0.16),
+                      shape: const SquircleBorder(borderRadius: AppShape.radiusSm),
+                    ),
+                    child: SizedBox.square(
+                      dimension: SuggestionCardMetrics.badge,
+                      child: Icon(suggestion.icon, size: SuggestionCardMetrics.glyph, color: tint),
+                    ),
+                  ),
+                  const SizedBox(height: SuggestionCardMetrics.badgeGap),
+                  Text(
+                    suggestion.label,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: theme.textTheme.titleSmall?.copyWith(color: theme.colorScheme.onSurface),
+                  ),
+                  if (detail != null) ...[
+                    const SizedBox(height: 2),
+                    Text(
+                      detail,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.bodySmall?.copyWith(color: dsh.textTertiary),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// The suggestions as cards: two equal columns edge to edge with the
+/// composer, [SuggestionCardMetrics.gap] apart both ways, each row as tall as
+/// its taller card. Titles wrap to two lines, so large text keeps two columns
+/// until a cell is narrower than [SuggestionCardMetrics.minCell]; then every
+/// card takes the full width, one per row.
+class SuggestionCards extends StatelessWidget {
+  const SuggestionCards({
     super.key,
     required this.suggestions,
     required this.enabled,
@@ -245,7 +368,7 @@ class SuggestionChips extends StatelessWidget {
   final bool enabled;
   final ValueChanged<ChatSuggestion> onSuggestion;
 
-  /// Entrance stagger of the first chip (after what is above them).
+  /// Entrance stagger of the first card (after what is above them).
   final int firstIndex;
 
   @override
@@ -253,24 +376,18 @@ class SuggestionChips extends StatelessWidget {
     if (suggestions.isEmpty) return const SizedBox.shrink();
     return LayoutBuilder(
       builder: (context, constraints) {
-        final cell = (constraints.maxWidth - EmptyActions.gap) / 2;
-        final widest = suggestions.map((s) => QuietChip.widthFor(context, s.label, icon: true)).reduce(math.max);
-        final columns = widest <= cell ? 2 : 1;
+        const gap = SuggestionCardMetrics.gap;
+        final cell = (constraints.maxWidth - gap) / 2;
+        final columns = cell >= SuggestionCardMetrics.minCell ? 2 : 1;
 
-        Widget chip(int i) {
+        Widget card(int i) {
           final s = suggestions[i];
           return FadeSlideIn(
             index: firstIndex + i,
             child: AnimatedOpacity(
               opacity: enabled ? 1 : 0.5,
               duration: AppMotion.of(context, AppMotion.quick),
-              child: QuietChip(
-                icon: s.icon,
-                label: s.label,
-                expand: true,
-                enabled: enabled,
-                onTap: () => onSuggestion(s),
-              ),
+              child: SuggestionCard(suggestion: s, enabled: enabled, onTap: () => onSuggestion(s)),
             ),
           );
         }
@@ -280,21 +397,127 @@ class SuggestionChips extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             for (var i = 0; i < suggestions.length; i += columns) ...[
-              if (i > 0) const SizedBox(height: EmptyActions.gap),
+              if (i > 0) const SizedBox(height: gap),
               if (columns == 1)
-                chip(i)
+                card(i)
               else
-                Row(
-                  children: [
-                    Expanded(child: chip(i)),
-                    const SizedBox(width: EmptyActions.gap),
-                    Expanded(child: i + 1 < suggestions.length ? chip(i + 1) : const SizedBox.shrink()),
-                  ],
+                IntrinsicHeight(
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Expanded(child: card(i)),
+                      const SizedBox(width: gap),
+                      Expanded(child: i + 1 < suggestions.length ? card(i + 1) : const SizedBox.shrink()),
+                    ],
+                  ),
                 ),
             ],
           ],
         );
       },
+    );
+  }
+}
+
+/// Where the tip line starts (tests pin it so the copy is reproducible).
+@visibleForTesting
+int Function(int count) tipStart = (count) => math.Random().nextInt(count);
+
+/// One quiet line under the suggestions: a small bulb, one tip about using
+/// DSH Go, and where it is in the list. A tap shows the next tip, rising in
+/// as the old one fades; nothing turns on its own.
+class TipLine extends StatefulWidget {
+  const TipLine({super.key, required this.tips, this.start});
+
+  final List<String> tips;
+
+  /// First tip shown; defaults to [tipStart].
+  final int? start;
+
+  @override
+  State<TipLine> createState() => _TipLineState();
+}
+
+class _TipLineState extends State<TipLine> {
+  late int _index = widget.tips.isEmpty ? 0 : (widget.start ?? tipStart(widget.tips.length)) % widget.tips.length;
+
+  @override
+  void didUpdateWidget(TipLine old) {
+    super.didUpdateWidget(old);
+    if (widget.tips.isNotEmpty) _index %= widget.tips.length;
+  }
+
+  void _next() => setState(() => _index = (_index + 1) % widget.tips.length);
+
+  @override
+  Widget build(BuildContext context) {
+    if (widget.tips.isEmpty) return const SizedBox.shrink();
+    final theme = Theme.of(context);
+    final dsh = DshColors.of(context);
+    final l10n = context.l10n;
+    final tip = widget.tips[_index];
+    final style = theme.textTheme.bodySmall?.copyWith(color: dsh.textTertiary);
+    final many = widget.tips.length > 1;
+    return Semantics(
+      button: many,
+      label: l10n.viewTipLabel(tip),
+      onTapHint: many ? l10n.viewTipNext : null,
+      onTap: many ? _next : null,
+      excludeSemantics: true,
+      child: Material(
+        type: MaterialType.transparency,
+        child: InkWell(
+          onTap: many ? _next : null,
+          customBorder: const SquircleBorder(borderRadius: AppShape.radiusMd),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Padding(
+                  // Sit the bulb on the first line's centre.
+                  padding: const EdgeInsets.only(top: 1),
+                  child: Icon(AppIcons.tip, size: 16, color: dsh.warning),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: AnimatedSwitcher(
+                    duration: AppMotion.of(context, AppMotion.standard),
+                    switchInCurve: AppMotion.enter,
+                    switchOutCurve: AppMotion.exit,
+                    layoutBuilder: (current, previous) => Stack(
+                      alignment: AlignmentDirectional.topStart,
+                      children: [...previous, ?current],
+                    ),
+                    transitionBuilder: (child, animation) => FadeTransition(
+                      opacity: animation,
+                      child: SlideTransition(
+                        position: Tween(begin: const Offset(0, 0.35), end: Offset.zero).animate(animation),
+                        child: child,
+                      ),
+                    ),
+                    child: Text(tip, key: ValueKey(_index), maxLines: 2, overflow: TextOverflow.ellipsis, style: style),
+                  ),
+                ),
+                if (many) ...[
+                  const SizedBox(width: 8),
+                  // The count and its caret sit on the first line together.
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        '${_index + 1}/${widget.tips.length}',
+                        style: style?.copyWith(fontFeatures: const [FontFeature.tabularFigures()]),
+                      ),
+                      Icon(AppIcons.disclosure, size: 14, color: dsh.textTertiary),
+                    ],
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ),
+      ),
     );
   }
 }

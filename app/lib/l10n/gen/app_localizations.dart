@@ -32627,7 +32627,7 @@ abstract class L10n {
   /// No description provided for @viewSuggestWorkspace.
   ///
   /// In zh, this message translates to:
-  /// **'看看工作区有什么'**
+  /// **'看看工作区'**
   String get viewSuggestWorkspace;
 
   /// No description provided for @viewSuggestWorkspacePrompt.
@@ -32639,7 +32639,7 @@ abstract class L10n {
   /// No description provided for @viewSuggestWordCount.
   ///
   /// In zh, this message translates to:
-  /// **'写个词频统计脚本'**
+  /// **'写个小脚本'**
   String get viewSuggestWordCount;
 
   /// No description provided for @viewSuggestWordCountPrompt.
@@ -32651,7 +32651,7 @@ abstract class L10n {
   /// No description provided for @viewSuggestNode.
   ///
   /// In zh, this message translates to:
-  /// **'新建 Node.js 项目'**
+  /// **'新建项目'**
   String get viewSuggestNode;
 
   /// No description provided for @viewSuggestNodePrompt.
@@ -32663,7 +32663,7 @@ abstract class L10n {
   /// No description provided for @viewSuggestGit.
   ///
   /// In zh, this message translates to:
-  /// **'rebase 还是 merge'**
+  /// **'讲讲 Git'**
   String get viewSuggestGit;
 
   /// No description provided for @viewSuggestGitPrompt.
@@ -32671,6 +32671,150 @@ abstract class L10n {
   /// In zh, this message translates to:
   /// **'用一个具体例子解释 git rebase 和 git merge 的区别，各自什么时候用。'**
   String get viewSuggestGitPrompt;
+
+  /// No description provided for @viewSuggestWorkspaceHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'列出文件和项目'**
+  String get viewSuggestWorkspaceHint;
+
+  /// No description provided for @viewSuggestWordCountHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'统计词频并跑一次'**
+  String get viewSuggestWordCountHint;
+
+  /// No description provided for @viewSuggestNodeHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'Node.js + TypeScript'**
+  String get viewSuggestNodeHint;
+
+  /// No description provided for @viewSuggestGitHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'rebase 和 merge 怎么选'**
+  String get viewSuggestGitHint;
+
+  /// No description provided for @viewTipNext.
+  ///
+  /// In zh, this message translates to:
+  /// **'下一条小技巧'**
+  String get viewTipNext;
+
+  /// No description provided for @viewTipLabel.
+  ///
+  /// In zh, this message translates to:
+  /// **'小技巧：{value}'**
+  String viewTipLabel(String value);
+
+  /// No description provided for @viewTipSteer.
+  ///
+  /// In zh, this message translates to:
+  /// **'生成中长按发送键，可以插话、排队或打断'**
+  String get viewTipSteer;
+
+  /// No description provided for @viewTipMidRun.
+  ///
+  /// In zh, this message translates to:
+  /// **'AI 干活时也能发消息，它下一步就会看到'**
+  String get viewTipMidRun;
+
+  /// No description provided for @viewTipSlash.
+  ///
+  /// In zh, this message translates to:
+  /// **'输入 / 唤出指令：压缩上下文、切换模型等'**
+  String get viewTipSlash;
+
+  /// No description provided for @viewTipMention.
+  ///
+  /// In zh, this message translates to:
+  /// **'输入 @ 可以引用工作区里的文件或别的对话'**
+  String get viewTipMention;
+
+  /// No description provided for @viewTipReplyMenu.
+  ///
+  /// In zh, this message translates to:
+  /// **'长按 AI 的回复，可以复制、引用或重新生成'**
+  String get viewTipReplyMenu;
+
+  /// No description provided for @viewTipEditResend.
+  ///
+  /// In zh, this message translates to:
+  /// **'长按自己的消息，可以改写后重发，原对话不动'**
+  String get viewTipEditResend;
+
+  /// No description provided for @viewTipQuote.
+  ///
+  /// In zh, this message translates to:
+  /// **'选中回复里的一段，点「引用」就只追问那一段'**
+  String get viewTipQuote;
+
+  /// No description provided for @viewTipTitleDetails.
+  ///
+  /// In zh, this message translates to:
+  /// **'点顶部的对话标题，能看改动、文件和终端'**
+  String get viewTipTitleDetails;
+
+  /// No description provided for @viewTipContextRing.
+  ///
+  /// In zh, this message translates to:
+  /// **'发送键旁的小圆环是上下文用量，点开看详情'**
+  String get viewTipContextRing;
+
+  /// No description provided for @viewTipDrawerMenu.
+  ///
+  /// In zh, this message translates to:
+  /// **'长按侧栏里的对话，可以置顶、改名或归档'**
+  String get viewTipDrawerMenu;
+
+  /// No description provided for @viewTipSearch.
+  ///
+  /// In zh, this message translates to:
+  /// **'搜索对话能搜到聊天内容，不只是标题'**
+  String get viewTipSearch;
+
+  /// No description provided for @viewTipSettingsSearch.
+  ///
+  /// In zh, this message translates to:
+  /// **'长按侧栏的设置键，可以直接搜索设置项'**
+  String get viewTipSettingsSearch;
+
+  /// No description provided for @viewNewChatPresetTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'这次对话的预设'**
+  String get viewNewChatPresetTitle;
+
+  /// No description provided for @viewNewChatPermissionTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'这次对话的权限'**
+  String get viewNewChatPermissionTitle;
+
+  /// No description provided for @viewNewChatDefault.
+  ///
+  /// In zh, this message translates to:
+  /// **'默认'**
+  String get viewNewChatDefault;
+
+  /// No description provided for @viewNewChatUnavailable.
+  ///
+  /// In zh, this message translates to:
+  /// **'不可用'**
+  String get viewNewChatUnavailable;
+
+  /// No description provided for @viewNewChatChange.
+  ///
+  /// In zh, this message translates to:
+  /// **'更改'**
+  String get viewNewChatChange;
+
+  /// No description provided for @viewNewChatModesFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'没能设置预设或权限，消息还没发出'**
+  String get viewNewChatModesFailed;
 
   /// No description provided for @viewGreetingMorning.
   ///
