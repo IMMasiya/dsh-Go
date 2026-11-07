@@ -27,6 +27,20 @@ test('successful synchronous cleanup stays synchronous and LIFO', t => {
   assert.deepEqual(order, ['last', 'first'], 'cleanup must not repeat');
 });
 
+test('successful async cleanup resolves after every cleanup, LIFO', async t => {
+  const ctx = context(t), order = [];
+  const dispose = ctx.effect(function* () {
+    yield () => { order.push('first'); };
+    yield async () => { await Promise.resolve(); order.push('middle'); };
+    yield async () => { order.push('last'); };
+  });
+  const pending = dispose();
+  assert.equal(typeof pending.then, 'function');
+  assert.equal(await pending, undefined);
+  assert.deepEqual(order, ['last', 'middle', 'first']);
+  assert.equal(dispose(), undefined);
+});
+
 test('a throwing cleanup does not skip the ones yielded before it', t => {
   const ctx = context(t), order = [], later = new Error('later failure');
   const dispose = ctx.effect(function* () {
