@@ -93,6 +93,9 @@ class FakeRemoteServer {
   Future<void> Function()? beforeRegistrationResponse;
   Future<void> Function()? beforeRefreshRequest;
   Future<void> Function()? beforeRefreshResponse;
+  Future<void> Function()? beforeRevokeResponse;
+  bool failNextRevoke = false;
+  final responses = <({String method, String path, int status})>[];
   Duration accessTtl = const Duration(hours: 1);
   int refreshCount = 0;
   int controlConnects = 0;
@@ -172,13 +175,16 @@ class FakeRemoteServer {
       '/api/v1/auth/me' => beforeAccountLookupResponse,
       '/api/v1/devices/register' => beforeRegistrationResponse,
       '/api/v1/auth/refresh' => beforeRefreshResponse,
+      '/api/v1/devices/self' => beforeRevokeResponse,
       _ => null,
     };
     if (path == '/api/v1/auth/me') beforeAccountLookupResponse = null;
     if (path == '/api/v1/devices/register') beforeRegistrationResponse = null;
     if (path == '/api/v1/auth/refresh') beforeRefreshResponse = null;
+    if (path == '/api/v1/devices/self') beforeRevokeResponse = null;
     Future<void> json(int status, Object? body) async {
       if (beforeResponse != null) await beforeResponse();
+      responses.add((method: request.method, path: path, status: status));
       response.statusCode = status;
       response.headers.contentType = ContentType.json;
       response.write(jsonEncode(body));
@@ -276,6 +282,10 @@ class FakeRemoteServer {
     final source = _authenticate(auth);
     if (source == null) return error(401, 'AUTH_INVALID');
     if (request.method == 'DELETE' && path == '/api/v1/devices/self') {
+      if (failNextRevoke) {
+        failNextRevoke = false;
+        return error(503, 'SERVICE_UNAVAILABLE');
+      }
       source.revoked = true;
       return json(200, {'status': 'revoked'});
     }
@@ -798,6 +808,7 @@ class FakeRemoteHost {
   final List<String> rpcMethods = [];
   final List<Map<String, Object?>> openedStreamParams = [];
   Future<Map<String, Object?>> Function(Map<String, Object?>)? transferRead;
+
   /// Holds an open reply after the Host has registered its incoming transfer.
   Future<void> Function(String transferId)? beforeTransferOpenResponse;
 

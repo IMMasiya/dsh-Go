@@ -321,6 +321,9 @@ class RemoteAccount {
   Future<_Identity>? _creatingIdentity;
   _Credentials? _credentials;
   Future<void> _credentialWrites = Future<void>.value();
+  // Refreshes keep the same sign-in. Only a successfully committed login
+  // retires an earlier logout's authority over local account secrets.
+  int _signInEpoch = 0;
   bool _restored = false;
   Future<void>? _restoring;
   Map<String, _Pin>? _pins;
@@ -503,6 +506,7 @@ class RemoteAccount {
     await _saveCredentials(
       _Credentials.fromTokens(identity.deviceId, account, tokens, provider: provider),
       beforeWrite: beforeCommit,
+      signIn: true,
     );
     return RemoteUser(account: account, deviceId: identity.deviceId, serverUrl: serverUrl, provider: provider);
   }
@@ -546,13 +550,14 @@ class RemoteAccount {
     return identity;
   }
 
-  Future<void> _saveCredentials(_Credentials credentials, {void Function()? beforeWrite}) {
+  Future<void> _saveCredentials(_Credentials credentials, {void Function()? beforeWrite, bool signIn = false}) {
     // SecretStore writes are atomic, but not cancellable. Serialize commits
     // so a slow older write cannot finish after a newer login's write.
     final write = _credentialWrites.then((_) async {
       beforeWrite?.call();
       await _secrets.write(_credentialsKey, jsonEncode(credentials.toJson()));
       _credentials = credentials;
+      if (signIn) _signInEpoch++;
     });
     _credentialWrites = write.catchError((Object _) {});
     return write;
@@ -561,19 +566,27 @@ class RemoteAccount {
   /// Signs out: closes the active connection, revokes this device on the
   /// Server (best effort, when [revokeDevice]) and deletes its tokens. A
   /// revoked device identity is discarded too; Host pins are kept.
+  /// A newer committed sign-in retires further cleanup from this logout;
+  /// a revoke or storage delete already issued cannot be undone here.
   Future<void> logout({bool revokeDevice = true}) async {
+    final epoch = _signInEpoch;
+    bool isCurrent() => epoch == _signInEpoch;
     await _restore();
+    if (!isCurrent()) return;
     await _active?.close();
+    if (!isCurrent()) return;
     final credentials = _credentials;
     if (revokeDevice && credentials != null) {
       try {
-        await api.revokeSelf(await accessToken());
+        final token = await accessToken();
+        if (!isCurrent()) return;
+        await api.revokeSelf(token);
       } on Object {
         // Offline or already revoked: still sign out locally.
       }
     }
-    await _dropCredentials();
-    if (revokeDevice) {
+    await _dropCredentials(isCurrent: isCurrent);
+    if (revokeDevice && isCurrent()) {
       _identity = null;
       await _secrets.delete(_identityKey);
     }
@@ -609,7 +622,7 @@ class RemoteAccount {
 
   Future<String> _rotate(_Credentials credentials) async {
     if (!credentials.refreshTokenExpiresAt.isAfter(DateTime.now())) {
-      await _dropCredentials(credentials);
+      await _dropCredentials(owner: credentials);
       throw const RemoteConnectException(
         RemoteFailure('ACCOUNT_AUTH_REQUIRED', 'The device sign-in expired; sign in again.', retryable: false),
       );
@@ -631,7 +644,7 @@ class RemoteAccount {
       if (error.retryable || error.code == 'CONNECTION_FAILED' || error.code == 'RATE_LIMITED') {
         throw RemoteConnectException(RemoteFailure(error.code, error.message, retryable: true));
       }
-      await _dropCredentials(credentials);
+      await _dropCredentials(owner: credentials);
       throw RemoteConnectException(
         RemoteFailure(
           'ACCOUNT_AUTH_REQUIRED',
@@ -642,9 +655,11 @@ class RemoteAccount {
     }
   }
 
-  Future<void> _dropCredentials([_Credentials? owner]) {
-    // Deletes share the commit queue; retired refreshes recheck their owner here.
+  Future<void> _dropCredentials({_Credentials? owner, bool Function()? isCurrent}) {
+    // Deletes share the commit queue; retired refreshes and logouts recheck
+    // their owner at the point where the mutation would actually begin.
     final write = _credentialWrites.then((_) async {
+      if (isCurrent != null && !isCurrent()) return;
       if (owner != null && !identical(_credentials, owner)) return;
       _credentials = null;
       await _secrets.delete(_credentialsKey);
