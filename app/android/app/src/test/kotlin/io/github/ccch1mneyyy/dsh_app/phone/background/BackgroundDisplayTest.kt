@@ -44,6 +44,24 @@ class BackgroundDisplayTest {
         assertNotNull(display.target("b7", 1))
     }
 
+    @Test fun unnumberedScrollRejectsAnOldOrInvalidatedSnapshotBeforeOpeningAChannel() {
+        val display = withLastElement()
+        BackgroundDisplay::class.java.getDeclaredField("currentPackage").apply {
+            isAccessible = true
+            set(display, "example.opened")
+        }
+        fun assertStale(screenId: String) {
+            val result = display.perform(PhoneAction.Scroll(screenId, null, PhoneAction.Direction.DOWN))
+            assertFalse(result.ok)
+            assertEquals(Reasons.of("staleSnapshot"), result.message)
+        }
+        assertStale("b6")
+        assertThrows(IllegalStateException::class.java) {
+            display.requireObservation(false, "treeUnavailable", null)
+        }
+        assertStale("b7")
+    }
+
     private fun withLastElement(): BackgroundDisplay {
         val display = BackgroundDisplay(
             channelProvider = { error("response validation must not start a connection") },

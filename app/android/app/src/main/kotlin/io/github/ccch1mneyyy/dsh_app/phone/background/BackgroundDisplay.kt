@@ -127,6 +127,10 @@ class BackgroundDisplay(
             // l10n:keep agent screen protocol
             return ActionResult(false, "后台屏不支持该系统键，未执行；请用返回或打开指定应用")
         }
+        // Explicit element ids are checked by PhoneCore before perform; collect owns its internal scrolls.
+        if (action is PhoneAction.Scroll && action.elementId == null && action.screenId != lastScreenId) {
+            return ActionResult(false, Reasons.of("staleSnapshot"))
+        }
         val request = Bundle().apply {
             putString(Proto.OWNER, "task")
             putString(Proto.PKG, pkg)
