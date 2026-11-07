@@ -97,7 +97,8 @@ class BackgroundDisplay(
             if (until != null && seen.any { it.contains(until) }) { stop = "untilMatched"; break }
             if (seen.size == before) { stop = "listEnd"; break }
             if (pages >= maxPages) { stop = "pageLimit"; break }
-            val result = perform(PhoneAction.Scroll(screenId, listElementId, PhoneAction.Direction.DOWN))
+            // Preserve the legacy whole-page collect path; explicit list tracking is separate.
+            val result = perform(PhoneAction.Scroll(snap.id, null, PhoneAction.Direction.DOWN))
             if (!result.ok) { stop = result.message; break }
         }
         return CollectResult(seen.toList(), pages, stop, last)
@@ -154,6 +155,10 @@ class BackgroundDisplay(
             is PhoneAction.Scroll -> {
                 request.putString(Proto.OP, Proto.OP_SCROLL)
                 request.putString(Proto.DIR, action.direction.name.lowercase())
+                action.elementId?.let { id ->
+                    request.putInt(Proto.ELEMENT, id)
+                    fingerprint(id, request)
+                }
             }
             is PhoneAction.Key -> {
                 request.putString(Proto.OP, Proto.OP_KEY)

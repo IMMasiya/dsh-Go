@@ -159,7 +159,7 @@ class PrivilegedDisplayCore(private val context: Context) {
             }
             Proto.OP_SCROLL -> {
                 requireDisplay(); requireForeground(pkg)
-                scroll(request)
+                scroll(pkg, request)
                 sleepChecked(250)
                 observe(pkg, false, response)
             }
@@ -641,10 +641,20 @@ class PrivilegedDisplayCore(private val context: Context) {
         injectTap(cx, cy, long)
     }
 
-    private fun scroll(request: Bundle) {
+    private fun scroll(pkg: String, request: Bundle) {
         val dir = request.getString(Proto.DIR) ?: "down"
-        val cx = width / 2; val cy = height / 2
-        val span = (if (dir == "left" || dir == "right") width else height) / 3
+        val bounds = if (request.containsKey(Proto.ELEMENT)) {
+            val target = resolveElement(pkg, request)
+            if (target.flags and Proto.FLAG_SCROLLABLE == 0) throw Fault("inputRejected")
+            Rect(target.bounds).also {
+                if (!it.intersect(0, 0, width, height)) throw Fault("inputRejected")
+            }
+        } else null
+        val cx = bounds?.centerX() ?: (width / 2)
+        val cy = bounds?.centerY() ?: (height / 2)
+        val span = if (bounds == null) (if (dir == "left" || dir == "right") width else height) / 3 else
+            (if (dir == "left" || dir == "right") bounds.width() else bounds.height()) / 3
+        if (bounds != null && span < 1) throw Fault("inputRejected")
         val p = when (dir) {
             "up" -> intArrayOf(cx, cy - span, cx, cy + span)
             "down" -> intArrayOf(cx, cy + span, cx, cy - span)
