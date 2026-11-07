@@ -87,6 +87,7 @@ class BackgroundDisplay(
     }
 
     override fun collect(screenId: String, listElementId: Int, maxPages: Int, until: String?): CollectResult {
+        check(screenId == lastScreenId) { Reasons.of("staleSnapshot") }
         val seen = LinkedHashSet<String>()
         var pages = 0
         var stop = "listEnd"

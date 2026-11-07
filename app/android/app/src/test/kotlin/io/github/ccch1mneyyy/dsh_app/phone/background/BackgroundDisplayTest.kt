@@ -63,6 +63,26 @@ class BackgroundDisplayTest {
         assertStale("b7")
     }
 
+    @Test fun collectRejectsAnOldOrInvalidatedScreenBeforeItsFirstObservation() {
+        val display = withLastElement()
+        BackgroundDisplay::class.java.getDeclaredField("currentPackage").apply {
+            isAccessible = true
+            set(display, "example.opened")
+        }
+        fun assertStale(id: String) {
+            val error = assertThrows(IllegalStateException::class.java) {
+                display.collect(id, 1, 2, null)
+            }
+            assertEquals(Reasons.of("staleSnapshot"), error.message)
+        }
+        assertStale("b6")
+        assertNotNull(display.target("b7", 1))
+        assertThrows(IllegalStateException::class.java) {
+            display.requireObservation(false, "treeUnavailable", null)
+        }
+        assertStale("b7")
+    }
+
     private fun withLastElement(): BackgroundDisplay {
         val display = BackgroundDisplay(
             channelProvider = { error("response validation must not start a connection") },
