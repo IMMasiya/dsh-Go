@@ -855,7 +855,14 @@ class RuntimeController private constructor(private val app: Context) : DshProce
             token = null
             healthyAt = null
             log("[dsh-app] DSH exited with code $code", "system")
-            if (publishStartupFailure(source.startupError, ownerReleased = true)) {
+            val tail = synchronized(runTail) { runTail.toList() }
+            var f = CrashClassifier.classify(code, readyAt, SystemClock.elapsedRealtime(), System.currentTimeMillis(), tail, runSafe, source.direct)
+            val startupError = source.startupError
+            // A token deadline must not hide crash evidence already in the tail (#75); a silent
+            // loader or a STOP that followed still ends as a plain startup failure.
+            val classifyStartup = startupError != null && !expected && stopGen < runGen &&
+                CrashClassifier.classifyAfterTokenTimeout(source.startupTokenTimedOut, f)
+            if (!classifyStartup && publishStartupFailure(startupError, ownerReleased = true)) {
                 // An accepted failure survives a later STOP. Reset still owns its final state.
                 // Neither a deadline nor a local launch error is evidence against a plugin.
                 if (!resetting) DshService.postStoppedAlert(app)
@@ -867,8 +874,6 @@ class RuntimeController private constructor(private val app: Context) : DshProce
                 DshService.stopSelfIfRunning(app, runGen)
                 return
             }
-            val tail = synchronized(runTail) { runTail.toList() }
-            var f = CrashClassifier.classify(code, readyAt, SystemClock.elapsedRealtime(), System.currentTimeMillis(), tail, runSafe, source.direct)
             if (SafePolicy.directLaunchFailed(f, source.direct)) {
                 // Direct can't launch on this device: PRoot from now on with this runtime, no failure card,
                 // no strike. A new runtime, or the user turning Direct on again, gives it another try.
@@ -901,7 +906,7 @@ class RuntimeController private constructor(private val app: Context) : DshProce
             prefs.edit().putInt(K_STRIKES, strikes).apply()
             if (outcome.state != safeState) setSafeState(outcome.state, outcome.reason ?: safeReason)
             log("[dsh-app] classified as ${f.kind.wire}${if (f.safeMode) " (safe mode)" else ""}; consecutive failures: $strikes", "system")
-            error = "DSH exited unexpectedly (code $code)"
+            error = startupError?.let { "start failed: $it" } ?: "DSH exited unexpectedly (code $code)"
             if (outcome.restartSafe) {
                 log("[dsh-app] restarting in safe mode", "system")
                 outcome.notice?.let { notice(it) }
