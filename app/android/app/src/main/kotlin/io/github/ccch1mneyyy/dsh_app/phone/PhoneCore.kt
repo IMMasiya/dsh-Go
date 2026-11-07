@@ -437,6 +437,7 @@ class PhoneCore(
 
     /** tap / type / scroll / tap_xy: route, resolve, gate, perform. */
     private fun act(name: String, a: Args, scope: SerialWorker.Scope): Out {
+        val owner = tasks.activeOwner() ?: return stoppedOut(name)
         val screenParameter = if (name == PhoneToolCatalog.TAP_XY) "observation" else "screen"
         val sid = a.str(screenParameter)
         val which = when (val r = routeScreenId(sid, screenParameter)) {
@@ -502,7 +503,7 @@ class PhoneCore(
         if (env.isLocked()) return locked(summary)
         lastScreen = which
         val target: TargetInfo? = if (id != null && kind != WriteKind.TAP_XY) {
-            driver.target(sid, id) ?: return stale(driver, sid, summary)
+            driver.target(sid, id) ?: return stale(driver, sid, summary, owner)
         } else {
             null
         }
@@ -513,7 +514,6 @@ class PhoneCore(
         val pkg = target?.packageName ?: driver.foregroundPackage()
         val appLabel = target?.appLabel
         val app = appLabel ?: pkg
-        val owner = tasks.activeOwner() ?: return stoppedOut(summary)
         val verdict = safety.checkWrite(kind, target, pkg, appLabel, typed, submit, point)
         val decision = when (val r = safety.resolve(verdict, scope)) {
             is SafetyGate.Result.No -> return Out(r.message, error = true, app = app, summary = summary, decision = r.decision)
@@ -523,6 +523,7 @@ class PhoneCore(
         tasks.setApp(appLabel ?: pkg)
         say(ui.get("phone_acting", "DSH 正在操作 · %1\$s", statusLine(kind, target, if (secret) SafetyRules.MASK else typed))) // l10n:keep test default
         val res = driver.perform(action)
+        if (!res.ok && res.staleSnapshot) return stale(driver, sid, summary, owner, res.message)
         return Out(
             res.message,
             error = !res.ok,
@@ -550,9 +551,19 @@ class PhoneCore(
     }
 
     /** The element no longer matches its snapshot: refuse and show the screen as it is now. */
-    private fun stale(driver: PhoneDriver, sid: String, summary: String): Out {
+    private fun stale(driver: PhoneDriver, sid: String, summary: String, owner: PhoneTasks.Owner, refusal: String? = null): Out {
         val now = try {
-            safety.filterScreen(driver.observe(detail = false, image = false))
+            if (!tasks.isCurrent(owner) || Thread.currentThread().isInterrupted || env.isLocked()) null
+            else {
+                val pkg = driver.foregroundPackage()
+                if (safety.checkRead(pkg, null) != null || !tasks.isCurrent(owner) ||
+                    Thread.currentThread().isInterrupted || env.isLocked()) null
+                else {
+                    val observed = driver.observe(detail = false, image = false)
+                    if (!tasks.isCurrent(owner) || Thread.currentThread().isInterrupted || env.isLocked()) null
+                    else safety.filterScreen(observed)
+                }
+            }
         } catch (e: InterruptedException) {
             throw e
         } catch (_: Exception) {
@@ -560,7 +571,9 @@ class PhoneCore(
         }
         return Out(
             // l10n:keep agent tool result
-            "屏幕 $sid 已经过期，或者这个元素变了，没有执行。按下面的新屏幕重新选。",
+            refusal ?: if (now != null) "屏幕 $sid 已经过期，或者这个元素变了，没有执行。按下面的新屏幕重新选。"
+            // l10n:keep agent tool result
+            else "屏幕 $sid 已经过期，或者这个元素变了，没有执行。请重新观察后再操作。",
             error = true,
             screen = now,
             summary = summary,

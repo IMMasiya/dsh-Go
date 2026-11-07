@@ -77,9 +77,7 @@ class BackgroundDisplay(
     /** A failed read is not an empty snapshot; old element numbers are no longer actionable. */
     internal fun requireObservation(ok: Boolean, code: String?, detail: String?) {
         if (ok) return
-        lastScreenId = null
-        lastElements = emptyList()
-        previousLabels = emptySet()
+        clearSnapshot()
         throw IllegalStateException(Reasons.of(code, detail))
     }
 
@@ -195,9 +193,20 @@ class BackgroundDisplay(
         e.viewId?.let { request.putString(Proto.EXPECT_VIEW_ID, it) }
     }
 
+    private fun clearSnapshot() {
+        lastScreenId = null
+        lastElements = emptyList()
+        previousLabels = emptySet()
+    }
+
     private fun toResult(response: Bundle, okMessage: String): ActionResult {
         val ok = response.getBoolean(Proto.OK)
         val message = if (ok) okMessage else Reasons.of(response.getString(Proto.ERROR), response.getString(Proto.ERROR_DETAIL))
+        if (!ok && response.getString(Proto.ERROR) == "staleSnapshot") {
+            // Invalidate before any optional snapshot decoding or subsequent refresh can fail.
+            clearSnapshot()
+            return ActionResult(false, message, staleSnapshot = true)
+        }
         val snap = if (response.containsKey(Proto.COUNT) || response.getBoolean(Proto.SECURE))
             snapshot(response, markNew = true) else null
         return ActionResult(ok, message, snap)
