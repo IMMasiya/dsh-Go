@@ -1850,9 +1850,9 @@ class PrivilegedDisplayCore internal constructor(
     }
 
     private fun typeText(pkg: String, request: Bundle, response: Bundle) {
-        val text = request.getString(Proto.TEXT).orEmpty()
+        val text = request.get(Proto.TEXT) as? String ?: throw Fault("invalidArguments")
         val index = request.getInt(Proto.ELEMENT, -1)
-        if (index < 1 || text.isEmpty() || text.length > 500 || '\u0000' in text) throw Fault("invalidArguments")
+        if (index < 1 || text.length > 500 || '\u0000' in text) throw Fault("invalidArguments")
         val vd = display ?: throw Fault("displayMissing")
         withTreeConnection(vd.display, pkg, "textConnectionUnavailable") { automation ->
             val node = readTree(automation, vd.display.displayId, pkg, index).target ?: throw Fault("elementMissing")
