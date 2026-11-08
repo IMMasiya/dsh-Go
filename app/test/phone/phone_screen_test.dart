@@ -339,6 +339,8 @@ void main() {
       of: find.byKey(ValueKey('phone-waiting-$id')),
       matching: find.byType(FixButton),
     );
+    final holder = find.text('正在操作「美团」');
+    expect(holder, findsOneWidget);
     expect(stopFor(71), findsOneWidget);
     expect(stopFor(72), findsOneWidget);
     final shownFor71 = tester.widget<FixButton>(stopFor(71)).onPressed!;
@@ -348,6 +350,12 @@ void main() {
     expect(h.native!.callsOf('stopTask').map((call) => call.arguments).toList(), [
       {'taskId': 72},
     ]);
+    final selectedHolder = phoneOf(tester).status.task;
+    expect(selectedHolder.id, 70);
+    expect(selectedHolder.active, isTrue);
+    expect(selectedHolder.stopped, isFalse);
+    // ensureVisible(waiter) can scroll the earlier holder out of the lazy list.
+    await tester.scrollUntilVisible(holder, -200, scrollable: find.byType(Scrollable).first);
     expect(find.text('正在操作「美团」'), findsOneWidget);
 
     // The already-displayed row keeps its identity even if selection changes.
