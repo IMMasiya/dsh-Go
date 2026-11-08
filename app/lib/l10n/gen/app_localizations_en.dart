@@ -11636,7 +11636,7 @@ class L10nEn extends L10n {
           'MAIN samples changed; this may include user actions. Complete cleanup. This does not establish the cause.',
       'main_unchanged': 'No change was seen at these finite sampling points. Disturbance between them remains unknown.',
       'main_incomplete': 'MAIN samples are incomplete. They cannot establish absence of disturbance.',
-      'not_installed': 'No local OCR recognizer is installed. OCR was not tested.',
+      'not_installed': 'This self-check does not include OCR. OCR was not tested.',
       'other': 'An unrecognized result was received.',
     });
     return '$_temp0';
@@ -11673,7 +11673,7 @@ class L10nEn extends L10n {
 
   @override
   String get phoneSelfCheckTargetC2Scope =>
-      'Uses a fixed local target for launch, tree reading, one button tap, ASCII and Chinese ACTION_SET_TEXT replacement/readback, local pattern capture and limited controlled refresh. This does not measure FPS or smoothness. Finite MAIN samples cannot prove there was no disturbance between samples. OCR is not installed; touch receiver, scrolling and back are not tested. Cleanup alone does not prove a display was created.';
+      'Uses a fixed local target for launch, tree reading, one button tap, ASCII and Chinese ACTION_SET_TEXT replacement/readback, local pattern capture and limited controlled refresh. This does not measure FPS or smoothness. Finite MAIN samples cannot prove there was no disturbance between samples. OCR, touch reception, scrolling and back are not tested. Cleanup alone does not prove a display was created.';
 
   @override
   String phoneTaskWaiting(int taskId) {
@@ -11724,6 +11724,20 @@ class L10nEn extends L10n {
 
   @override
   String get phoneInterruptionActionFailed => 'Task records are not confirmed yet. Please retry.';
+
+  @override
+  String get phoneLocalOcrTitle => 'On-device text recognition (ML Kit)';
+
+  @override
+  String get phoneLocalOcrUnknown => 'This setting could not be read. Refresh and try again.';
+
+  @override
+  String get phoneLocalOcrDisclosure =>
+      'Recognition runs on this device. Screenshots and text are not sent to Google; Google’s SDK collects usage statistics such as device model, app version and processing time.';
+
+  @override
+  String get phoneLocalOcrDetails =>
+      'Enabled by default. While off, recognition requests do not trigger SDK loading or initialization. Screenshots and recognized text may be sent to your configured model. Turning this off prevents new local recognition; work already started may still finish. It does not uninstall the SDK or promise to clear or stop sending previously accumulated SDK statistics.';
 
   @override
   String get phoneTaskResultReady => 'Task complete · View result';
@@ -18921,7 +18935,8 @@ class L10nEn extends L10n {
   String get usageStatsSection => 'Improve DSH Go';
 
   @override
-  String get usageStatsFooter => 'Only usage counts, versions and the phone’s maker. Never chats, files or accounts.';
+  String get usageStatsFooter =>
+      'This switch controls dsh-go’s own usage counts, versions and phone maker statistics. It includes no chats, files or accounts, and does not control Google ML Kit SDK statistics.';
 
   @override
   String get usageNoticeBody => 'No chats or personal info.\nTurn off anytime.';
