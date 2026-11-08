@@ -22,7 +22,7 @@ internal class RootProcess private constructor(private val process: Process) : C
         check(!closed.get() && synced && mux == null)
         FramedMuxSession(process.inputStream, process.outputStream,
             { MuxProtocol.unwrap(Bundles.unmarshal(it), peer) },
-            { retired(); close() }, 30_000).also { mux = it; it.start() }
+            { retired(); close() }, FramedMuxSession.REQUEST_DEADLINE_MS).also { mux = it; it.start() }
     }
 
     fun exchangeMux(request: Bundle, peer: String): Bundle =

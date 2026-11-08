@@ -285,14 +285,27 @@ class BackgroundDisplay internal constructor(
         }
         // l10n:keep agent screen protocol
         val response = try {
-            resourceIo.call {
-                if (!allowed()) return@call null
-                OwnerScopeProtocol.execute(channel(), ownerToken, request)
-            }
+            dispatch(allowed) { OwnerScopeProtocol.execute(channel(), ownerToken, request, it) }
         } catch (error: Exception) { clearSnapshot(); throw error }
             ?: return ActionResult(false, PhoneTasks.STOPPED_MESSAGE)
         return toResult(response, "已在后台屏执行", textAction = action is PhoneAction.Type)
     }
+
+    /**
+     * Input commits at its actual channel admission (client gate -> resource IO lock, as in [open]):
+     * a pause, stop or seal while it waits for capacity sends nothing. Null means not allowed.
+     */
+    internal fun <T> dispatch(allowed: () -> Boolean, send: (beforeSend: () -> Unit) -> T): T? = try {
+        resourceIo.call<T?> {
+            if (!allowed()) return@call null
+            send {
+                if (!allowed()) throw NotAdmitted()
+                resourceIo.checkDispatch()
+            }
+        }
+    } catch (_: NotAdmitted) { null }
+
+    private class NotAdmitted : RuntimeException()
 
     private fun performCoordinates(action: PhoneAction.TapXY, target: PhoneAppIdentity, allowed: () -> Boolean): ActionResult {
         // l10n:keep agent coordinate protocol
@@ -319,7 +332,7 @@ class BackgroundDisplay internal constructor(
             }
         }
         val response = try {
-            resourceIo.call { if (allowed()) OwnerScopeProtocol.execute(channel(), ownerToken, request) else null }
+            dispatch(allowed) { OwnerScopeProtocol.execute(channel(), ownerToken, request, it) }
         } catch (_: Exception) {
             clearSnapshot()
             // The original lane never replays a request after a missing/throwing reply.

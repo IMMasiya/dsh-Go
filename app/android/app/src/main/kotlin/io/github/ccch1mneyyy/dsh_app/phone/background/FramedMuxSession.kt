@@ -96,4 +96,9 @@ internal class FramedMuxSession<R>(
         abandoned.forEach { it.completeExceptionally(IOException("deviceUnavailable")) }
         onClosed() // Outside pending/writer locks; actual transport close wakes its sole reader.
     }
+
+    companion object {
+        /** Root and ADB alike: a reply that never comes retires the channel instead of holding its caller. */
+        const val REQUEST_DEADLINE_MS = 30_000L
+    }
 }

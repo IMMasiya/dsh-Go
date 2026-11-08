@@ -22,11 +22,12 @@ class AdbFramedSession(
     private val muxGuard = Any()
     @Volatile private var mux: FramedMuxSession<Bundle>? = null
 
-    internal fun installMux(peer: String, retired: () -> Unit) = synchronized(muxGuard) {
-        check(!closed.get() && synced && mux == null)
-        FramedMuxSession(input, output, { MuxProtocol.unwrap(Bundles.unmarshal(it), peer) },
-            { retired(); close() }).also { mux = it; it.start() }
-    }
+    internal fun installMux(peer: String, retired: () -> Unit, deadlineMs: Long = FramedMuxSession.REQUEST_DEADLINE_MS) =
+        synchronized(muxGuard) {
+            check(!closed.get() && synced && mux == null)
+            FramedMuxSession(input, output, { MuxProtocol.unwrap(Bundles.unmarshal(it), peer) },
+                { retired(); close() }, deadlineMs).also { mux = it; it.start() }
+        }
 
     internal fun exchangeMux(request: Bundle, peer: String): Bundle =
         checkNotNull(mux).exchange { id -> Bundles.marshal(MuxProtocol.request(request, peer, id)) }
