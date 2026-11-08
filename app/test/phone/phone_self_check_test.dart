@@ -14,10 +14,11 @@ import '../shell/golden_harness.dart';
 
 const _phone = MethodChannel('dsh/phone');
 const _files = MethodChannel('dsh/files');
-Map<String, Object?> _reply(String state, {String? handle, String? reason, List<Object?>? steps}) => {
+Map<String, Object?> _reply(String state, {String? handle, String? reason, String? profile, List<Object?>? steps}) => {
   'v': 1, 'accepted': true, 'coverage': 'partial', 'state': state,
   if (handle != null) 'runHandle': handle,
   if (reason != null) 'reason': reason,
+  if (profile != null) 'profile': profile,
   'steps': steps ?? [for (final stage in phoneSelfCheckStages)
     {'stage': stage, 'state': 'not_run', 'observed': false}],
 };
@@ -88,6 +89,72 @@ void main() {
     ])).available, isFalse);
   });
 
+  test('native profile alone controls coverage and missing profile remains B', () {
+    final allPassed = [for (final stage in phoneSelfCheckStages) _step(stage, 'pass', true)];
+    final legacy = PhoneSelfCheckSnapshot.parse(_reply('done', steps: allPassed));
+    expect(legacy.profile, 'probe_b');
+    expect(legacy.steps.where((s) => s.state == 'pass').map((s) => s.stage),
+      ['device', 'channel', 'display', 'input_probe', 'cleanup']);
+    final target = PhoneSelfCheckSnapshot.parse(_reply('done', profile: 'target_c1', steps: allPassed));
+    expect(target.profile, 'target_c1');
+    expect(target.steps.where((s) => s.state == 'pass').map((s) => s.stage),
+      ['device', 'channel', 'display', 'launch', 'tree', 'tap', 'cleanup']);
+    for (final stage in ['input_probe', 'scroll', 'back', 'text_ascii', 'text_zh', 'capture', 'continuity', 'ocr']) {
+      expect(target.steps.firstWhere((s) => s.stage == stage).state, 'not_run');
+    }
+    for (final profile in <Object?>[null, true, 1, '', 'future', 'target_c1 private']) {
+      final unknown = PhoneSelfCheckSnapshot.parse(_reply('done')..['profile'] = profile);
+      expect(unknown.available, isFalse);
+      expect(unknown.profile, isNull);
+      expect(unknown.steps.where((s) => s.state == 'pass'), isEmpty);
+    }
+  });
+
+  test('C1 MAIN only accepts observed wrong-main failure and never a pass', () {
+    for (final step in [
+      _step('main', 'pass', true), _step('main', 'pass', false),
+      _step('main', 'fail', false, reason: 'targetWrongMain'),
+      _step('main', 'fail', true, reason: 'targetChanged'),
+      _step('main', 'fail', true, reason: 'targetWrongMain', duration: -1),
+    ]) {
+      final target = PhoneSelfCheckSnapshot.parse(_reply('done', profile: 'target_c1', steps: [step]));
+      expect(target.steps.firstWhere((s) => s.stage == 'main').state, 'unknown');
+    }
+    final actual = _step('main', 'fail', true, reason: 'targetWrongMain', duration: 1);
+    final target = PhoneSelfCheckSnapshot.parse(_reply('done', profile: 'target_c1', steps: [actual]));
+    final main = target.steps.firstWhere((s) => s.stage == 'main');
+    expect(main.state, 'fail'); expect(main.observed, isTrue); expect(main.reason, 'targetWrongMain');
+    expect(PhoneSelfCheckSnapshot.parse(_reply('done', profile: 'target_c1')).steps.firstWhere((s) => s.stage == 'main').state, 'not_run');
+    expect(PhoneSelfCheckSnapshot.parse(_reply('done', steps: [actual])).steps.firstWhere((s) => s.stage == 'main').state, 'not_run');
+  });
+
+  test('C1 fixed reasons and report preserve coverage without target identities', () {
+    const reasons = {
+      'targetUnavailable': 'target_unavailable', 'targetChanged': 'target_changed',
+      'targetCleanupPending': 'target_cleanup', 'targetWrongMain': 'target_main',
+      'targetReadbackMismatch': 'target_readback', 'treeCleanupPending': 'tree_cleanup',
+      'targetLaunchDenied': 'target_launch',
+    };
+    for (final entry in reasons.entries) {
+      final snapshot = PhoneSelfCheckSnapshot.parse(_reply('cleanup_pending', profile: 'target_c1',
+        handle: 'private-handle', reason: entry.key, steps: [_step('cleanup', 'fail', true, reason: entry.key)]));
+      expect(phoneSelfCheckReasonGroup(snapshot.reason), entry.value);
+      expect(phoneSelfCheckReasonGroup(snapshot.steps.last.reason), entry.value);
+    }
+    final snapshot = PhoneSelfCheckSnapshot.parse(_reply('done', profile: 'target_c1', handle: 'private-handle', steps: [
+      _step('tap', 'pass', true), _step('main', 'fail', true, reason: 'targetWrongMain'),
+      _step('input_probe', 'pass', true),
+    ])..['targetRun'] = 'private-marker'..['stepNonce'] = 'private-nonce'..['component'] = 'private-component');
+    final report = phoneSelfCheckMarkdown(snapshot);
+    expect(report, contains('Profile: target_c1'));
+    expect(report, contains('ordinary display'));
+    expect(report, contains('| tap | pass | true |'));
+    expect(report, contains('| main | fail | true | target_main |'));
+    expect(report, contains('| input_probe | not_run | false |'));
+    expect(report, isNot(contains('private-')));
+    expect(utf8.encode(report).length, lessThanOrEqualTo(diagnosticsMarkdownBytes));
+  });
+
   test('report is a bounded whitelist with no handles or raw content', () {
     const private = 'private-token-account-ocr-screen-data';
     final snapshot = PhoneSelfCheckSnapshot.parse(_reply('cleanup_pending', handle: private, reason: private, steps: [
@@ -123,6 +190,64 @@ void main() {
     expect(calls[1].arguments, {'v': 1});
     expect(calls[2].arguments, {'v': 1, 'runHandle': 'original'});
     expect(calls[3].arguments, calls[2].arguments);
+  });
+
+  test('C1 start sends only its fixed profile and invalid choices send nothing', () async {
+    final calls = <MethodCall>[];
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger.setMockMethodCallHandler(_phone, (call) async {
+      calls.add(call); return _reply('running', profile: 'target_c1', handle: 'one');
+    });
+    const channel = PhoneSelfCheckChannel();
+    final snapshot = await channel.start(profile: 'target_c1');
+    expect(snapshot.profile, 'target_c1');
+    expect(calls.single.method, 'startPhoneSelfCheck');
+    expect(calls.single.arguments, {'v': 1, 'profile': 'target_c1'});
+    expect((await channel.start(profile: 'future')).available, isFalse);
+    expect(calls.length, 1);
+  });
+
+  testWidgets('same run cannot change profile and cancellation keeps its original handle', (tester) async {
+    var reads = 0;
+    final calls = <MethodCall>[];
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger.setMockMethodCallHandler(_phone, (call) async {
+      calls.add(call);
+      if (call.method == 'cancelPhoneSelfCheck') return _reply('cleaning', profile: 'target_c1', handle: 'one');
+      return ++reads == 1 ? _reply('running', profile: 'target_c1', handle: 'one') : _reply('done', handle: 'one');
+    });
+    final controller = PhoneSelfCheckController();
+    await controller.refresh(); await controller.refresh();
+    expect(controller.readFailed, isTrue);
+    expect(controller.snapshot.profile, 'target_c1');
+    expect(controller.snapshot.state, 'running');
+    expect(controller.canStart, isFalse);
+    await controller.start(profile: 'probe_b');
+    await controller.cancel();
+    expect(calls.where((c) => c.method == 'startPhoneSelfCheck'), isEmpty);
+    expect(calls.singleWhere((c) => c.method == 'cancelPhoneSelfCheck').arguments, {'v': 1, 'runHandle': 'one'});
+    controller.dispose();
+  });
+
+  testWidgets('C1 unknown reply does not restart and a late old B read cannot replace new C1', (tester) async {
+    final old = Completer<Object?>();
+    var reads = 0, starts = 0;
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger.setMockMethodCallHandler(_phone, (call) async {
+      if (call.method == 'startPhoneSelfCheck') { starts++; return null; }
+      if (++reads == 1) return _reply('idle');
+      if (reads == 2) return old.future;
+      return _reply('running', profile: 'target_c1', handle: 'new-c');
+    });
+    final controller = PhoneSelfCheckController();
+    await controller.refresh();
+    unawaited(controller.refresh()); await tester.pump();
+    await controller.start(profile: 'target_c1');
+    await controller.start(profile: 'probe_b');
+    expect(starts, 1); expect(controller.canStart, isFalse);
+    await tester.pump(const Duration(milliseconds: 800)); await tester.pump();
+    expect(controller.snapshot.profile, 'target_c1');
+    old.complete(_reply('done', handle: 'old-b')); await tester.pump();
+    expect(controller.snapshot.runHandle, 'new-c');
+    expect(controller.snapshot.profile, 'target_c1');
+    controller.dispose();
   });
 
   test('missing or failing native uses fixed unavailable result', () async {
@@ -299,4 +424,52 @@ void main() {
     final count = calls.length; await tester.pump(const Duration(seconds: 2));
     expect(calls.length, count); expect(tester.takeException(), isNull);
   });
+  testWidgets('profile selection only changes next start, never legacy native facts', (tester) async {
+    final calls = <MethodCall>[];
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger.setMockMethodCallHandler(_phone, (call) async {
+      calls.add(call);
+      return call.method == 'startPhoneSelfCheck'
+        ? _reply('done', handle: 'legacy-b', steps: [_step('launch', 'pass', true)]) : _reply('idle');
+    });
+    await tester.pumpWidget(goldenApp(home: const Scaffold(body: SingleChildScrollView(child: PhoneSelfCheckPanel()))));
+    await tester.pump(); await tester.pump();
+    final l10n = tester.element(find.byType(PhoneSelfCheckPanel)).l10n;
+    await tester.tap(find.byKey(const ValueKey('self-check-profile'))); await tester.pumpAndSettle();
+    await tester.tap(find.text(l10n.phoneSelfCheckProfile('target_c1')).last); await tester.pumpAndSettle();
+    expect(calls.where((c) => c.method == 'startPhoneSelfCheck'), isEmpty);
+    await tester.ensureVisible(find.byKey(const ValueKey('self-check-start')));
+    await tester.tap(find.byKey(const ValueKey('self-check-start'))); await tester.pump(); await tester.pump();
+    expect(calls.singleWhere((c) => c.method == 'startPhoneSelfCheck').arguments, {'v': 1, 'profile': 'target_c1'});
+    expect(tester.widget<Text>(find.byKey(const ValueKey('self-check-report-profile'))).data,
+      l10n.phoneSelfCheckReportProfile('probe_b'));
+    expect(tester.widget<Text>(find.byKey(const ValueKey('self-check-step-launch'))).data,
+      l10n.phoneSelfCheckStepState('not_run'));
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('C1 panel shows actual MAIN failure and explicit save captures native C1 profile', (tester) async {
+    final report = _RecordingReport();
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger.setMockMethodCallHandler(_phone, (_) async =>
+      _reply('done', profile: 'target_c1', handle: 'private-handle', steps: [
+        _step('main', 'fail', true, reason: 'targetWrongMain'), _step('tap', 'pass', true),
+      ]));
+    await tester.pumpWidget(goldenApp(home: Scaffold(body: SingleChildScrollView(child: PhoneSelfCheckPanel(report: report)))));
+    await tester.pump(); await tester.pump();
+    final l10n = tester.element(find.byType(PhoneSelfCheckPanel)).l10n;
+    expect(tester.widget<Text>(find.byKey(const ValueKey('self-check-report-profile'))).data,
+      l10n.phoneSelfCheckReportProfile('target_c1'));
+    expect(tester.widget<Text>(find.byKey(const ValueKey('self-check-step-main'))).data,
+      l10n.phoneSelfCheckStepState('fail'));
+    expect(tester.widget<Text>(find.byKey(const ValueKey('self-check-reason-main'))).data,
+      l10n.phoneSelfCheckReason('target_main'));
+    expect(report.saved, isEmpty);
+    expect(find.textContaining('private-handle'), findsNothing);
+    await tester.ensureVisible(find.byKey(const ValueKey('self-check-save')));
+    await tester.tap(find.byKey(const ValueKey('self-check-save'))); await tester.pump();
+    expect(report.saved.single.profile, 'target_c1');
+    expect(phoneSelfCheckMarkdown(report.saved.single), contains('| main | fail | true | target_main |'));
+    await tester.pumpWidget(const SizedBox()); report.done.complete(); await tester.pump();
+    expect(tester.takeException(), isNull);
+  });
+
 }
