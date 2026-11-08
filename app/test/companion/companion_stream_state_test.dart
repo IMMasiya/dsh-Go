@@ -12,6 +12,7 @@ import 'package:dsh_app/l10n/gen/app_localizations.dart';
 import 'package:dsh_app/state/chat_state.dart';
 import 'package:dsh_app/state/connection_state.dart';
 import 'package:dsh_app/state/hosts_state.dart';
+import 'package:dsh_app/ui/chat/widgets/approval_card.dart';
 import 'package:dsh_app/ui/companion/companion_chrome.dart';
 import 'package:dsh_app/ui/companion/companion_page.dart';
 import 'package:dsh_app/ui/companion/companion_stage.dart';
@@ -454,8 +455,8 @@ void main() {
       );
       await flush(tester);
       expect(room.state.openApproval?.eventId, 'approval-positive');
-      final label = L10n.of(tester.element(find.byType(CompanionPage))).companionNeedsAttention;
-      expect(find.widgetWithText(CompanionPill, label), findsOneWidget);
+      // Answered right here in the room, on her glass: no trip to the main chat.
+      expect(find.byType(ApprovalCard), findsOneWidget);
       expect(room.speech(tester), '我看一下。');
       room.client.events.add(HostEvent.fromFrame({'type': 'cancel', 'eventId': 'approval-positive'}));
       wire.log('tool/result', {
@@ -486,10 +487,13 @@ void main() {
       expect(room.state.items.whereType<AssistantChatItem>().map((item) => item.text), [first, second]);
       expect(room.state.items.whereType<ToolChatItem>(), hasLength(1));
       expect(room.state.openApproval, isNull);
-      expect(find.widgetWithText(CompanionPill, label), findsNothing);
+      // The card sinks away (its exit animation), then it is gone.
+      await tester.pump(const Duration(milliseconds: 600));
+      expect(find.byType(ApprovalCard), findsNothing);
       expect(room.speech(tester), '我看一下。\n查好了。');
-      expect(room.emotionNames, ['happy']);
-      expect(room.commands.where((c) => c.$1 == 'action').map((c) => c.$2['name']), ['nod']);
+      // She looks up once when the approval comes in, then nods at her answer.
+      expect(room.emotionNames, ['surprised', 'happy']);
+      expect(room.commands.where((c) => c.$1 == 'action').map((c) => c.$2['name']), ['lookUp', 'nod']);
       debugPrint(
         '[C439 POSITIVE] same user, two assistant messages, tool projection and attention enter/exit: OK; no actual tool executed',
       );

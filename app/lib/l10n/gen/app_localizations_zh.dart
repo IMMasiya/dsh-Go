@@ -4560,7 +4560,16 @@ class L10nZh extends L10n {
   String get companionSendFailed => '这句话没送出去，要不要再说一次？';
 
   @override
-  String get companionNeedsAttention => '有件事要你确认，点这里去看';
+  String get companionLogTitle => '聊天记录';
+
+  @override
+  String get companionLogEmpty => '还没有说过话。';
+
+  @override
+  String get companionLogYou => '你';
+
+  @override
+  String get companionLogOpenChat => '在主对话里看';
 
   @override
   String get companionMenuHistory => '查看聊天记录';

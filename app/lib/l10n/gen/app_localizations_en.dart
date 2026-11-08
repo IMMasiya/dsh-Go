@@ -4852,7 +4852,16 @@ class L10nEn extends L10n {
   String get companionSendFailed => 'That didn\'t get through. Say it again?';
 
   @override
-  String get companionNeedsAttention => 'Something needs your confirmation. Tap to see it';
+  String get companionLogTitle => 'Log';
+
+  @override
+  String get companionLogEmpty => 'Nothing said yet.';
+
+  @override
+  String get companionLogYou => 'You';
+
+  @override
+  String get companionLogOpenChat => 'Open in chat';
 
   @override
   String get companionMenuHistory => 'View chat history';

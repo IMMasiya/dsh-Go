@@ -8384,11 +8384,29 @@ abstract class L10n {
   /// **'这句话没送出去，要不要再说一次？'**
   String get companionSendFailed;
 
-  /// No description provided for @companionNeedsAttention.
+  /// No description provided for @companionLogTitle.
   ///
   /// In zh, this message translates to:
-  /// **'有件事要你确认，点这里去看'**
-  String get companionNeedsAttention;
+  /// **'聊天记录'**
+  String get companionLogTitle;
+
+  /// No description provided for @companionLogEmpty.
+  ///
+  /// In zh, this message translates to:
+  /// **'还没有说过话。'**
+  String get companionLogEmpty;
+
+  /// No description provided for @companionLogYou.
+  ///
+  /// In zh, this message translates to:
+  /// **'你'**
+  String get companionLogYou;
+
+  /// No description provided for @companionLogOpenChat.
+  ///
+  /// In zh, this message translates to:
+  /// **'在主对话里看'**
+  String get companionLogOpenChat;
 
   /// No description provided for @companionMenuHistory.
   ///

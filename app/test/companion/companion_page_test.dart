@@ -17,6 +17,7 @@ import 'package:http/testing.dart';
 import 'package:dsh_app/l10n/gen/app_localizations.dart';
 import 'package:dsh_app/state/connection_state.dart';
 import 'package:dsh_app/ui/companion/companion_chrome.dart';
+import 'package:dsh_app/ui/companion/companion_log.dart';
 import 'package:dsh_app/ui/companion/companion_page.dart';
 import 'package:dsh_app/ui/companion/companion_stage.dart';
 import 'package:dsh_app/ui/theme/app_icons.dart';
@@ -557,6 +558,34 @@ void main() {
         await say(tester, '今天好累');
         expect(asked, hasLength(2));
         expect((asked.last['messages']! as List).map((m) => (m as Map)['role']), ['user', 'assistant', 'user']);
+
+        await tester.pumpWidget(const SizedBox());
+        await tester.pump(const Duration(seconds: 20));
+      });
+
+      testWidgets('聊天记录: read back right here, over her; back closes it first', (tester) async {
+        final client = MockClient.streaming(
+          (_, _) async => http.StreamedResponse(Stream.value(utf8.encode(_sse(['[表情:开心]', '你来啦。']))), 200),
+        );
+        await openLight(tester, apiKey: 'sk-test', client: client);
+        await say(tester, '你好');
+        await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 200)));
+        await tester.pump(const Duration(seconds: 12));
+
+        await tester.tap(find.byIcon(AppIcons.history));
+        await tester.pumpAndSettle();
+        final log = find.byType(CompanionLog);
+        expect(log, findsOneWidget);
+        // Only what was said: no aside, no marks.
+        expect(find.descendant(of: log, matching: find.text('你好')), findsOneWidget);
+        expect(find.descendant(of: log, matching: find.text('你来啦。')), findsOneWidget);
+        expect(find.descendant(of: log, matching: find.textContaining('〔')), findsNothing);
+
+        // Back closes the log, not the room.
+        await tester.binding.handlePopRoute();
+        await tester.pumpAndSettle();
+        expect(find.byType(CompanionLog), findsNothing);
+        expect(find.byType(CompanionPage), findsOneWidget);
 
         await tester.pumpWidget(const SizedBox());
         await tester.pump(const Duration(seconds: 20));

@@ -50,7 +50,9 @@ import '../settings/settings_widgets.dart';
 import '../theme/app_icons.dart';
 import '../theme/app_theme.dart';
 import '../theme/surfaces.dart';
+import 'companion_ask.dart';
 import 'companion_chrome.dart';
+import 'companion_log.dart';
 import 'companion_memory_page.dart';
 import 'companion_persona_page.dart';
 import 'companion_voice_page.dart';
@@ -124,6 +126,13 @@ class _CompanionPageState extends ConsumerState<CompanionPage> implements Compan
   bool _running = false;
   bool _needsAttention = false;
   bool _asleep = false;
+
+  /// What her session waits on the person for (an approval or a question),
+  /// already looked up at: she reacts once to each.
+  String? _askingSeen;
+
+  /// The backlog is over her (companion_log.dart).
+  bool _logOpen = false;
 
   /// What she's doing in her corner (the stage's word for it).
   String _home = 'idle';
@@ -1001,7 +1010,7 @@ class _CompanionPageState extends ConsumerState<CompanionPage> implements Compan
     audioBusy: _voice.active || (_settleTimer?.isActive ?? false) || _ttsPending.isNotEmpty,
     activityBusy: _home != 'idle' || _asleep || (_objectTimer?.isActive ?? false),
     approvalPending: _needsAttention,
-    externalPromptBusy: _bubble != null || _myLine != null || _agentPill != null,
+    externalPromptBusy: _bubble != null || _myLine != null || _agentPill != null || _logOpen,
     quietHoursBlocked: false,
     enabled: ref.read(companionInitiativeEnabledProvider) ?? false,
     accessible: _accessible,
@@ -1154,6 +1163,7 @@ class _CompanionPageState extends ConsumerState<CompanionPage> implements Compan
     _sending = false;
     _running = false;
     _needsAttention = false;
+    _askingSeen = null;
     _baselineSet = false;
     _marksHandled = 0;
     _wordsSpoken = 0;
@@ -1192,6 +1202,15 @@ class _CompanionPageState extends ConsumerState<CompanionPage> implements Compan
 
   void _onChat(ChatState state) {
     if (!mounted) return;
+    final asking = state.openApproval?.eventId ?? state.questions.firstOrNull?.eventId;
+    if (asking != _askingSeen) {
+      // Something already waiting when the page opened is not news.
+      if (asking != null && _baselineSet) {
+        _stage.command('emotion', {'name': 'surprised', 'hold': 1600});
+        _stage.command('action', {'name': 'lookUp'});
+      }
+      _askingSeen = asking;
+    }
     final (user, parts) = _latestReply(state);
     _onReply(
       user,
@@ -1550,6 +1569,57 @@ class _CompanionPageState extends ConsumerState<CompanionPage> implements Compan
     unawaited(_arrive(greet: false));
   }
 
+  /// The backlog over her: this room's whole conversation, in either mode.
+  Future<void> _openLog() async {
+    _acted();
+    if (_light && _store != null) {
+      final history = _lightHistory ??= CompanionLightHistory.at(_store!.root);
+      await history.load();
+    }
+    if (!mounted) return;
+    _focus.unfocus();
+    setState(() => _logOpen = true);
+  }
+
+  void _closeLog() {
+    if (mounted && _logOpen) setState(() => _logOpen = false);
+  }
+
+  Widget _log(String name) {
+    final sessionId = _sessionId;
+    if (_light || sessionId == null) {
+      return CompanionLog(
+        key: const ValueKey('log-light'),
+        entries: companionLogFromLight(
+          _lightHistory?.lines ?? const [],
+          emotions: _moves.emotionLabels,
+          actions: _moves.actionLabels,
+        ),
+        name: name,
+        onClose: _closeLog,
+      );
+    }
+    return Consumer(
+      key: ValueKey('log-$sessionId'),
+      builder: (context, ref, _) {
+        final chat = ref.watch(
+          chatProvider(sessionId).select((s) => (items: s.items, more: s.hasMoreHistory, loading: s.loadingOlder)),
+        );
+        return CompanionLog(
+          entries: companionLogFromChat(chat.items, emotions: _moves.emotionLabels, actions: _moves.actionLabels),
+          name: name,
+          onClose: _closeLog,
+          loadingOlder: chat.loading,
+          onLoadOlder: chat.more ? () => unawaited(ref.read(chatProvider(sessionId).notifier).loadOlder()) : null,
+          onOpenChat: () {
+            _closeLog();
+            _openFullChat();
+          },
+        );
+      },
+    );
+  }
+
   void _openFullChat() {
     final id = _sessionId;
     if (id == null) return;
@@ -1872,14 +1942,14 @@ class _CompanionPageState extends ConsumerState<CompanionPage> implements Compan
                           unawaited(_restart());
                         },
                       ),
-                    if (_sessionId != null)
+                    if (_sessionId != null || (light && (_lightHistory?.lines.isNotEmpty ?? false)))
                       SettingsTile(
-                        icon: AppIcons.conversations,
+                        icon: AppIcons.history,
                         tinted: false,
                         title: l10n.companionMenuHistory,
                         onTap: () {
                           Navigator.of(sheet).pop();
-                          _openFullChat();
+                          unawaited(_openLog());
                         },
                       ),
                     if (_sessionId != null)
@@ -2008,7 +2078,13 @@ class _CompanionPageState extends ConsumerState<CompanionPage> implements Compan
       // The water is dark at every hour, whatever the app's own theme.
       child: Theme(
         data: buildDarkTheme(accent: surfaces.accent, glassBlur: surfaces.blurEnabled),
-        child: Builder(builder: _buildPage),
+        child: PopScope(
+          canPop: !_logOpen,
+          onPopInvokedWithResult: (didPop, _) {
+            if (!didPop) _closeLog();
+          },
+          child: Builder(builder: _buildPage),
+        ),
       ),
     );
   }
@@ -2102,15 +2178,18 @@ class _CompanionPageState extends ConsumerState<CompanionPage> implements Compan
                     unawaited(Navigator.of(context).maybePop());
                   },
                 ),
+                const SizedBox(width: 52),
                 Expanded(
                   child: Center(
                     child: _stageReady ? CompanionNamePlate(name: name, activity: _activity) : const SizedBox.shrink(),
                   ),
                 ),
-                if (_stageReady)
-                  CompanionRoundButton(icon: AppIcons.more, label: l10n.companionMenu, onTap: _openMenu)
-                else
-                  const SizedBox(width: 44),
+                if (_stageReady) ...[
+                  CompanionRoundButton(icon: AppIcons.history, label: l10n.companionLogTitle, onTap: _openLog),
+                  const SizedBox(width: 8),
+                  CompanionRoundButton(icon: AppIcons.more, label: l10n.companionMenu, onTap: _openMenu),
+                ] else
+                  const SizedBox(width: 96),
               ],
             ),
           ),
@@ -2139,21 +2218,13 @@ class _CompanionPageState extends ConsumerState<CompanionPage> implements Compan
                         _openAgent(pill.sessionId);
                       },
                     ),
-                  if (_needsAttention)
-                    CompanionPill(
-                      icon: AppIcons.toConfirm,
-                      label: l10n.companionNeedsAttention,
-                      tone: const Color(0xFFFFD27A),
-                      onTap: () {
-                        _acted();
-                        _openFullChat();
-                      },
-                    ),
+                  if (!_light && _sessionId != null) CompanionAsk(sessionId: _sessionId!),
                   CompanionMyLine(text: _myLine),
                   CompanionSpeech(
                     text: _bubble,
                     error: _bubbleIsError,
                     thinking: _sending || (_running && _bubble == null),
+                    onPullBack: _openLog,
                   ),
                   CompanionInvite(
                     ticket: inviting ? invite.ticket.id : null,
@@ -2191,6 +2262,7 @@ class _CompanionPageState extends ConsumerState<CompanionPage> implements Compan
                 ],
               ),
             ),
+          Positioned.fill(child: CompanionLogTransition(child: _logOpen && showStage ? _log(name) : null)),
         ],
       ),
     );

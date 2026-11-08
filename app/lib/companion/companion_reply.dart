@@ -144,6 +144,20 @@ String? companionAside({DateTime? now, List<String> notes = const []}) {
 
 const _weekday = ['周一', '周二', '周三', '周四', '周五', '周六', '周日'];
 
+/// The aside line [companionAside] writes: it always starts with the date.
+final _asideLine = RegExp(r'^〔\d{1,2}月\d{1,2}日 周[一二三四五六日] \d{2}:\d{2}[^\n]*〕$');
+
+/// What the person actually typed, out of a message the page sent: whatever
+/// the page put in front of it (the persona, its changes, her name, moves) all
+/// comes before the aside, and the aside comes last. A message with no aside
+/// is already only theirs.
+String companionSaidText(String sent) {
+  final lines = sent.split('\n');
+  final aside = lines.indexWhere(_asideLine.hasMatch);
+  if (aside < 0) return sent;
+  return lines.skip(aside + 1).join('\n').trim();
+}
+
 /// How to greet someone coming back, from the clock and how long they were
 /// away. Never reproachful: absence is news to her, not a debt.
 enum CompanionGreeting { firstTime, morning, noon, afternoon, evening, lateNight, longAbsence, justNow }
