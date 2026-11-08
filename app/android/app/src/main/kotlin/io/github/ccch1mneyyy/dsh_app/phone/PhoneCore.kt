@@ -727,9 +727,25 @@ class PhoneCore(
         say(owner, ui.get("phone_reading_list", "DSH 正在滚动读取列表")) // l10n:keep test default
         if (!current(owner)) return stoppedOut(summary)
         skillTrace.markIncomplete(owner)
-        val r = driver.collect(sid!!, list, pages, a.str("until"))
+        val readRefusal = AtomicReference<SafetyGate.Verdict.Refuse?>(null)
+        fun readAllowed(): Boolean {
+            safety.checkRead(pkg, null)?.let { readRefusal.compareAndSet(null, it) }
+            return readRefusal.get() == null
+        }
+        val r = driver.collect(sid!!, list, pages, a.str("until"), ::readAllowed)
         if (!current(owner)) return stoppedOut(summary)
-        val screen = r.screen?.let { returnedScreen(driver, it, owner) }
+        readAllowed()
+        val collectedScreen = r.screen
+        collectedScreen?.let { snap ->
+            safety.checkRead(snap.packageName, snap.appLabel)?.let { readRefusal.compareAndSet(null, it) }
+        }
+        readRefusal.get()?.let {
+            return Out(it.message, error = true, app = pkg, summary = summary, decision = "refused:${it.rule}")
+        }
+        if (collectedScreen?.secure == true) {
+            return Out(safety.filterScreen(collectedScreen).text, error = true, app = pkg, summary = summary, decision = "refused:read")
+        }
+        val screen = collectedScreen?.let { returnedScreen(driver, it, owner) }
         val text = buildString {
             // l10n:keep agent tool result
             append("收集到 ${r.items.size} 条（翻了 ${r.pages} 页，停下原因：${r.stopReason}）：\n")

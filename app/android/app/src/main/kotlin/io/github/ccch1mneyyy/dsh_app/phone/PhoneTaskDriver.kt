@@ -102,11 +102,13 @@ class PhoneTaskObservations(private val tasks: PhoneTasks) {
                 })
             } finally { syncCurrentScope() }
         }
-        override fun collect(screenId: String, listElementId: Int, maxPages: Int, until: String?): CollectResult {
+        override fun collect(screenId: String, listElementId: Int, maxPages: Int, until: String?): CollectResult =
+            collect(screenId, listElementId, maxPages, until) { true }
+        override fun collect(screenId: String, listElementId: Int, maxPages: Int, until: String?, allowed: () -> Boolean): CollectResult {
             current()
             if (!owns(screenId)) return CollectResult(emptyList(), 0, "屏幕编号不属于本任务，请重新 screen", null) // l10n:keep agent observation ownership result
             return try {
-                val result = driver.collect(screenId, listElementId, maxPages, until, ::taskAllowed)
+                val result = driver.collect(screenId, listElementId, maxPages, until) { taskAllowed() && allowed() }
                 current()
                 result.screen?.let(::remember)
                 result

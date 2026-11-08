@@ -201,4 +201,30 @@ class PhoneTaskObservationsTest {
         assertEquals(1, physical.actions)
     }
 
+    @Test fun fiveArgumentCollectionForwardsLiveCallerPermissionTogetherWithTaskPermission() {
+        val tasks = PhoneTasks(); val physical = Driver()
+        val original = owner(tasks)
+        val bound = PhoneTaskObservations(tasks).bind(physical, original)
+        bound.observe(false, false)
+        var callerAllowed = true
+        var entered = 0
+        physical.duringCollect = {
+            entered++
+            val allowed = checkNotNull(physical.collectGate)
+            assertTrue(allowed())
+            callerAllowed = false
+            assertFalse(allowed()) // Must remain live inside the real physical call.
+        }
+        bound.collect("s1", 1, 3, null) { callerAllowed }
+        assertEquals(1, entered)
+        val allowed = checkNotNull(physical.collectGate)
+        assertFalse(allowed())
+        callerAllowed = true
+        assertTrue(allowed())
+        tasks.setPaused(true); assertFalse(allowed())
+        tasks.setPaused(false); assertTrue(allowed())
+        tasks.stop("replacement"); tasks.clearStop(); tasks.begin()
+        assertFalse(allowed())
+        assertFalse(tasks.isCurrent(original))
+    }
 }

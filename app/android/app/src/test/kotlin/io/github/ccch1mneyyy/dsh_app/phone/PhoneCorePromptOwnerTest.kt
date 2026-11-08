@@ -108,6 +108,9 @@ class PhoneCorePromptOwnerTest {
         var collects = 0
         var collecting: () -> Unit = {}
         var collectScreen = true
+        var collectStopReason = "pageLimit"
+        var collectAllowed: (() -> Boolean)? = null
+        var collectSnapshot: ScreenSnapshot? = null
         val actions = mutableListOf<PhoneAction>()
         override fun availability() = Availability(true)
         override fun foregroundPackage() = "example.app"
@@ -119,9 +122,13 @@ class PhoneCorePromptOwnerTest {
         override fun collect(screenId: String, listElementId: Int, maxPages: Int, until: String?): CollectResult {
             collects++
             collecting()
-            val snapshot = if (collectScreen) ScreenSnapshot("${screen.prefix}2", "late collected screen",
+            val snapshot = if (collectScreen) collectSnapshot ?: ScreenSnapshot("${screen.prefix}2", "late collected screen",
                 "Example", "example.app", image = byteArrayOf(1, 2, 3), imageMime = "image/png") else null
-            return CollectResult(listOf("late collected item"), 1, "pageLimit", snapshot)
+            return CollectResult(listOf("late collected item"), 1, collectStopReason, snapshot)
+        }
+        override fun collect(screenId: String, listElementId: Int, maxPages: Int, until: String?, allowed: () -> Boolean): CollectResult {
+            collectAllowed = allowed
+            return collect(screenId, listElementId, maxPages, until)
         }
         override fun target(screenId: String, elementId: Int) = TargetInfo(screenId, elementId,
             "按钮", "发送", "example.app", "Example", false, false, false)
@@ -886,4 +893,120 @@ class PhoneCorePromptOwnerTest {
         assertEquals(1, intents)
     }
 
+    @Test fun lateCollectTargetDenialDiscardsItemsAndOptionalScreenWithoutStoppingOwner() {
+        for (driver in listOf(main, background)) for (withScreen in listOf(true, false)) {
+            policies = PhonePolicies()
+            driver.collectScreen = withScreen
+            val before = driver.collects
+            var original: PhoneTasks.Owner? = null
+            driver.collecting = {
+                original = checkNotNull(tasks.activeOwner())
+                policies = PhonePolicies(denyPackages = listOf("example.app"))
+            }
+            val result = collectCall("${driver.screen.prefix}1")
+            assertTrue(result.text, result.isError)
+            assertFalse(result.text.contains("late collected item"))
+            assertFalse(result.text.contains("late collected screen"))
+            assertNull(result.image)
+            assertEquals("refused:deny-list", core.log.last()!!.decision)
+            assertFalse(tasks.isStopped())
+            assertTrue(tasks.isCurrent(checkNotNull(original)))
+            assertEquals(before + 1, driver.collects)
+        }
+    }
+
+    @Test fun unrelatedCollectDenialKeepsItemsAndOptionalScreenForOriginalOwner() {
+        for (driver in listOf(main, background)) for (withScreen in listOf(true, false)) {
+            policies = PhonePolicies()
+            driver.collectScreen = withScreen
+            val before = driver.collects
+            var original: PhoneTasks.Owner? = null
+            driver.collecting = {
+                original = checkNotNull(tasks.activeOwner())
+                policies = PhonePolicies(denyPackages = listOf("unrelated.app"))
+            }
+            val result = collectCall("${driver.screen.prefix}1")
+            assertFalse(result.text, result.isError)
+            assertTrue(result.text.contains("late collected item"))
+            assertEquals(withScreen, result.text.contains("late collected screen"))
+            if (withScreen) assertArrayEquals(byteArrayOf(1, 2, 3), result.image)
+            else assertNull(result.image)
+            assertEquals("ok", core.log.last()!!.decision)
+            assertFalse(tasks.isStopped())
+            assertTrue(tasks.isCurrent(checkNotNull(original)))
+            assertEquals(before + 1, driver.collects)
+        }
+    }
+    @Test fun observedCollectDenialRemainsRefusedAfterThePolicyIsRestored() {
+        for (driver in listOf(main, background)) {
+            policies = PhonePolicies()
+            driver.collecting = {
+                val allowed = checkNotNull(driver.collectAllowed)
+                assertTrue(allowed())
+                policies = PhonePolicies(denyPackages = listOf("example.app"))
+                assertFalse(allowed())
+                policies = PhonePolicies()
+                assertFalse(allowed())
+            }
+            val result = collectCall("${driver.screen.prefix}1")
+            assertTrue(result.isError)
+            assertFalse(result.text.contains("late collected item"))
+            assertFalse(result.text.contains("late collected screen"))
+            assertNull(result.image)
+            assertEquals("refused:deny-list", core.log.last()!!.decision)
+            assertFalse(tasks.isStopped())
+            assertEquals(1, driver.collects)
+        }
+    }
+
+    @Test fun collectChecksBothItsOriginalPackageAndTheReturnedPackage() {
+        for (driver in listOf(main, background)) for (denied in listOf("example.app", "other.app")) {
+            policies = PhonePolicies()
+            driver.collectSnapshot = ScreenSnapshot("${driver.screen.prefix}2", "late collected screen",
+                "Other", "other.app", image = byteArrayOf(1), imageMime = "image/png")
+            driver.collecting = { policies = PhonePolicies(denyPackages = listOf(denied)) }
+            val before = driver.collects
+            val result = collectCall("${driver.screen.prefix}1")
+            assertTrue(result.isError)
+            assertFalse(result.text.contains("late collected item"))
+            assertFalse(result.text.contains("late collected screen"))
+            assertNull(result.image)
+            assertEquals("refused:deny-list", core.log.last()!!.decision)
+            assertFalse(tasks.isStopped())
+            assertEquals(before + 1, driver.collects)
+        }
+    }
+
+    @Test fun secureCollectedScreenCannotExposeTheSeparatelyReturnedItems() {
+        for (driver in listOf(main, background)) {
+            driver.collectSnapshot = ScreenSnapshot("${driver.screen.prefix}2", "late collected screen",
+                "Example", "example.app", secure = true, image = byteArrayOf(1), imageMime = "image/png")
+            val result = collectCall("${driver.screen.prefix}1")
+            assertTrue(result.isError)
+            assertFalse(result.text.contains("late collected item"))
+            assertFalse(result.text.contains("late collected screen"))
+            assertNull(result.image)
+            assertNotEquals("stopped", core.log.last()!!.decision)
+            assertFalse(tasks.isStopped())
+            assertEquals(1, driver.collects)
+        }
+    }
+
+    @Test fun imageOnlyCollectionFilteringKeepsTheReadablePartialText() {
+        for (driver in listOf(main, background)) {
+            driver.collectStopReason = "页面只读了一部分，无法确认列表是否到底"
+            driver.collectSnapshot = ScreenSnapshot("${driver.screen.prefix}2", "late collected screen «银行卡 ****1234»",
+                "Example", "example.app", image = byteArrayOf(1), imageMime = "image/png")
+            val result = collectCall("${driver.screen.prefix}1")
+            assertFalse(result.text, result.isError)
+            assertTrue(result.text.contains("late collected item"))
+            assertTrue(result.text.contains("late collected screen"))
+            assertTrue(result.text.contains("«银行卡 ****1234»"))
+            assertTrue(result.text.contains(driver.collectStopReason))
+            assertNull(result.image)
+            assertEquals("ok", core.log.last()!!.decision)
+            assertFalse(tasks.isStopped())
+            assertEquals(1, driver.collects)
+        }
+    }
 }
