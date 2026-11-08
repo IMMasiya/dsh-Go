@@ -16,6 +16,7 @@ internal class TargetState(val targetRun: String, val profile: TargetContract.Pr
     private var attempted = false
     private var expectedDisplay = -1
     private var instance: Any? = null
+    private var relaunching = false
     private var created = false
     private var destroyedForFinish = false
     private var destroyedStamp: Any? = null
@@ -35,9 +36,13 @@ internal class TargetState(val targetRun: String, val profile: TargetContract.Pr
         true
     }
 
-    /** Immediately before the single startActivity call, after all UI preconditions. */
-    fun attempt(): Boolean = synchronized(lock) {
-        if (sealed || attempted || !scheduled) return false
+    /**
+     * Immediately before the single startActivity call, after all UI preconditions. In lock task mode
+     * (screen pinning included) Android drops a new task with no error and no Activity, and an attempted
+     * launch without an Activity can never be told apart from a delayed one, so it is not attempted.
+     */
+    fun attempt(lockTaskActive: Boolean = false): Boolean = synchronized(lock) {
+        if (sealed || attempted || !scheduled || lockTaskActive) return false
         attempted = true
         true
     }
@@ -45,10 +50,14 @@ internal class TargetState(val targetRun: String, val profile: TargetContract.Pr
     fun launchReturned() = synchronized(lock) { launchFinished = true; lock.notifyAll() }
     fun seal() = synchronized(lock) { sealed = true; lock.notifyAll() }
 
-    /** Even a wrong-display or sealed late creation is a fact, but it must not draw the target. */
+    /**
+     * Even a wrong-display or sealed late creation is a fact, but it must not draw the target. Only the
+     * relaunch of a configuration-destroyed instance succeeds it; cleanup then finishes that replacement.
+     */
     fun register(value: Any, displayId: Int, actualTaskId: Int): Boolean = synchronized(lock) {
         if (displayId == 0) wrongMain = true
-        if (finalized || instance != null && instance !== value) return false
+        if (finalized || instance != null && instance !== value && !relaunching) return false
+        relaunching = false
         instance = value
         taskId = actualTaskId
         created = true
@@ -70,8 +79,9 @@ internal class TargetState(val targetRun: String, val profile: TargetContract.Pr
 
     fun destroyed(value: Any, finishing: Boolean, changingConfiguration: Boolean): Boolean = synchronized(lock) {
         if (instance !== value) return false
-        // Configuration destruction cannot acknowledge this run's requested final close.
+        // Configuration destruction cannot acknowledge this run's requested final close; its replacement must.
         destroyedForFinish = finishing && !changingConfiguration
+        relaunching = changingConfiguration
         destroyedStamp = null
         taskEmpty = false
         if (changingConfiguration) sealed = true

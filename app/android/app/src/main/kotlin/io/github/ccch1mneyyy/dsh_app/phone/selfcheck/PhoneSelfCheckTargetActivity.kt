@@ -190,11 +190,12 @@ internal object PhoneSelfCheckTarget {
                         identifier = TargetContract.identifier(ticket.state.targetRun)
                         addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_MULTIPLE_TASK)
                     }
-                    if (!activity.getSystemService(ActivityManager::class.java)
-                            .isActivityStartAllowedOnDisplay(activity, displayId, intent))
+                    val manager = activity.getSystemService(ActivityManager::class.java)
+                    if (!manager.isActivityStartAllowedOnDisplay(activity, displayId, intent))
                         return@FutureTask Unit
                     val options = ActivityOptions.makeBasic().setLaunchDisplayId(displayId)
-                    if (ticket.state.attempt()) activity.startActivity(intent, options.toBundle())
+                    if (ticket.state.attempt(manager.lockTaskModeState != ActivityManager.LOCK_TASK_MODE_NONE))
+                        activity.startActivity(intent, options.toBundle())
                 } finally {
                     ticket.state.launchReturned()
                 }

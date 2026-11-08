@@ -32,6 +32,16 @@ class TargetStateTest {
         assertTrue(state.facts().cleanupPending)
     }
 
+    @Test fun lockTaskModeNeverAttemptsALaunchAndroidWouldSilentlyDrop() {
+        val state = TargetState(run)
+        assertTrue(state.schedule(7))
+        assertFalse(state.attempt(lockTaskActive = true))
+        state.launchReturned()
+        state.seal()
+        assertFalse(state.facts().launchAttempted)
+        assertTrue(state.finishIfClosed())
+    }
+
     @Test fun normalCloseNeedsOriginalDestroyAndStructuredEmptyTask() {
         val state = started()
         val activity = Any()
@@ -83,6 +93,26 @@ class TargetStateTest {
         state.teardownCompleted(activity)
         empty(state)
         assertFalse(state.facts().closed)
+    }
+
+    @Test fun configurationReplacementIsTrackedThroughFinalClose() {
+        val state = started()
+        val original = Any()
+        assertTrue(state.register(original, 7, 12))
+        state.destroyed(original, finishing = false, changingConfiguration = true)
+        // The relaunch is still in flight: an empty read cannot stand in for the replacement.
+        empty(state)
+        assertTrue(state.facts().cleanupPending)
+        val replacement = Any()
+        assertFalse(state.register(replacement, 7, 12)) // Sealed: tracked, but it must not draw.
+        assertSame(replacement, state.instance())
+        assertFalse(state.register(Any(), 7, 12))
+        assertSame(replacement, state.instance())
+        assertTrue(state.destroyed(replacement, finishing = true, changingConfiguration = false))
+        state.teardownCompleted(replacement)
+        assertFalse(state.facts().closed)
+        assertTrue(empty(state))
+        assertTrue(state.finishIfClosed())
     }
 
     @Test fun lateCreationAfterSealIsRecordedAndMustFinish() {
