@@ -14,13 +14,16 @@ internal class OwnerScopes<C : Any, R : Any>(private val limit: Int = 3, private
     private val lock = Any()
     private val active = linkedMapOf<String, Record<C>>()
     private val completed = linkedMapOf<String, R>()
+    private val retiredOwners = hashSetOf<String>()
+    private var retired = false
     private var global = false
-    private var mode: Boolean? = null // true: hosted, false: isolated legacy
+    private var mode: Boolean? = null
 
     fun enter(owner: String, opening: Boolean, maintenance: Boolean, release: Boolean,
               create: () -> C): Entry<C, R> = synchronized(lock) {
-        val known = active.containsKey(owner) || completed.containsKey(owner)
+        val known = active.containsKey(owner) || completed.containsKey(owner) || owner in retiredOwners
         fun no(code: String) = Entry.Refused<C, R>(code, !known)
+        if (retired) return no("peerRetired")
         if (mode == false) return no("scopeModeMismatch")
         if (global) return no("scopeBusy")
         val done = completed[owner]
@@ -31,7 +34,6 @@ internal class OwnerScopes<C : Any, R : Any>(private val limit: Int = 3, private
             if (active.size + completed.size >= lifetime) return no("scopeHistoryFull")
             if (active.size >= limit) return no("scopeCapacity")
             if (active.values.any { it.maintenance } || maintenance && active.isNotEmpty()) return no("scopeBusy")
-            // create is a pure-memory Core constructor, including its original owner/purpose.
             record = Record(owner, maintenance, create())
             active[owner] = record
             mode = true
@@ -52,13 +54,28 @@ internal class OwnerScopes<C : Any, R : Any>(private val limit: Int = 3, private
         } else record.busy = false
     }
 
-    /** Global/legacy reservation excludes all hosted resources, including unknown cleanup. */
     fun enterGlobal(legacyResource: Boolean = false): String? = synchronized(lock) {
+        if (retired) return "peerRetired"
         if (global || active.isNotEmpty()) return "scopeBusy"
         if (legacyResource && mode == true) return "scopeModeMismatch"
         if (legacyResource) mode = false
         global = true
         null
+    }
+
+    /** Permanent seal is published even when an already admitted body must finish first. */
+    fun beginRetire(): List<Record<C>>? = synchronized(lock) {
+        retired = true
+        retiredOwners.addAll(active.keys)
+        retiredOwners.addAll(completed.keys)
+        if (global || active.values.any { it.busy }) return null
+        global = true
+        active.values.onEach { it.closing = true }.toList()
+    }
+    fun finishRetire(complete: Boolean) = synchronized(lock) {
+        check(retired && global)
+        if (complete) { active.clear(); completed.clear() }
+        global = false
     }
     fun leaveGlobal() = synchronized(lock) { check(global); global = false }
 }

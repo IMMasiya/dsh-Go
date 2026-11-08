@@ -14,6 +14,18 @@ import java.io.OutputStream
 
 object Proto {
     const val REVISION = "dsh-vdisplay-2"
+    const val RESOURCE_RECOVERY_VERSION = "resourceRecoveryVersion"
+    const val RECOVERY_PEER = "recoveryPeer"
+    const val RECOVERY_BOOT = "recoveryBoot"
+    const val RECOVERY_PID = "recoveryPid"
+    const val RECOVERY_UID = "recoveryUid"
+    const val RECOVERY_PID_NS_DEV = "recoveryPidNsDev"
+    const val RECOVERY_PID_NS_INO = "recoveryPidNsIno"
+    const val ALLOCATION_PURPOSE = "allocationPurpose"
+    const val RECOVERY_KIND = "recoveryKind"
+    const val OP_ALLOCATE = "allocate"
+    const val OP_RECOVERY_RETIRE = "recoveryRetire"
+    const val OP_RECOVERY_CHECK = "recoveryCheck"
 
     // request keys
     const val OP = "op"
