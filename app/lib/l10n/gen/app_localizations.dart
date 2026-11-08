@@ -26402,6 +26402,282 @@ abstract class L10n {
   /// **'精简 简洁 历史 工具 传输 流量 远程 compact slim lite'**
   String get searchKwRemoteCompactHistory;
 
+  /// No description provided for @remotePairEntry.
+  ///
+  /// In zh, this message translates to:
+  /// **'扫码配对电脑'**
+  String get remotePairEntry;
+
+  /// No description provided for @remotePairEntryHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'扫电脑上 Remote 插件显示的二维码，不用注册账号'**
+  String get remotePairEntryHint;
+
+  /// No description provided for @remotePairAddComputer.
+  ///
+  /// In zh, this message translates to:
+  /// **'扫码添加电脑'**
+  String get remotePairAddComputer;
+
+  /// No description provided for @remotePairTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'扫码配对电脑'**
+  String get remotePairTitle;
+
+  /// No description provided for @remotePairSubtitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'不用注册 Remote 账号，也不会传 DeepSeek 密码或登录凭据'**
+  String get remotePairSubtitle;
+
+  /// No description provided for @remotePairNeedsDeepSeek.
+  ///
+  /// In zh, this message translates to:
+  /// **'先登录 DeepSeek 账号'**
+  String get remotePairNeedsDeepSeek;
+
+  /// No description provided for @remotePairNeedsDeepSeekBody.
+  ///
+  /// In zh, this message translates to:
+  /// **'扫码配对要先在 DSH Go 里登录 DeepSeek 账号。配对时只附带账号 ID 用来标记这台手机，不传密码、Cookie 或 Token。'**
+  String get remotePairNeedsDeepSeekBody;
+
+  /// No description provided for @remotePairScanHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'对准电脑上 Remote 插件显示的配对二维码'**
+  String get remotePairScanHint;
+
+  /// No description provided for @remotePairPasteLink.
+  ///
+  /// In zh, this message translates to:
+  /// **'粘贴配对链接'**
+  String get remotePairPasteLink;
+
+  /// No description provided for @remotePairPasteEmpty.
+  ///
+  /// In zh, this message translates to:
+  /// **'剪贴板里没有配对链接'**
+  String get remotePairPasteEmpty;
+
+  /// No description provided for @remotePairFromImage.
+  ///
+  /// In zh, this message translates to:
+  /// **'从相册识别'**
+  String get remotePairFromImage;
+
+  /// No description provided for @remotePairImageNoCode.
+  ///
+  /// In zh, this message translates to:
+  /// **'这张图里没找到二维码'**
+  String get remotePairImageNoCode;
+
+  /// No description provided for @remotePairCameraDenied.
+  ///
+  /// In zh, this message translates to:
+  /// **'没有相机权限。可以在系统设置里打开，或者用「从相册识别」「粘贴配对链接」'**
+  String get remotePairCameraDenied;
+
+  /// No description provided for @remotePairCameraFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'相机打不开。可以用「从相册识别」或「粘贴配对链接」'**
+  String get remotePairCameraFailed;
+
+  /// No description provided for @remotePairReading.
+  ///
+  /// In zh, this message translates to:
+  /// **'正在读取配对信息…'**
+  String get remotePairReading;
+
+  /// No description provided for @remotePairConfirmTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'要连接这台电脑吗？'**
+  String get remotePairConfirmTitle;
+
+  /// No description provided for @remotePairComputer.
+  ///
+  /// In zh, this message translates to:
+  /// **'电脑'**
+  String get remotePairComputer;
+
+  /// No description provided for @remotePairServer.
+  ///
+  /// In zh, this message translates to:
+  /// **'服务器'**
+  String get remotePairServer;
+
+  /// No description provided for @remotePairFingerprint.
+  ///
+  /// In zh, this message translates to:
+  /// **'电脑指纹'**
+  String get remotePairFingerprint;
+
+  /// No description provided for @remotePairFingerprintHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'和电脑 Remote 插件上显示的指纹核对一致再继续。'**
+  String get remotePairFingerprintHint;
+
+  /// No description provided for @remotePairConfirm.
+  ///
+  /// In zh, this message translates to:
+  /// **'确认是这台电脑，开始配对'**
+  String get remotePairConfirm;
+
+  /// No description provided for @remotePairNotThis.
+  ///
+  /// In zh, this message translates to:
+  /// **'不是这台，重新扫'**
+  String get remotePairNotThis;
+
+  /// No description provided for @remotePairClaiming.
+  ///
+  /// In zh, this message translates to:
+  /// **'正在生成验证码…'**
+  String get remotePairClaiming;
+
+  /// No description provided for @remotePairCodeTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'在电脑上输入这 8 位验证码'**
+  String get remotePairCodeTitle;
+
+  /// No description provided for @remotePairCodeSemantics.
+  ///
+  /// In zh, this message translates to:
+  /// **'验证码 {digits}'**
+  String remotePairCodeSemantics(String digits);
+
+  /// No description provided for @remotePairCodeHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'在电脑的 Remote 插件里输入，再点「确认绑定」。手机这边不用再操作。'**
+  String get remotePairCodeHint;
+
+  /// No description provided for @remotePairOneAttempt.
+  ///
+  /// In zh, this message translates to:
+  /// **'只有一次机会：输错后这次配对作废，要在电脑上重新生成二维码再扫。'**
+  String get remotePairOneAttempt;
+
+  /// No description provided for @remotePairWaiting.
+  ///
+  /// In zh, this message translates to:
+  /// **'等电脑确认 · 剩余 {countdown}'**
+  String remotePairWaiting(String countdown);
+
+  /// No description provided for @remotePairApproved.
+  ///
+  /// In zh, this message translates to:
+  /// **'电脑已确认，正在完成绑定…'**
+  String get remotePairApproved;
+
+  /// No description provided for @remotePairCodeExpired.
+  ///
+  /// In zh, this message translates to:
+  /// **'验证码已过期，请在电脑上重新生成二维码'**
+  String get remotePairCodeExpired;
+
+  /// No description provided for @remotePairConnecting.
+  ///
+  /// In zh, this message translates to:
+  /// **'配对完成，正在连接 {name}…'**
+  String remotePairConnecting(String name);
+
+  /// No description provided for @remotePairFailedTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'没能配对'**
+  String get remotePairFailedTitle;
+
+  /// No description provided for @remotePairOtherServerBody.
+  ///
+  /// In zh, this message translates to:
+  /// **'这个二维码来自 {server}，和 DSH Go 现在用的 Remote 服务器不同。切换过去继续吗？两个服务器的登录各自保留。'**
+  String remotePairOtherServerBody(String server);
+
+  /// No description provided for @remotePairSwitchServer.
+  ///
+  /// In zh, this message translates to:
+  /// **'切换服务器并继续'**
+  String get remotePairSwitchServer;
+
+  /// No description provided for @remotePairScanAgain.
+  ///
+  /// In zh, this message translates to:
+  /// **'重新扫码'**
+  String get remotePairScanAgain;
+
+  /// No description provided for @remotePairErrInvalidCode.
+  ///
+  /// In zh, this message translates to:
+  /// **'这不是 DSH Go 的配对二维码'**
+  String get remotePairErrInvalidCode;
+
+  /// No description provided for @remotePairErrOtherServer.
+  ///
+  /// In zh, this message translates to:
+  /// **'这个二维码来自另一个 Remote 服务器'**
+  String get remotePairErrOtherServer;
+
+  /// No description provided for @remotePairErrUnsupported.
+  ///
+  /// In zh, this message translates to:
+  /// **'这个 Remote 服务器还不支持扫码配对'**
+  String get remotePairErrUnsupported;
+
+  /// No description provided for @remotePairErrExpired.
+  ///
+  /// In zh, this message translates to:
+  /// **'二维码已过期或已经用过了。请在电脑上重新生成二维码'**
+  String get remotePairErrExpired;
+
+  /// No description provided for @remotePairErrCodeRejected.
+  ///
+  /// In zh, this message translates to:
+  /// **'电脑上输入的验证码不对，这次配对已作废。请在电脑上重新生成二维码再扫'**
+  String get remotePairErrCodeRejected;
+
+  /// No description provided for @remotePairErrCancelled.
+  ///
+  /// In zh, this message translates to:
+  /// **'配对已取消'**
+  String get remotePairErrCancelled;
+
+  /// No description provided for @remotePairErrAccountConflict.
+  ///
+  /// In zh, this message translates to:
+  /// **'这台手机已经登录了另一个 Remote 账号，和这台电脑的账号不一致。原来的登录保持不变；要换绑请先在 Remote 里退出登录'**
+  String get remotePairErrAccountConflict;
+
+  /// No description provided for @remotePairErrIdentity.
+  ///
+  /// In zh, this message translates to:
+  /// **'配对信息和这台电脑或这台手机对不上，已经停止。请在电脑上重新生成二维码'**
+  String get remotePairErrIdentity;
+
+  /// No description provided for @remotePairErrHostLimit.
+  ///
+  /// In zh, this message translates to:
+  /// **'这个账号绑定的电脑已经到上限了'**
+  String get remotePairErrHostLimit;
+
+  /// No description provided for @remotePairErrNetwork.
+  ///
+  /// In zh, this message translates to:
+  /// **'连不上 Remote 服务器，检查网络后重试'**
+  String get remotePairErrNetwork;
+
+  /// No description provided for @remotePairErrFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'配对没有完成，请重新扫码'**
+  String get remotePairErrFailed;
+
   /// No description provided for @stateWorkspaceFilesHint.
   ///
   /// In zh, this message translates to:
