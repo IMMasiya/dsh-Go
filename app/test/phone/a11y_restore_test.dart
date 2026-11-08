@@ -1,4 +1,3 @@
-import 'package:dsh_app/phone/phone_channel.dart';
 import 'package:dsh_app/state/phone_state.dart';
 import 'package:dsh_app/ui/phone/a11y_restore_sheet.dart';
 import 'package:dsh_app/ui/phone/phone_control_screen.dart';
