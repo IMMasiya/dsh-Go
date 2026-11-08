@@ -151,13 +151,16 @@ internal class MainScreenDriver(private val service: PhoneA11yService, private v
             isPassword = false, isSecretField = false, isEditable = false, viewId = node.viewId))
     }
 
-    override fun observe(detail: Boolean, image: Boolean): ScreenSnapshot = synchronized(lock) {
+    override fun observe(detail: Boolean, image: Boolean): ScreenSnapshot = observe(detail, image, automaticImage = false)
+
+    override fun observe(detail: Boolean, image: Boolean, automaticImage: Boolean): ScreenSnapshot = synchronized(lock) {
         val start = SystemClock.uptimeMillis()
         val generation = abortGen
         availability().let { if (!it.ok) return blank(it.reason!!) }
         val cap = capture()
         try {
             val snap = publish(cap, detail)
+            val publicImage = image || automaticImage && snap.screen.poorTree
             val text = StringBuilder(snap.screen.text)
             var bytes: ByteArray? = null
             var mime: String? = null
@@ -169,7 +172,7 @@ internal class MainScreenDriver(private val service: PhoneA11yService, private v
             if (snap.screen.poorTree && epoch != null && !readLocal) {
                 localText = LocalOcrResult.Unavailable(LocalOcrResult.Reason.PRIVACY_UNVERIFIED)
             }
-            if (image || readLocal) {
+            if (publicImage || readLocal) {
                 val left = OBSERVE_MS - (SystemClock.uptimeMillis() - start)
                 when {
                     // l10n:keep agent screen result
@@ -185,7 +188,7 @@ internal class MainScreenDriver(private val service: PhoneA11yService, private v
                         val secrets = secretFieldBounds(cap.windows)
                         val capturedTransitions = visual.transitions()
                         val shot = shooter.shoot(window, cap.screen, snap.screen.elements, secrets, minOf(left - 300, 3_000),
-                            image = image,
+                            image = publicImage,
                             readLocalText = readLocal,
                             localTextPrivacyAllowed = ocrAllowed(cap, snap, generation),
                             localTextCancelled = { !ocrAllowed(cap, snap, generation) || localOcr.enabledEpoch() != epoch })
@@ -217,7 +220,7 @@ internal class MainScreenDriver(private val service: PhoneA11yService, private v
                             snap.image = shot.observation
                             snap.ocrOnlyEpoch = epoch
                             visual.candidate(snap.id, capturedTransitions)
-                        } else if (image && !privateText) text.append("\n提示：${shot.error ?: "截图失败"}。")
+                        } else if (publicImage && !privateText) text.append("\n提示：${shot.error ?: "截图失败"}。")
                     }
                 }
             }
