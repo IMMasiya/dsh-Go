@@ -151,6 +151,15 @@ Future<void> _flush(WidgetTester tester) async {
   await tester.pump(Duration.zero);
 }
 
+Future<void> _waitForSecondWrite(WidgetTester tester, List<String> written) async {
+  // The connection notification, refresh timer and collection can span several
+  // event-loop turns. Do not advance the clock into a source's timeout fallback.
+  for (var pump = 0; pump < 20 && written.length < 2; pump++) {
+    await tester.pump(Duration.zero);
+  }
+  expect(written, hasLength(2), reason: 'automatic refresh must write exactly twice within 20 zero-duration pumps');
+}
+
 void main() {
   final written = <String>[];
   final manualFlags = <bool>[];
@@ -196,7 +205,7 @@ void main() {
       } else {
         f.ready.completeError(StateError('synthetic connection failure'));
       }
-      await _flush(tester);
+      await _waitForSecondWrite(tester, written);
       expect(written, hasLength(2));
       expect(written.last, contains('- state：${succeeds ? 'connected' : 'failed'}'));
     });
@@ -214,7 +223,7 @@ void main() {
     expect(written, isEmpty);
     hold.complete(VoiceMode.auto);
     await first;
-    await _flush(tester);
+    await _waitForSecondWrite(tester, written);
     expect(written, hasLength(2));
     expect(written.last, contains('- state：connected'));
   });
@@ -397,7 +406,7 @@ void main() {
     await _flush(tester);
     hold.complete(VoiceMode.auto);
     await manual;
-    await _flush(tester);
+    await _waitForSecondWrite(tester, written);
     expect(written, hasLength(2));
     expect(written.first, contains('System IME evidence'));
     expect(written.last, contains('- state：connected'));
@@ -470,6 +479,7 @@ void main() {
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger.setMockMethodCallHandler(
       DiagnosticsPublisher.channel,
       (call) async {
+        if (call.method != 'publishDiagnostics') return null;
         flags.add((call.arguments as Map<Object?, Object?>)['manual']);
         return null;
       },
