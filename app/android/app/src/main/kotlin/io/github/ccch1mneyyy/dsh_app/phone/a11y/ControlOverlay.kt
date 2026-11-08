@@ -7,6 +7,7 @@ package io.github.ccch1mneyyy.dsh_app.phone.a11y
 
 import io.github.ccch1mneyyy.dsh_app.i18n.AppStrings
 import io.github.ccch1mneyyy.dsh_app.R
+import io.github.ccch1mneyyy.dsh_app.phone.background.BackgroundPreview
 import android.accessibilityservice.AccessibilityService
 import android.content.Context
 import android.content.Intent
@@ -473,7 +474,7 @@ internal class ControlOverlay(private val service: AccessibilityService) : UserG
         if (taskId == null || p == null || control == null) return
         previewTaskId = taskId
         previewPill = p
-        control.preview.addConsumer(previewOwner, taskId) { frame ->
+        control.preview.addConsumer(previewOwner, taskId, BackgroundPreview.ConsumerKind.OVERLAY) { frame ->
             if (destroying || previewTaskId != taskId || previewPill !== p) return@addConsumer
             when (frame["state"]) {
                 "frame" -> (frame["imageBytes"] as? ByteArray)?.let(previewDecoder::offer)
@@ -481,6 +482,7 @@ internal class ControlOverlay(private val service: AccessibilityService) : UserG
                     previewDecoder.clear()
                     val label = when (frame["state"]) {
                         "off" -> null
+                        "inUse" -> s(R.string.overlay_preview_in_use)
                         "protected" -> s(R.string.overlay_preview_protected)
                         "waiting" -> s(R.string.overlay_preview_waiting)
                         else -> s(R.string.overlay_preview_unavailable)

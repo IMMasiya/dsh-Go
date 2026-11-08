@@ -175,6 +175,8 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
         },
         journal = taskJournal,
         recoveryAdmission = { background.resourceAdmission() },
+        backgroundCapacity = { background.parallelism().effectiveLimit },
+        prepareBackground = { task, owner -> background.prepareForTask(owner) { task.tasks.isCurrent(owner) } },
         startSkillScope = skillLifecycle::startManaged,
         completeSkillScope = skillLifecycle::completeDrained,
         cancelScope = { record, state ->
@@ -223,6 +225,7 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
     }
 
     private fun onSessionTask(task: PhoneTasks, state: PhoneTasks.Snapshot) {
+        preview.refresh()
         prompts.check()
         val record = sessions.all().firstOrNull { it.tasks === task } ?: return
         if (!state.active) sessions.onInactive(record, state)
@@ -260,7 +263,8 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
         PhoneRegistry.promptGate = prompts
         PhoneRegistry.controlListener = this
         PhoneRegistry.unlocks = { policies().unlocks }
-        background.onStatusChanged = { emitStatus() }
+        // Never enter registry from a BackgroundControl callback's ownership monitor.
+        background.onStatusChanged = { ticker.execute { sessions.backgroundCapacityChanged() } }
         background.onPreviewChanged = { main.post { preview.refresh() } }
         background.localOcrAllowed = { target ->
             isEnabled() && !isLocked() && target.packageName != app.packageName &&
@@ -592,8 +596,9 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
                 if (intent.action != Intent.ACTION_SCREEN_OFF) return
                 selfCheck.stop()
                 preview.refresh()
-                background.requestInterrupt()
-                onStopAllRequested("熄屏") // l10n:keep agent stop reason
+                background.requestInterrupt {
+                    sessions.stopAll("熄屏") // l10n:keep agent stop reason
+                }
                 cleanupIo.execute { background.finishInterrupt() }
             }
         }
@@ -679,13 +684,14 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
     }
 
     private fun settleStoredTask(): Map<String, Any?>? {
-        val taskId = background.pendingStoredTaskId() ?: return null
-        // The original driver already has a physical completion proof. Persist its clear
-        // and return that exact slot; no repeated RELEASE or lookup by a journal payload.
-        if (!background.endTask(taskId)) return mapOf("ok" to false, "reason" to "storageUnavailable")
-        // Only an already eligible ended/retiring scope releases its registry leases.
-        // An active failed-handoff task intentionally keeps its task/App ownership.
-        sessions.retryCleanup(taskId)
+        for (taskId in background.pendingStoredTaskIds()) {
+            // The original driver already has a physical completion proof. Persist its clear
+            // and return that exact slot; no repeated RELEASE or lookup by a journal payload.
+            if (!background.endTask(taskId)) return mapOf("ok" to false, "reason" to "storageUnavailable")
+            // Only an already eligible ended/retiring scope releases its registry leases.
+            // An active failed-handoff task intentionally keeps its task/App ownership.
+            sessions.retryCleanup(taskId)
+        }
         return null
     }
 
@@ -728,8 +734,17 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
         return value
     }
 
+    fun setBackgroundParallelLimit(value: Any?): Map<String, Any?> {
+        val result = background.setBackgroundParallelLimit(value)
+        if (result["ok"] == true) sessions.backgroundCapacityChanged()
+        return result
+    }
+
     private fun backgroundStatus(): Map<String, Any?> = try {
-        background.status() + ("preview" to mapOf("v" to 1, "enabled" to preview.enabled))
+        background.status() + mapOf(
+            "preview" to mapOf("v" to 1, "enabled" to preview.enabled),
+            "parallelism" to background.parallelism().map(sessions.backgroundHeldSlots()),
+        )
     } catch (e: Exception) {
         linkedMapOf("mode" to "off", "ready" to false, "reason" to (e.message ?: AppStrings.get(app, R.string.phone_background_error)), "androidOk" to (Build.VERSION.SDK_INT >= 34), "preview" to mapOf("v" to 1, "enabled" to preview.enabled))
     }
@@ -813,7 +828,13 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
         val report = s - "statusRevision"
         if (!force && report == lastStatus) return
         lastStatus = report
-        main.post { sinks.forEach { runCatching { it(s) } } }
+        main.post {
+            if (sinks.isEmpty()) return@post
+            val outgoing = capacityStatusForDelivery(s, background.configuredParallelLimit())
+            sinks.forEach { runCatching { it(outgoing) } }
+            // Capture/lastStatus/revision stay on ticker; never splice a new limit into old facts.
+            if (outgoing !== s) ticker.execute { pushIfChanged(force = true) }
+        }
     }
 
     /** Every 2 s: end idle tasks; 自动恢复无障碍; push status changes we can't observe (accessibility connecting). */
@@ -969,4 +990,13 @@ internal fun applyLocalOcrPolicyUpdate(map: Map<*, *>?, publish: (Boolean) -> Un
     if (!saved) return false
     if (enabled) publish(true)
     return true
+}
+
+/** Strip a stale capacity block; never splice a new limit into old effective/held facts. */
+internal fun capacityStatusForDelivery(status: Map<String, Any?>, configuredLimit: Int): Map<String, Any?> {
+    val background = status["background"] as? Map<*, *> ?: return status
+    val parallelism = background["parallelism"] as? Map<*, *> ?: return status
+    val sampled = parallelism["configuredLimit"] as? Int ?: return status
+    if (sampled == configuredLimit) return status
+    return status + ("background" to (background - "parallelism"))
 }

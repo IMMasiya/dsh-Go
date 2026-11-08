@@ -122,7 +122,8 @@ class McpServer(
         "protocolVersion" to (requested?.takeIf { it in KNOWN_VERSIONS } ?: LATEST_VERSION),
         "capabilities" to mapOf(
             "tools" to mapOf("listChanged" to false),
-            "experimental" to mapOf(PhoneCaller.META_KEY to mapOf("v" to 1, "taskIsolation" to 1, "parallelLimit" to 1, "runLifecycle" to 1)),
+            "experimental" to mapOf(PhoneCaller.META_KEY to mapOf("v" to 1, "taskIsolation" to 1, "parallelLimit" to 1, "runLifecycle" to 1,
+                "backgroundParallelism" to mapOf("v" to 1, "maxLimit" to 3, "defaultLimit" to 1))),
         ),
         "serverInfo" to linkedMapOf("name" to "dsh-app-phone", "version" to serverVersion),
     )

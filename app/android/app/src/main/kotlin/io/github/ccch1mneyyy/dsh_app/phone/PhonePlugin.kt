@@ -2,6 +2,7 @@ package io.github.ccch1mneyyy.dsh_app.phone
 
 import io.github.ccch1mneyyy.dsh_app.i18n.AppStrings
 import io.github.ccch1mneyyy.dsh_app.R
+import io.github.ccch1mneyyy.dsh_app.phone.background.BackgroundPreview
 import android.app.Activity
 import android.app.Application
 import android.content.Context
@@ -137,7 +138,7 @@ class PhonePlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandle
         val events = previewSink ?: return
         val host = activity?.activity ?: return
         if (attached && AppVisibility.isResumed(host)) {
-            control.preview.addConsumer(previewOwner, taskId) { events.success(it) }
+            control.preview.addConsumer(previewOwner, taskId, BackgroundPreview.ConsumerKind.APP_DIALOG) { events.success(it) }
         }
     }
 
@@ -185,6 +186,10 @@ class PhonePlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandle
             "retryBackgroundRecovery" -> async(result) { control.retryBackgroundRecovery() }
             "startPhoneSelfCheck", "phoneSelfCheckStatus", "cancelPhoneSelfCheck",
             "retryPhoneSelfCheckCleanup" -> selfCheckCall(call, result)
+            "setBackgroundParallelLimit" -> async(result, shortControl = true) {
+                val args = call.arguments as? Map<*, *>
+                control.setBackgroundParallelLimit(if (args != null && args.keys == setOf("limit")) args["limit"] else null)
+            }
             "setBackgroundViewport" -> async(result, shortControl = true) {
                 val args = call.arguments as? Map<*, *>
                 control.background.setBackgroundViewport(if (args != null && args.keys == setOf("preset")) args["preset"] else null)
