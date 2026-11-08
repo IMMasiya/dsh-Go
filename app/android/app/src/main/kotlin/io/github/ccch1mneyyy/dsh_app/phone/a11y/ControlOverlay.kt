@@ -1325,6 +1325,13 @@ internal class ControlOverlay(private val service: AccessibilityService) : UserG
         confirmCard?.let { it.root to it.params }, handoffCard?.let { it.root to it.params },
     )
 
+    /** Main-thread identity check, including invisible roots during a display capture. */
+    internal fun ownsWindow(windowId: Int): Boolean = windowId >= 0 && windows().any { (root, _) ->
+        if (!root.isAttachedToWindow) return@any false
+        val node = root.createAccessibilityNodeInfo() ?: return@any false
+        try { node.windowId == windowId } finally { node.recycle() }
+    }
+
     private fun add(view: View, params: WindowManager.LayoutParams): Boolean = try {
         wm.addView(view, params); true
     } catch (e: Exception) { Log.w(TAG, "overlay addView failed", e); false }
