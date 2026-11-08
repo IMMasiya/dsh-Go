@@ -4,6 +4,7 @@ import 'dart:typed_data';
 
 import 'package:archive/archive.dart';
 import 'package:dsh_app/pets/pet_library.dart';
+import 'package:dsh_app/pets/pet_pack_validator.dart' show petArchiveByteCap;
 import 'package:flutter_test/flutter_test.dart';
 
 /// A real (transparent) PNG of [w] × [h]; [data] replaces its image data
@@ -126,7 +127,9 @@ void main() {
     expect(pngIntact(Uint8List.fromList(whole)..[40] ^= 0xff), isFalse);
     // A chunk a decoder may skip (ancillary: lower-case first letter) is fine; an
     // unknown critical one (upper-case first) or a name that isn't four letters is not.
-    expect(pngIntact(png(32, 16, chunks: ['tEXt', 'abCd'])), isTrue);
+    expect(pngIntact(png(32, 16, chunks: ['abCd'])), isTrue);
+    // One a decoder knows but that is malformed (an empty tEXt has no keyword) is not.
+    expect(pngIntact(png(32, 16, chunks: ['tEXt'])), isFalse);
     expect(pngIntact(png(32, 16, chunks: ['ABCD'])), isFalse);
     expect(pngIntact(png(32, 16, chunks: ['ab1d'])), isFalse);
     // Interlaced 2 × 2: Adam7 passes 1, 6 and 7 hold a row each (1, 1 and 2 pixels).
@@ -337,6 +340,51 @@ void main() {
       expect((await library.list()).map((p) => p.name), ['小猫']);
       expect(leftovers(), isEmpty);
     });
+  });
+
+  test('schema1 remains authoritative when an extra Codex manifest is present', () async {
+    final result = await library.install(
+      zip({
+        'pack.json': utf8.encode(jsonEncode(packJson())),
+        'idle.png': png(32, 16),
+        'pet.json': utf8.encode('{not a Codex manifest'),
+      }),
+    );
+    expect(result.id, 'user-cat');
+    final dir = await library.folder(result.id);
+    expect(dir.listSync().map((e) => e.uri.pathSegments.last).toSet(), {'pack.json', 'idle.png'});
+    // Falling back would report a missing Codex atlas. The authored pack's
+    // own schema error must remain the reason, and the installed pet survives.
+    await expectLater(
+      library.install(zip({'pack.json': utf8.encode('{'), 'pet.json': utf8.encode('{}')})),
+      problem(PetImportProblem.badPack),
+    );
+    expect((await library.load('user-cat')).name, '小猫');
+  });
+
+  test('failed replacement keeps the previous JSON and sheet byte for byte', () async {
+    await library.install(zip({'pack.json': utf8.encode(jsonEncode(packJson())), 'idle.png': png(32, 16)}));
+    final dir = await library.folder('user-cat');
+    final beforeJson = File('${dir.path}/pack.json').readAsBytesSync();
+    final beforePng = File('${dir.path}/idle.png').readAsBytesSync();
+    final broken = png(32, 16)..[29] ^= 1;
+    await expectLater(
+      library.install(zip({'pack.json': utf8.encode(jsonEncode(packJson(name: 'replacement'))), 'idle.png': broken})),
+      problem(PetImportProblem.badSheet),
+    );
+    expect(File('${dir.path}/pack.json').readAsBytesSync(), beforeJson);
+    expect(File('${dir.path}/idle.png').readAsBytesSync(), beforePng);
+    expect(leftovers(), isEmpty);
+  });
+
+  test('oversized archive is rejected before reading its payload', () async {
+    // A sparse file exercises the declared-file gate without a large fixture.
+    final file = File('${temp.path}/oversized.zip');
+    final handle = file.openSync(mode: FileMode.write);
+    handle.truncateSync(petArchiveByteCap + 1);
+    handle.closeSync();
+    await expectLater(library.install(file), problem(PetImportProblem.tooLarge));
+    expect(await Directory('${temp.path}/pets').exists(), isFalse);
   });
 
   group('turned away, nothing left behind', () {

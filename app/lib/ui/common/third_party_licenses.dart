@@ -42,6 +42,8 @@ void registerThirdPartyLicenses() {
     // Provenance and the binary/asset hashes are in THIRD_PARTY_NOTICES.md.
     final bundledNotices = await rootBundle.loadString('assets/licenses/webrtc-150.7871.04.md');
     yield LicenseEntryWithLineBreaks(<String>['WebRTC'], '$_webrtcBsd\n$bundledNotices');
+    final unicodeNotice = await rootBundle.loadString('assets/licenses/unicode-15.0.txt');
+    yield LicenseEntryWithLineBreaks(<String>['Unicode Character Database (15.0.0)'], unicodeNotice);
   });
 }
 
