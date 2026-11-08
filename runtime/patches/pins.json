@@ -1488,6 +1488,14 @@
         }
       }
     },
+    "zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz-phone-caller-bundle.diff": {
+      "0.2.2-rc.1": {
+        "node_modules/@deepseek-ai/dsh-tools/lib/pipeline.js": {
+          "after": "eb891d29b281a0ed02e6b69c3128ee29ee525292c8565133999280cf20edcb5c",
+          "before": "f6c850cefce30831c4c5f160e831856b105935331bacd1ae0823129001614bc6"
+        }
+      }
+    },
     "zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz-storage-json-postpublish.diff": {
       "0.2.2-rc.1": {
         "node_modules/@deepseek-ai/dsh-storage-json/lib/index.js": {
