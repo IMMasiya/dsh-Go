@@ -413,8 +413,16 @@ internal class MainScreenDriver(private val service: PhoneA11yService, private v
                         break
                     }
                     val list = ScreenFormat.followList(ScreenFormat.index(cap.windows), el.fingerprint, lastBounds)
-                        // l10n:keep agent screen result
-                        ?: run { stop = "列表不见了（界面变了）"; null } ?: break
+                    if (list == null) {
+                        stop = if (cap.truncated || cap.partial) {
+                            // l10n:keep agent screen result
+                            "页面只读了一部分，无法确认列表是否到底"
+                        } else {
+                            // l10n:keep agent screen result
+                            "列表不见了（界面变了）"
+                        }
+                        break
+                    }
                     val source = cap.windows.firstOrNull { it.id == list.windowId }?.packageName
                     if (!canRead(source)) {
                         sourceDenied = true
