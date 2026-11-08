@@ -936,7 +936,7 @@ internal class MainScreenDriver(private val service: PhoneA11yService, private v
     )
 
     private fun locate(cap: Capture, el: ScreenElement): IndexedElement? =
-        ScreenFormat.index(cap.windows).firstOrNull { it.fingerprint == el.fingerprint }
+        ScreenFormat.index(cap.windows).singleOrNull { it.fingerprint == el.fingerprint }
 
     /** Formats [cap] as the next snapshot (`s<n>`) and makes it the latest. */
     private fun publish(cap: Capture, detail: Boolean): Snapshot {
