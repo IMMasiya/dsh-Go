@@ -49,6 +49,7 @@ import java.util.concurrent.TimeUnit
  */
 class PhoneControl private constructor(private val app: Context) : PhoneEnv, ControlListener {
     private val prefs = app.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+    @Volatile private var policiesCache: PhonePolicies = readPolicies()
     private val main = Handler(Looper.getMainLooper())
     private val nm = app.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
     private val ticker = Executors.newSingleThreadScheduledExecutor { r -> Thread(r, "dsh-phone-status").apply { isDaemon = true } }
@@ -226,7 +227,6 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
 
     @Volatile private var logger: (String) -> Unit = {}
     @Volatile private var rootfs: File? = null
-    @Volatile private var policiesCache: PhonePolicies? = null
     @Volatile private var lastStatus: Map<String, Any?>? = null
     @Volatile private var keptTask = 0L
     private var screenReceiver: BroadcastReceiver? = null
@@ -287,23 +287,24 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
         return true
     }
 
-    override fun policies(): PhonePolicies = policiesCache ?: run {
+    override fun policies(): PhonePolicies = policiesCache
+
+    /** Construction only, before any registry/worker can read the published cache. */
+    private fun readPolicies(): PhonePolicies {
         val stored = prefs.getString(K_POLICIES, null)
-        val p = try {
+        return try {
             PhonePolicies.fromMap(stored?.let { Json.parse(it) as? Map<*, *> })
         } catch (_: Exception) {
             PhonePolicies()
         }
-        policiesCache = p
-        p
     }
 
     fun setPolicies(map: Map<*, *>?): Boolean {
         // Partial updates keep what they don't mention (the 免确认 switch sends only its flag).
         // 解除限制 is refused while any task, selected or not, may still act; restoring never is.
-        val p = PhonePolicies.update(map, base = policies(), busy = sessions::anyActive) ?: return false
+        val p = sessions.updatePolicies(map, { policiesCache }, { policiesCache = it }) ?: return false
+        // The plugin serializes setters on its IO executor; never hold admission over preferences IO.
         prefs.edit().putString(K_POLICIES, Json.write(p.toMap())).apply()
-        policiesCache = p
         return true
     }
 

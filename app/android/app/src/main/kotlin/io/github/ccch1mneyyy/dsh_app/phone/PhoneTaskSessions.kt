@@ -432,6 +432,14 @@ class PhoneTaskSessions(
     fun all(): List<Task> = synchronized(lock) { entries.values.toList() }
     fun isBusy(task: Task): Boolean = synchronized(lock) { task.pending > 0 || task.running || task.closing || task.cancelling || task.cleanupFailed }
 
+    /** Policy validation and in-memory publication share admission's linearization point.
+     * Callbacks must only read/publish memory; persistence and notifications belong outside. */
+    fun updatePolicies(map: Map<*, *>?, current: () -> PhonePolicies, publish: (PhonePolicies) -> Unit): PhonePolicies? = synchronized(lock) {
+        val next = PhonePolicies.update(map, current(), ::anyActive) ?: return@synchronized null
+        publish(next)
+        next
+    }
+
     /** Any record, selected or not, that may still act: active, an admitted call, or a draining body. */
     fun anyActive(): Boolean = synchronized(lock) {
         (entries.values + retiring).any { it.pending > 0 || it.running || it.retired == null && it.tasks.snapshot().active }
