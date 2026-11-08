@@ -115,6 +115,15 @@ internal class ControlOverlay(private val service: AccessibilityService) : UserG
     /** 「已发给 DSH：…」 for a moment after 插话, in the line's place. */
     private var steerNote: String? = null
     private var pill: OverlayCapsule? = null
+    private val previewOwner = Any()
+    private var previewTaskId: Long? = null
+    private var previewPill: OverlayCapsule? = null
+    @Volatile private var destroying = false
+    private val previewDecoder = OverlayPreviewDecoder { bitmap ->
+        val target = previewPill
+        if (target == null || destroying) bitmap?.recycle()
+        else target.showPreview(bitmap, s(if (bitmap == null) R.string.overlay_preview_unavailable else R.string.overlay_preview_readonly))
+    }
     private var confirmCard: Card? = null
     private var handoffCard: Card? = null
     private var pendingConfirm: Pending<Decision>? = null
@@ -319,6 +328,7 @@ internal class ControlOverlay(private val service: AccessibilityService) : UserG
             if (sharedPrompt == null && pendingConfirm === confirm) { confirm?.resolve(Decision.STOP); dismissConfirm() }
             if (pendingHandoff === handoff) { handoff?.resolve(HandoffResult.STOP); dismissHandoff() }
             paused = false
+            clearPreview()
             endEditing()
             if (statusText != null) { setStopped(true); renderPill(); clearStoppedLater() }
         }
@@ -397,15 +407,56 @@ internal class ControlOverlay(private val service: AccessibilityService) : UserG
     }
 
     fun destroy() {
+        destroying = true
         sharedPrompt?.ticket?.stop()
         pendingConfirm?.resolve(Decision.STOP)
         pendingHandoff?.resolve(HandoffResult.STOP)
         overlayPrefs.unregisterOnSharedPreferenceChangeListener(prefsListener)
         main.post {
+            clearPreview()
             dismissConfirm()
             dismissHandoff()
             removePill(animated = false)
         }
+    }
+
+    /** Subscription visibility follows the existing card, never the mere existence of its View. */
+    private fun syncPreview() {
+        val p = pill
+        val control = PhoneControl.peek()
+        val taskId = if (!destroying && p != null && p.root.isAttachedToWindow && fold.expanded &&
+            !ballShown && !captureHidden && !stoppedNote && !waiting() &&
+            confirmCard == null && handoffCard == null && pendingHandoff == null)
+            control?.liveTask()?.id else null
+        if (taskId == previewTaskId && (taskId == null || previewPill === p)) return
+        clearPreview()
+        if (taskId == null || p == null || control == null) return
+        previewTaskId = taskId
+        previewPill = p
+        control.preview.addConsumer(previewOwner, taskId) { frame ->
+            if (destroying || previewTaskId != taskId || previewPill !== p) return@addConsumer
+            when (frame["state"]) {
+                "frame" -> (frame["imageBytes"] as? ByteArray)?.let(previewDecoder::offer)
+                else -> {
+                    previewDecoder.clear()
+                    val label = when (frame["state"]) {
+                        "off" -> null
+                        "protected" -> s(R.string.overlay_preview_protected)
+                        "waiting" -> s(R.string.overlay_preview_waiting)
+                        else -> s(R.string.overlay_preview_unavailable)
+                    }
+                    p.showPreview(null, label)
+                }
+            }
+        }
+    }
+
+    private fun clearPreview() {
+        PhoneControl.peek()?.preview?.removeConsumer(previewOwner)
+        previewDecoder.clear()
+        previewPill?.showPreview(null, null)
+        previewPill = null
+        previewTaskId = null
     }
 
     // ---- capsule ----------------------------------------------------------------------------------
@@ -481,6 +532,7 @@ internal class ControlOverlay(private val service: AccessibilityService) : UserG
             badge = u.any && !stoppedNote,
             stopLabel = if (stoppedNote) null else s(R.string.overlay_stop_description),
         )
+        syncPreview()
     }
 
     /** 「已解除限制」 in bold over what is lifted (「系统设置、密码和验证码」), a size smaller. */
@@ -502,6 +554,7 @@ internal class ControlOverlay(private val service: AccessibilityService) : UserG
 
     /** Takes the control away; [animated]: it fades first (a task that ended, not a rebuild). */
     private fun removePill(animated: Boolean) {
+        clearPreview()
         val p = pill ?: return
         endEditing()
         main.removeCallbacks(foldTick)
@@ -550,6 +603,12 @@ internal class ControlOverlay(private val service: AccessibilityService) : UserG
             override fun inputDone() = endEditing()
         }
         capsule = OverlayCapsule(service, c, strings, actions) { update(capsule.root, capsule.params) }
+        capsule.root.addOnAttachStateChangeListener(object : View.OnAttachStateChangeListener {
+            override fun onViewAttachedToWindow(view: View) = Unit
+            override fun onViewDetachedFromWindow(view: View) {
+                if (previewPill === capsule) clearPreview()
+            }
+        })
         capsule.params = params(top = true, keepScreenOn = true)
         placeCapsule(capsule)
         return capsule
@@ -940,6 +999,7 @@ internal class ControlOverlay(private val service: AccessibilityService) : UserG
     private fun now() = SystemClock.uptimeMillis()
 
     private fun scheduleFold() {
+        syncPreview()
         main.removeCallbacks(foldTick)
         if (debugFreeze) return
         val at = fold.nextAt ?: return
@@ -1133,6 +1193,7 @@ internal class ControlOverlay(private val service: AccessibilityService) : UserG
      * touches, so the hidden one is never in the way.
      */
     private fun syncWindows() {
+        syncPreview()
         val p = pill ?: return
         val handoff = handoffCard != null
         val shown = if (captureHidden) View.INVISIBLE else View.VISIBLE
