@@ -1,7 +1,17 @@
 // Synthetic MCP peer: no phone access. Only tests consume the echoed metadata.
+import { closeSync, openSync } from 'node:fs';
 import { createInterface } from 'node:readline';
 
-const ends = [];
+// `--first-end=<exit|refuse>:<marker>`: the first run end this fixture sees across reconnected
+// processes (claimed by creating the marker) is lost before any ACK, or answered with a peer error.
+const firstEnd = process.argv.find(arg => arg.startsWith('--first-end='))?.slice('--first-end='.length);
+const claimFirstEnd = () => {
+  if (firstEnd === undefined) return undefined;
+  const split = firstEnd.indexOf(':');
+  try { closeSync(openSync(firstEnd.slice(split + 1), 'wx')); } catch { return undefined; }
+  return firstEnd.slice(0, split);
+};
+const ends = [], refused = [];
 for await (const line of createInterface({ input: process.stdin })) {
   const request = JSON.parse(line);
   if (request.id === undefined) continue;
@@ -26,13 +36,28 @@ for await (const line of createInterface({ input: process.stdin })) {
       result = { content: [{ type: 'text', text: JSON.stringify({
         args: request.params.arguments,
         ends,
+        refused,
+        pid: process.pid,
         caller: request.params._meta?.['dsh-go/phone-caller'] ?? null,
       }) }] };
+      if (request.params.arguments?.exit === true) {
+        // Reply, then retire this connection as a relay or bridge loss would.
+        process.stdout.write(JSON.stringify({ jsonrpc: '2.0', id: request.id, result }) + '\n', () => process.exit(0));
+        continue;
+      }
       break;
-    case 'dsh-go/phone-run-end':
+    case 'dsh-go/phone-run-end': {
+      const fault = claimFirstEnd();
+      if (fault === 'exit') process.exit(0);
+      if (fault === 'refuse') {
+        refused.push(request.params);
+        process.stdout.write(JSON.stringify({ jsonrpc: '2.0', id: request.id, error: { code: -32000, message: 'Synthetic end refusal' } }) + '\n');
+        continue;
+      }
       ends.push(request.params);
       result = {}; // ACK records intent only; this fixture has no device work.
       break;
+    }
     case 'ping':
       result = {};
       break;

@@ -1579,6 +1579,14 @@
           "before": "851f298e025660da755bcd8207cba997a7520278ad189f4675e7e9c793c250a9"
         }
       }
+    },
+    "zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz-phone-run-end-retry.diff": {
+      "0.2.2-rc.1": {
+        "node_modules/@deepseek-ai/dsh-mcp-client/lib/index.js": {
+          "after": "a1ad048cbbb7caefe5471c583f076aa8e393f534efbc5b11b625308096efdace",
+          "before": "3af6303ee705551b6c44155549d6767dedd802a1a881b7aac0dcc84099c4e7b4"
+        }
+      }
     }
   },
   "schema": 1

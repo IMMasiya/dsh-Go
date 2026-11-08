@@ -3,6 +3,8 @@
 // DSH_PREFIX=<prepared patched prefix> node --test runtime/tests/phone-caller-context.test.mjs
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
@@ -14,7 +16,7 @@ const { NativeToolExecutor } = await load('dsh-tool-executor-native');
 const { PtcExecutor } = await load('dsh-tool-executor-ptc');
 let serial = 0;
 
-async function fixture(t, { enabled = true, supported = true, lifecycle = false } = {}) {
+async function fixture(t, { enabled = true, supported = true, lifecycle = false, reconnect = false, extra = [] } = {}) {
   const ctx = new Context();
   t.after(() => ctx.fiber.dispose());
   for (const name of ['dsh-session', 'dsh-session-projection', 'dsh-agent', 'dsh-llm',
@@ -22,8 +24,9 @@ async function fixture(t, { enabled = true, supported = true, lifecycle = false 
   await ctx.plugin((await load('dsh-agent-loop')).AgentLoop, { agents: [] });
   await ctx.plugin(await load('dsh-mcp-client'), {
     serverName: 'phone', transport: 'stdio', command: process.execPath,
-    args: [fileURLToPath(new URL('./fixtures/phone-caller-mcp.mjs', import.meta.url)), lifecycle ? 'lifecycle' : supported ? 'supported' : 'legacy'],
-    dshGoPhoneCaller: enabled, failOnStartupError: true, reconnect: { enabled: false },
+    args: [fileURLToPath(new URL('./fixtures/phone-caller-mcp.mjs', import.meta.url)), lifecycle ? 'lifecycle' : supported ? 'supported' : 'legacy', ...extra],
+    dshGoPhoneCaller: enabled, failOnStartupError: true,
+    reconnect: reconnect ? { enabled: true, initialDelayMs: 10, maxDelayMs: 50, maxAttempts: 100 } : { enabled: false },
   });
   const native = new NativeToolExecutor(ctx);
   const create = async () => (await ctx.agents.create({ sessionId: `phone-caller-${++serial}` })).agent;
@@ -41,7 +44,25 @@ async function fixture(t, { enabled = true, supported = true, lifecycle = false 
     const value = ptc ? result.value.result : result.value;
     return { id, ...JSON.parse(value.content[0].text) };
   };
-  return { ctx, create, run, native };
+  // An unowned query of the peer's records; undefined while no connection can answer.
+  const probe = async () => { try { return await run(undefined, 1, {}, false); } catch { return undefined; } };
+  return { ctx, create, run, native, probe };
+}
+
+async function until(read, done, what) {
+  const deadline = Date.now() + 10_000;
+  for (;;) {
+    const value = await read();
+    if (value !== undefined && done(value)) return value;
+    if (Date.now() > deadline) assert.fail(`timed out waiting for ${what}`);
+    await new Promise(resolve => setTimeout(resolve, 10));
+  }
+}
+
+function marker(t) {
+  const dir = mkdtempSync(join(tmpdir(), 'phone-run-end-'));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  return join(dir, 'first-end');
 }
 
 test('shared MCP client keeps two Agents and each turn separate, arguments cannot replace caller', async t => {
@@ -136,6 +157,44 @@ test('actual session end reaches managed MCP as a private ACK request with captu
     { v: 1, sessionId: a.session.id, runId: first.caller.runId, completion: 'completed' },
     { v: 1, sessionId: b.session.id, runId: second.caller.runId, completion: 'other' },
   ]);
+});
+
+// Native keys a run by launch, not connection, so a replacement relay connection reaches the same task.
+test('an end whose calls used a retired connection reaches the replacement connection', async t => {
+  const f = await fixture(t, { lifecycle: true, reconnect: true }), a = await f.create();
+  const call = await f.run(a, 1);
+  const retired = await f.run(undefined, 1, { exit: true }, false);
+  assert.equal(retired.pid, call.pid);
+  await until(f.probe, value => value.pid !== retired.pid, 'a replacement connection');
+  a.session.append('turn/end', { turn: 1, reason: { kind: 'completed' } });
+  const { ends } = await until(f.probe, value => value.ends.length > 0, 'the end on the replacement');
+  assert.deepEqual(ends, [{ v: 1, sessionId: a.session.id, runId: call.caller.runId, completion: 'completed' }]);
+});
+
+test('an end lost before its ACK is kept and delivered once on the next connection', async t => {
+  const f = await fixture(t, { lifecycle: true, reconnect: true, extra: [`--first-end=exit:${marker(t)}`] });
+  const a = await f.create(), call = await f.run(a, 1);
+  a.session.append('turn/end', { turn: 1, reason: { kind: 'aborted', reason: 'must not leak' } });
+  const delivered = await until(f.probe, value => value.ends.length > 0, 'the retained end');
+  assert.notEqual(delivered.pid, call.pid);
+  const expected = [{ v: 1, sessionId: a.session.id, runId: call.caller.runId, completion: 'other' }];
+  assert.deepEqual(delivered.ends, expected);
+  await f.run(a, 2); // A later phone call flushes only ends that are still unacknowledged.
+  a.session.append('turn/end', { turn: 1, reason: { kind: 'completed' } });
+  assert.deepEqual((await f.probe()).ends, expected);
+});
+
+test('a peer refusal is final and later ends still flow', async t => {
+  const f = await fixture(t, { lifecycle: true, extra: [`--first-end=refuse:${marker(t)}`] });
+  const a = await f.create(), b = await f.create();
+  const first = await f.run(a, 1), second = await f.run(b, 1);
+  a.session.append('turn/end', { turn: 1, reason: { kind: 'completed' } });
+  await until(f.probe, value => value.refused.length > 0, 'the refusal');
+  await f.run(b, 1); // Would re-send a retained end ahead of this call.
+  b.session.append('turn/end', { turn: 1, reason: { kind: 'completed' } });
+  const { ends, refused } = await until(f.probe, value => value.ends.length > 0, 'the later end');
+  assert.deepEqual(refused, [{ v: 1, sessionId: a.session.id, runId: first.caller.runId, completion: 'completed' }]);
+  assert.deepEqual(ends, [{ v: 1, sessionId: b.session.id, runId: second.caller.runId, completion: 'completed' }]);
 });
 
 for (const options of [{ enabled: false, lifecycle: true }, { lifecycle: false }, { supported: false }]) {
