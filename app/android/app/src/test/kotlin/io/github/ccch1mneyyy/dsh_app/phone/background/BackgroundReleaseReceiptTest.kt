@@ -31,8 +31,15 @@ class BackgroundReleaseReceiptTest {
     }
 
     @Test fun displayOwnersAreOpaqueUniqueLifetimesAndNeverContainSessionMetadata() {
-        val a = BackgroundDisplay { error("constructing an owner must not open a channel") }
-        val b = BackgroundDisplay { error("constructing an owner must not open a channel") }
+        fun display() = BackgroundDisplay(
+            channelProvider = { error("constructing an owner must not open a channel") },
+            journal = BackgroundResourceJournal({ null }, { error("unused owner must not write a resource record") })
+                .apply { assertTrue(load()) },
+            mayUse = { error("unused owner must not request admission") },
+            admitUse = { error("unused owner must not admit an action") },
+        )
+        val a = display()
+        val b = display()
         assertNotEquals(a.ownerToken, b.ownerToken)
         assertEquals(java.util.UUID.fromString(a.ownerToken).toString(), a.ownerToken)
         assertEquals(java.util.UUID.fromString(b.ownerToken).toString(), b.ownerToken)
