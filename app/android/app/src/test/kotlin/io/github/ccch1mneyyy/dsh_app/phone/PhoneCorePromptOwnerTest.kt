@@ -18,6 +18,7 @@ class PhoneCorePromptOwnerTest {
     private var reviewRequired = false
     private var beforeHandoff: (PhoneTasks.Owner) -> Unit = {}
     private var asked = 0
+    private val focusRequests = mutableListOf<ConfirmRequest>()
     private val confirmedPackages = mutableListOf<String?>()
     private val statuses = mutableListOf<String?>()
     private var beforeStatus: () -> Unit = {}
@@ -46,7 +47,7 @@ class PhoneCorePromptOwnerTest {
         override fun policies() = policyRead?.invoke() ?: policies
         override fun isLocked() = false
         override fun gate() = if (!gateAvailable) null else object : UserGate {
-            override fun confirm(request: ConfirmRequest): Decision { asked++; confirmedPackages += request.packageName; return confirm() }
+            override fun confirm(request: ConfirmRequest): Decision { focusRequests += request; asked++; confirmedPackages += request.packageName; return confirm() }
             override fun handoff(reason: String, timeoutMs: Long): HandoffResult { asked++; return handoff() }
             override fun handoff(reason: String, timeoutMs: Long, cause: HandoffCause?): HandoffResult {
                 handoffCauses += cause
@@ -99,6 +100,30 @@ class PhoneCorePromptOwnerTest {
     }, tasks, ActionLog())
 
     private class Driver(override val screen: PhoneScreen) : PhoneDriver {
+        var focusEnabled = false
+        var focusToken: FocusObservation? = null
+        var focusPrepares = 0
+        var focusInputs = 0
+        var focusCloses = 0
+        var focusSecret = false
+        var focusMethod = FocusInput.Method.INPUT_METHOD
+        var beforeFocusInput: () -> Unit = {}
+        override fun prepareFocusInput(screenId: String): Either<String, FocusInput> {
+            focusPrepares++
+            if (!focusEnabled || focusToken?.committed != true) return Either.Left("original response not committed")
+            return Either.Right(object : FocusInput {
+                override val method = focusMethod
+                override val target = TargetInfo(screenId, 1, "输入框", "Search", targetPackage,
+                    "Example", false, focusSecret, true)
+                override fun perform(text: String, allowed: () -> Boolean): ActionResult {
+                    beforeFocusInput()
+                    if (!allowed()) return ActionResult(false, "no input")
+                    focusInputs++
+                    return ActionResult(true, "one selection insertion")
+                }
+                override fun close() { focusCloses++ }
+            })
+        }
         var reads = 0
         var writes = 0
         var targetPackage = "example.app"
@@ -134,7 +159,8 @@ class PhoneCorePromptOwnerTest {
         override fun observe(detail: Boolean, image: Boolean): ScreenSnapshot {
             reads++
             observing()
-            return ScreenSnapshot("${screen.prefix}1", observedText, "Example", observedPackage, image = observedImage)
+            return ScreenSnapshot("${screen.prefix}1", observedText, "Example", observedPackage, image = observedImage,
+                focus = if (focusEnabled) FocusObservation(1).also { focusToken = it } else null)
         }
         override fun collect(screenId: String, listElementId: Int, maxPages: Int, until: String?): CollectResult {
             collects++
@@ -1388,4 +1414,107 @@ class PhoneCorePromptOwnerTest {
             assertFalse(tasks.isStopped())
         }
     }
+
+    /** Real Core/filter -> MCP encoding -> original CallWork normal-result winner. No Android IME fake ACK. */
+    private fun committedFocusScreen(expireAfterEncoding: Boolean = false, expectedCommit: Boolean = !expireAfterEncoding) {
+        main.focusEnabled = true
+        val ticket = PhoneReplyCommit()
+        val server = McpServer(emptyList(), { name, args, _ -> core.call(name, args) })
+        val call = server.dispatch("""{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"screen","arguments":{"image":false}}}""") as McpServer.Dispatch.Call
+        var remaining = 1L
+        val work = PhoneCallWork({ call.runWithCommit(ticket) { name, args, _ -> core.call(name, args) }
+            .also { if (expireAfterEncoding) remaining = 0L } }, { remaining }, { "expired" }, ticket)
+        assertNotNull(work.run())
+        assertEquals(expectedCommit, checkNotNull(main.focusToken).committed)
+    }
+
+    private fun focusCall(text: Any? = "hello", extra: Map<String, Any?> = emptyMap()) =
+        core.call(PhoneCore.FOCUS_TEXT, mapOf("observation" to "s1", "text" to text) + extra)
+
+    @Test fun focusUsesOriginalEncodedNormalReplyAndAlwaysAsksOnce() {
+        policies = PhonePolicies(confirmMode = ConfirmMode.ALWAYS)
+        committedFocusScreen()
+        tasks.approve("example.app")
+        tasks.waive()
+        val out = focusCall()
+        assertFalse(out.text, out.isError)
+        assertEquals(1, asked)
+        assertEquals(1, main.focusInputs)
+        assertEquals(1, main.focusCloses)
+        assertFalse(focusRequests.single().offerTaskWaiver)
+        assertFalse(focusRequests.single().firstInApp)
+        assertNull(focusRequests.single().visualScope)
+    }
+
+    @Test fun focusCannotUseDirectOrExpiredObservationResponse() {
+        main.focusEnabled = true
+        core.call(PhoneToolCatalog.SCREEN, emptyMap())
+        assertFalse(checkNotNull(main.focusToken).committed)
+        assertTrue(focusCall().isError)
+        committedFocusScreen(expireAfterEncoding = true)
+        assertTrue(focusCall().isError)
+        assertEquals(0, asked)
+        assertEquals(0, main.focusInputs)
+    }
+
+    @Test fun focusRejectsBroadConsentAndClosesCapturedPlan() {
+        committedFocusScreen()
+        confirm = { Decision.ALLOW_ALL_FOR_TASK }
+        assertTrue(focusCall().isError)
+        assertEquals(0, main.focusInputs)
+        assertEquals(1, main.focusCloses)
+        assertFalse(tasks.isStopped())
+    }
+
+    @Test fun focusDeniesSecretAndLatePolicyWithoutRetargetOrStop() {
+        committedFocusScreen()
+        main.focusSecret = true
+        assertTrue(focusCall().isError)
+        assertEquals(0, asked)
+        main.focusSecret = false
+        confirm = { policies = policies.copy(denyPackages = listOf("example.app")); Decision.ALLOW_ONCE }
+        val refused = focusCall()
+        assertTrue(refused.isError)
+        assertEquals(1, asked)
+        assertEquals(0, main.focusInputs)
+        assertEquals(2, main.focusCloses)
+        assertFalse(tasks.isStopped())
+    }
+
+    @Test fun focusChecksLatestPolicyAtActualInputAndClipboardConsentIsSpecific() {
+        committedFocusScreen()
+        main.focusMethod = FocusInput.Method.CLIPBOARD
+        main.beforeFocusInput = { policies = policies.copy(denyPackages = listOf("example.app")) }
+        assertTrue(focusCall().isError)
+        assertEquals(0, main.focusInputs)
+        assertEquals(1, main.focusCloses)
+        assertTrue(focusRequests.single().sentence.contains("覆盖系统剪贴板"))
+        assertTrue(focusRequests.single().sentence.contains("不备份、不恢复"))
+        assertFalse(tasks.isStopped())
+    }
+
+    @Test fun focusStrictArgumentsAndBackgroundNeverFallBackToMain() {
+        committedFocusScreen()
+        for (value in listOf(null, 123, "", "a\nb", "\uD800", "x".repeat(501))) {
+            assertTrue(focusCall(value).isError)
+        }
+        assertTrue(focusCall(extra = mapOf("submit" to false)).isError)
+        assertEquals(0, main.focusPrepares)
+        val backgroundResult = core.call(PhoneCore.FOCUS_TEXT, mapOf("observation" to "b1", "text" to "hello"))
+        assertTrue(backgroundResult.isError)
+        assertEquals(1, background.focusPrepares)
+        assertEquals(0, main.focusPrepares)
+        assertEquals(0, asked)
+        assertEquals(0, main.focusInputs)
+    }
+
+    @Test fun focusRefusedScreenCannotBindItsHiddenCandidate() {
+        policies = PhonePolicies(denyPackages = listOf("example.app"))
+        committedFocusScreen(expectedCommit = false)
+        policies = policies.copy(denyPackages = emptyList())
+        assertTrue(focusCall().isError)
+        assertEquals(0, asked)
+        assertEquals(0, main.focusInputs)
+    }
+
 }

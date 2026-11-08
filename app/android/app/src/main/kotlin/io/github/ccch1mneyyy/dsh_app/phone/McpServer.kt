@@ -9,6 +9,7 @@ class ToolOutput(
 ) {
     // Associated by the native producer with this call only; never serialized into MCP.
     internal var nativeReplyCommit: PhoneReplyCommit? = null
+    internal var focusObservation: FocusObservation? = null
 }
 
 /** Host attribution, separate from tool arguments. It is not an approval or a task lease. */
@@ -144,6 +145,9 @@ class McpServer(
             ToolOutput("手机操控出错：${e.javaClass.simpleName}${e.message?.let { "：$it" } ?: ""}", isError = true)
         }
         val line = result(id, toolResult(out))
+        // Only the exact, fully encoded original response can bind its displayed focus evidence.
+        if (!out.isError && nativeReplyCommit != null && out.focusObservation?.bind(nativeReplyCommit) == true)
+            out.nativeReplyCommit = nativeReplyCommit
         if (nativeReplyCommit != null && out.nativeReplyCommit === nativeReplyCommit)
             nativeReplyCommit.encoded()
         return line

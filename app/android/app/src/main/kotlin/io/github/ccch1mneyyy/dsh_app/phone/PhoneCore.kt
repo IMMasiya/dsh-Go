@@ -125,7 +125,7 @@ class PhoneCore(
 
     /** Cheap refusals must not start a native task or acquire a screen lease. */
     internal fun rejection(name: String): ToolOutput? {
-        if (name !in PhoneToolCatalog.names) {
+        if (name !in PhoneToolCatalog.names && name != FOCUS_TEXT) {
             // l10n:keep agent tool result
             return ToolOutput("没有这个手机工具：$name。可用：${PhoneToolCatalog.names.joinToString("、")}", isError = true)
         }
@@ -188,7 +188,9 @@ class PhoneCore(
             out.screen?.let { if (out.text.isNotEmpty()) append("\n\n"); append(it.text) }
         }
         val image = out.screen?.image
-        return ToolOutput(text, out.error, image, if (image != null) out.screen.imageMime else null)
+        return ToolOutput(text, out.error, image, if (image != null) out.screen.imageMime else null).also {
+            if (!out.error && owner != null && current(owner)) it.focusObservation = out.screen?.focus
+        }
     }
 
     private fun noteRefusal(tool: String, decision: String?, owner: PhoneTasks.Owner) {
@@ -245,6 +247,7 @@ class PhoneCore(
                 PhoneToolCatalog.CLIPBOARD -> clipboard(a, owner)
                 PhoneToolCatalog.SCREEN -> screen(a, owner)
                 PhoneToolCatalog.COLLECT -> collect(a, owner)
+                FOCUS_TEXT -> focusText(a, scope, owner)
                 PhoneToolCatalog.TAP, PhoneToolCatalog.TYPE, PhoneToolCatalog.SCROLL, PhoneToolCatalog.TAP_XY -> act(name, a, scope, owner)
                 PhoneToolCatalog.KEY -> key(a, owner)
                 PhoneToolCatalog.HANDOFF -> handoff(a, scope, owner)
@@ -626,7 +629,7 @@ class PhoneCore(
         return Either.Right(d)
     }
 
-    private fun actionScreenParameter(name: String) = if (name == PhoneToolCatalog.TAP_XY) "observation" else "screen"
+    private fun actionScreenParameter(name: String) = if (name == PhoneToolCatalog.TAP_XY || name == FOCUS_TEXT) "observation" else "screen"
 
     /** Admission uses the same argument coercion and routing as the actual tool body. */
     fun requiredScreens(name: String, args: Map<String, Any?>): Either<String, List<PhoneScreen>> {
@@ -643,7 +646,7 @@ class PhoneCore(
             PhoneToolCatalog.HANDOFF -> Either.Right(if (lastScreen == PhoneScreen.BACKGROUND)
                 listOf(PhoneScreen.MAIN, PhoneScreen.BACKGROUND) else listOf(PhoneScreen.MAIN))
             PhoneToolCatalog.TAP, PhoneToolCatalog.TYPE, PhoneToolCatalog.SCROLL, PhoneToolCatalog.TAP_XY,
-            PhoneToolCatalog.COLLECT, PhoneToolCatalog.KEY -> {
+            PhoneToolCatalog.COLLECT, PhoneToolCatalog.KEY, FOCUS_TEXT -> {
                 val parameter = actionScreenParameter(name)
                 val id = a.str(parameter)
                 if (name == PhoneToolCatalog.KEY && id == null) Either.Right(listOf(PhoneScreen.MAIN))
@@ -776,6 +779,82 @@ class PhoneCore(
             }
         }.trimEnd()
         return Out(text, screen = screen, app = screen?.appLabel ?: pkg, summary = summary, decision = "ok")
+    }
+
+    /** Selection insertion is distinct from type's whole-field replacement and never submits. */
+    private fun focusText(a: Args, scope: SerialWorker.Scope, owner: PhoneTasks.Owner): Out {
+        val summary = "焦点输入（内容不记录）" // l10n:keep agent focus result
+        val text = a.strictText("text")
+        if (!a.onlyKeys("observation", "text") || text == null || text.isEmpty() || text.length > 500 ||
+            text.any { it < ' ' || it == '\u007f' || it == '\u2028' || it == '\u2029' } ||
+            text.indices.any { i -> Character.isHighSurrogate(text[i]) &&
+                (i + 1 == text.length || !Character.isLowSurrogate(text[i + 1])) ||
+                Character.isLowSurrogate(text[i]) && (i == 0 || !Character.isHighSurrogate(text[i - 1])) }) {
+            return Out("focus_text 只接受 observation 和非空、最多 500 个 UTF-16 单元的单行 text 字符串；不支持提交。", // l10n:keep agent focus result
+                error = true, summary = summary, decision = "refused:arguments")
+        }
+        val sid = a.strictText("observation")
+        val which = when (val route = routeScreenId(sid, "observation")) {
+            is Either.Left -> return Out(route.value, error = true, summary = summary, decision = "refused:arguments")
+            is Either.Right -> route.value
+        }
+        if (!current(owner)) return stoppedOut(summary)
+        if (env.isLocked()) return locked(summary)
+        val driver = when (val d = driverFor(which, owner)) {
+            is Either.Left -> return Out(d.value, error = true, summary = summary, decision = "unavailable")
+            is Either.Right -> d.value
+        }
+        // No background-to-main substitution. Each driver must prove its own original editor.
+        val input = when (val prepared = driver.prepareFocusInput(sid!!)) {
+            is Either.Left -> return Out(prepared.value, error = true, summary = summary, decision = "unavailable")
+            is Either.Right -> prepared.value
+        }
+        input.use { plan ->
+            val target = plan.target
+            val pkg = target.packageName
+            val app = target.appLabel ?: pkg
+            if (!current(owner)) return stoppedOut(summary)
+            if (target.screenId != sid || !target.isEditable || SafetyRules.isSecretTarget(target))
+                return Out("原焦点不是可用的普通输入框，未输入。密码、验证码及支付框请用户填写。", // l10n:keep agent focus result
+                    error = true, app = app, summary = summary, decision = "refused:secret-field")
+            fun verdict() = safety.checkWrite(WriteKind.TYPE, target, pkg, target.appLabel,
+                typed = text, submit = false, screen = which)
+            (verdict() as? SafetyGate.Verdict.Refuse)?.let {
+                return Out(it.message, error = true, app = app, summary = summary, decision = "refused:${it.rule}")
+            }
+            val sentence = if (plan.method == FocusInput.Method.CLIPBOARD)
+                "将覆盖系统剪贴板，并在「${app ?: "当前应用"}」的原焦点选择区粘贴一次。旧剪贴板不备份、不恢复；输入可能触发应用行为，不会请求提交。是否仅允许这一次？" // l10n:keep agent focus result
+            else "将在「${app ?: "当前应用"}」的原焦点选择区插入一次文本，可能结束输入法组合状态；输入可能触发应用行为，不会请求提交。是否仅允许这一次？" // l10n:keep agent focus result
+            val decision = when (val consent = safety.resolve(safety.confirmationOnce(sentence, pkg,
+                target.appLabel, "focus_text"), scope, owner)) {
+                is SafetyGate.Result.No -> return Out(consent.message, error = true, app = app,
+                    summary = summary, decision = consent.decision)
+                is SafetyGate.Result.Go -> consent.decision
+            }
+            val failure = AtomicReference<SafetyGate.Verdict.Refuse?>(null)
+            fun allowed(): Boolean {
+                if (!current(owner) || tasks.isPaused || env.isLocked()) return false
+                if (failure.get() != null) return false
+                (verdict() as? SafetyGate.Verdict.Refuse)?.let { failure.compareAndSet(null, it) }
+                return failure.get() == null
+            }
+            if (!allowed()) {
+                failure.get()?.let { return Out(it.message, error = true, app = app,
+                    summary = summary, decision = "refused:${it.rule}") }
+                return stoppedOut(summary)
+            }
+            if (!tasks.setAppIfCurrent(owner, app)) return stoppedOut(summary)
+            // Selection insertion has no verified Phase1 action/parameter witness.
+            skillTrace.markIncomplete(owner)
+            val result = plan.perform(text, ::allowed)
+            if (!current(owner)) return stoppedOut(summary)
+            val denied = failure.get()
+            return Out(if (denied == null) result.message else
+                "策略已变化，停止继续输入；已开始的步骤可能产生效果，请核对后再决定，不要自动重试。\n${denied.message}", // l10n:keep agent focus result
+                error = denied != null || !result.ok,
+                screen = result.screen?.let { returnedScreen(driver, it, owner) }, app = app, summary = summary,
+                decision = if (denied != null) "refused:${denied.rule}" else if (result.ok) decision else "failed")
+        }
     }
 
     /** tap / type / scroll / tap_xy: route, resolve, gate, perform. */
@@ -1089,15 +1168,17 @@ class PhoneCore(
         summary = summary, decision = "stopped")
 
     companion object {
+        internal const val FOCUS_TEXT = "focus_text"
+
         /** Under DSH's 660 s MCP timeout, so the bridge always answers first. */
         const val MAX_TOTAL_MS = 640_000L
         const val PAUSE_WAIT_MS = 600_000L
         const val HANDOFF_MS = 600_000L
 
         /** Tools whose success means the agent got past whatever refused it before. */
-        private val WRITES = setOf(PhoneToolCatalog.TAP, PhoneToolCatalog.TYPE, PhoneToolCatalog.TAP_XY, PhoneToolCatalog.OPEN)
+        private val WRITES = setOf(FOCUS_TEXT, PhoneToolCatalog.TAP, PhoneToolCatalog.TYPE, PhoneToolCatalog.TAP_XY, PhoneToolCatalog.OPEN)
         /** An uncertain effect call tightens draft eligibility; it does not prove input was dispatched. */
-        private val TRACE_ACTIONS = setOf(PhoneToolCatalog.OPEN, PhoneToolCatalog.TAP, PhoneToolCatalog.TYPE,
+        private val TRACE_ACTIONS = setOf(FOCUS_TEXT, PhoneToolCatalog.OPEN, PhoneToolCatalog.TAP, PhoneToolCatalog.TYPE,
             PhoneToolCatalog.SCROLL, PhoneToolCatalog.TAP_XY, PhoneToolCatalog.KEY)
         private val DONE = setOf("ok", "allowed", "confirmed", "confirmed-app", "confirmed-task")
         const val SETTLE_AFTER_LAUNCH_MS = 1200L
