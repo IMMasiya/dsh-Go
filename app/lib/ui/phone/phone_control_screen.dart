@@ -337,176 +337,181 @@ class _PhoneControlScreenState extends ConsumerState<PhoneControlScreen> {
     }
     const gap = SizedBox(height: 24);
 
-    return AppPage.list(
-      title: l10n.phoneControlTitle,
-      subtitle: Text(l10n.phoneControlSubtitle),
-      actions: const [AskAiButton(AskAiTopic.phoneControl)],
-      children: [
-        if (blocker != null) ...[_BlockerNote(blocker), const SizedBox(height: 10)],
-        OverviewCard(
-          margin: const EdgeInsets.symmetric(horizontal: 16),
-          leading: const FeatureTile(FeatureKind.phone, size: OverviewCard.avatarSize),
-          title: Text(l10n.phoneControlTitle),
-          subtitle: AnimatedSwitcher(
-            duration: AppMotion.of(context, AppMotion.quick),
-            layoutBuilder: (current, previous) =>
-                Stack(alignment: Alignment.centerLeft, children: [...previous, ?current]),
-            child: Text(_statusLine(state, runtime, blocker), key: ValueKey(_statusLine(state, runtime, blocker))),
-          ),
-          onTap: toggle == null ? null : () => _onToggle(!status.enabled),
-          trailing: state.toggling
-              ? const SizedBox.square(
-                  dimension: 22,
-                  child: CircularProgressIndicator(strokeWidth: 2, strokeCap: StrokeCap.round),
-                )
-              : Switch(value: status.enabled, onChanged: toggle),
-        ),
-        if (state.policies?.unlocks.isNotEmpty ?? false)
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
-            child: Align(
-              alignment: AlignmentDirectional.centerStart,
-              child: UnlockedTag(onTap: () => _push(const PhoneUnlockPage())),
+    return PhoneSkillAutoPrompt(
+      status: status.skills,
+      enabled: ready && status.skills.available,
+      autoPromptReady: _skillPromptsReady,
+      promptBaseline: _skillPromptBaseline,
+      child: AppPage.list(
+        title: l10n.phoneControlTitle,
+        subtitle: Text(l10n.phoneControlSubtitle),
+        actions: const [AskAiButton(AskAiTopic.phoneControl)],
+        children: [
+          if (blocker != null) ...[_BlockerNote(blocker), const SizedBox(height: 10)],
+          OverviewCard(
+            margin: const EdgeInsets.symmetric(horizontal: 16),
+            leading: const FeatureTile(FeatureKind.phone, size: OverviewCard.avatarSize),
+            title: Text(l10n.phoneControlTitle),
+            subtitle: AnimatedSwitcher(
+              duration: AppMotion.of(context, AppMotion.quick),
+              layoutBuilder: (current, previous) =>
+                  Stack(alignment: Alignment.centerLeft, children: [...previous, ?current]),
+              child: Text(_statusLine(state, runtime, blocker), key: ValueKey(_statusLine(state, runtime, blocker))),
             ),
+            onTap: toggle == null ? null : () => _onToggle(!status.enabled),
+            trailing: state.toggling
+                ? const SizedBox.square(
+                    dimension: 22,
+                    child: CircularProgressIndicator(strokeWidth: 2, strokeCap: StrokeCap.round),
+                  )
+                : Switch(value: status.enabled, onChanged: toggle),
           ),
-        if (status.taskInterruption.visible) ...[
-          const SizedBox(height: 12),
-          ListPageCard(
-            children: [
-              ListPageRow(
-                key: const ValueKey('phone-task-interruption'),
-                icon: AppIcons.paused,
-                title: l10n.phoneInterruptionTitle,
-                subtitle: status.taskInterruption.state == 'loading'
-                    ? l10n.phoneInterruptionLoading
-                    : status.taskInterruption.state == 'error'
-                    ? l10n.phoneInterruptionStorageError
-                    : l10n.phoneInterruptionHint(status.taskInterruption.count),
-                trailing: status.taskInterruption.state == 'loading'
-                    ? null
-                    : FixButton(
-                        key: const ValueKey('phone-task-interruption-action'),
-                        label: status.taskInterruption.canAcknowledge
-                            ? l10n.phoneInterruptionAcknowledge
-                            : l10n.phoneInterruptionRetry,
-                        onPressed: !ready || _interruptionBusy ? null : () => _taskInterruptionAction(status.taskInterruption.batchToken),
-                      ),
+          if (state.policies?.unlocks.isNotEmpty ?? false)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+              child: Align(
+                alignment: AlignmentDirectional.centerStart,
+                child: UnlockedTag(onTap: () => _push(const PhoneUnlockPage())),
               ),
-            ],
-          ),
-        ],
-        if (task.active) ...[
-          const SizedBox(height: 12),
-          ListPageCard(
-            children: [
-              ListPageRow(
-                icon: task.paused ? AppIcons.paused : AppIcons.phoneControl,
-                iconColor: Theme.of(context).colorScheme.primary,
-                title: task.app == null ? l10n.phoneControlWorking : l10n.phoneControlWorkingApp(task.app!),
-                subtitle: task.paused
-                    ? l10n.commonPaused
-                    : task.waived
-                    ? l10n.phoneControlTaskNoConfirmHint
-                    : l10n.phoneControlFloatingBarHint,
-                trailing: FixButton(label: l10n.commonStop, onPressed: ready ? () => _stopTask(task.id) : null),
-              ),
-            ],
-          ),
-        ],
-        for (final waiting in status.tasks.where((item) => item.id != null && item.waitingForResources &&
-            !item.stopped && !item.finishing && !item.draining)) ...[
-          const SizedBox(height: 12),
-          ListPageCard(
-            children: [
-              ListPageRow(
-                key: ValueKey('phone-waiting-${waiting.id}'),
-                trailing: FixButton(label: l10n.commonStop, onPressed: ready ? () => _stopTask(waiting.id) : null),
-                icon: AppIcons.phoneControl,
-                title: l10n.phoneTaskWaiting(waiting.id!),
-                subtitle: waiting.waitingForApp != null
-                    ? waiting.waitingForApp!.packageName != null
-                        ? l10n.phoneTaskWaitingApp(waiting.waitingForApp!.packageName!, waiting.waitingForMs ~/ 1000)
-                        : l10n.phoneTaskWaitingUnknown(waiting.waitingForMs ~/ 1000)
-                    : l10n.phoneTaskWaitingScreen(
-                        waiting.waitingForScreen == 'background' ? l10n.phoneTaskBackgroundResource : l10n.phoneTaskMainResource,
-                        waiting.waitingForMs ~/ 1000),
-              ),
-            ],
-          ),
-        ],
-        for (final stopped in stoppedSessions.values) ...[
-          const SizedBox(height: 12),
-          ListPageCard(
-            children: [
-              ListPageRow(
-                icon: AppIcons.paused,
-                title: stopped.stopped ? l10n.phoneStoppedTask(stopped.id!) : l10n.phoneFinishingTask(stopped.id!),
-                subtitle: stopped.cleanupFailed
-                    ? l10n.phoneTaskCleanupFailedHint
-                    : stopped.retiring || stopped.draining || stopped.finishing || stopped.pendingCalls > 0
-                    ? l10n.phoneTaskDrainingHint
-                    : l10n.phoneResumeTaskHint,
-                trailing: FixButton(
-                  key: ValueKey('phone-resume-${stopped.id}'),
-                  label: stopped.cleanupFailed ? l10n.phoneCleanupRetry : l10n.phoneResumeTask,
-                  onPressed: !ready ? null : stopped.cleanupFailed
-                      ? stopped.draining || stopped.settling || stopped.pendingCalls > 0
-                          ? null
-                          : () => _retryTaskCleanup(stopped.id!)
-                      : stopped.retiring || stopped.draining || stopped.finishing || stopped.cleanupFailed || stopped.pendingCalls > 0
-                      ? null
-                      : () => _resumeTask(stopped.id!),
-                ),
-              ),
-            ],
-          ),
-        ],
-        gap,
-        if (!state.loaded)
-          const QuietSpinner(padding: EdgeInsets.symmetric(vertical: 32))
-        else if (ready) ...[
-          if (status.enabled) ..._setup(status) else const _WhatItDoes(),
-          gap,
-          ..._rules(state),
-          gap,
-          const PhoneSelfCheckPanel(),
-          gap,
-          _localOcr(state),
-          if (status.skills.available) ...[
-            gap,
-            PhoneSkillSection(status: status.skills, autoPromptReady: _skillPromptsReady,
-                promptBaseline: _skillPromptBaseline),
-          ],
-          if (status.enabled) ...[
-            gap,
+            ),
+          if (status.taskInterruption.visible) ...[
+            const SizedBox(height: 12),
             ListPageCard(
-              title: l10n.phoneControlAdvanced,
               children: [
                 ListPageRow(
-                  icon: AppIcons.dndMode,
-                  spot: SettingsIndex.entry(SettingsPageId.phoneDnd),
-                  subtitle: dndSummary(status.background),
-                  onTap: () => _push(const PhoneDndPage()),
-                ),
-                ListPageRow(
-                  icon: AppIcons.keepAlive,
-                  spot: SettingsIndex.entry(SettingsPageId.background),
-                  subtitle: l10n.phoneControlKeepAliveHint,
-                  onTap: () => _push(const BackgroundGuidePage()),
-                ),
-                ListPageRow(
-                  icon: AppIcons.backgroundPrompt,
-                  spot: Spots.phoneBackgroundGuide,
-                  subtitle: l10n.phoneBackgroundGuideSubtitle,
-                  onTap: _showBackgroundGuide,
+                  key: const ValueKey('phone-task-interruption'),
+                  icon: AppIcons.paused,
+                  title: l10n.phoneInterruptionTitle,
+                  subtitle: status.taskInterruption.state == 'loading'
+                      ? l10n.phoneInterruptionLoading
+                      : status.taskInterruption.state == 'error'
+                      ? l10n.phoneInterruptionStorageError
+                      : l10n.phoneInterruptionHint(status.taskInterruption.count),
+                  trailing: status.taskInterruption.state == 'loading'
+                      ? null
+                      : FixButton(
+                          key: const ValueKey('phone-task-interruption-action'),
+                          label: status.taskInterruption.canAcknowledge
+                              ? l10n.phoneInterruptionAcknowledge
+                              : l10n.phoneInterruptionRetry,
+                          onPressed: !ready || _interruptionBusy ? null : () => _taskInterruptionAction(status.taskInterruption.batchToken),
+                        ),
                 ),
               ],
             ),
           ],
-          // Said only while it is true: lifted rules are named by the tag above.
-          if (state.policies?.unlocks.isEmpty ?? true) PageFootnote(l10n.phoneSensitiveActionsNote),
+          if (task.active) ...[
+            const SizedBox(height: 12),
+            ListPageCard(
+              children: [
+                ListPageRow(
+                  icon: task.paused ? AppIcons.paused : AppIcons.phoneControl,
+                  iconColor: Theme.of(context).colorScheme.primary,
+                  title: task.app == null ? l10n.phoneControlWorking : l10n.phoneControlWorkingApp(task.app!),
+                  subtitle: task.paused
+                      ? l10n.commonPaused
+                      : task.waived
+                      ? l10n.phoneControlTaskNoConfirmHint
+                      : l10n.phoneControlFloatingBarHint,
+                  trailing: FixButton(label: l10n.commonStop, onPressed: ready ? () => _stopTask(task.id) : null),
+                ),
+              ],
+            ),
+          ],
+          for (final waiting in status.tasks.where((item) => item.id != null && item.waitingForResources &&
+              !item.stopped && !item.finishing && !item.draining)) ...[
+            const SizedBox(height: 12),
+            ListPageCard(
+              children: [
+                ListPageRow(
+                  key: ValueKey('phone-waiting-${waiting.id}'),
+                  trailing: FixButton(label: l10n.commonStop, onPressed: ready ? () => _stopTask(waiting.id) : null),
+                  icon: AppIcons.phoneControl,
+                  title: l10n.phoneTaskWaiting(waiting.id!),
+                  subtitle: waiting.waitingForApp != null
+                      ? waiting.waitingForApp!.packageName != null
+                          ? l10n.phoneTaskWaitingApp(waiting.waitingForApp!.packageName!, waiting.waitingForMs ~/ 1000)
+                          : l10n.phoneTaskWaitingUnknown(waiting.waitingForMs ~/ 1000)
+                      : l10n.phoneTaskWaitingScreen(
+                          waiting.waitingForScreen == 'background' ? l10n.phoneTaskBackgroundResource : l10n.phoneTaskMainResource,
+                          waiting.waitingForMs ~/ 1000),
+                ),
+              ],
+            ),
+          ],
+          for (final stopped in stoppedSessions.values) ...[
+            const SizedBox(height: 12),
+            ListPageCard(
+              children: [
+                ListPageRow(
+                  icon: AppIcons.paused,
+                  title: stopped.stopped ? l10n.phoneStoppedTask(stopped.id!) : l10n.phoneFinishingTask(stopped.id!),
+                  subtitle: stopped.cleanupFailed
+                      ? l10n.phoneTaskCleanupFailedHint
+                      : stopped.retiring || stopped.draining || stopped.finishing || stopped.pendingCalls > 0
+                      ? l10n.phoneTaskDrainingHint
+                      : l10n.phoneResumeTaskHint,
+                  trailing: FixButton(
+                    key: ValueKey('phone-resume-${stopped.id}'),
+                    label: stopped.cleanupFailed ? l10n.phoneCleanupRetry : l10n.phoneResumeTask,
+                    onPressed: !ready ? null : stopped.cleanupFailed
+                        ? stopped.draining || stopped.settling || stopped.pendingCalls > 0
+                            ? null
+                            : () => _retryTaskCleanup(stopped.id!)
+                        : stopped.retiring || stopped.draining || stopped.finishing || stopped.cleanupFailed || stopped.pendingCalls > 0
+                        ? null
+                        : () => _resumeTask(stopped.id!),
+                  ),
+                ),
+              ],
+            ),
+          ],
+          gap,
+          if (!state.loaded)
+            const QuietSpinner(padding: EdgeInsets.symmetric(vertical: 32))
+          else if (ready) ...[
+            if (status.enabled) ..._setup(status) else const _WhatItDoes(),
+            gap,
+            ..._rules(state),
+            gap,
+            const PhoneSelfCheckPanel(),
+            gap,
+            _localOcr(state),
+            if (status.skills.available) ...[
+              gap,
+              PhoneSkillSection(status: status.skills),
+            ],
+            if (status.enabled) ...[
+              gap,
+              ListPageCard(
+                title: l10n.phoneControlAdvanced,
+                children: [
+                  ListPageRow(
+                    icon: AppIcons.dndMode,
+                    spot: SettingsIndex.entry(SettingsPageId.phoneDnd),
+                    subtitle: dndSummary(status.background),
+                    onTap: () => _push(const PhoneDndPage()),
+                  ),
+                  ListPageRow(
+                    icon: AppIcons.keepAlive,
+                    spot: SettingsIndex.entry(SettingsPageId.background),
+                    subtitle: l10n.phoneControlKeepAliveHint,
+                    onTap: () => _push(const BackgroundGuidePage()),
+                  ),
+                  ListPageRow(
+                    icon: AppIcons.backgroundPrompt,
+                    spot: Spots.phoneBackgroundGuide,
+                    subtitle: l10n.phoneBackgroundGuideSubtitle,
+                    onTap: _showBackgroundGuide,
+                  ),
+                ],
+              ),
+            ],
+            // Said only while it is true: lifted rules are named by the tag above.
+            if (state.policies?.unlocks.isEmpty ?? true) PageFootnote(l10n.phoneSensitiveActionsNote),
+          ],
         ],
-      ],
+      ),
     );
   }
 
