@@ -224,6 +224,7 @@ class SafetyGate(
         submit: Boolean = false,
         point: Pair<Int, Int>? = null,
         coordinate: PhoneAction.TapXY? = null,
+        screen: PhoneScreen = PhoneScreen.MAIN,
     ): Verdict {
         val app = labelOf(pkg, appLabel)
         if (kind == WriteKind.KEY) return Verdict.Allow // back / home / recents / shade: always a way out
@@ -243,13 +244,15 @@ class SafetyGate(
         }
         // Everything above is a hard rule (or one the person lifted); everything below only asks.
         val forceOnce = kind == WriteKind.TAP_XY &&
-            coordinate?.gesture in setOf(PhoneAction.CoordinateGesture.LONG, PhoneAction.CoordinateGesture.SWIPE)
+            (screen == PhoneScreen.BACKGROUND || coordinate?.gesture in setOf(PhoneAction.CoordinateGesture.LONG, PhoneAction.CoordinateGesture.SWIPE))
         if (waived(p) && !forceOnce) return Verdict.Allow
         val everyWrite = pkg != null && pkg in p.confirmEveryWritePackages
         val firstInApp = !forceOnce && !everyWrite && (pkg == null || !tasks.isApproved(pkg))
         val word = if (kind == WriteKind.TAP || kind == WriteKind.LONG_TAP) SafetyRules.sensitiveWord(target?.label, target?.viewId) else null
         val actionApp = appLabel ?: pkg ?: uiText.get("phone_current_app", "当前应用") // l10n:keep test default
-        val action = describe(kind, target, actionApp, if (secret) SafetyRules.MASK else typed, submit, point, coordinate)
+        val action = describe(kind, target, actionApp, if (secret) SafetyRules.MASK else typed, submit, point, coordinate) +
+            if (kind == WriteKind.TAP_XY && screen == PhoneScreen.BACKGROUND)
+                uiText.get("phone_confirm_background_coordinate", "。这是最近后台截图的位置；本机文字识别未安装，请核对目标。此确认卡不含原截图。") else "" // l10n:keep test default
         val reason = when {
             kind == WriteKind.TAP_XY -> "tap_xy"
             kind == WriteKind.TYPE && submit -> "submit"

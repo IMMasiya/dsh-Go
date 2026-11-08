@@ -37,6 +37,8 @@ class BackgroundDisplay(
 
     @Volatile private var currentTarget: PhoneAppIdentity? = null
     private var targetReady = false
+    private var coordinateSupported = false
+    private val coordinateImage = BackgroundCoordinateImage()
     private var counter = 0
     private var lastScreenId: String? = null
     private var lastElements: List<Element> = emptyList()
@@ -74,6 +76,7 @@ class BackgroundDisplay(
                 check(BackgroundPolicy.supportsViewport(viewport, probe.get(Proto.VIEWPORT_VERSION))) {
                     Reasons.of("viewportUnsupported")
                 }
+                coordinateSupported = probe.get(Proto.BACKGROUND_COORDINATES) is Int && probe.getInt(Proto.BACKGROUND_COORDINATES) == 1
                 // A stop during probe seals this short admission check before CREATE can be sent.
                 resourceIo.pin(active)
             }
@@ -102,6 +105,7 @@ class BackgroundDisplay(
     }
 
     override fun observe(detail: Boolean, image: Boolean): ScreenSnapshot {
+        coordinateImage.clear()
         val target = currentTarget ?: return idleSnapshot()
         check(targetReady) { Reasons.of("targetIdentityUnavailable") }
         val request = Bundle().apply {
@@ -110,6 +114,7 @@ class BackgroundDisplay(
             putTarget(this, target)
             putBoolean(Proto.DETAIL, detail)
             putBoolean(Proto.WANT_IMAGE, image)
+            if (image && coordinateSupported) putInt(Proto.BACKGROUND_COORDINATES, 1)
             putBoolean(Proto.LOCAL_VISUAL, true)
         }
         val response = try {
@@ -122,6 +127,8 @@ class BackgroundDisplay(
         requireIdentity(response)
         return snapshot(response, markNew = false)
     }
+
+    override fun acceptVisualObservation(screenId: String) = coordinateImage.accept(screenId)
 
     /** A failed read is not an empty snapshot; old element numbers are no longer actionable. */
     internal fun requireObservation(ok: Boolean, code: String?, detail: String?) {
@@ -233,8 +240,7 @@ class BackgroundDisplay(
                 request.putString(Proto.OP, Proto.OP_KEY)
                 request.putString(Proto.DIR, "back")
             }
-            // l10n:keep agent screen protocol
-            is PhoneAction.TapXY -> return ActionResult(false, "后台屏按元素编号操作，不用坐标")
+            is PhoneAction.TapXY -> return performCoordinates(action, target, allowed)
         }
         // l10n:keep agent screen protocol
         val response = try {
@@ -245,6 +251,53 @@ class BackgroundDisplay(
         } catch (error: Exception) { clearSnapshot(); throw error }
             ?: return ActionResult(false, PhoneTasks.STOPPED_MESSAGE)
         return toResult(response, "已在后台屏执行", textAction = action is PhoneAction.Type)
+    }
+
+    private fun performCoordinates(action: PhoneAction.TapXY, target: PhoneAppIdentity, allowed: () -> Boolean): ActionResult {
+        // l10n:keep agent coordinate protocol
+        if (!coordinateSupported) return ActionResult(false, "当前后台通道不支持截图坐标，请更新并重新连接；未执行，也不会转到主屏。")
+        if (!allowed()) return ActionResult(false, PhoneTasks.STOPPED_MESSAGE)
+        val image = coordinateImage.take(action.screenId)
+            // l10n:keep agent coordinate protocol
+            ?: return ActionResult(false, "没有本任务最近一次已返回图片的后台坐标凭据。请显式 screen(image:true, background:true) 后核对；仍无凭据请用元素操作或交给用户，不要盲点。")
+        val gesture = action.gesture.name.lowercase()
+        val points = BackgroundCoordinateRequest(image.nonce, gesture, action.x, action.y, action.x2, action.y2, action.durationMs.toInt())
+        // l10n:keep agent coordinate protocol
+        if (!points.fits(image.width, image.height)) return ActionResult(false, "坐标超出原截图范围；未执行，请重新读屏。")
+        val request = Bundle().apply {
+            putString(Proto.OP, Proto.OP_COORDINATE)
+            putString(Proto.OWNER, ownerToken)
+            putTarget(this, target)
+            putInt(Proto.BACKGROUND_COORDINATES, 1)
+            putString(Proto.COORDINATE_OBSERVATION, image.nonce)
+            putString(Proto.GESTURE, gesture)
+            putInt(Proto.X, action.x); putInt(Proto.Y, action.y)
+            if (action.gesture == PhoneAction.CoordinateGesture.SWIPE) {
+                putInt(Proto.X2, checkNotNull(action.x2)); putInt(Proto.Y2, checkNotNull(action.y2))
+                putInt(Proto.DURATION_MS, action.durationMs.toInt())
+            }
+        }
+        val response = try {
+            resourceIo.call { if (allowed()) channel().execute(request) else null }
+        } catch (_: Exception) {
+            clearSnapshot()
+            // The original lane never replays a request after a missing/throwing reply.
+            return ActionResult(false, COORDINATE_UNKNOWN)
+        } ?: return ActionResult(false, PhoneTasks.STOPPED_MESSAGE)
+        val result = BackgroundCoordinateImage.Result.parse(image, target) { response.get(it) }
+        if (result == null) { clearSnapshot(); return ActionResult(false, COORDINATE_UNKNOWN) }
+        if (!result.ok) {
+            clearSnapshot()
+            // l10n:keep agent coordinate protocol
+            val message = if (result.attempted) "后台坐标手势可能已经产生作用，但后续结果未确认。请重新读屏，不要直接重试。" else
+                "后台坐标动作在注入前被拒绝；原观察不再可用，请重新读屏核对。"
+            return ActionResult(false, message)
+        }
+        val snap = try {
+            if (response.containsKey(Proto.COUNT) || response.getBoolean(Proto.SECURE)) snapshot(response, markNew = true) else null
+        } catch (_: Exception) { clearSnapshot(); null } // The gesture acknowledgement already exists.
+        // l10n:keep agent coordinate protocol
+        return ActionResult(true, "后台坐标手势已结束（不表示业务成功）" + backgroundVisualNote(result.change), snap)
     }
 
     override fun foregroundPackage(): String? = currentTarget?.packageName
@@ -262,6 +315,7 @@ class BackgroundDisplay(
             }
         } catch (_: Exception) { false }
         if (!acknowledged) return false
+        coordinateImage.clear()
         currentTarget = null
         targetReady = false
         lastScreenId = null
@@ -294,6 +348,7 @@ class BackgroundDisplay(
     }
 
     private fun clearSnapshot() {
+        coordinateImage.clear()
         lastScreenId = null
         lastElements = emptyList()
         previousLabels = emptySet()
@@ -331,6 +386,7 @@ class BackgroundDisplay(
     }
 
     private fun snapshot(response: Bundle, markNew: Boolean): ScreenSnapshot {
+        coordinateImage.clear()
         val id = "b${++counter}"
         val pkg = currentTarget?.packageName
         val appLabel = response.getString(Proto.APP_LABEL)
@@ -363,6 +419,17 @@ class BackgroundDisplay(
         }
         previousLabels = elements.map { it.label }.filter { it.isNotEmpty() }.toSet()
         val image = if (response.getBoolean(Proto.IMAGE_OMITTED)) null else response.getByteArray("imageBytes")
+        val coordinate = if (image != null && coordinateSupported) BackgroundCoordinateImage.Receipt.parse(
+            response.get(Proto.BACKGROUND_COORDINATES), response.get(Proto.COORDINATE_OBSERVATION),
+            response.get(Proto.COORDINATE_WIDTH), response.get(Proto.COORDINATE_HEIGHT)) else null
+        coordinateImage.candidate(id, coordinate)
+        if (coordinate != null) {
+            // l10n:keep agent coordinate protocol
+            text += "\n截图坐标范围：${coordinate.width}×${coordinate.height}像素；30秒内可单次使用，仍需逐次确认。本机文字识别未安装，未证明画布敏感内容或目标像素未变。"
+        } else if (image != null && coordinateSupported) {
+            // l10n:keep agent coordinate protocol
+            text += "\n本次截图没有可用坐标凭据（窗口、隐私、几何或帧条件未满足）。请用元素操作或交给用户。"
+        }
         return ScreenSnapshot(id, text, appLabel, pkg, secure = false, poorTree = poor,
             image = image, imageMime = if (image == null) null else response.getString("imageMime"))
     }
@@ -410,9 +477,14 @@ class BackgroundDisplay(
     }
 
     private fun idleSnapshot(): ScreenSnapshot {
+        coordinateImage.clear()
         val id = "b${++counter}"
         lastScreenId = id; lastElements = emptyList()
         // l10n:keep agent screen protocol
         return ScreenSnapshot(id, "屏幕 $id · 后台屏 · 空闲，用 open 打开应用", null, null)
+    }
+    companion object {
+        // l10n:keep agent coordinate protocol
+        private const val COORDINATE_UNKNOWN = "后台坐标请求未获得可信回执，可能已产生作用。请重新读屏，不要直接重试。"
     }
 }

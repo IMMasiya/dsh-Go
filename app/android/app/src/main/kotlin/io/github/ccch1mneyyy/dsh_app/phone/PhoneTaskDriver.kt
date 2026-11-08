@@ -42,6 +42,18 @@ class PhoneTaskObservations(private val tasks: PhoneTasks) {
             current()
             return remember(driver.observe(detail, image))
         }
+        override fun acceptVisualObservation(screenId: String) {
+            current()
+            if (!tasks.runIfCurrent(owner) {
+                synchronized(seen) {
+                    val value = seen[driver.screen]
+                    if (value != null && value.driver === driver && value.id == screenId &&
+                        value.owner.taskId == owner.taskId && value.owner.lifecycle == owner.lifecycle) {
+                        driver.acceptVisualObservation(screenId) // Memory only; Tasks -> ledger -> driver state.
+                    }
+                }
+            }) throw InterruptedException()
+        }
         override fun target(screenId: String, elementId: Int): TargetInfo? {
             current()
             return if (owns(screenId)) driver.target(screenId, elementId) else null

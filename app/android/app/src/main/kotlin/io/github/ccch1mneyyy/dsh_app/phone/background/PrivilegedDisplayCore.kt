@@ -54,6 +54,8 @@ import java.io.ByteArrayOutputStream
 import java.lang.reflect.InvocationTargetException
 import java.lang.reflect.Proxy
 import java.nio.ByteBuffer
+import java.security.MessageDigest
+import java.util.UUID
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
@@ -71,6 +73,7 @@ class PrivilegedDisplayCore(private val context: Context) {
 
     // Guarded by lock, one recent frame only; never a permission to drive coordinates.
     private var visualObservation: BackgroundVisualObservation? = null
+    private var coordinateObservation: BackgroundCoordinateObservation? = null
     // Same owner and Core lock; never replace an unconfirmed platform registration.
     private var treeConnection: TreeConnection? = null
 
@@ -134,7 +137,7 @@ class PrivilegedDisplayCore(private val context: Context) {
         try {
             if ((request.containsKey(Proto.TARGET_IDENTITY_VERSION) || request.containsKey(Proto.TARGET_UID)) &&
                 op !in setOf(Proto.OP_CREATE, Proto.OP_LAUNCH, Proto.OP_OBSERVE, Proto.OP_TAP, Proto.OP_SCROLL,
-                    Proto.OP_KEY, Proto.OP_TEXT, Proto.OP_RELEASE)) throw Fault("invalidArguments")
+                    Proto.OP_KEY, Proto.OP_TEXT, Proto.OP_COORDINATE, Proto.OP_RELEASE)) throw Fault("invalidArguments")
             if (op == Proto.OP_PROBE) {
                 response.putBoolean(Proto.OK, true)
                 response.putInt(Proto.UID, Process.myUid())
@@ -142,6 +145,7 @@ class PrivilegedDisplayCore(private val context: Context) {
                 response.putInt(Proto.PREVIEW_VERSION, 1)
                 response.putInt(Proto.VIEWPORT_VERSION, 1)
                 response.putInt(Proto.TARGET_IDENTITY_VERSION, 1)
+                response.putInt(Proto.BACKGROUND_COORDINATES, 1)
                 // A real successful full query is required; finding the reflective method is insufficient.
                 if (runCatching { rootTasksEmpty(Display.DEFAULT_DISPLAY) }.isSuccess) {
                     response.putInt(Proto.RELEASE_RECEIPT, 1)
@@ -202,6 +206,7 @@ class PrivilegedDisplayCore(private val context: Context) {
                 selfCheckReply = selfCheckReply || selfCheckOwner
                 try { dispatch(op, request, response) }
                 catch (e: Throwable) {
+                    coordinateObservation = null
                     visualObservation = null
                     if (request.get(Proto.OWNER) == owner &&
                         (op == Proto.OP_CREATE || op == Proto.OP_LAUNCH || e is TargetIdentity.Failure)) {
@@ -295,6 +300,9 @@ class PrivilegedDisplayCore(private val context: Context) {
         if (keyguard?.isKeyguardLocked == true) throw Fault("locked")
         val pkg = request.getString(Proto.PKG).orEmpty()
         if (!PACKAGE.matches(pkg)) throw Fault("invalidArguments")
+        if (request.containsKey(Proto.BACKGROUND_COORDINATES) && op != Proto.OP_COORDINATE &&
+            (op != Proto.OP_OBSERVE || request.get(Proto.BACKGROUND_COORDINATES) !is Int ||
+                request.getInt(Proto.BACKGROUND_COORDINATES) != 1 || request.get(Proto.WANT_IMAGE) != true)) throw Fault("invalidArguments")
         val opening = op == Proto.OP_CREATE || op == Proto.OP_LAUNCH
         if (!opening) requireDisplay() else owner = ownerId
         // Binding and all target changes share the resource owner lock. RELEASE never enters this gate.
@@ -304,6 +312,7 @@ class PrivilegedDisplayCore(private val context: Context) {
         // Resolve the exact intent before VD/reader allocation, not again after approving its identity.
         val launch = if (opening) resolveLaunch(pkg, expected) else null
 
+        if (op != Proto.OP_COORDINATE) coordinateObservation = null
         val localVisual = request.getBoolean(Proto.LOCAL_VISUAL) && when (op) {
             Proto.OP_CREATE, Proto.OP_LAUNCH, Proto.OP_OBSERVE, Proto.OP_TAP, Proto.OP_SCROLL -> true
             else -> false
@@ -324,8 +333,9 @@ class PrivilegedDisplayCore(private val context: Context) {
             }
             Proto.OP_OBSERVE -> {
                 if (expected == null) requireForeground(pkg)
-                observe(pkg, request.getBoolean(Proto.WANT_IMAGE), response, requireTree = true, detail = request.getBoolean(Proto.DETAIL), localVisual = localVisual)
+                observe(pkg, request.getBoolean(Proto.WANT_IMAGE), response, requireTree = true, detail = request.getBoolean(Proto.DETAIL), localVisual = localVisual, coordinates = request.containsKey(Proto.BACKGROUND_COORDINATES))
             }
+            Proto.OP_COORDINATE -> coordinate(pkg, request, response)
             Proto.OP_TAP -> {
                 requireForeground(pkg)
                 tap(pkg, request)
@@ -871,6 +881,7 @@ class PrivilegedDisplayCore(private val context: Context) {
 
     /** Old callers keep their best-effort contract. Strict owners use releaseStrict instead. */
     private fun releaseAll() = lock.withLock {
+        coordinateObservation = null
         if (strictOwner) throw Fault("releaseReceiptRequired") // Never downgrade a strict owner's cleanup.
         closeTreeConnection()
         visualObservation = null
@@ -897,6 +908,7 @@ class PrivilegedDisplayCore(private val context: Context) {
         // Only the last completed identity/variant is cached; it never touches a new owner.
         if (lastReleasedOwner == ownerId) return lastReleaseNeverCreated
         if (owner != ownerId || !strictOwner) throw Fault("identityChanged")
+        coordinateObservation = null
         closeTreeConnection()
         visualObservation = null
         stopPreview()
@@ -945,14 +957,18 @@ class PrivilegedDisplayCore(private val context: Context) {
 
     // ---- observation (tree + optional screenshot) --------------------------
 
-    private fun observe(pkg: String, wantImage: Boolean, response: Bundle, requireTree: Boolean = false, detail: Boolean = false, localVisual: Boolean = false) {
+    private fun observe(pkg: String, wantImage: Boolean, response: Bundle, requireTree: Boolean = false, detail: Boolean = false,
+                        localVisual: Boolean = false, coordinates: Boolean = false,
+                        coordinatePost: BackgroundCoordinateObservation? = null) {
+        coordinateObservation = null
         if (targetIdentity.verified) requireForeground(pkg)
         visualObservation = null
+        if (coordinatePost != null) response.putString(Proto.VISUAL_CHANGE, "unavailable")
         val id = displayId()
         response.putInt(Proto.DISPLAY_ID, id)
         response.putString(Proto.FG_PKG, pkg)
         response.putBoolean(Proto.PORTRAIT, height >= width)
-        val captureResult = runCatching { tracePhase("dsh.bg.capture") { capture(localVisual) } }
+        val captureResult = runCatching { tracePhase("dsh.bg.capture") { capture(localVisual || coordinates || coordinatePost != null) } }
         val captureFailure = captureResult.exceptionOrNull()
         if (captureFailure is InterruptedException ||
             captureFailure is Fault && captureFailure.code == "cancelled") throw captureFailure
@@ -960,7 +976,7 @@ class PrivilegedDisplayCore(private val context: Context) {
         val shot = captureResult.getOrNull()
         val label = runCatching { appLabel(pkg) }.getOrNull()
         label?.let { response.putString(Proto.APP_LABEL, if (detail) BackgroundTree.cap(it) else it) }
-        val treeResult = runCatching { readTree(id, pkg, scanOtherWindows = wantImage && shot != null, inspectVisual = localVisual && shot?.local != null) }
+        val treeResult = runCatching { readTree(id, pkg, scanOtherWindows = wantImage && shot != null, inspectVisual = (localVisual || coordinates || coordinatePost != null) && shot?.local != null, coordinates = coordinates) }
         val failure = treeResult.exceptionOrNull()
         if (failure is InterruptedException || failure is Fault && failure.code == "cancelled") throw failure
         // Pixels alone never identify FLAG_SECURE. Keep an explicit secure failure authoritative.
@@ -996,6 +1012,19 @@ class PrivilegedDisplayCore(private val context: Context) {
             } else {
                 response.putBoolean(Proto.IMAGE_OMITTED, true)
             }
+        }
+        if (coordinates && wantImage && response.containsKey("imageBytes")) {
+            val candidate = BackgroundCoordinateObservation.create(UUID.randomUUID().toString(), coordinateScope(),
+                tree?.visualWindow, tree?.coordinateContext(), shot?.local, tree?.complete == true,
+                tree?.hasSecrets != false, tree?.hasSensitive != false, SystemClock.uptimeMillis())
+            if (candidate != null) {
+                coordinateObservation = candidate
+                coordinateReceipt(candidate, response)
+            }
+        }
+        if (coordinatePost != null) {
+            response.putString(Proto.VISUAL_CHANGE, coordinatePost.change(coordinateScope(), tree?.visualWindow,
+                shot?.local, tree != null && tree.complete && !tree.hasSecrets && !tree.hasSensitive, SystemClock.uptimeMillis()))
         }
         if (localVisual && tree != null) {
             val vd = display
@@ -1293,7 +1322,10 @@ class PrivilegedDisplayCore(private val context: Context) {
 
     // ---- UiAutomation control-tree read ------------------------------------
 
-    private class TreeRead(val targetId: Int = 0, val inspectVisual: Boolean = false, val targetEvidence: SelfCheckTargetEvidence? = null) {
+    private class TreeRead(val targetId: Int = 0, val inspectVisual: Boolean = false,
+                           val targetEvidence: SelfCheckTargetEvidence? = null, coordinates: Boolean = false) {
+        val coordinateDigest: MessageDigest? = if (coordinates) MessageDigest.getInstance("SHA-256") else null
+        fun coordinateContext(): String? = coordinateDigest?.digest()?.joinToString("") { "%02x".format(it) }
         var visualWindow: BackgroundVisualObservation.Window? = null
         var hasSensitive = false
         val elements = ArrayList<BgNode>()
@@ -1314,6 +1346,7 @@ class PrivilegedDisplayCore(private val context: Context) {
             treeConnection = null
         } else {
             visualObservation = null
+            coordinateObservation = null
             stopPreview()
             preview.invalidate()
             throw Fault("treeCleanupPending")
@@ -1333,11 +1366,11 @@ class PrivilegedDisplayCore(private val context: Context) {
         } finally { closeTreeConnection() }
     }
 
-    private fun readTree(displayId: Int, pkg: String, scanOtherWindows: Boolean = false, inspectVisual: Boolean = false, targetEvidence: SelfCheckTargetEvidence? = null): TreeRead {
+    private fun readTree(displayId: Int, pkg: String, scanOtherWindows: Boolean = false, inspectVisual: Boolean = false, targetEvidence: SelfCheckTargetEvidence? = null, coordinates: Boolean = false): TreeRead {
         val vd = display ?: throw Fault("displayMissing")
         return withTreeConnection(vd.display, pkg, "treeUnavailable") { automation ->
             tracePhase("dsh.bg.treeRead") {
-                readTree(automation, displayId, pkg, scanOtherWindows = scanOtherWindows, inspectVisual = inspectVisual, targetEvidence = targetEvidence)
+                readTree(automation, displayId, pkg, scanOtherWindows = scanOtherWindows, inspectVisual = inspectVisual, targetEvidence = targetEvidence, coordinates = coordinates)
             }
         }
     }
@@ -1345,7 +1378,7 @@ class PrivilegedDisplayCore(private val context: Context) {
     private fun readTree(
         automation: UiAutomation, displayId: Int, pkg: String,
         targetId: Int = 0, scanOtherWindows: Boolean = false, inspectVisual: Boolean = false,
-        targetEvidence: SelfCheckTargetEvidence? = null,
+        targetEvidence: SelfCheckTargetEvidence? = null, coordinates: Boolean = false,
     ): TreeRead {
         runCatching { invoke(automation, "clearCache") }
         @Suppress("UNCHECKED_CAST")
@@ -1361,7 +1394,7 @@ class PrivilegedDisplayCore(private val context: Context) {
             for (window in windows) roots.add(window.root)
             val selected = BackgroundTree.selectApplicationWindow(roots.map { it?.packageName?.toString() }, pkg)
                 ?: throw Fault(if (roots.firstOrNull() != null) "displayTargetChanged" else "treeUnavailable")
-            val tree = TreeRead(targetId, inspectVisual, targetEvidence)
+            val tree = TreeRead(targetId, inspectVisual, targetEvidence, coordinates)
             if (targetEvidence != null) tree.targetWindowId = windows[selected.index].id
             if (inspectVisual && displayWindows.size == 1 && windows.size == 1) {
                 val window = windows[selected.index]
@@ -1414,6 +1447,27 @@ class PrivilegedDisplayCore(private val context: Context) {
                 // Check raw text too: bestText may drop an oversized blank value.
                 backgroundVisualSensitive(node.text, node.contentDescription, node.hintText, node.viewIdResourceName)
             } catch (_: Exception) { true } // Incomplete additional privacy evidence cannot fail the element action.
+        }
+        tree.coordinateDigest?.let { digest ->
+            val bounds = Rect().also { node.getBoundsInScreen(it) }
+            val fields = listOf(node.text, node.contentDescription, node.hintText, node.viewIdResourceName,
+                node.className, node.packageName).map { it?.toString() }
+            if (fields.any { (it?.length ?: 0) > 4096 }) tree.hasSensitive = true
+            else {
+                // Length prefixes distinguish null/empty and field boundaries without retaining text.
+                for (field in fields) {
+                    val bytes = field?.toByteArray(Charsets.UTF_8)
+                    digest.update(ByteBuffer.allocate(4).putInt(bytes?.size ?: -1).array())
+                    if (bytes != null) digest.update(bytes)
+                }
+            }
+            val metadata = intArrayOf(indent, node.childCount, bounds.left, bounds.top, bounds.right, bounds.bottom,
+                node.inputType, if (node.isVisibleToUser) 1 else 0, if (node.isEnabled) 1 else 0,
+                if (node.isClickable) 1 else 0, if (node.isLongClickable) 1 else 0, if (node.isEditable) 1 else 0,
+                if (node.isScrollable) 1 else 0, if (node.isPassword) 1 else 0, if (node.isShowingHintText) 1 else 0,
+                if (node.isCheckable) 1 else 0, if (node.isChecked) 1 else 0,
+                if (node.isSelected) 1 else 0, if (node.isFocused) 1 else 0)
+            digest.update(ByteBuffer.allocate(metadata.size * 4).apply { metadata.forEach { putInt(it) } }.array())
         }
         var childIndent = indent
         if (emitElements) {
@@ -1547,6 +1601,52 @@ class PrivilegedDisplayCore(private val context: Context) {
             expectLabel != null && expectLabel != e.label ||
             expectViewId != null && expectViewId != e.viewId) throw Fault(if (target == null) "staleSnapshot" else "targetChanged")
         return e
+    }
+
+    private fun coordinateScope(): BackgroundCoordinateObservation.Scope? {
+        val vd = display ?: return null
+        val ownerId = owner ?: return null
+        val target = targetIdentity.current ?: return null
+        return BackgroundCoordinateObservation.Scope(vd, ownerId, target)
+    }
+
+    private fun coordinateReceipt(observation: BackgroundCoordinateObservation, response: Bundle) {
+        response.putInt(Proto.BACKGROUND_COORDINATES, 1)
+        response.putString(Proto.COORDINATE_OBSERVATION, observation.nonce)
+        response.putInt(Proto.COORDINATE_WIDTH, observation.image.geometry.width)
+        response.putInt(Proto.COORDINATE_HEIGHT, observation.image.geometry.height)
+        response.putInt(Proto.TARGET_IDENTITY_VERSION, 1)
+        response.putString(Proto.PKG, observation.scope.target.packageName)
+        response.putInt(Proto.TARGET_UID, observation.scope.target.uid)
+    }
+
+    private fun coordinate(pkg: String, request: Bundle, response: Bundle) {
+        val action = BackgroundCoordinateRequest.parse(request.keySet()) { request.get(it) } ?: throw Fault("invalidArguments")
+        val observed = coordinateObservation ?: throw Fault("staleSnapshot")
+        if (action.nonce != observed.nonce) throw Fault("staleSnapshot")
+        coordinateReceipt(observed, response)
+        response.putBoolean(Proto.ACTION_ATTEMPTED, false)
+        response.putString(Proto.VISUAL_CHANGE, "unavailable")
+        val geometry = ImageGeometry(0, 0, 1f, 1f, width, height)
+        if (!action.fits(width, height) || !observed.image.isFresh(SystemClock.uptimeMillis())) throw Fault("staleSnapshot")
+        requireForeground(pkg)
+        val tree = readTree(displayId(), pkg, scanOtherWindows = true, inspectVisual = true, coordinates = true)
+        val scope = coordinateScope() ?: throw Fault("targetIdentityUnavailable")
+        if (!tree.complete || tree.hasSecrets || tree.hasSensitive ||
+            !observed.matches(scope, tree.visualWindow, tree.coordinateContext(), geometry, SystemClock.uptimeMillis()))
+            throw Fault("targetChanged")
+        // The complete tree transaction has already unregistered. Recheck the real target before dispatch.
+        requireForeground(pkg)
+        if (!observed.image.isFresh(SystemClock.uptimeMillis())) throw Fault("staleSnapshot")
+        coordinateObservation = null
+        response.putBoolean(Proto.ACTION_ATTEMPTED, true)
+        when (action.gesture) {
+            "tap" -> injectTap(action.x, action.y, false)
+            "long" -> injectTap(action.x, action.y, true)
+            "swipe" -> injectSwipe(action.x, action.y, checkNotNull(action.x2), checkNotNull(action.y2), action.durationMs)
+        }
+        sleepChecked(250)
+        observe(pkg, false, response, coordinatePost = observed)
     }
 
     private fun tap(pkg: String, request: Bundle) {

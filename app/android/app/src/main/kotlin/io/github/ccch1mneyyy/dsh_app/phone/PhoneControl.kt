@@ -93,6 +93,7 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
             "phone_confirm_type" -> R.string.phone_confirm_type
             "phone_confirm_submit" -> R.string.phone_confirm_submit
             "phone_confirm_tap_xy" -> R.string.phone_confirm_tap_xy
+            "phone_confirm_background_coordinate" -> R.string.phone_confirm_background_coordinate
             "phone_confirm_coordinate_long" -> R.string.phone_confirm_coordinate_long
             "phone_confirm_coordinate_swipe" -> R.string.phone_confirm_coordinate_swipe
             "phone_confirm_scroll" -> R.string.phone_confirm_scroll

@@ -133,6 +133,9 @@ interface PhoneDriver {
 
     fun observe(detail: Boolean, image: Boolean): ScreenSnapshot
 
+    /** Pure local commit after the current task's final image filter; not model-delivery evidence. */
+    fun acceptVisualObservation(screenId: String) {}
+
     fun collect(screenId: String, listElementId: Int, maxPages: Int, until: String?): CollectResult
 
     /** Multi-page implementations recheck this invocation's gate before each physical scroll. */

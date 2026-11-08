@@ -596,6 +596,7 @@ class PhoneCore(
         val shown = safety.filterScreen(snap)
         if (!current(owner)) return stoppedOut(summary)
         val refused = shown !== snap
+        if (!refused && shown.image != null) driver.acceptVisualObservation(shown.id)
         return Out(
             // l10n:keep agent tool result
             if (refused) "没有读取这个屏幕的内容。" else "",
@@ -742,7 +743,7 @@ class PhoneCore(
         val pkg = target?.packageName ?: driver.foregroundPackage()
         val appLabel = target?.appLabel
         val app = appLabel ?: pkg
-        val verdict = safety.checkWrite(kind, target, pkg, appLabel, typed, submit, point, action as? PhoneAction.TapXY)
+        val verdict = safety.checkWrite(kind, target, pkg, appLabel, typed, submit, point, action as? PhoneAction.TapXY, which)
         val decision = when (val r = safety.resolve(verdict, scope, owner)) {
             is SafetyGate.Result.No -> return Out(r.message, error = true, app = app, summary = summary, decision = r.decision)
             is SafetyGate.Result.Go -> r.decision
