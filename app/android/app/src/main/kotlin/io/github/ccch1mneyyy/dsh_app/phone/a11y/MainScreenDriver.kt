@@ -529,6 +529,10 @@ internal class MainScreenDriver(private val service: PhoneA11yService, private v
                 // l10n:keep agent screen result
                 return ActionResult(false, "[${a.elementId}] 是列表本身，不能点。看更多用 scroll，整理全部条目用 collect。")
             }
+            if (!r.node.isEnabled) {
+                // l10n:keep agent screen result
+                return ActionResult(false, "目标 [${a.elementId}] 当前不可用，没有发起点击；请重新查看屏幕。")
+            }
             val sources = r.cap.windows.mapNotNull { it.packageName }.toSet()
             refuseHalted { allowed() && actionSourcesAllowed(sources) }?.let { return it }
             val before = clock.count
