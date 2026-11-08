@@ -266,7 +266,7 @@ class SafetyGate(
         val actionApp = appLabel ?: pkg ?: uiText.get("phone_current_app", "当前应用") // l10n:keep test default
         val action = describe(kind, target, actionApp, if (secret) SafetyRules.MASK else typed, submit, point, coordinate) +
             if (kind == WriteKind.TAP_XY && screen == PhoneScreen.BACKGROUND)
-                uiText.get("phone_confirm_background_coordinate", "。这是最近后台截图的位置；本机文字识别未安装，请核对目标。此确认卡不含原截图。") else "" // l10n:keep test default
+                uiText.get("phone_confirm_background_coordinate", "。这是最近后台截图的位置，请核对目标。此确认卡不含原截图。") else "" // l10n:keep test default
         val reason = when {
             kind == WriteKind.TAP_XY && !eligibleVisual -> "tap_xy"
             kind == WriteKind.TYPE && submit -> "submit"
