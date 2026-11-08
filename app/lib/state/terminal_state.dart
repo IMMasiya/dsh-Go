@@ -220,6 +220,11 @@ abstract final class TerminalCopy {
   static String get offline => appL10n.commonEngineUnreachable;
   static String get limit => appL10n.stateTerminalLimit;
   static String get startFailed => appL10n.stateTerminalStartFailed;
+  static String get disabledOnHost => appL10n.stateTerminalDisabledOnHost;
+
+  /// A Remote Host whose owner switched the terminal off in its local Remote
+  /// settings (ds-harness-remote `TERMINAL_DISABLED`); only they can turn it on.
+  static bool isDisabledOnHost(Object error) => error is DshRemoteException && error.code == 'TERMINAL_DISABLED';
 }
 
 // ── Controller ───────────────────────────────────────────────────────────────
@@ -358,9 +363,10 @@ class TerminalWorkspace extends Notifier<TerminalWorkspaceState> {
         }
       }
       if (tabs.isEmpty) await newTerminal();
-    } on Object {
+    } on Object catch (error) {
       if (_stale(epoch)) return;
-      state = state.copyWith(loading: false, error: TerminalCopy.offline);
+      final message = TerminalCopy.isDisabledOnHost(error) ? TerminalCopy.disabledOnHost : TerminalCopy.offline;
+      state = state.copyWith(loading: false, error: message);
     }
   }
 
@@ -576,7 +582,11 @@ class TerminalWorkspace extends Notifier<TerminalWorkspaceState> {
       _connect(id);
     } on DshRemoteException catch (error) {
       if (_stale(epoch)) return;
-      final message = error.code == 'terminal/limit-reached' ? TerminalCopy.limit : TerminalCopy.startFailed;
+      final message = switch (error.code) {
+        'terminal/limit-reached' => TerminalCopy.limit,
+        'TERMINAL_DISABLED' => TerminalCopy.disabledOnHost,
+        _ => TerminalCopy.startFailed,
+      };
       _update(id, (t) => t.copyWith(phase: TerminalPhase.failed, message: message));
     } on Object {
       if (_stale(epoch)) return;

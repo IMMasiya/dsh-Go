@@ -2797,7 +2797,7 @@ class L10nEn extends L10n {
   String get botsTerminalUnsupported => 'Terminal isn’t available on this connection';
 
   @override
-  String get botsTerminalSupportedHosts => 'Available on this phone or an SSH host';
+  String get botsTerminalSupportedHosts => 'Available on this phone, an SSH host or a Remote computer';
 
   @override
   String get botsTerminalOpening => 'Opening terminal…';
@@ -17680,6 +17680,10 @@ class L10nEn extends L10n {
 
   @override
   String get stateTerminalStartFailed => 'Couldn’t start terminal';
+
+  @override
+  String get stateTerminalDisabledOnHost =>
+      'This computer turned off the remote terminal. Turn on “Terminal” in Remote settings on the computer, then try again.';
 
   @override
   String get stateTileDuotone => 'Duotone';

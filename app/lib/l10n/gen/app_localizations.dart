@@ -4883,7 +4883,7 @@ abstract class L10n {
   /// No description provided for @botsTerminalSupportedHosts.
   ///
   /// In zh, this message translates to:
-  /// **'在本机或 SSH 主机上可用'**
+  /// **'在本机、SSH 主机或 Remote 电脑上可用'**
   String get botsTerminalSupportedHosts;
 
   /// No description provided for @botsTerminalOpening.
@@ -30985,6 +30985,12 @@ abstract class L10n {
   /// In zh, this message translates to:
   /// **'没能启动终端'**
   String get stateTerminalStartFailed;
+
+  /// No description provided for @stateTerminalDisabledOnHost.
+  ///
+  /// In zh, this message translates to:
+  /// **'这台电脑关掉了远程终端。在电脑上打开 Remote 设置里的「终端」，再回来重试'**
+  String get stateTerminalDisabledOnHost;
 
   /// No description provided for @stateTileDuotone.
   ///
