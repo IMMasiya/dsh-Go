@@ -87,6 +87,7 @@ internal class MainScreenDriver(private val service: PhoneA11yService, private v
         /** Notes already shown on this app's previous screen (not repeated). */
         val noteKeys: Set<String>,
         val visualEvidence: MainVisualEvidence?,
+        val readPackages: Set<String>,
     ) {
         @Volatile var image: ImageObservation? = null
         // Null denotes an actual public image; only OCR-only coordinates depend on the ON epoch.
@@ -225,7 +226,8 @@ internal class MainScreenDriver(private val service: PhoneA11yService, private v
                 }
             }
             if (snap.screen.poorTree) text.append("\n").append(formatted?.text ?: LocalOcrBoundary.message(localText))
-            ScreenSnapshot(snap.id, text.toString(), snap.appLabel, snap.packageName, secure || snap.hidden, snap.screen.poorTree, bytes, mime)
+            ScreenSnapshot(snap.id, text.toString(), snap.appLabel, snap.packageName, secure || snap.hidden, snap.screen.poorTree, bytes, mime,
+                readPackages = snap.readPackages)
         } finally { cap.recycle() }
     }
 
@@ -352,7 +354,11 @@ internal class MainScreenDriver(private val service: PhoneA11yService, private v
     override fun collect(screenId: String, listElementId: Int, maxPages: Int, until: String?): CollectResult =
         collect(screenId, listElementId, maxPages, until) { !overlay.paused }
 
-    override fun collect(screenId: String, listElementId: Int, maxPages: Int, until: String?, allowed: () -> Boolean): CollectResult {
+    override fun collect(screenId: String, listElementId: Int, maxPages: Int, until: String?, allowed: () -> Boolean): CollectResult =
+        collect(screenId, listElementId, maxPages, until, allowed) { true }
+
+    override fun collect(screenId: String, listElementId: Int, maxPages: Int, until: String?,
+                         allowed: () -> Boolean, canRead: (String?) -> Boolean): CollectResult {
         // l10n:keep agent screen result
         if (Looper.myLooper() == Looper.getMainLooper()) return CollectResult(emptyList(), 0, "内部错误：不能在主线程执行", null)
         synchronized(lock) {
@@ -377,6 +383,8 @@ internal class MainScreenDriver(private val service: PhoneA11yService, private v
             val gen = abortGen
             val deadline = SystemClock.uptimeMillis() + COLLECT_MS
             val items = CollectedItems()
+            val readPackages = LinkedHashSet<String>()
+            var sourceDenied = false
             // l10n:keep agent screen result
             var stop = "未能读取列表"
             var read = 0
@@ -396,6 +404,13 @@ internal class MainScreenDriver(private val service: PhoneA11yService, private v
                     val list = ScreenFormat.followList(ScreenFormat.index(cap.windows), el.fingerprint, lastBounds)
                         // l10n:keep agent screen result
                         ?: run { stop = "列表不见了（界面变了）"; null } ?: break
+                    val source = cap.windows.firstOrNull { it.id == list.windowId }?.packageName
+                    if (!canRead(source)) {
+                        sourceDenied = true
+                        stop = "本页内容不允许读取" // l10n:keep agent screen result
+                        break
+                    }
+                    source?.let(readPackages::add)
                     val page = items.readPage(list.itemTexts, wanted, cap.truncated || cap.partial)
                     if (list.itemTexts.isNotEmpty()) read++
                     if (page.stopReason != null) { stop = page.stopReason; break }
@@ -417,6 +432,11 @@ internal class MainScreenDriver(private val service: PhoneA11yService, private v
                     if (cancelled(gen)) { stop = "已停止"; break }
                     // l10n:keep agent screen result
                     if (!allowed()) { stop = "本任务已暂停或停止"; break }
+                    if (!canRead(source)) {
+                        sourceDenied = true
+                        stop = "本页内容不允许读取" // l10n:keep agent screen result
+                        break
+                    }
                     // l10n:keep agent screen result
                     if (SystemClock.uptimeMillis() > deadline) { stop = "超时"; break }
                     // l10n:keep agent screen result
@@ -429,7 +449,8 @@ internal class MainScreenDriver(private val service: PhoneA11yService, private v
                     if (misses > 0) clock.pause(800) { cancelled(gen) } // lists that load more on demand
                 } finally { cap.recycle() }
             }
-            return CollectResult(items.list(), read, stop, if (!cancelled(gen) && allowed()) observeQuiet() else null)
+            return CollectResult(items.list(), read, stop,
+                if (!sourceDenied && !cancelled(gen) && allowed()) observeQuiet() else null, readPackages.toSet())
         }
     }
 
@@ -936,7 +957,7 @@ internal class MainScreenDriver(private val service: PhoneA11yService, private v
         val snap = Snapshot(
             id, formatted, pkg, appLabel, protectedPage, cap.ownAppInFront,
             cap.hiddenWindowTitle != null, cap.unreadableWindowTitle != null, observation(cap), noteKeys,
-            visualEvidence(cap),
+            visualEvidence(cap), cap.windows.mapNotNull { it.packageName }.toSet(),
         )
         latest = snap
         visual.publish(id)
@@ -944,7 +965,7 @@ internal class MainScreenDriver(private val service: PhoneA11yService, private v
     }
 
     private fun toSnapshot(s: Snapshot, text: String = s.screen.text) =
-        ScreenSnapshot(s.id, text, s.appLabel, s.packageName, secure = s.hidden, poorTree = s.screen.poorTree)
+        ScreenSnapshot(s.id, text, s.appLabel, s.packageName, secure = s.hidden, poorTree = s.screen.poorTree, readPackages = s.readPackages)
 
     /** A fresh text snapshot for an action result; null when the screen can't be read now. */
     private fun observeQuiet(): ScreenSnapshot? {

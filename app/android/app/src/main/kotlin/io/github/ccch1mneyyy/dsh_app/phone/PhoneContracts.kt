@@ -45,6 +45,8 @@ data class ScreenSnapshot(
     /** Optional numbered screenshot (same element ids drawn on it), PNG or JPEG bytes. */
     val image: ByteArray? = null,
     val imageMime: String? = null,
+    /** Known root packages contributing to this local observation; not pixel/UID attestation. */
+    internal val readPackages: Set<String> = emptySet(),
 )
 
 /** What an element looks like to the safety rules, resolved from a snapshot id + element id. */
@@ -118,6 +120,8 @@ data class CollectResult(
     /** Stopped because: end of list / `until` matched / page limit / list lost. */
     val stopReason: String,
     val screen: ScreenSnapshot?,
+    /** Union of known packages whose pages contributed items, independent of the last screen. */
+    internal val readPackages: Set<String> = emptySet(),
 )
 
 /** Whether a driver can work right now, and if not, a sentence the model can relay. */
@@ -149,6 +153,11 @@ interface PhoneDriver {
     fun collect(screenId: String, listElementId: Int, maxPages: Int, until: String?, allowed: () -> Boolean): CollectResult =
         if (allowed()) collect(screenId, listElementId, maxPages, until)
         else CollectResult(emptyList(), 0, PhoneTasks.STOPPED_MESSAGE, null)
+
+    /** Local source gate. Legacy drivers retain their existing behavior without guessing a package. */
+    fun collect(screenId: String, listElementId: Int, maxPages: Int, until: String?,
+                allowed: () -> Boolean, canRead: (String?) -> Boolean): CollectResult =
+        collect(screenId, listElementId, maxPages, until, allowed)
 
     /**
      * Resolves an element of a recent snapshot for the safety rules. Null when the

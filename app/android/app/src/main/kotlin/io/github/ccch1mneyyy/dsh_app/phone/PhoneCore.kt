@@ -670,8 +670,9 @@ class PhoneCore(
 
     /** Every returned observation passes the final read policy before a driver candidate is
      * committed. This also covers post-action and stale-refresh frames, not just screen(). */
-    private fun returnedScreen(driver: PhoneDriver, snapshot: ScreenSnapshot, owner: PhoneTasks.Owner): ScreenSnapshot {
-        val shown = safety.filterScreen(snapshot)
+    private fun returnedScreen(driver: PhoneDriver, snapshot: ScreenSnapshot, owner: PhoneTasks.Owner,
+                               policy: PhonePolicies = env.policies()): ScreenSnapshot {
+        val shown = safety.filterScreen(snapshot, policy)
         if (!current(owner)) throw InterruptedException()
         if (shown === snapshot) driver.acceptVisualObservation(shown.id)
         return shown
@@ -728,24 +729,31 @@ class PhoneCore(
         if (!current(owner)) return stoppedOut(summary)
         skillTrace.markIncomplete(owner)
         val readRefusal = AtomicReference<SafetyGate.Verdict.Refuse?>(null)
-        fun readAllowed(): Boolean {
-            safety.checkRead(pkg, null)?.let { readRefusal.compareAndSet(null, it) }
+        fun canRead(source: String?): Boolean {
+            safety.checkRead(source, null)?.let { readRefusal.compareAndSet(null, it) }
             return readRefusal.get() == null
         }
-        val r = driver.collect(sid!!, list, pages, a.str("until"), ::readAllowed)
+        fun readAllowed(): Boolean = canRead(pkg)
+        val r = driver.collect(sid!!, list, pages, a.str("until"), ::readAllowed, ::canRead)
         if (!current(owner)) return stoppedOut(summary)
-        readAllowed()
         val collectedScreen = r.screen
-        collectedScreen?.let { snap ->
-            safety.checkRead(snap.packageName, snap.appLabel)?.let { readRefusal.compareAndSet(null, it) }
+        val sources = buildSet<String?> {
+            add(pkg)
+            addAll(r.readPackages)
+            collectedScreen?.let { snap ->
+                add(snap.packageName)
+                addAll(snap.readPackages)
+            }
         }
+        val readPolicy = env.policies()
+        safety.checkReadSources(readPolicy, sources)?.let { readRefusal.compareAndSet(null, it) }
         readRefusal.get()?.let {
             return Out(it.message, error = true, app = pkg, summary = summary, decision = "refused:${it.rule}")
         }
         if (collectedScreen?.secure == true) {
-            return Out(safety.filterScreen(collectedScreen).text, error = true, app = pkg, summary = summary, decision = "refused:read")
+            return Out(safety.filterScreen(collectedScreen, readPolicy).text, error = true, app = pkg, summary = summary, decision = "refused:read")
         }
-        val screen = collectedScreen?.let { returnedScreen(driver, it, owner) }
+        val screen = collectedScreen?.let { returnedScreen(driver, it, owner, readPolicy) }
         val text = buildString {
             // l10n:keep agent tool result
             append("收集到 ${r.items.size} 条（翻了 ${r.pages} 页，停下原因：${r.stopReason}）：\n")

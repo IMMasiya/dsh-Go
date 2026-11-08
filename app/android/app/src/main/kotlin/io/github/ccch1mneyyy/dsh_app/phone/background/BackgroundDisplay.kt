@@ -284,9 +284,15 @@ class BackgroundDisplay internal constructor(
     override fun collect(screenId: String, listElementId: Int, maxPages: Int, until: String?): CollectResult =
         collect(screenId, listElementId, maxPages, until) { true }
 
-    override fun collect(screenId: String, listElementId: Int, maxPages: Int, until: String?, allowed: () -> Boolean): CollectResult {
+    override fun collect(screenId: String, listElementId: Int, maxPages: Int, until: String?, allowed: () -> Boolean): CollectResult =
+        collect(screenId, listElementId, maxPages, until, allowed) { true }
+
+    override fun collect(screenId: String, listElementId: Int, maxPages: Int, until: String?,
+                         allowed: () -> Boolean, canRead: (String?) -> Boolean): CollectResult {
         if (!allowed()) return CollectResult(emptyList(), 0, PhoneTasks.STOPPED_MESSAGE, null)
         check(screenId == lastScreenId) { Reasons.of("staleSnapshot") }
+        val source = currentTarget?.packageName
+        if (!canRead(source)) return CollectResult(emptyList(), 0, "本页内容不允许读取", null) // l10n:keep agent screen result
         if (maxPages.coerceIn(1, 30) == 1) {
             val selected = lastElements.getOrNull(listElementId - 1)
                 ?: throw IllegalStateException(Reasons.of("elementMissing"))
@@ -295,16 +301,20 @@ class BackgroundDisplay internal constructor(
                 .takeWhile { it.indent > selected.indent }
                 .map { it.label }.filter { it.isNotEmpty() }.distinct()
             val stop = if (until != null && labels.any { it.contains(until) }) "untilMatched" else "pageLimit"
-            return CollectResult(labels, 1, stop, null)
+            return CollectResult(labels, 1, stop, null, setOfNotNull(source))
         }
         val seen = LinkedHashSet<String>()
         var pages = 0
         var stop = "listEnd"
         var last: ScreenSnapshot? = null
+        val readPackages = LinkedHashSet<String>()
         while (pages < maxPages.coerceIn(1, 30)) {
             if (!allowed()) { stop = PhoneTasks.STOPPED_MESSAGE; break }
+            if (!canRead(source)) { stop = "本页内容不允许读取"; break } // l10n:keep agent screen result
             val snap = observeFrame(detail = false, image = false, requestLocalText = false)
             last = snap
+            if (!canRead(source)) { stop = "本页内容不允许读取"; break } // l10n:keep agent screen result
+            source?.let(readPackages::add)
             val before = seen.size
             for (e in lastElements) if (e.label.isNotEmpty()) seen.add(e.label)
             pages++
@@ -312,10 +322,10 @@ class BackgroundDisplay internal constructor(
             if (seen.size == before) { stop = "listEnd"; break }
             if (pages >= maxPages) { stop = "pageLimit"; break }
             // Preserve the legacy whole-page collect path; explicit list tracking is separate.
-            val result = perform(PhoneAction.Scroll(snap.id, null, PhoneAction.Direction.DOWN), allowed)
+            val result = perform(PhoneAction.Scroll(snap.id, null, PhoneAction.Direction.DOWN)) { allowed() && canRead(source) }
             if (!result.ok) { stop = result.message; break }
         }
-        return CollectResult(seen.toList(), pages, stop, last)
+        return CollectResult(seen.toList(), pages, stop, last, readPackages.toSet())
     }
 
     override fun target(screenId: String, elementId: Int): TargetInfo? {
@@ -596,13 +606,13 @@ class BackgroundDisplay internal constructor(
             lastScreenId = id; lastElements = emptyList(); previousLabels = emptySet()
             // l10n:keep agent screen protocol
             val text = "屏幕 $id · 后台屏 · 受保护页面（支付或密码），已交还用户"
-            return ScreenSnapshot(id, text, appLabel, pkg, secure = true)
+            return ScreenSnapshot(id, text, appLabel, pkg, secure = true, readPackages = setOfNotNull(pkg))
         }
         if (response.getBoolean(Proto.FRAME_NOT_READY)) {
             lastScreenId = id; lastElements = emptyList(); previousLabels = emptySet()
             // l10n:keep agent screen protocol
             val text = "屏幕 $id · 后台屏\n" + Reasons.of("frameNotReady")
-            return ScreenSnapshot(id, text, appLabel, pkg, secure = false, poorTree = true)
+            return ScreenSnapshot(id, text, appLabel, pkg, secure = false, poorTree = true, readPackages = setOfNotNull(pkg))
         }
         val elements = buildElements(response, markNew)
         lastElements = elements
@@ -638,7 +648,8 @@ class BackgroundDisplay internal constructor(
         if (localText != null) text += "\n" + localText.text
         val shownImage = image.takeIf { publishImage }
         return ScreenSnapshot(id, text, appLabel, pkg, secure = false, poorTree = poor,
-            image = shownImage, imageMime = if (shownImage == null) null else response.getString("imageMime"))
+            image = shownImage, imageMime = if (shownImage == null) null else response.getString("imageMime"),
+            readPackages = setOfNotNull(pkg))
     }
 
     private fun buildElements(response: Bundle, markNew: Boolean): List<Element> {
