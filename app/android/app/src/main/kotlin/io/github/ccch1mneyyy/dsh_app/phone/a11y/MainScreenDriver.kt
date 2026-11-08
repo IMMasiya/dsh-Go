@@ -166,6 +166,7 @@ internal class MainScreenDriver(private val service: PhoneA11yService, private v
                     else -> {
                         val window = if (cap.windows.size == 1) cap.windows[0] else null
                         val secrets = secretFieldBounds(cap.windows)
+                        val capturedTransitions = visual.transitions()
                         val shot = shooter.shoot(window, cap.screen, snap.screen.elements, secrets, minOf(left - 300, 3_000),
                             readLocalText = snap.screen.poorTree,
                             localTextPrivacyAllowed = Build.VERSION.SDK_INT >= 34 && cap.windows.size == 1 &&
@@ -182,7 +183,7 @@ internal class MainScreenDriver(private val service: PhoneA11yService, private v
                             bytes = shot.bytes
                             mime = shot.mime
                             snap.image = shot.observation
-                            if (shot.observation != null) visual.candidate(snap.id)
+                            if (shot.observation != null) visual.candidate(snap.id, capturedTransitions)
                             // l10n:keep agent screen result
                             text.append("\n截图上的数字是元素编号；tap_xy 用截图像素（${shot.geometry!!.width}×${shot.geometry.height}）。")
                             // l10n:keep agent screen result
