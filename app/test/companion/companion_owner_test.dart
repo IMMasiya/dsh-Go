@@ -100,7 +100,13 @@ class _Chat extends ChatController {
   @override
   Future<bool> waitForSync({bool Function()? isCurrent}) async => isCurrent?.call() ?? true;
   @override
-  Future<bool> send(String text, {List<DraftAttachment> attachments = const [], SendMode mode = SendMode.now}) async {
+  Future<bool> send(
+    String text, {
+    List<DraftAttachment> attachments = const [],
+    SendMode mode = SendMode.now,
+    bool verbatim = false,
+    Future<void> Function(String requestId)? beforeDeliver,
+  }) async {
     sent.add(text);
     return true;
   }

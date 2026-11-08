@@ -135,7 +135,13 @@ class FakeChatController extends ChatController {
   void emit(ChatState next) => state = next;
 
   @override
-  Future<bool> send(String text, {List<DraftAttachment> attachments = const [], SendMode mode = SendMode.now}) async {
+  Future<bool> send(
+    String text, {
+    List<DraftAttachment> attachments = const [],
+    SendMode mode = SendMode.now,
+    bool verbatim = false,
+    Future<void> Function(String requestId)? beforeDeliver,
+  }) async {
     sent.add(text);
     sentAttachments.add(attachments);
     sentModes.add(mode);

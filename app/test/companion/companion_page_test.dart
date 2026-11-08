@@ -545,19 +545,30 @@ void main() {
         expect(asked, hasLength(1));
         expect(asked.single['system'], contains('鲸鱼娘'));
         final lines = asked.single['messages']! as List;
-        expect((lines.single as Map)['content'], endsWith('你好'));
+        // What the person said, exactly, and beside it this turn's context
+        // (the time, on arrival): never one line made of both.
+        final content = (lines.single as Map)['content']! as List;
+        expect((content.first as Map)['text'], '你好');
+        expect((content.last as Map)['text'], allOf(contains('<companion_context>'), contains('localTime')));
         expect(find.text('你来啦。我在这儿。'), findsOneWidget);
         expect(commands.map((c) => c.$1), containsAll(['emotion', 'say']));
 
         await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 200)));
         final saved = File('${root.path}/light-chat.json').readAsStringSync();
         expect(saved, contains('你来啦。我在这儿。'));
+        // The history keeps only what was said.
+        expect(saved, isNot(contains('〔')));
+        expect(saved, isNot(contains('companion_context')));
 
-        // The next line goes with what came before.
+        // The next line goes with what came before; nothing new to tell her,
+        // so no date or name rides along again.
         await tester.pump(const Duration(seconds: 12));
         await say(tester, '今天好累');
         expect(asked, hasLength(2));
-        expect((asked.last['messages']! as List).map((m) => (m as Map)['role']), ['user', 'assistant', 'user']);
+        final next = asked.last['messages']! as List;
+        expect(next.map((m) => (m as Map)['role']), ['user', 'assistant', 'user']);
+        expect((next.last as Map)['content'], '今天好累');
+        expect((next.first as Map)['content'], '你好');
 
         await tester.pumpWidget(const SizedBox());
         await tester.pump(const Duration(seconds: 20));

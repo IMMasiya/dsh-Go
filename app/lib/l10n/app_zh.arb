@@ -2938,6 +2938,7 @@
   "companionNotConnected": "现在连不上引擎，等一下再和我说吧。",
   "companionSendFailed": "这句话没送出去，要不要再说一次？",
   "companionLogTitle": "聊天记录",
+  "companionContextUnsupported": "这台主机的伙伴还不支持上下文：她的名字、设定和刚才发生的事传不过去，只发你说的话。升级主机或换成轻量模式就好。",
   "companionLogEmpty": "还没有说过话。",
   "companionLogYou": "你",
   "companionLogOpenChat": "在主对话里看",

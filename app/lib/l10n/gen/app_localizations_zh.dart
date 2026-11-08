@@ -4568,6 +4568,9 @@ class L10nZh extends L10n {
   String get companionLogTitle => '聊天记录';
 
   @override
+  String get companionContextUnsupported => '这台主机的伙伴还不支持上下文：她的名字、设定和刚才发生的事传不过去，只发你说的话。升级主机或换成轻量模式就好。';
+
+  @override
   String get companionLogEmpty => '还没有说过话。';
 
   @override

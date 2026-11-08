@@ -4860,6 +4860,10 @@ class L10nEn extends L10n {
   String get companionLogTitle => 'Log';
 
   @override
+  String get companionContextUnsupported =>
+      'This host can\'t take her context yet: her name, persona and what just happened won\'t reach her, only what you say. Update the host or switch to light mode.';
+
+  @override
   String get companionLogEmpty => 'Nothing said yet.';
 
   @override

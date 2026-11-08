@@ -1384,6 +1384,7 @@
   "companionNotConnected": "I can't reach the engine right now. Tell me again in a bit?",
   "companionSendFailed": "That didn't get through. Say it again?",
   "companionLogTitle": "Log",
+  "companionContextUnsupported": "This host can't take her context yet: her name, persona and what just happened won't reach her, only what you say. Update the host or switch to light mode.",
   "companionLogEmpty": "Nothing said yet.",
   "companionLogYou": "You",
   "companionLogOpenChat": "Open in chat",

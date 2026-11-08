@@ -8396,6 +8396,12 @@ abstract class L10n {
   /// **'聊天记录'**
   String get companionLogTitle;
 
+  /// No description provided for @companionContextUnsupported.
+  ///
+  /// In zh, this message translates to:
+  /// **'这台主机的伙伴还不支持上下文：她的名字、设定和刚才发生的事传不过去，只发你说的话。升级主机或换成轻量模式就好。'**
+  String get companionContextUnsupported;
+
   /// No description provided for @companionLogEmpty.
   ///
   /// In zh, this message translates to:

@@ -19,6 +19,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../companion/companion_adapt.dart';
 import '../../companion/companion_bond.dart';
+import '../../companion/companion_context.dart';
 import '../../companion/companion_initiative.dart';
 import '../../companion/companion_initiative_owner.dart';
 import '../../companion/companion_keeper.dart';
@@ -142,7 +143,29 @@ class _CompanionPageState extends ConsumerState<CompanionPage> implements Compan
   int _wordsSpoken = 0;
   List<_ReplyPart> _replyParts = const [];
   String _replyWords = '';
-  final List<String> _notes = [];
+
+  /// What happened in the room since she last heard from the person (C905):
+  /// data for her next turn, never part of what the person said.
+  List<CompanionContextEvent> _contextEvents = const [];
+  int _eventSerial = 0;
+
+  /// Light mode: when the person last spoke, when she was last told the time,
+  /// and the context the reply on its way was asked with.
+  DateTime? _lastSpokenAt;
+  DateTime? _lastClockAt;
+  CompanionTurnContext? _lightContext;
+
+  /// Full mode: one plan per request id (a retried send reuses it, never a
+  /// fresh one under the same id); its events are spent once the person's
+  /// own message with that id is in the session.
+  final Map<String, CompanionFullContextPlan> _fullPlans = {};
+
+  /// The profile this host last acknowledged, and for which connection,
+  /// instance and session: anything else changing sends it again.
+  ({Object client, String instanceId, String sessionId, String profile})? _ackProfile;
+
+  /// This host can't take her context: said once per visit.
+  bool _contextUnsupportedSaid = false;
 
   // Light mode: her conversation on this phone, and the reply on its way.
   CompanionLightHistory? _lightHistory;
@@ -397,7 +420,7 @@ class _CompanionPageState extends ConsumerState<CompanionPage> implements Compan
   void _closer(int step) {
     _stage.command('emotion', {'name': 'happy', 'hold': 3200});
     _stage.command('action', {'name': 'hop'});
-    _remember('你觉得和对方又亲近了一些');
+    _remember('pet', '你觉得和对方又亲近了一些');
     if (!mounted || _running || _sending) return;
     final l10n = context.l10n;
     _say(switch (step) {
@@ -487,7 +510,7 @@ class _CompanionPageState extends ConsumerState<CompanionPage> implements Compan
     };
     // A hug is affection the way a pat is: the same event for her state.
     if (kind == 'pat' || kind == 'hug') _event('pet');
-    _remember(switch ((zone, kind)) {
+    _remember('pet', switch ((zone, kind)) {
       (_, 'hug') => '对方刚才抱了抱你',
       (_, 'tease') => '对方刚才连着戳你',
       (_, 'pat') => '对方刚才摸了摸你的头',
@@ -531,7 +554,7 @@ class _CompanionPageState extends ConsumerState<CompanionPage> implements Compan
       // No host to keep it: the page's own guess, so her corner still answers.
       _stage.command('activity', {'name': id, 'remainingMs': _localActivity[id]!.inMilliseconds});
     }
-    _remember(switch (id) {
+    _remember(id == 'snack' ? 'feed' : 'pet', switch (id) {
       _ when invited => '你邀请对方陪你在海草软垫上歇一会儿，对方答应了',
       'snack' => '对方刚才给你吃了一块点心',
       'play' => '对方刚才陪你玩了泡泡球',
@@ -583,7 +606,7 @@ class _CompanionPageState extends ConsumerState<CompanionPage> implements Compan
         line = title == null ? l10n.companionTaskDoneUntitled : l10n.companionTaskDone(title);
         (emotion, action, note) = ('happy', 'nodSmall', '跑完了');
     }
-    _remember('对方的另一个对话${title == null ? '' : '「$title」'}刚刚$note');
+    _remember('task-finished', '对方的另一个对话${title == null ? '' : '「$title」'}刚刚$note');
     if (event.host == ref.read(activeHostProvider)) {
       _agentPillTimer?.cancel();
       setState(() {
@@ -629,12 +652,15 @@ class _CompanionPageState extends ConsumerState<CompanionPage> implements Compan
     if (asleep != _asleep && mounted) setState(() => _asleep = asleep);
   }
 
-  void _remember(String? note) {
+  /// Something that just happened, for her next turn (C905 kinds: pet, feed,
+  /// task-finished, renamed). Kept for half an hour, eight at most.
+  void _remember(String kind, String? note) {
     if (note == null) return;
-    _notes
-      ..remove(note)
-      ..add(note);
-    if (_notes.length > 3) _notes.removeAt(0);
+    final now = DateTime.now();
+    _contextEvents = companionRecentEvents([
+      ..._contextEvents,
+      CompanionContextEvent(id: 'e-${now.microsecondsSinceEpoch}-${++_eventSerial}', kind: kind, at: now, detail: note),
+    ], now: now);
   }
 
   /// A short line without the model.
@@ -869,7 +895,7 @@ class _CompanionPageState extends ConsumerState<CompanionPage> implements Compan
   void _renamedTo(String name) {
     if (!mounted || !_stageReady) return;
     final l10n = context.l10n;
-    _remember('对方刚给你起了新名字「$name」');
+    _remember('renamed', '对方刚给你起了新名字「$name」');
     _stage.command('emotion', {'name': 'happy', 'hold': 3200});
     _stage.command('action', {'name': 'hop'});
     _say(l10n.companionRenamed(name));
@@ -1238,7 +1264,9 @@ class _CompanionPageState extends ConsumerState<CompanionPage> implements Compan
     _wordsSpoken = 0;
     _replyParts = const [];
     _replyWords = '';
-    _notes.clear();
+    _contextEvents = const [];
+    _fullPlans.clear();
+    _ackProfile = null;
     _bubble = null;
     _myLine = null;
     _home = 'idle';
@@ -1271,6 +1299,7 @@ class _CompanionPageState extends ConsumerState<CompanionPage> implements Compan
 
   void _onChat(ChatState state) {
     if (!mounted) return;
+    _spendCommitted(state);
     final asking = state.openApproval?.eventId ?? state.questions.firstOrNull?.eventId;
     if (asking != _askingSeen) {
       // Something already waiting when the page opened is not news.
@@ -1446,7 +1475,9 @@ class _CompanionPageState extends ConsumerState<CompanionPage> implements Compan
   }
 
   Future<void> _send() async {
-    final text = _input.text.trim();
+    // What the person typed, exactly; trimmed only to see it isn't empty.
+    final raw = _input.text;
+    final text = raw.trim();
     if (text.isEmpty || _sending || _lightReply != null) return;
     _acted();
     _hush();
@@ -1464,7 +1495,7 @@ class _CompanionPageState extends ConsumerState<CompanionPage> implements Compan
     _stage.command('mood', {'mood': 'thinking'});
     try {
       if (_light) {
-        await _sendLight(text, current);
+        await _sendLight(raw, current);
         return;
       }
       final binding = await ref.read(companionSessionsProvider.notifier).ensure();
@@ -1473,38 +1504,28 @@ class _CompanionPageState extends ConsumerState<CompanionPage> implements Compan
       final chat = ref.read(chatProvider(binding.sessionId).notifier);
       if (!await chat.waitForSync(isCurrent: current)) throw const DshClosedException('not synced');
       if (!current()) return;
+      // A host without her preset at all: the persona goes once, in front of
+      // the first line, or she'd be no one (the oldest hosts only).
       final firstInline = binding.inlinePersona && ref.read(chatProvider(binding.sessionId)).items.isEmpty;
-      final persona = ref.read(companionPersonaProvider);
-      final movesRules = _moves.rules();
-      final before = await companionPersonaToldAs(binding.sessionId);
-      final hadMoves = before != null && before.split('|').last != CompanionMoves.noneFingerprint;
-      final told = [
-        ?companionPersonaUpdate(custom: persona.custom, callMe: persona.callMe),
-        if (movesRules != null) '（$movesRules）' else if (hadMoves) '（这个角色自己的表情和动作现在都不用了，只用你原来的那些标记。）',
-      ];
-      final update = told.isEmpty ? null : told.join('\n');
-      final fingerprint = '${persona.fingerprint}|${_moves.fingerprint}';
-      final tell = update != null && !firstInline && !await companionPersonaTold(binding.sessionId, fingerprint);
+      final client = ref.read(activeConnectionProvider).value?.client;
+      // Her name, persona and moves go to the host as context (C905), sent
+      // only when they change; the time and what just happened go beside the
+      // message under its own id. A host without that gets the text alone.
+      final capability = firstInline || client == null
+          ? null
+          : await client.companionPromptCapability(binding.sessionId);
       if (!current()) return;
-      final aside = companionAside(now: DateTime.now(), notes: List.of(_notes));
-      final named = companionNameNote(ref.read(companionNameProvider));
-      final message = [
-        if (firstInline) '（从现在起请扮演下面的角色，直接开始，不要复述这段设定。）\n${_persona()}',
-        if (tell) update,
-        ?named,
-        ?aside,
-        text,
-      ].join('\n');
-      final sent = await chat.send(message);
-      if (sent && (tell || (firstInline && update != null))) {
-        unawaited(companionPersonaMarkTold(binding.sessionId, fingerprint));
-      }
+      if (capability == null && !firstInline) _contextUnsupported();
+      final profile = _contextProfile();
+      final sent = await chat.send(
+        firstInline ? '（从现在起请扮演下面的角色，直接开始，不要复述这段设定。）\n${_persona()}\n$raw' : raw,
+        verbatim: true,
+        beforeDeliver: capability == null || client == null
+            ? null
+            : (requestId) => _prepareContext(client, capability, binding.sessionId, requestId, raw, profile),
+      );
       if (!current()) return;
-      if (sent) {
-        _notes.clear();
-      } else {
-        throw StateError(ref.read(chatProvider(binding.sessionId)).error ?? 'send');
-      }
+      if (!sent) throw StateError(ref.read(chatProvider(binding.sessionId)).error ?? 'send');
     } on Object catch (error) {
       if (!current()) return;
       if (_input.text.isEmpty) _input.text = text;
@@ -1517,6 +1538,90 @@ class _CompanionPageState extends ConsumerState<CompanionPage> implements Compan
         _refreshMood();
       }
     }
+  }
+
+  /// Who she is to this host: persona, name, what she calls the person, her
+  /// own moves. Sent when it differs from what the host acknowledged.
+  CompanionContextProfile _contextProfile() {
+    final persona = ref.read(companionPersonaProvider);
+    String cap(String text, int most) {
+      if (text.runes.length <= most) return text;
+      final cut = String.fromCharCodes(text.runes.take(most));
+      final space = cut.lastIndexOf(' ');
+      return space > 0 ? cut.substring(0, space) : cut;
+    }
+
+    return CompanionContextProfile(
+      persona: cap(persona.custom.trim(), 4000),
+      name: cap((ref.read(companionNameProvider) ?? _character.name ?? '').replaceAll(RegExp(r'\s+'), ' ').trim(), 24),
+      callMe: cap(persona.callMe.replaceAll(RegExp(r'\s+'), ' ').trim(), 40),
+      moves: cap(_moves.rules() ?? '', 1024),
+    );
+  }
+
+  /// Runs inside the send, once its request id is chosen: the plan for that
+  /// id (kept for a retry), and the host told what changed.
+  Future<void> _prepareContext(
+    DshClient client,
+    CompanionPromptCapability capability,
+    String sessionId,
+    String requestId,
+    String raw,
+    CompanionContextProfile profile,
+  ) async {
+    final ack = _ackProfile;
+    final plan = _fullPlans[requestId] ??= companionFullContextPlan(
+      text: raw,
+      sessionId: sessionId,
+      requestId: requestId,
+      profile: profile,
+      supported: true,
+      now: DateTime.now(),
+      instanceId: capability.instanceId,
+      profileRevision: capability.profileRevision,
+      acknowledgedProfile:
+          ack != null &&
+              identical(ack.client, client) &&
+              ack.instanceId == capability.instanceId &&
+              ack.sessionId == sessionId
+          ? ack.profile
+          : null,
+      events: _contextEvents,
+      memoryMode: capability.memoryMode,
+    );
+    while (_fullPlans.length > 8) {
+      _fullPlans.remove(_fullPlans.keys.first);
+    }
+    final update = plan.update;
+    if (update == null) return;
+    final answer = await client.prepareCompanionPromptContext(update);
+    if (answer.profileAccepted == true && update.containsKey('profile')) {
+      _ackProfile = (client: client, instanceId: answer.instanceId, sessionId: sessionId, profile: profile.fingerprint);
+    }
+  }
+
+  /// The person's own message with a plan's id is in the session: what that
+  /// plan carried is spent. Events that came since stay for the next one.
+  void _spendCommitted(ChatState state) {
+    if (_fullPlans.isEmpty) return;
+    final committed = {
+      for (final item in state.items)
+        if (item is UserChatItem && item.sourceKind == 'user' && item.requestId != null) item.requestId!,
+    };
+    for (final id in [..._fullPlans.keys]) {
+      if (!committed.contains(id)) continue;
+      _contextEvents = companionConsumeEvents(_contextEvents, _fullPlans.remove(id)!.eventIds);
+    }
+  }
+
+  void _contextUnsupported() {
+    if (_contextUnsupportedSaid || !mounted) return;
+    _contextUnsupportedSaid = true;
+    _voiceNoticeTimer?.cancel();
+    setState(() => _voiceNotice = context.l10n.companionContextUnsupported);
+    _voiceNoticeTimer = Timer(const Duration(seconds: 8), () {
+      if (mounted) setState(() => _voiceNotice = null);
+    });
   }
 
   String _failureText(Object error) {
@@ -1534,7 +1639,8 @@ class _CompanionPageState extends ConsumerState<CompanionPage> implements Compan
 
   /// Light mode: the reply comes straight from the model, and the conversation
   /// stays on this phone.
-  Future<void> _sendLight(String text, bool Function() current) async {
+  Future<void> _sendLight(String raw, bool Function() current) async {
+    final text = raw.trim();
     final key = ref.read(settingsProvider).apiKey.trim();
     if (key.isEmpty) throw const CompanionLightError(CompanionLightFailure.noKey);
     final history = _lightHistory ??= CompanionLightHistory.at(_store!.root);
@@ -1550,9 +1656,16 @@ class _CompanionPageState extends ConsumerState<CompanionPage> implements Compan
     // Switched to full (or away) while the history was read: this line is not
     // light mode's any more.
     if (!current()) return;
-    final aside = companionAside(now: DateTime.now(), notes: List.of(_notes));
-    history.add(CompanionLine.user([?aside, text].join('\n')));
-    _notes.clear();
+    final now = DateTime.now();
+    final turnContext = _lightContext = companionTurnContext(
+      now: now,
+      utcOffsetMinutes: now.timeZoneOffset.inMinutes,
+      lastSpokenAt: _lastSpokenAt,
+      lastClockAt: _lastClockAt,
+      events: _contextEvents,
+    );
+    _lastSpokenAt = now;
+    history.add(CompanionLine.user(raw));
     // Nothing said before this page counts as news.
     _baselineSet = true;
     final turn = _lightTurn = 'light-${++_lightTurns}';
@@ -1565,6 +1678,7 @@ class _CompanionPageState extends ConsumerState<CompanionPage> implements Compan
           apiKey: key,
           system: companionLightSystem(memories, persona: _persona()),
           lines: history.context(),
+          context: turnContext,
         ).listen(
           (delta) {
             if (!mounted || turn != _lightTurn) return;
@@ -1588,8 +1702,15 @@ class _CompanionPageState extends ConsumerState<CompanionPage> implements Compan
     _lightClient = null;
     final history = _lightHistory;
     final answered = _lightText.trim().isNotEmpty;
+    final asked = _lightContext;
+    _lightContext = null;
     if (answered) {
       history?.add(CompanionLine.her(_lightText));
+      // She heard it: what this turn carried is spent.
+      if (asked != null) {
+        _contextEvents = companionConsumeEvents(_contextEvents, asked.eventIds);
+        if (asked.hasClock) _lastClockAt = asked.sampledAt;
+      }
     } else if (error != null) {
       history?.dropUnanswered();
     }

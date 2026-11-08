@@ -266,8 +266,9 @@ CompanionFullContextPlan companionFullContextPlan({
   bool recall = true,
   String memoryMode = 'query',
 }) {
-  if (!_identifier(sessionId) || !_identifier(requestId))
+  if (!_identifier(sessionId) || !_identifier(requestId)) {
     throw const FormatException('Invalid companion request identity');
+  }
   if (!supported) {
     return CompanionFullContextPlan._(text: text, requestId: requestId, sessionId: sessionId, contextAvailable: false);
   }
