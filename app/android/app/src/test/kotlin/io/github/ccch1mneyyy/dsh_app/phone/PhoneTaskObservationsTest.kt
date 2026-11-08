@@ -7,6 +7,8 @@ class PhoneTaskObservationsTest {
     private class Driver : PhoneDriver {
         override val screen = PhoneScreen.MAIN
         var actions = 0
+        val imageCommits = mutableListOf<String>()
+        override fun acceptVisualObservation(screenId: String) { imageCommits += screenId }
         val opens = mutableListOf<PhoneAppIdentity>()
         var duringOpen: () -> Unit = {}
         var collectGate: (() -> Boolean)? = null
@@ -113,4 +115,21 @@ class PhoneTaskObservationsTest {
         try { bound.perform(PhoneAction.Tap("s1", 1)); fail("old lifetime dispatched") } catch (_: InterruptedException) { }
         assertEquals(0, physical.actions)
     }
+    @Test fun visualCommitRequiresThisOwnerAndTheSameObservedDriver() {
+        val a = PhoneTasks(); val b = PhoneTasks(); val physical = Driver()
+        val ledger = PhoneTaskObservations(a)
+        val bound = ledger.bind(physical, owner(a))
+        bound.observe(false, true)
+        PhoneTaskObservations(b).bind(physical, owner(b)).acceptVisualObservation("s1")
+        assertTrue(physical.imageCommits.isEmpty())
+        val replacement = Driver()
+        ledger.bind(replacement, checkNotNull(a.activeOwner())).acceptVisualObservation("s1")
+        assertTrue(replacement.imageCommits.isEmpty())
+        bound.acceptVisualObservation("s1")
+        assertEquals(listOf("s1"), physical.imageCommits)
+        a.stop("stop"); a.clearStop(); a.begin()
+        assertThrows(InterruptedException::class.java) { bound.acceptVisualObservation("s1") }
+        assertEquals(1, physical.imageCommits.size)
+    }
+
 }
