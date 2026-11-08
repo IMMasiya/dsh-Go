@@ -10,9 +10,9 @@ import vm from 'node:vm';
 
 const DEFAULT_STAGE = fileURLToPath(new URL('../../app/assets/companion/stage.js', import.meta.url));
 const FIXTURES = new URL('./fixtures/', import.meta.url);
-// Explicitly reviewed c76 source. A different stage needs a new explicit pin;
+// Explicitly reviewed stage source. A different stage needs a new explicit pin;
 // recognizing the same method names alone must not silently accept drift.
-export const defaultStageSha256 = '25e103c70b5fffa9ebab580d645bd8cb9f0dcc3f818f16a33c47a65db448b22a';
+export const defaultStageSha256 = '5f2cf373b0273d3be99ac675ea40ffe1d3eaf8d3c3e36b7dee25a70f572c4f5d';
 export const historicalPins = Object.freeze({
   sourcePatchSha256: 'b680a925e6effca5b0bdb3eb5f201709e79f514dbd1beee35cb3b62ec55f86f7',
   sourceBase: '98d4628746e2a37f09ebfb05530a718622357982',
