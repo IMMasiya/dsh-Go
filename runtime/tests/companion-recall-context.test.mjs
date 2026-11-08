@@ -41,8 +41,11 @@ test('the existing full context still mounts without an available recall service
       getSectionOrder: () => 100, getContextOrder: () => 100,
     },
   });
-  assert.equal(sections.length, 1);
-  assert.equal(sections[0].name, 'app:web-surface');
+  assert.deepEqual(sections.map(section => section.name), [
+    'deployment:persona-prefix', 'deployment:persona-suffix', 'app:web-surface',
+  ]);
+  assert(sections[0].text().includes('鲸鱼女孩'));
+  assert(sections[1].text.includes('应用固定规则'));
   assert.equal(contexts.length, 1);
   assert.equal(contexts[0].name, 'app:web-surface');
 });
