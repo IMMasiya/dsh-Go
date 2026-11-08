@@ -45,6 +45,7 @@ class PhoneTaskSessions(
         @Volatile internal var resourcesReleased = true
         @Volatile internal var resourceTaskId = 0L
         internal var cleanupFailed = false
+        internal var cleanupRetryTaskId: Long? = null
         // Full requested set while waiting; holders can change before this waiter wakes.
         internal var waitingScreens: List<PhoneScreen> = emptyList()
         internal var waitingApp: PhoneAppIdentity? = null
@@ -448,11 +449,20 @@ class PhoneTaskSessions(
     /** End/stop/idle/retirement all keep physical leases until body AND resource cleanup drain. */
     fun settleInactive(task: Task) { settle(task, explicitFinish = false) }
 
-    private fun settle(task: Task, explicitFinish: Boolean, retry: Boolean = false, expected: PhoneTasks.Snapshot? = null): PhoneTasks.Owner? {
+    private fun settle(task: Task, explicitFinish: Boolean, retryTaskId: Long? = null, expected: PhoneTasks.Snapshot? = null): PhoneTasks.Owner? {
+        val retry = retryTaskId != null
         val state: PhoneTasks.Snapshot
         val shouldFinish: Boolean
         val drainWorker: SerialWorker
         synchronized(lock) {
+            if (retryTaskId != null) {
+                if ((task.retired ?: task.tasks.snapshot()).id != retryTaskId) return null
+                if (task.closing) {
+                    // Journal-only closing has already released physical resources.
+                    if (!task.resourcesReleased) task.cleanupRetryTaskId = retryTaskId
+                    return null
+                }
+            }
             if (task.pending > 0 || task.running || task.closing || task.cancelling || task.ending || task.cleanupFailed && !retry || task.journalFailed) return null
             // Capture only after excluding a new registry run, in registry -> Tasks lock order.
             state = task.retired ?: task.tasks.snapshot()
@@ -496,7 +506,16 @@ class PhoneTaskSessions(
                     // A failed release does not prove the display/body is gone. Keep its physical fence.
                     synchronized(lock) { task.cleanupFailed = true }
                 } finally {
-                    synchronized(lock) { task.closing = false; lock.notifyAll() }
+                    val retryTaskId = synchronized(lock) {
+                        task.closing = false
+                        val requested = task.cleanupRetryTaskId
+                        task.cleanupRetryTaskId = null
+                        lock.notifyAll()
+                        requested?.takeIf { task.cleanupFailed }
+                    }
+                    // Consume this explicit request once, before optional status observers.
+                    // The original settle eligibility still protects an active failed handoff.
+                    if (retryTaskId != null) retryCleanup(retryTaskId)
                     onSettled(task)
                     changed()
                 }
@@ -553,10 +572,10 @@ class PhoneTaskSessions(
     fun retryCleanup(taskId: Long): Boolean {
         val task = synchronized(lock) {
             (entries.values + retiring).firstOrNull {
-                it.cleanupFailed && (it.retired ?: it.tasks.snapshot()).id == taskId
+                (it.retired ?: it.tasks.snapshot()).id == taskId
             }
         } ?: return false
-        settle(task, explicitFinish = false, retry = true)
+        settle(task, explicitFinish = false, retryTaskId = taskId)
         return synchronized(lock) { task.resourcesReleased && !task.cleanupFailed && !task.closing }
     }
 

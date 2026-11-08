@@ -644,6 +644,99 @@ class PhoneTaskSessionsTest {
         assertFalse(sessions.run(admitted, PhoneToolCatalog.APPS, emptyMap()).isError)
     }
 
+    @Test fun explicitCleanupRetryDuringClosingIsNotLostBeforeFailureIsPublished() {
+        assertFalse(invoke("A", tool = PhoneToolCatalog.SCREEN).isError)
+        val record = task("A")
+        val id = record.tasks.snapshot().id
+        val entered = CountDownLatch(1)
+        val release = CountDownLatch(1)
+        val attempts = AtomicLong()
+        cleanup = {
+            if (attempts.incrementAndGet() == 1L) {
+                entered.countDown()
+                check(release.await(5, TimeUnit.SECONDS))
+                error("original release raced with verified recovery")
+            }
+        }
+        val ending = pool.submit { end("A") }
+        try {
+            assertTrue(entered.await(5, TimeUnit.SECONDS))
+            assertFalse(record.cleanupFailed)
+            assertTrue(record.closing)
+            assertFalse(sessions.retryCleanup(id))
+            assertFalse(sessions.retryCleanup(id)) // Same in-flight close: one owed retry.
+            release.countDown()
+            ending.get(5, TimeUnit.SECONDS)
+            assertEquals(2L, attempts.get())
+            assertTrue(record.resourcesReleased)
+            assertFalse(record.cleanupFailed)
+            assertFalse(record.closing)
+        } finally { release.countDown() }
+    }
+
+    @Test fun anOwedCleanupRetryDoesNotRepeatAfterSuccessOrRetryItsOwnFailure() {
+        for (firstSucceeds in listOf(true, false)) {
+            val session = if (firstSucceeds) "success" else "failure"
+            assertFalse(invoke(session, tool = PhoneToolCatalog.SCREEN).isError)
+            val record = task(session)
+            val id = record.tasks.snapshot().id
+            val entered = CountDownLatch(1)
+            val release = CountDownLatch(1)
+            val attempts = AtomicLong()
+            cleanup = {
+                if (attempts.incrementAndGet() == 1L) {
+                    entered.countDown()
+                    check(release.await(5, TimeUnit.SECONDS))
+                }
+                if (!firstSucceeds) error("release still unknown")
+            }
+            val ending = pool.submit { end(session) }
+            try {
+                assertTrue(entered.await(5, TimeUnit.SECONDS))
+                assertFalse(sessions.retryCleanup(id))
+                release.countDown()
+                ending.get(5, TimeUnit.SECONDS)
+                assertEquals(if (firstSucceeds) 1L else 2L, attempts.get())
+                assertEquals(firstSucceeds, record.resourcesReleased)
+                assertEquals(!firstSucceeds, record.cleanupFailed)
+            } finally { release.countDown() }
+        }
+    }
+
+    @Test fun journalOnlyClosingDoesNotRetainAPhysicalCleanupRetry() {
+        val releases = AtomicLong()
+        cleanup = { releases.incrementAndGet() }
+        assertFalse(invoke("journal-only", tool = PhoneToolCatalog.SCREEN).isError)
+        val record = task("journal-only")
+        val id = record.tasks.snapshot().id
+        journalCommit = { false }
+        end("journal-only")
+        assertTrue(record.resourcesReleased)
+        assertTrue(record.journalFailed)
+        val clearing = CountDownLatch(1)
+        val finish = CountDownLatch(1)
+        val writes = AtomicLong()
+        journalCommit = { bytes ->
+            if (writes.incrementAndGet() == 2L) {
+                clearing.countDown()
+                check(finish.await(5, TimeUnit.SECONDS))
+            }
+            journalBytes = bytes
+            true
+        }
+        val retry = pool.submit<Boolean> { sessions.retryJournalStorage() }
+        try {
+            assertTrue(clearing.await(5, TimeUnit.SECONDS))
+            assertTrue(record.closing)
+            assertFalse(sessions.retryCleanup(id))
+            assertNull(record.cleanupRetryTaskId)
+            finish.countDown()
+            assertTrue(retry.get(5, TimeUnit.SECONDS))
+            assertNull(record.cleanupRetryTaskId)
+            assertEquals(1L, releases.get())
+        } finally { finish.countDown() }
+    }
+
     @Test fun anyStillActiveSessionCountsNotJustTheLastOne() {
         assertFalse(sessions.anyActive())
         val queued = admit("C") // Admitted, not begun: it would act under whatever policy it finds.
