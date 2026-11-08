@@ -170,18 +170,29 @@ class BackgroundControl private constructor(context: Context) {
         return when {
             cached.connectionError != null -> AppStrings.get(app, cached.connectionError)
             cached.trustedDisplayOk == false -> Reasons.withDetail(UNSUPPORTED, cached.gateDetail)
-            cached.injectOk == false -> Reasons.withDetail(AppStrings.get(app, when (cached.injectError) {
-                "inputApiUnavailable" -> R.string.background_input_api_unavailable
-                "systemOperationDenied" -> R.string.background_input_permission_denied
-                "inputWindowNotReady" -> R.string.background_input_window_not_ready
-                "inputUnconfirmed" -> R.string.background_input_unconfirmed
-                "inputProbeCleanupFailed" -> R.string.background_input_cleanup_failed
-                "cancelled" -> R.string.background_input_cancelled
-                else -> R.string.background_injection_denied
-            }), cached.gateDetail)
+            cached.injectOk == false -> Reasons.withDetail(inputFailureReason(
+                BackgroundGateState.InjectFailure.fromWire(cached.injectError)), cached.gateDetail)
             else -> null
         }
     }
+
+    /** This invocation's accepted facts; do not reread a newer probe or connection here. */
+    private fun probeReason(receipt: BackgroundGateState.Receipt): String? = when {
+        !receipt.trustedDisplayOk -> Reasons.withDetail(UNSUPPORTED, receipt.observation?.encode())
+        receipt.injectOk == false -> Reasons.withDetail(
+            inputFailureReason(receipt.injectFailure ?: BackgroundGateState.InjectFailure.OTHER), receipt.observation?.encode())
+        else -> null
+    }
+
+    private fun inputFailureReason(reason: BackgroundGateState.InjectFailure): String = AppStrings.get(app, when (reason) {
+        BackgroundGateState.InjectFailure.API_UNAVAILABLE -> R.string.background_input_api_unavailable
+        BackgroundGateState.InjectFailure.PERMISSION_DENIED -> R.string.background_input_permission_denied
+        BackgroundGateState.InjectFailure.WINDOW_NOT_READY -> R.string.background_input_window_not_ready
+        BackgroundGateState.InjectFailure.UNCONFIRMED -> R.string.background_input_unconfirmed
+        BackgroundGateState.InjectFailure.CLEANUP_FAILED -> R.string.background_input_cleanup_failed
+        BackgroundGateState.InjectFailure.CANCELLED -> R.string.background_input_cancelled
+        BackgroundGateState.InjectFailure.OTHER -> R.string.background_injection_denied
+    })
 
     private fun rootReason(): String? {
         val status = root.status()
@@ -566,10 +577,14 @@ class BackgroundControl private constructor(context: Context) {
             injectError = response.getString(Proto.INJECT_ERROR),
             detail = response.getString(Proto.ERROR_DETAIL),
         )
-        if (!completed) return AppStrings.get(app, if (gate.current(owner))
-            R.string.background_input_probe_busy else R.string.background_selection_cancelled)
-        notifyChanged()
-        return gateReason()
+        return when (completed) {
+            BackgroundGateState.Update.Busy -> AppStrings.get(app, R.string.background_input_probe_busy)
+            BackgroundGateState.Update.Cancelled -> AppStrings.get(app, R.string.background_selection_cancelled)
+            is BackgroundGateState.Update.Accepted -> {
+                notifyChanged()
+                probeReason(completed.receipt)
+            }
+        }
     }
 
 

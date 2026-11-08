@@ -10,6 +10,36 @@ internal class BackgroundGateState {
         val connectionError: Int? = null,
     )
 
+    /** One accepted response, not the latest capability cache or a strict cleanup receipt. */
+    data class Receipt(
+        val trustedDisplayOk: Boolean,
+        val injectOk: Boolean?,
+        val injectFailure: InjectFailure?,
+        val observation: InputProbeDiagnostics.Observation?,
+    )
+
+    enum class InjectFailure {
+        API_UNAVAILABLE, PERMISSION_DENIED, WINDOW_NOT_READY, UNCONFIRMED, CLEANUP_FAILED, CANCELLED, OTHER;
+
+        companion object {
+            fun fromWire(error: String?): InjectFailure = when (error) {
+                "inputApiUnavailable" -> API_UNAVAILABLE
+                "systemOperationDenied" -> PERMISSION_DENIED
+                "inputWindowNotReady" -> WINDOW_NOT_READY
+                "inputUnconfirmed" -> UNCONFIRMED
+                "inputProbeCleanupFailed" -> CLEANUP_FAILED
+                "cancelled" -> CANCELLED
+                else -> OTHER
+            }
+        }
+    }
+
+    sealed interface Update {
+        data class Accepted(val receipt: Receipt) : Update
+        object Busy : Update
+        object Cancelled : Update
+    }
+
     class Probe internal constructor(internal val mayApply: () -> Boolean)
     private var probe: Probe? = null
     private var failedChannel: Any? = null
@@ -50,11 +80,15 @@ internal class BackgroundGateState {
         }
     }
 
-    /** False means the probe did not run, so none of the cached facts may be replaced. */
-    @Synchronized fun update(owner: Probe, ok: Boolean, error: String?, injectOk: Boolean?, injectError: String?, detail: String?): Boolean {
-        if (!current(owner) || error == "probeBusy") return false
+    /** Accept the response and freeze its safe facts under the same owner check. */
+    @Synchronized fun update(owner: Probe, ok: Boolean, error: String?, injectOk: Boolean?, injectError: String?, detail: String?): Update {
+        if (!current(owner)) return Update.Cancelled
+        if (error == "probeBusy") return Update.Busy // Not run: keep historical facts unchanged.
+        val receipt = Receipt(ok, injectOk,
+            if (injectOk == false) InjectFailure.fromWire(injectError) else null,
+            InputProbeDiagnostics.decode(detail))
         failedChannel = null
         snapshot = Snapshot(ok, injectOk, if (injectOk == false) injectError else null, detail)
-        return true
+        return Update.Accepted(receipt)
     }
 }
