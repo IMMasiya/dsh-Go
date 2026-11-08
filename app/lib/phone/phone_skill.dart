@@ -161,7 +161,9 @@ class PhoneSkillSaveHandle {
     if (raw is! Map) return null;
     final task = raw['taskId'], id = raw['draftId'], name = raw['name'], revision = raw['bundleRevision'];
     if (task is! int || task <= 0 || id is! String || !_draftId.hasMatch(id) ||
-        name is! String || !_skillName.hasMatch(name) || revision is! String || !_draftId.hasMatch(revision)) return null;
+        name is! String || !_skillName.hasMatch(name) || revision is! String || !_draftId.hasMatch(revision)) {
+      return null;
+    }
     return PhoneSkillSaveHandle._(task, id, name, revision);
   }
 

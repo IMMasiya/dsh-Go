@@ -188,10 +188,10 @@ class _PhoneSkillSectionState extends ConsumerState<PhoneSkillSection> {
 }
 
 class PhoneSkillEditor extends StatefulWidget {
-  const PhoneSkillEditor({super.key, required this.channel, required PhoneSkillCandidate candidate})
-    : candidate = candidate, result = null;
-  const PhoneSkillEditor.result({super.key, required this.channel, required PhoneSkillSaveResult result})
-    : result = result, candidate = null;
+  const PhoneSkillEditor({super.key, required this.channel, required PhoneSkillCandidate this.candidate})
+    : result = null;
+  const PhoneSkillEditor.result({super.key, required this.channel, required PhoneSkillSaveResult this.result})
+    : candidate = null;
   final PhoneChannel channel;
   final PhoneSkillCandidate? candidate;
   final PhoneSkillSaveResult? result;
@@ -353,7 +353,9 @@ class _PhoneSkillEditorState extends State<PhoneSkillEditor> {
     setState(() => _busy = true);
     final reply = handle == null ? await channel.viewSkillDraft(_draft!) : await channel.checkSkillSave(handle);
     if (!mounted || !identical(channel, widget.channel) || !identical(result, widget.result) ||
-        !identical(handle, _queryHandle)) return;
+        !identical(handle, _queryHandle)) {
+      return;
+    }
     _accept(reply, fromQuery: handle != null);
   }
 
