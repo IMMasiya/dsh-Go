@@ -74,8 +74,9 @@ class _WorkspaceUploadRowState extends ConsumerState<WorkspaceUploadRow> {
     });
     final sent = <String>[];
     String? failure;
+    bool stillHere() => mounted && identical(ref.read(activeConnectionProvider).value?.client, client);
     for (final file in files) {
-      if (!mounted) return;
+      if (!stillHere()) break;
       setState(() => _current = file.name);
       try {
         final result = await client.uploadWorkspaceFile(widget.sessionId, file.bytes, name: file.name);
@@ -92,6 +93,9 @@ class _WorkspaceUploadRowState extends ConsumerState<WorkspaceUploadRow> {
       _total = 0;
       _current = null;
     });
+    // Another Host took over meanwhile: its folder and its page are not
+    // where these files went.
+    if (!stillHere()) return;
     if (sent.isNotEmpty) {
       unawaited(ref.read(workspaceDirProvider((widget.sessionId, '')).notifier).refresh());
     }
@@ -101,11 +105,18 @@ class _WorkspaceUploadRowState extends ConsumerState<WorkspaceUploadRow> {
 
   @override
   Widget build(BuildContext context) {
-    final l10n = context.l10n;
-    final available = ref.watch(
-      activeConnectionProvider.select((c) => c.value?.client.supportsWorkspaceUpload ?? false),
+    final client = ref.watch(activeConnectionProvider.select((c) => c.value?.client));
+    if (client == null) return _busy ? _row(context) : const SizedBox.shrink();
+    // The Host may gain or lose the capability on a reconnect in place, which
+    // keeps the same client: look again on every new link.
+    return StreamBuilder<Object?>(
+      stream: client.mux.generations,
+      builder: (context, _) => client.supportsWorkspaceUpload || _busy ? _row(context) : const SizedBox.shrink(),
     );
-    if (!available && !_busy) return const SizedBox.shrink();
+  }
+
+  Widget _row(BuildContext context) {
+    final l10n = context.l10n;
     return ListPageCard(
       margin: const EdgeInsets.fromLTRB(16, 0, 16, 10),
       children: [
