@@ -28,7 +28,7 @@ class PhoneCorePolicyRevocationTest {
         override fun policies() = policies
         override fun isLocked() = false
         override fun gate() = object : UserGate {
-            override fun confirm(request: ConfirmRequest): Decision { asked++; return confirm(request) }
+            override fun confirm(request: ConfirmRequest): Decision { asked++; return this@PhoneCorePolicyRevocationTest.confirm(request) }
             override fun handoff(reason: String, timeoutMs: Long) = error("unexpected handoff")
             override fun status(text: String?) {}
         }
