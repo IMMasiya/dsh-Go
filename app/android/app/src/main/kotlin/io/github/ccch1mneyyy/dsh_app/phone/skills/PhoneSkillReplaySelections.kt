@@ -159,6 +159,13 @@ internal class PhoneSkillReplaySelections(private val clock: () -> Long) {
         selection.attempted = true
         if (!selection.terminal) selection.dispatch = "dispatched"
     }
+    /** Record uncertainty only; original finish/expire owns terminal/accounting readiness. */
+    fun dispatchUncertain(selection: Selection) = synchronized(lock) {
+        if (!selection.terminal) {
+            selection.uncertain = true
+            selection.dispatch = "unknown"
+        }
+    }
     fun completed(selection: Selection): Boolean = synchronized(lock) {
         if (records[selection.invocation] !== selection || selection.cancelled || selection.terminal) false
         else { selection.completed++; selection.dispatch = "verified"; true }

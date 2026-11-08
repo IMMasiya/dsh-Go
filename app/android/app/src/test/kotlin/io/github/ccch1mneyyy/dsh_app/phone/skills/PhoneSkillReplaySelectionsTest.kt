@@ -235,4 +235,21 @@ class PhoneSkillReplaySelectionsTest {
         assertNull(records.find(selection.invocation))
     }
 
+    @Test fun uncertainDispatchKeepsFinishResponsibleAndCannotRewriteExistingTerminal() {
+        val records = PhoneSkillReplaySelections { 0L }
+        val selected = records.prepare(client, 1, { true }, request, bundle, app)!!
+        assertTrue(records.claim(selected, caller()) is PhoneSkillReplaySelections.Claim.Start)
+        records.dispatchUncertain(selected)
+        assertNull(records.terminalOutcome(selected))
+        assertFalse(selected.attempted)
+        records.control(selected, caller(), true)
+        assertEquals(PhoneSkillOutcomes.Outcome.UNKNOWN, records.finish(selected, false, 1L))
+        assertEquals("unknown", records.snapshot(selected)["stepDispatch"])
+        val finished = records.prepare(client, 1, { true }, request, bundle, app)!!
+        assertTrue(records.claim(finished, caller()) is PhoneSkillReplaySelections.Claim.Start)
+        assertEquals(PhoneSkillOutcomes.Outcome.NOT_STARTED, records.finish(finished, false, 1L))
+        records.dispatchUncertain(finished)
+        assertEquals(PhoneSkillOutcomes.Outcome.NOT_STARTED, records.finish(finished, false, 1L))
+    }
+
 }

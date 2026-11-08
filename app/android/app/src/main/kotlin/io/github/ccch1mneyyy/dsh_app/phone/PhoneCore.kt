@@ -178,6 +178,10 @@ class PhoneCore(
                 try {
                     val result = plan.perform(::allowed)
                     if (plan.attempted) selections.dispatched(selection)
+                    else if (plan.dispatchUncertain) {
+                        selections.dispatchUncertain(selection)
+                        return stop("写请求回执不完整，无法排除已有作用；请核对，不要重新执行。") // l10n:keep replay result
+                    }
                     if (!live()) return stop("任务或来源在步骤期间失效，结果未获完整核对。") // l10n:keep replay result
                     refusal.get()?.let { return stop(it.message) }
                     val witness = result.navigationWitness
@@ -194,6 +198,7 @@ class PhoneCore(
                     if (!live() || !selections.completed(selection)) return stop("步骤核对后任务已失效。") // l10n:keep replay result
                 } finally {
                     if (plan.attempted) selections.dispatched(selection)
+                    else if (plan.dispatchUncertain) selections.dispatchUncertain(selection)
                 }
             }
         }

@@ -126,6 +126,7 @@ class PhoneTaskObservations(private val tasks: PhoneTasks) {
                 current()
                 if (!taskAllowed()) return Either.Left("当前任务已暂停，未准备路线动作。") // l10n:keep
                 val bound = object : SkillReplayPlan by original {
+                    override val dispatchUncertain: Boolean get() = original.dispatchUncertain
                     override fun perform(allowed: () -> Boolean): ActionResult {
                         current()
                         return try {

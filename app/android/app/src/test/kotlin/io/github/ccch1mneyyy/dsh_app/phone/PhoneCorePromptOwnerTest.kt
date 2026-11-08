@@ -1562,8 +1562,10 @@ class PhoneCorePromptOwnerTest {
         }
         return Triple(registry, selected, outcomes)
     }
-    private fun executeReplay(fixture: Triple<PhoneSkillReplaySelections, PhoneSkillReplaySelections.Selection, PhoneSkillOutcomes>): ToolOutput {
+    private fun executeReplay(fixture: Triple<PhoneSkillReplaySelections, PhoneSkillReplaySelections.Selection, PhoneSkillOutcomes>,
+        bind: Boolean = false): ToolOutput {
         val owner = (tasks.begin() as PhoneTasks.Begin.Go).owner
+        if (bind) boundMain = PhoneTaskObservations(tasks).bind(main, owner)
         val call = (core.prepareReplayCall(fixture.second, fixture.first, fixture.third, owner) as Either.Right).value
         assertTrue("MAIN must retain unknown window UID exclusion", call.unknownApp)
         return core.call(call, core.worker)
@@ -1663,6 +1665,65 @@ class PhoneCorePromptOwnerTest {
         assertEquals(2, main.collects)
         assertTrue(tasks.isCurrent(owner))
         assertFalse(tasks.isStopped())
+    }
+
+    /** Only the transport boundary is fake; Core, owner proxy and accounting are real. */
+    private fun lostReplayReply(mode: String) {
+        val fixture = replayFixture()
+        val original = checkNotNull(main.replayPlan)
+        main.replayPlan = object : SkillReplayPlan by original {
+            override var dispatchUncertain = false
+            override val post get() = if (mode == "untrusted-ok") SkillReplayPost.SATISFIED else SkillReplayPost.UNKNOWN
+            override fun perform(allowed: () -> Boolean): ActionResult {
+                check(allowed())
+                dispatchUncertain = true // Simulated sent write, not a NODE attempt receipt.
+                if (mode == "cancel") fixture.first.control(fixture.second,
+                    PhoneCaller("session", "run", "cancel", 1), true)
+                if (mode == "throw") throw IllegalStateException("transport reply missing")
+                if (mode == "untrusted-ok") return ActionResult(true, "untrusted success", before,
+                    navigationWitness = PhoneSkillNavigationWitness(10123, 1, 2, "c".repeat(64)))
+                return ActionResult(false, "transport reply missing")
+            }
+        }
+        assertTrue(executeReplay(fixture, bind = true).isError)
+        assertFalse(main.replayPlan!!.attempted)
+        assertEquals(0, main.writes)
+        assertEquals("unknown", fixture.first.snapshot(fixture.second)["stepDispatch"])
+        assertEquals(PhoneSkillOutcomes.Outcome.UNKNOWN, fixture.first.finish(fixture.second, false, 1L))
+        fixture.first.retryAccounting(fixture.third)
+        val key = PhoneSkillOutcomes.Key(fixture.second.request.name, fixture.second.request.revision, fixture.second.bundle.routeSha256)
+        assertEquals(PhoneSkillOutcomes.Outcome.UNKNOWN, fixture.third.counts(key)!!.last)
+        assertEquals(0L, fixture.third.counts(key)!!.successes)
+        assertTrue(fixture.first.claim(fixture.second, PhoneCaller("session", "run", "again", 1)) is PhoneSkillReplaySelections.Claim.Existing)
+        assertFalse(tasks.isStopped())
+    }
+    @Test fun replayLostWriteReplyBeforeDeadlineIsUnknownThroughRealOwnerProxy() = lostReplayReply("reply")
+    @Test fun replayThrownTransportFailureStillFreezesUnknownInFinally() = lostReplayReply("throw")
+    @Test fun replayCancellationCannotTurnMissingWriteReplyIntoKnownNoAttempt() = lostReplayReply("cancel")
+
+    @Test fun replayUnresolvedDispatchCannotContributeVerifiedSuccess() = lostReplayReply("untrusted-ok")
+
+    @Test fun replayActualAttemptTakesPriorityOverConservativeTransportUncertainty() {
+        val fixture = replayFixture()
+        val original = checkNotNull(main.replayPlan)
+        main.replayPlan = object : SkillReplayPlan by original {
+            override val dispatchUncertain = true
+        }
+        assertFalse(executeReplay(fixture, bind = true).isError)
+        assertTrue(original.attempted)
+        assertEquals(1, main.writes)
+        assertEquals(PhoneSkillOutcomes.Outcome.SUCCESS, fixture.first.finish(fixture.second, true, 1L))
+    }
+    @Test fun replayReadOnlyFailureWithNoWriteUncertaintyRemainsNotStarted() {
+        val fixture = replayFixture(already = true)
+        val original = checkNotNull(main.replayPlan)
+        main.replayPlan = object : SkillReplayPlan by original {
+            override fun perform(allowed: () -> Boolean) = ActionResult(false, "inspect unavailable")
+        }
+        assertTrue(executeReplay(fixture, bind = true).isError)
+        assertFalse(main.replayPlan!!.dispatchUncertain)
+        assertEquals(0, main.writes)
+        assertEquals(PhoneSkillOutcomes.Outcome.NOT_STARTED, fixture.first.finish(fixture.second, false, 1L))
     }
 
 }

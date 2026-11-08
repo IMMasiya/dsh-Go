@@ -11,7 +11,10 @@ interface SkillReplayPlan : AutoCloseable {
     val before: ScreenSnapshot
     val target: TargetInfo?
     val alreadySatisfied: Boolean
+    /** Actual native action attempt, not merely a transport send. */
     val attempted: Boolean
+    /** A sent write lacks a trustworthy reply; never set for inspect or a known unsent call. */
+    val dispatchUncertain: Boolean get() = false
     val post: SkillReplayPost
     fun perform(allowed: () -> Boolean): ActionResult
     override fun close()
