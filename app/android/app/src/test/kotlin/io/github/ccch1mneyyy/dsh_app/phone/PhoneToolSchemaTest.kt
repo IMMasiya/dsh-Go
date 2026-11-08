@@ -61,18 +61,34 @@ class PhoneToolSchemaTest {
     @After fun close() = core.worker.shutdown()
 
     @Test fun sdkSchemaKeepsIntegerFieldsAndMovesBoundsIntoDescriptions() {
-        val json = Json.write(PhoneToolCatalog.listJson())
+        val server = McpServer(PhoneToolCatalog.listJson(), { _, _, _ -> error("tools/list must not dispatch a tool") })
+        val json = checkNotNull(server.handle(Json.write(mapOf("jsonrpc" to "2.0", "id" to 1, "method" to "tools/list"))))
+        val listed = ((Json.parse(json) as Map<*, *>)["result"] as Map<*, *>)["tools"] as List<*>
+        assertEquals(PhoneToolCatalog.listJson(), listed)
+        assertEquals(listOf("apps", "open", "intent", "notify", "clipboard", "screen", "collect", "tap", "type", "scroll", "key", "tap_xy", "handoff"),
+            listed.map { (it as Map<*, *>)["name"] })
+        for (tool in listed) {
+            val schema = (tool as Map<*, *>)["inputSchema"] as Map<*, *>
+            assertEquals(false, schema["additionalProperties"])
+        }
         assertFalse(json.contains("\"minimum\""))
         assertFalse(json.contains("\"maximum\""))
         assertEquals(13, PhoneToolCatalog.tools.size)
         val tap = PhoneToolCatalog.tools.single { it.name == PhoneToolCatalog.TAP_XY }
         assertEquals(listOf("observation", "x", "y"), tap.required)
-        assertEquals(setOf("observation", "x", "y"), tap.properties.keys)
+        assertEquals(listOf("observation", "x", "y", "action", "x2", "y2", "duration_ms"), tap.properties.keys.toList())
+        val gesture = tap.properties["action"] as Map<*, *>
+        assertEquals("string", gesture["type"])
+        assertEquals(listOf("tap", "long", "swipe"), gesture["enum"])
         for (key in listOf("x", "y")) {
             val field = tap.properties[key] as Map<*, *>
             assertEquals("integer", field["type"])
             assertTrue((field["description"] as String).contains("从 0 开始"))
         }
+        for (key in listOf("x2", "y2", "duration_ms")) assertEquals("integer", (tap.properties[key] as Map<*, *>)["type"])
+        val duration = (tap.properties["duration_ms"] as Map<*, *>)["description"] as String
+        assertTrue(duration.contains("100–2000"))
+        assertTrue(duration.contains("400"))
         val collect = PhoneToolCatalog.tools.single { it.name == PhoneToolCatalog.COLLECT }
         val count = collect.properties["max_pages"] as Map<*, *>
         assertEquals("integer", count["type"])
@@ -129,9 +145,19 @@ class PhoneToolSchemaTest {
         val base = mapOf("observation" to "s1", "x" to 10, "y" to 20)
         for (extra in listOf(
             mapOf("action" to "unknown"), mapOf("action" to "swipe"),
+            mapOf("action" to 1),
+            mapOf("action" to "swipe", "x2" to 30),
+            mapOf("action" to "swipe", "y2" to 40),
+            mapOf("action" to "swipe", "x2" to -1, "y2" to 40),
+            mapOf("action" to "swipe", "x2" to 30, "y2" to -1),
+            mapOf("action" to "swipe", "x2" to 30.5, "y2" to 40),
+            mapOf("action" to "swipe", "x2" to 30, "y2" to 40, "duration_ms" to "fast"),
             mapOf("action" to "swipe", "x2" to 30, "y2" to 40, "duration_ms" to 99),
             mapOf("action" to "swipe", "x2" to 30, "y2" to 40, "duration_ms" to 2001),
             mapOf("action" to "long", "x2" to 30),
+            mapOf("action" to "long", "duration_ms" to 400),
+            mapOf("action" to "tap", "y2" to 40),
+            mapOf("action" to "tap", "duration_ms" to 400),
         )) assertTrue(core.call(PhoneToolCatalog.TAP_XY, base + extra).isError)
         assertTrue(actions.isEmpty())
         assertEquals(0, confirmations)
@@ -142,7 +168,13 @@ class PhoneToolSchemaTest {
         assertEquals(PhoneAction.TapXY("s1", 10, 20, PhoneAction.CoordinateGesture.SWIPE, 30, 40, 2000), actions.last())
         assertTrue(confirmationText.last().contains("(30,40)"))
         assertTrue(confirmationText.last().contains("2000"))
-        assertEquals(2, confirmations)
+        for (extra in listOf(emptyMap(), mapOf("duration_ms" to 100))) {
+            assertFalse(core.call(PhoneToolCatalog.TAP_XY, base + mapOf("action" to "swipe", "x2" to 30, "y2" to 40) + extra).isError)
+            val expected = (extra["duration_ms"] ?: 400).toLong()
+            assertEquals(PhoneAction.TapXY("s1", 10, 20, PhoneAction.CoordinateGesture.SWIPE, 30, 40, expected), actions.last())
+            assertTrue(confirmationText.last().contains(expected.toString()))
+        }
+        assertEquals(4, confirmations)
     }
 
     @Test fun allFixedIntentKindsUseThePreparedLaunchConsumer() {
