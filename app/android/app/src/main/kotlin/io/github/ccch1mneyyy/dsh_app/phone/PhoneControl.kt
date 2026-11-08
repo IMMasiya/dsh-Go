@@ -192,7 +192,7 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
             override fun beforeHandoff(screen: PhoneScreen): String? {
                 if (screen != PhoneScreen.BACKGROUND) return null
                 check(background.endTask(task.snapshot().id)) { "后台屏释放尚未确认，暂不能交还主屏。" } // l10n:keep agent handoff failure
-                return "后台屏已释放，App 回到主屏。请重新读取主屏。" // l10n:keep agent handoff result
+                return "后台屏已释放。请用户在主屏完成操作，继续前先重新读取主屏。" // l10n:keep agent handoff result
             }
         }
         task.addListener { state -> onSessionTask(task, state) }
@@ -788,7 +788,7 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
         if (screen != PhoneScreen.BACKGROUND || PhoneRegistry.backgroundDriver == null) return null
         check(background.endTask()) { "后台屏释放尚未确认，暂不能交还主屏。" } // l10n:keep agent handoff failure
         // l10n:keep agent stop reason
-        return "后台屏已释放，App 回到了主屏，用户在主屏上操作。之后请用主屏（s 开头的屏幕号）。"
+        return "后台屏已释放。请用户在主屏完成操作，继续前先重新读取主屏（s 开头的屏幕号）。"
     }
 
     override fun a11yState(): A11yState = when {
