@@ -287,6 +287,36 @@ void main() {
     });
   });
 
+  testWidgets('她多主动 in her menu: quiet or one of three paces, quiet being the old switch off', (tester) async {
+    final room = _Room(tester, root);
+    await room.open();
+    try {
+      await room.wait(const Duration(seconds: 8));
+      Future<void> pick(String choice) async {
+        await tester.tap(find.byIcon(AppIcons.more));
+        await tester.pumpAndSettle();
+        expect(find.text('她多主动'), findsOneWidget);
+        await tester.tap(find.text('她多主动'));
+        await tester.pumpAndSettle();
+        expect(find.text('一天最多 6 次，至少隔 2 小时'), findsOneWidget);
+        await tester.tap(find.text(choice));
+        await tester.pumpAndSettle();
+      }
+
+      await pick('常常');
+      expect(room.container.read(companionInitiativePaceProvider), CompanionInitiativePace.often);
+      expect(room.container.read(companionInitiativeEnabledProvider), isTrue);
+      await pick('安静');
+      expect(room.container.read(companionInitiativeEnabledProvider), isFalse);
+      expect(room.container.read(companionInitiativePaceProvider), CompanionInitiativePace.often);
+      await pick('话多');
+      expect(room.container.read(companionInitiativeEnabledProvider), isTrue);
+      expect(room.container.read(companionInitiativePaceProvider), CompanionInitiativePace.chatty);
+    } finally {
+      await room.close();
+    }
+  });
+
   testWidgets('another conversation ends: she holds it until you have been quiet, then says it once', (tester) async {
     final room = _Room(tester, root);
     await room.open();

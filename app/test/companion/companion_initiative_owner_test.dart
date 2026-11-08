@@ -484,4 +484,20 @@ void main() {
     final prefs = await SharedPreferences.getInstance();
     expect(prefs.getBool('companion_initiative_enabled'), isFalse);
   });
+
+  testWidgets('the pace is the original one until another is picked, and stays as picked', (tester) async {
+    final container = ProviderContainer();
+    addTearDown(container.dispose);
+    expect(container.read(companionInitiativePaceProvider), CompanionInitiativePace.rare);
+    await tester.runAsync(
+      () => container.read(companionInitiativePaceProvider.notifier).set(CompanionInitiativePace.chatty),
+    );
+    final prefs = await SharedPreferences.getInstance();
+    expect(prefs.getString('companion_initiative_pace'), 'chatty');
+    final again = ProviderContainer();
+    addTearDown(again.dispose);
+    again.read(companionInitiativePaceProvider);
+    await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 20)));
+    expect(again.read(companionInitiativePaceProvider), CompanionInitiativePace.chatty);
+  });
 }

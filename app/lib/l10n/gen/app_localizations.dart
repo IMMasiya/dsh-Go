@@ -9128,17 +9128,65 @@ abstract class L10n {
   /// **'那我先躺好啦，你也放松点。'**
   String get companionInviteYes2;
 
-  /// No description provided for @companionMenuInvite.
+  /// No description provided for @companionMenuPace.
   ///
   /// In zh, this message translates to:
-  /// **'主动邀请'**
-  String get companionMenuInvite;
+  /// **'她多主动'**
+  String get companionMenuPace;
 
-  /// No description provided for @companionMenuInviteHint.
+  /// No description provided for @companionPaceHint.
   ///
   /// In zh, this message translates to:
-  /// **'你安静陪着她时，她偶尔会邀你一起歇一会儿'**
-  String get companionMenuInviteHint;
+  /// **'她只在你安静陪着她时开口：邀你歇一会儿，或提一句别的对话。深夜不说，每次进门最多邀一次。'**
+  String get companionPaceHint;
+
+  /// No description provided for @companionPaceQuiet.
+  ///
+  /// In zh, this message translates to:
+  /// **'安静'**
+  String get companionPaceQuiet;
+
+  /// No description provided for @companionPaceQuietHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'不主动开口，你找她时才说话'**
+  String get companionPaceQuietHint;
+
+  /// No description provided for @companionPaceRare.
+  ///
+  /// In zh, this message translates to:
+  /// **'偶尔'**
+  String get companionPaceRare;
+
+  /// No description provided for @companionPaceRareHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'一天最多 2 次，至少隔 6 小时'**
+  String get companionPaceRareHint;
+
+  /// No description provided for @companionPaceOften.
+  ///
+  /// In zh, this message translates to:
+  /// **'常常'**
+  String get companionPaceOften;
+
+  /// No description provided for @companionPaceOftenHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'一天最多 6 次，至少隔 2 小时'**
+  String get companionPaceOftenHint;
+
+  /// No description provided for @companionPaceChatty.
+  ///
+  /// In zh, this message translates to:
+  /// **'话多'**
+  String get companionPaceChatty;
+
+  /// No description provided for @companionPaceChattyHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'一天最多 12 次，至少隔半小时'**
+  String get companionPaceChattyHint;
 
   /// No description provided for @companionSetupBundled.
   ///
@@ -9269,7 +9317,7 @@ abstract class L10n {
   /// No description provided for @companionSignalsHint.
   ///
   /// In zh, this message translates to:
-  /// **'这些只在小屋里说给你听，不会发给模型。她只在你安静陪着她时开口，和「主动邀请」共用次数：一天最多两次，至少隔 6 小时，深夜不说；关掉「主动邀请」她也不说。'**
+  /// **'这些只在小屋里说给你听，不会发给模型。说多说少跟着「她多主动」，和邀请共用次数，深夜不说；选「安静」她也不说。'**
   String get companionSignalsHint;
 
   /// No description provided for @companionSignalState.

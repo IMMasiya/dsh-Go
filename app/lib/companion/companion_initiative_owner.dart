@@ -17,6 +17,7 @@ import 'companion_elapsed_clock.dart';
 
 const companionInitiativeKey = 'companion_initiative_v1';
 const _enabledKey = 'companion_initiative_enabled';
+const _paceKey = 'companion_initiative_pace';
 
 /// Both clocks for the controller: the wall clock for its day-long quotas, a
 /// monotonic one for quiet and display time. Tests drive their own.
@@ -57,6 +58,36 @@ class CompanionInitiativeEnabled extends Notifier<bool?> {
 
 final companionInitiativeEnabledProvider = NotifierProvider<CompanionInitiativeEnabled, bool?>(
   CompanionInitiativeEnabled.new,
+);
+
+/// How often she speaks up when she may (「她多主动」). Unread or unknown is
+/// the original pace: two a day, six hours apart.
+class CompanionInitiativePaceSetting extends Notifier<CompanionInitiativePace> {
+  @override
+  CompanionInitiativePace build() {
+    unawaited(_load());
+    return CompanionInitiativePace.rare;
+  }
+
+  Future<void> _load() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final saved = CompanionInitiativePace.byName(prefs.getString(_paceKey));
+      if (ref.mounted && saved != null) state = saved;
+    } on Object {
+      // The original pace, then.
+    }
+  }
+
+  Future<void> set(CompanionInitiativePace pace) async {
+    state = pace;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_paceKey, pace.name);
+  }
+}
+
+final companionInitiativePaceProvider = NotifierProvider<CompanionInitiativePaceSetting, CompanionInitiativePace>(
+  CompanionInitiativePaceSetting.new,
 );
 
 /// The room the owner shows things in. Every call is synchronous: a ticket is
@@ -116,6 +147,7 @@ class CompanionInitiative {
   }
 
   CompanionInitiativeController? _controller;
+  CompanionInitiativePace _pace = CompanionInitiativePace.rare;
   CompanionInitiativeRoom? _room;
   CompanionInitiativeView? _view;
   bool _disposed = false;
@@ -168,12 +200,22 @@ class CompanionInitiative {
     if (!_disposed) {
       final now = _now();
       if (!_disposed) {
-        _controller = CompanionInitiativeController(now: now, restored: restored);
+        _controller = CompanionInitiativeController(now: now, restored: restored)..pace = _pace;
         final view = _view;
         if (_room != null && view != null) _run(CompanionInitiativeEvent.enter(view));
       }
     }
     if (!_restored.isCompleted) _restored.complete();
+  }
+
+  /// The person's pick (「她多主动」), from the next check on: a quiet stretch
+  /// already turned down under the old pace is looked at again.
+  set pace(CompanionInitiativePace value) {
+    if (_disposed || value == _pace) return;
+    _pace = value;
+    _controller?.pace = value;
+    _wokeForQuiet = null;
+    _run(const CompanionInitiativeEvent.check());
   }
 
   void enter(CompanionInitiativeRoom room, CompanionInitiativeView view) {
@@ -526,12 +568,13 @@ class CompanionInitiative {
       final all = record.optionalAtMs;
       final recent = all.where((t) => t > now.wallMs - CompanionInitiativeRules.windowMs).toList();
       gate = max(gate, record.declinedUntilMs);
-      if (all.isNotEmpty) gate = max(gate, all.last + CompanionInitiativeRules.inviteGapMs);
-      if (recent.length >= CompanionInitiativeRules.maxInvites) {
-        gate = max(gate, recent.first + CompanionInitiativeRules.windowMs);
+      if (all.isNotEmpty) gate = max(gate, all.last + controller.pace.gapMs);
+      if (recent.length >= controller.pace.maxPerDay) {
+        // Room again once enough of the day's lines have aged out.
+        gate = max(gate, recent[recent.length - controller.pace.maxPerDay] + CompanionInitiativeRules.windowMs);
       }
     }
-    var at = max<int>(since + CompanionInitiativeRules.quietMs, now.monoMs + max<int>(0, gate - now.wallMs));
+    var at = max<int>(since + controller.pace.quietMs, now.monoMs + max<int>(0, gate - now.wallMs));
     // Quiet/quotas may finish at night. Schedule the first eligible local day
     // boundary instead of spending this quiet stretch on a rejected check.
     final wallAt = now.wallMs + at - now.monoMs;

@@ -256,6 +256,56 @@ void main() {
     expect((controller.inspect()['stay'] as Map)['invited'], isTrue);
   });
 
+  group('pace', () {
+    _Controller spent(List<int> invites) => _Controller(
+      enforceLocalQuietHours: false,
+      now: _now(0),
+      restored: CompanionInitiativeRestore.loaded({
+        'v': 1,
+        'lastGreetingAtMs': _wall,
+        'inviteAtMs': invites,
+        'declinedUntilMs': 0,
+      }),
+    );
+
+    test('two lines already today: the original pace waits, a livelier one goes on', () {
+      final today = [_wall - 20 * 3600000, _wall - 3 * 3600000];
+      final rare = spent(today);
+      rare.handle(_Event.enter(_room()), _now(0));
+      rare.handle(const _Event.check(), _now(60000));
+      expect(rare.offer, isNull);
+
+      final often = spent(today)..pace = CompanionInitiativePace.often;
+      often.handle(_Event.enter(_room()), _now(0));
+      often.handle(const _Event.check(), _now(29999));
+      expect(often.offer, isNull);
+      often.handle(const _Event.check(), _now(30000));
+      expect(often.offer?.kind, CompanionPromptKind.invite);
+    });
+
+    test('each pace keeps its own distance from the last line', () {
+      final often = spent([_wall - 3600000])..pace = CompanionInitiativePace.often;
+      often.handle(_Event.enter(_room()), _now(0));
+      often.handle(const _Event.check(), _now(60000));
+      expect(often.offer, isNull);
+
+      final chatty = spent([_wall - 3600000])..pace = CompanionInitiativePace.chatty;
+      chatty.handle(_Event.enter(_room()), _now(0));
+      chatty.handle(const _Event.check(), _now(20000));
+      expect(chatty.offer?.kind, CompanionPromptKind.invite);
+    });
+
+    test('a ledger written at the chattiest pace still reads at any pace', () {
+      final full = [for (var i = 0; i < 12; i++) _wall - 23 * 3600000 + i * 1800000];
+      final controller = spent(full);
+      expect(controller.fault, isNull);
+      expect(controller.record!.inviteAtMs, full);
+      controller.handle(_Event.enter(_room()), _now(0));
+      controller.handle(const _Event.check(), _now(60000));
+      expect(controller.offer, isNull);
+    });
+  });
+
   test('invalid ledgers never become a fresh quota, while a future refusal is valid', () {
     final valid = {'v': 1, 'lastGreetingAtMs': null, 'inviteAtMs': <int>[], 'declinedUntilMs': 0};
     final invalid = <Object?>[
@@ -269,7 +319,12 @@ void main() {
       },
       {
         ...valid,
-        'inviteAtMs': [0, 21600000, 43200000],
+        // More than the chattiest pace ever spends in a day.
+        'inviteAtMs': [for (var i = 0; i < 13; i++) i * 3600000],
+      },
+      {
+        ...valid,
+        'inviteAtMs': [0, 60000],
       },
       {...valid, 'declinedUntilMs': -1},
       {...valid, 'lastGreetingAtMs': '0'},
