@@ -8,6 +8,22 @@ class ToolOutput(
     val imageMime: String? = null,
 )
 
+/** Host attribution, separate from tool arguments. It is not an approval or a task lease. */
+data class PhoneCaller(val sessionId: String, val runId: String, val callId: String) {
+    companion object {
+        const val META_KEY = "dsh-go/phone-caller"
+
+        fun parse(value: Any?): PhoneCaller? {
+            val m = value as? Map<*, *> ?: return null
+            if (m["v"] != 1L) return null
+            fun id(key: String): String? = (m[key] as? String)?.takeIf {
+                it.length in 1..256 && it.none { c -> c < ' ' || c == '\u007f' }
+            }
+            return PhoneCaller(id("sessionId") ?: return null, id("runId") ?: return null, id("callId") ?: return null)
+        }
+    }
+}
+
 /**
  * The MCP side of the bridge: newline-delimited JSON-RPC 2.0 as MCP's stdio transport speaks it
  * (the guest relay forwards the bytes unchanged). Serves `initialize`, `ping`, `tools/list` and
@@ -19,7 +35,7 @@ class ToolOutput(
  */
 class McpServer(
     private val tools: List<Map<String, Any?>>,
-    private val call: (name: String, args: Map<String, Any?>) -> ToolOutput,
+    private val call: (name: String, args: Map<String, Any?>, caller: PhoneCaller?) -> ToolOutput,
     private val serverVersion: String = "1",
 ) {
     sealed interface Dispatch {
@@ -28,9 +44,9 @@ class McpServer(
 
         class Reply(val line: String) : Dispatch
 
-        class Call(val id: Any?, val name: String, val args: Map<String, Any?>, private val server: McpServer) : Dispatch {
+        class Call(val id: Any?, val name: String, val args: Map<String, Any?>, val caller: PhoneCaller?, private val server: McpServer) : Dispatch {
             /** Runs the tool (blocking) and returns the response line. */
-            fun run(): String = server.runCall(id, name, args)
+            fun run(): String = server.runCall(id, name, args, caller)
         }
     }
 
@@ -71,7 +87,16 @@ class McpServer(
                     ?: return Dispatch.Reply(error(id, INVALID_PARAMS, "tools/call needs a tool name"))
                 @Suppress("UNCHECKED_CAST")
                 val args = (params["arguments"] as? Map<String, Any?>) ?: emptyMap()
-                Dispatch.Call(id, name, args, this)
+                val rawMeta = params["_meta"]
+                if (rawMeta != null && rawMeta !is Map<*, *>) {
+                    return Dispatch.Reply(error(id, INVALID_PARAMS, "Invalid call metadata"))
+                }
+                val meta = rawMeta as? Map<*, *>
+                val caller = if (meta?.containsKey(PhoneCaller.META_KEY) == true) {
+                    PhoneCaller.parse(meta[PhoneCaller.META_KEY])
+                        ?: return Dispatch.Reply(error(id, INVALID_PARAMS, "Invalid phone caller context"))
+                } else null
+                Dispatch.Call(id, name, args, caller, this)
             }
             else -> Dispatch.Reply(error(id, METHOD_NOT_FOUND, "Method not found"))
         }
@@ -79,13 +104,16 @@ class McpServer(
 
     private fun initializeResult(requested: String?): Map<String, Any?> = linkedMapOf(
         "protocolVersion" to (requested?.takeIf { it in KNOWN_VERSIONS } ?: LATEST_VERSION),
-        "capabilities" to mapOf("tools" to mapOf("listChanged" to false)),
+        "capabilities" to mapOf(
+            "tools" to mapOf("listChanged" to false),
+            "experimental" to mapOf(PhoneCaller.META_KEY to mapOf("v" to 1, "taskIsolation" to 0)),
+        ),
         "serverInfo" to linkedMapOf("name" to "dsh-app-phone", "version" to serverVersion),
     )
 
-    internal fun runCall(id: Any?, name: String, args: Map<String, Any?>): String {
+    internal fun runCall(id: Any?, name: String, args: Map<String, Any?>, caller: PhoneCaller?): String {
         val out = try {
-            call(name, args)
+            call(name, args, caller)
         } catch (e: Throwable) {
             // l10n:keep agent tool error
             ToolOutput("手机操控出错：${e.javaClass.simpleName}${e.message?.let { "：$it" } ?: ""}", isError = true)

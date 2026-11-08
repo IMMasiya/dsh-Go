@@ -127,7 +127,8 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
     val core = PhoneCore(this, tasks, log)
     val notificationGate = NotificationGate(app) { setStatusLine(it) }
     val prompts = PhonePrompts(app, tasks, ::isEnabled, ::isLocked, notificationGate, ::reopen)
-    private val server = McpServer(PhoneToolCatalog.listJson(), core::call, SERVER_VERSION)
+    // Caller attribution is parsed at the boundary; taskIsolation stays 0 until per-task state lands.
+    private val server = McpServer(PhoneToolCatalog.listJson(), { name, args, _ -> core.call(name, args) }, SERVER_VERSION)
     private val bridge = PhoneBridge(server) { line -> logger(line) }
 
     @Volatile private var logger: (String) -> Unit = {}
