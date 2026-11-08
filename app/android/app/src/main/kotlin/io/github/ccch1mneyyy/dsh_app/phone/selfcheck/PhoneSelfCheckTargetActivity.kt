@@ -276,13 +276,18 @@ internal object PhoneSelfCheckTarget {
                 val readStamp = ticket.state.taskReadStamp()
                 val info = task.taskInfo
                 if (info.baseIntent.component?.packageName != app.packageName) continue
+                // TaskInfo.displayId is hidden on the Android versions supported by this probe.
+                // Preserve the actual display fact; an unreadable field must not acknowledge cleanup.
+                val displayId = info.javaClass.getField("displayId").getInt(info)
                 if (ticket.state.observeTask(readStamp, info.taskId, info.baseIntent.component?.className,
-                        info.baseIntent.identifier, info.displayId, info.isRunning,
+                        info.baseIntent.identifier, displayId, info.isRunning,
                         info.numActivities, info.topActivity == null)) {
                     ticket.appTask = task
                     return
                 }
             }
+        } catch (_: ReflectiveOperationException) {
+            // Missing or blocked hidden API evidence leaves this original ticket pending.
         } catch (_: RuntimeException) {
             // Retain the ticket and retry. In particular, a removed AppTask can throw here.
         }

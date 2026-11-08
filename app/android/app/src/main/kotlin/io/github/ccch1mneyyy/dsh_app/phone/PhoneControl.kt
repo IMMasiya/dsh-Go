@@ -158,7 +158,7 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
     val core = PhoneCore(this, tasks, log, skillTrace = skillTrace,
         onExecution = { owner -> selectExecution(tasks, owner) })
     val notificationGate = NotificationGate(app) { text, ifCurrent -> setStatusLine(text, ifCurrent) }
-    val prompts = PhonePrompts(app, tasks, ::isEnabled, ::isLocked, notificationGate, ::reopen, displaySelection) { id, session ->
+    val prompts: PhonePrompts = PhonePrompts(app, tasks, ::isEnabled, ::isLocked, notificationGate, ::reopen, displaySelection) { id, session ->
         sessions.task(id)?.takeIf { it.sessionId == null || it.sessionId == session }?.tasks
     }
     private val sessions = PhoneTaskSessions(SystemClock::elapsedRealtime, taskIds::incrementAndGet, ::createSessionCore, tasks, core, ::emitStatus,

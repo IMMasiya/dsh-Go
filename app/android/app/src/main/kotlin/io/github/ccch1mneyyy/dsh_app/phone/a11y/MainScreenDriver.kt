@@ -166,7 +166,7 @@ internal class MainScreenDriver(private val service: PhoneA11yService, private v
                         val shot = shooter.shoot(window, cap.screen, snap.screen.elements, secrets, minOf(left - 300, 3_000),
                             readLocalText = snap.screen.poorTree,
                             localTextPrivacyAllowed = Build.VERSION.SDK_INT >= 34 && cap.windows.size == 1 &&
-                                !cap.keyboardShown && !snap.ownApp && !snap.protectedPage && !snap.hidden &&
+                                cap.keyboardShown == false && !snap.ownApp && !snap.protectedPage && !snap.hidden &&
                                 !cap.truncated && !cap.partial && !unavailable(cap) && secrets.isEmpty() &&
                                 PhoneControl.peek()?.policies()?.denyPackages?.let { denied ->
                                     snap.packageName != null && snap.packageName !in denied
