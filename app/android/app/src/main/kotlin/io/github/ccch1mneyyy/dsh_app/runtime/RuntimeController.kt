@@ -84,7 +84,7 @@ class RuntimeController private constructor(private val app: Context) : DshProce
     @Volatile private var resetting = false
     // A phone draft save may stage only within the ready runtime captured by its button press.
     // Independent of bundled-skill attachment grants; it never borrows their write permission.
-    private var phoneSkillStoppedGeneration = -1
+    @Volatile private var phoneSkillStoppedGeneration = -1
     // Retire skill writes at the stop request, before the Service receives ACTION_STOP.
     // This gate does not change process lifecycle or A5's ownership/launch decisions.
     private val managedSkillGate = ManagedSkillRuntimeGate()
@@ -312,15 +312,17 @@ class RuntimeController private constructor(private val app: Context) : DshProce
         if (phase == Phase.RUNNING && !runSafe && !resetting && stopGen < runGen &&
             phoneSkillStoppedGeneration < runGen) PhoneSkillOrigin(this, runGen, installer.rootfs) else null
 
-    @Synchronized internal fun phoneSkillOriginCurrent(origin: PhoneSkillOrigin): Boolean =
+    // Read-only generation fence for physical action gates; never acquires the Runtime monitor.
+    // The final generation read rejects mixed fields across an unexpected-exit/restart.
+    internal fun phoneSkillOriginCurrent(origin: PhoneSkillOrigin): Boolean =
         origin.runtime === this && phase == Phase.RUNNING && !runSafe && !resetting &&
             runGen == origin.generation && stopGen < origin.generation &&
-            phoneSkillStoppedGeneration < origin.generation
+            phoneSkillStoppedGeneration < origin.generation && runGen == origin.generation
 
     /** Uses the existing rootfs worker. The only descriptor input is the native reviewed table;
      * private UI/JSON never supplies it. An empty table has no executable App registration.
      * Caller keeps this same origin for pending/claim checks, outside registry/Tasks locks. */
-    internal fun readPhoneSkillBundle(origin: PhoneSkillOrigin, name: String, revision: String,
+    internal fun readPhoneSkillBundle(origin: PhoneSkillOrigin, name: String, revision: String?,
         descriptors: Map<String, PhoneSkillRoute.Descriptor>,
         onDone: (PhoneSkillBundleReader.Read) -> Unit) {
         val reviewed = java.util.Collections.unmodifiableMap(LinkedHashMap(descriptors))

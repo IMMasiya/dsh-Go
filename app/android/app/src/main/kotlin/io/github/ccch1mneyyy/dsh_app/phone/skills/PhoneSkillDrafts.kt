@@ -199,6 +199,8 @@ internal class PhoneSkillDrafts(private val newId: () -> String = { UUID.randomU
         if (editor === e && cancel(e)) editor = null
     }
 
+    @Synchronized internal fun clientCurrent(client: Client): Boolean = attached(client)
+
     private fun attached(client: Client): Boolean = client.issuer === issuer && client.active
     private fun matching(client: Client, id: String, taskId: Long): Editor? {
         if (!attached(client)) return null

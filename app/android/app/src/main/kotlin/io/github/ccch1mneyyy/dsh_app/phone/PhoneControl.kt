@@ -156,6 +156,7 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
 
     val skillTrace = PhoneTaskTrace()
     internal val skillDrafts = PhoneSkillDrafts()
+    internal val skillReplaySelections = io.github.ccch1mneyyy.dsh_app.phone.skills.PhoneSkillReplaySelections()
     private val skillLifecycle = PhoneSkillLifecycle(skillTrace, skillDrafts)
     internal val skillBridge = PhoneSkillBridge(skillDrafts,
         { write, done -> RuntimeController.get(app).savePhoneSkill(write, done) }, ::emitStatus)
@@ -431,6 +432,7 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
     }
 
     private fun stopBridge() {
+        skillReplaySelections.retire()
         selfCheck.stop()
         background.sealTask()
         bridge.stop()

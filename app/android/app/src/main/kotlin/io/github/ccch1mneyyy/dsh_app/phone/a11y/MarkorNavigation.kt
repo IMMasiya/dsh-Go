@@ -48,6 +48,10 @@ internal object MarkorNavigation {
         } catch (_: Exception) { null }
     }
 
+    /** Current explicit UI selection only. Recording identity is never substituted here. */
+    fun selectedApp(context: Context, packageName: String, uid: Int): App? =
+        if (packageName != PACKAGE) null else installed(context)?.first?.takeIf { it.uid == uid }
+
     /** Reads original nodes, including the selected tab which Material makes non-clickable. */
     fun inspect(windows: List<UiWindow>, labels: Map<String, String>): Observation? {
         val window = windows.singleOrNull()?.takeIf { it.kind == WindowKind.APP && it.packageName == PACKAGE } ?: return null
