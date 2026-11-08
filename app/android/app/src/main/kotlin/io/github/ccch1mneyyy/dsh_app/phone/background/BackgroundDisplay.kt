@@ -512,6 +512,9 @@ class BackgroundDisplay internal constructor(
 
     /** Never combine the old action receipt with a partial new observation. */
     private fun afterSnapshot(response: Bundle, read: AfterRead): ScreenSnapshot? {
+        // A completed action consumes the old observation even when its postread is absent.
+        coordinateImage.clear()
+        coordinateOcrEpoch = null
         val after = if (read.requested && BackgroundAfterVisual.supported(response.get(Proto.AFTER_LOCAL_VISUAL)))
             response.get(Proto.AFTER_VISUAL) as? Bundle else null
         val valid = after != null && after.get(Proto.OK) == true && currentTarget == read.target &&
