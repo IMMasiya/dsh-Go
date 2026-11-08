@@ -8,6 +8,7 @@ class PhoneTaskObservationsTest {
     private class Driver : PhoneDriver {
         override val screen = PhoneScreen.MAIN
         var actions = 0
+        var performedScreen: ScreenSnapshot? = null
         var scrollSourceGate: ((Set<String>) -> Boolean)? = null
         var duringScroll: () -> Unit = {}
         var capturedAdmission: ((() -> Boolean) -> Boolean)? = null
@@ -26,7 +27,7 @@ class PhoneTaskObservationsTest {
         override fun availability() = Availability(true)
         override fun observe(detail: Boolean, image: Boolean) = ScreenSnapshot("s1", "screen", "App", "app")
         override fun target(screenId: String, elementId: Int) = TargetInfo(screenId, elementId, "button", "send", "app", "App", false, false, false)
-        override fun perform(action: PhoneAction): ActionResult { actions++; return ActionResult(true, "done") }
+        override fun perform(action: PhoneAction): ActionResult { actions++; return ActionResult(true, "done", performedScreen) }
         override fun perform(action: PhoneAction, allowed: () -> Boolean,
                              coordinateAdmission: ((() -> Boolean) -> Boolean)?): ActionResult {
             capturedAdmission = coordinateAdmission
@@ -368,4 +369,87 @@ class PhoneTaskObservationsTest {
         }
         assertEquals(1, entered)
     }
+
+    @Test fun everyDriverEntryPointHasAnExplicitOwnershipClassification() {
+        // This inventories the interface, not the generated delegation class: Kotlin's
+        // `by driver` emits methods even when the owner wrapper forgot an override.
+        // Adding an entry requires a classification AND a real wrapper behavior test.
+        val readOnlyCapabilities = setOf("getScreen()", "availability()")
+        val ownerBoundEntries = setOf(
+            "observe(boolean,boolean)",
+            "observe(boolean,boolean,boolean)",
+            "acceptVisualObservation(String)",
+            "collect(String,int,int,String)",
+            "collect(String,int,int,String,Function0)",
+            "collect(String,int,int,String,Function0,Function1)",
+            "collect(String,int,int,String,Function0,Function1,Function1)",
+            "target(String,int)",
+            "visualScope(String)",
+            "coordinateTarget(TapXY)",
+            "perform(PhoneAction)",
+            "perform(PhoneAction,Function0)",
+            "perform(PhoneAction,Function0,Function1)",
+            "perform(PhoneAction,Function0,Function1,Function1)",
+            "open(PhoneAppIdentity)",
+            "open(PhoneAppIdentity,Function0)",
+            "foregroundPackage()",
+        )
+        val actual = PhoneDriver::class.java.methods
+            .filterNot { java.lang.reflect.Modifier.isStatic(it.modifiers) }
+            .map { method ->
+                "${method.name}(${method.parameterTypes.joinToString(",") { it.simpleName }})"
+            }.toSet()
+        assertTrue(readOnlyCapabilities.intersect(ownerBoundEntries).isEmpty())
+        assertEquals("Review every new default entry for delegation bypass; arity alone is insufficient",
+            readOnlyCapabilities + ownerBoundEntries, actual)
+    }
+
+    @Test fun directThreeArgumentPerformKeepsPublicationOwnerPauseAndTheOriginalClaim() {
+        val tasks = PhoneTasks(); val physical = Driver(); val ledger = PhoneTaskObservations(tasks)
+        val bound = ledger.bind(physical, owner(tasks))
+        bound.observe(false, false)
+        physical.performedScreen = ScreenSnapshot("sAfter", "after", "App", "app")
+        var callerAllowed = true
+        var outerAdmissions = 0
+        var outerAllows = true
+        val originalAdmission: (() -> Boolean) -> Boolean = { claim ->
+            outerAdmissions++
+            outerAllows && claim()
+        }
+        val result = bound.perform(PhoneAction.TapXY("s1", 1, 1), { callerAllowed }, originalAdmission)
+        assertTrue(result.ok)
+        assertNotNull("Direct perform3 must register the returned observation for this owner",
+            bound.target("sAfter", 1))
+        assertEquals(1, physical.actions)
+        val allowed = checkNotNull(physical.capturedAllowed)
+        val admission = checkNotNull(physical.capturedAdmission)
+        var claims = 0
+        assertTrue(admission { claims++; true })
+        assertEquals(1, outerAdmissions); assertEquals(1, claims)
+        outerAllows = false
+        assertFalse(admission { claims++; true })
+        assertEquals(2, outerAdmissions); assertEquals(1, claims)
+        outerAllows = true
+        callerAllowed = false
+        assertFalse(allowed()); assertFalse(admission { claims++; true })
+        assertEquals(2, outerAdmissions); assertEquals(1, claims)
+        callerAllowed = true
+        tasks.setPaused(true)
+        assertFalse(allowed()); assertFalse(admission { claims++; true })
+        assertEquals(2, outerAdmissions); assertEquals(1, claims)
+        assertFalse(bound.perform(PhoneAction.TapXY("sAfter", 1, 1), { true }, originalAdmission).ok)
+        assertEquals(1, physical.actions)
+        tasks.setPaused(false)
+        assertTrue(allowed())
+        tasks.stop("replacement"); tasks.clearStop(); tasks.begin()
+        assertFalse(allowed()); assertFalse(admission { claims++; true })
+        assertEquals(2, outerAdmissions); assertEquals(1, claims)
+        assertThrows(InterruptedException::class.java) {
+            bound.perform(PhoneAction.TapXY("sAfter", 1, 1), { true }, originalAdmission)
+        }
+        assertEquals(1, physical.actions)
+        val replacement = ledger.bind(physical, checkNotNull(tasks.activeOwner()))
+        assertNull(replacement.target("sAfter", 1))
+    }
+
 }
