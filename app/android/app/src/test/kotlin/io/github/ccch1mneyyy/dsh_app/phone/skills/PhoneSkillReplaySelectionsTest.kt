@@ -124,4 +124,115 @@ class PhoneSkillReplaySelectionsTest {
         terminalTail("verified_before_freeze", PhoneSkillOutcomes.Outcome.UNKNOWN, "unknown")
     @Test fun definiteFailureFrozenBeforeDeadlineSurvivesLateReplyAndCountsOnlyOnce() =
         terminalTail("failure_before", PhoneSkillOutcomes.Outcome.FAILURE, "failed")
+    @Test fun frozenDebtSurvivesAnotherPendingWriteFifoAndLogicalRetirement() {
+        val records = PhoneSkillReplaySelections { 1L }
+        var live = true
+        var sourceReads = 0
+        fun selected(session: String): PhoneSkillReplaySelections.Selection {
+            val value = records.prepare(client, 1, { sourceReads++; live }, request.copy(session = session), bundle, app)!!
+            assertTrue(records.claim(value, caller(session = session)) is PhoneSkillReplaySelections.Claim.Start)
+            return value
+        }
+        val a = selected("a"); val b = selected("b")
+        var storage: String? = null
+        var writable = true
+        var commits = 0
+        val outcomes = PhoneSkillOutcomes({ storage }, { commits++; if (writable) { storage = it; true } else false }, "d".repeat(32))
+        val key = PhoneSkillOutcomes.Key(request.name, request.revision, bundle.routeSha256)
+        assertEquals(PhoneSkillOutcomes.Result.SAVED, outcomes.begin(a.invocation, key))
+        assertEquals(PhoneSkillOutcomes.Result.SAVED, outcomes.begin(b.invocation, key))
+        records.verified(a)
+        assertEquals(PhoneSkillOutcomes.Outcome.SUCCESS, records.finish(a, true, 10L))
+        // Frozen responsibility must exist BEFORE the first accounting IO, not a later flag.
+        assertTrue((records.snapshot(a)["reason"] as String).contains("计数落盘待确认"))
+        writable = false
+        records.retryAccounting(outcomes) // A owns the pending absolute storage snapshot.
+        records.dispatched(b); records.failedPost(b)
+        assertEquals(PhoneSkillOutcomes.Outcome.FAILURE, records.finish(b, false, 10L))
+        records.retryAccounting(outcomes) // Retry A fails; B cannot yet enter settle.
+        assertNull(outcomes.counts(key))
+        repeat(64) { i ->
+            assertNotNull(records.prepare(client, 1, { true }, request.copy(session = "fifo$i"), bundle, app))
+        }
+        assertNull(records.find(a.invocation)); assertNull(records.find(b.invocation))
+        records.retire()
+        live = false
+        val readsBeforeRecovery = sourceReads
+        writable = true
+        val beforeRecovery = commits
+        val work = io.github.ccch1mneyyy.dsh_app.phone.PhoneCallWork(invoke = {
+            records.retryAccounting(outcomes)
+            "rejected: original source remains unavailable"
+        })
+        assertEquals(beforeRecovery, commits) // No IO while constructing reply work.
+        assertEquals("rejected: original source remains unavailable", work.run())
+        assertEquals(readsBeforeRecovery, sourceReads) // No source callback, claim or action.
+        val count = checkNotNull(outcomes.counts(key))
+        assertEquals(1L, count.successes); assertEquals(1L, count.failures)
+        assertEquals(PhoneSkillOutcomes.Outcome.FAILURE, count.last)
+        val afterRecovery = commits
+        records.retryAccounting(outcomes)
+        assertEquals(afterRecovery, commits)
+        assertEquals(count, outcomes.counts(key))
+        assertSame(PhoneSkillReplaySelections.Claim.Refused, records.claim(b, caller(session = "b")))
+        assertFalse((records.snapshot(b)["reason"] as String).contains("计数落盘待确认"))
+    }
+
+    @Test fun accountingReservationIsBoundedAcrossRetirementAndNoBeginSettlesWithoutCounts() {
+        val records = PhoneSkillReplaySelections { 1L }
+        var storage: String? = null
+        val outcomes = PhoneSkillOutcomes({ storage }, { storage = it; true }, "d".repeat(32))
+        repeat(64) { i ->
+            val selection = records.prepare(client, 1, { true }, request.copy(session = "s$i"), bundle, app)!!
+            assertTrue(records.claim(selection, caller(session = "s$i")) is PhoneSkillReplaySelections.Claim.Start)
+            // Failed native admission, so Outcomes.begin was never called.
+            assertEquals(PhoneSkillOutcomes.Outcome.NOT_STARTED, records.finish(selection, false, null))
+            records.retire()
+        }
+        val blocked = records.prepare(client, 1, { true }, request, bundle, app)!!
+        assertSame(PhoneSkillReplaySelections.Claim.Refused, records.claim(blocked, caller()))
+        assertNull(blocked.run)
+        records.retryAccounting(outcomes)
+        assertNull(storage) // Absent active entries are not success/failure counters.
+        assertNull(outcomes.counts(PhoneSkillOutcomes.Key(request.name, request.revision, bundle.routeSha256)))
+        assertTrue(records.claim(blocked, caller()) is PhoneSkillReplaySelections.Claim.Start)
+    }
+
+    @Test fun timerFrozenDebtCannotAcknowledgeAbsentBeginBeforeOriginalPreparationReturns() {
+        val records = PhoneSkillReplaySelections { 10L }
+        val selection = records.prepare(client, 1, { true }, request, bundle, app)!!
+        assertTrue(records.claim(selection, caller()) is PhoneSkillReplaySelections.Claim.Start)
+        var storage: String? = null
+        val outcomes = PhoneSkillOutcomes({ storage }, { storage = it; true }, "d".repeat(32))
+        records.expire(selection)
+        records.retire()
+        records.retryAccounting(outcomes) // begin may still be about to run on the original body.
+        assertNull(storage)
+        val key = PhoneSkillOutcomes.Key(request.name, request.revision, bundle.routeSha256)
+        assertEquals(PhoneSkillOutcomes.Result.SAVED, outcomes.begin(selection.invocation, key))
+        assertEquals(PhoneSkillOutcomes.Outcome.UNKNOWN, records.finish(selection, false, 10L))
+        records.retryAccounting(outcomes)
+        val count = checkNotNull(outcomes.counts(key))
+        assertEquals(PhoneSkillOutcomes.Outcome.UNKNOWN, count.last)
+        assertEquals(0L, count.successes); assertEquals(0L, count.failures)
+        assertEquals(PhoneSkillOutcomes.Result.INVALID, outcomes.markDispatch(selection.invocation))
+    }
+
+    @Test fun retireBeforeBodyFinallyKeepsOriginalReservationForItsFrozenOutcome() {
+        val records = PhoneSkillReplaySelections { 1L }
+        val selection = records.prepare(client, 1, { true }, request, bundle, app)!!
+        assertTrue(records.claim(selection, caller()) is PhoneSkillReplaySelections.Claim.Start)
+        var storage: String? = null
+        val outcomes = PhoneSkillOutcomes({ storage }, { storage = it; true }, "d".repeat(32))
+        val key = PhoneSkillOutcomes.Key(request.name, request.revision, bundle.routeSha256)
+        assertEquals(PhoneSkillOutcomes.Result.SAVED, outcomes.begin(selection.invocation, key))
+        records.dispatched(selection)
+        records.retire()
+        assertEquals(PhoneSkillOutcomes.Outcome.UNKNOWN, records.finish(selection, false, 10L))
+        records.retryAccounting(outcomes)
+        assertEquals(PhoneSkillOutcomes.Outcome.UNKNOWN, outcomes.counts(key)!!.last)
+        assertEquals(PhoneSkillOutcomes.Result.INVALID, outcomes.markDispatch(selection.invocation))
+        assertNull(records.find(selection.invocation))
+    }
+
 }

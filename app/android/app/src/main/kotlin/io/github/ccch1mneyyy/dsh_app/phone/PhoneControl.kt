@@ -222,17 +222,12 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
         }
     })
 
-    private fun settleReplayAccounting(selection: PhoneSkillReplaySelections.Selection) {
-        val outcome = skillReplaySelections.terminalOutcome(selection) ?: return
-        val saved = skillReplayOutcomes.retryStorage() && skillReplayOutcomes.settle(selection.invocation, outcome) in
-            setOf(PhoneSkillOutcomes.Result.SAVED, PhoneSkillOutcomes.Result.UNCHANGED)
-        val key = PhoneSkillOutcomes.Key(selection.request.name, selection.request.revision, selection.bundle.routeSha256)
-        skillReplaySelections.accounting(selection, !saved, saved && skillReplayOutcomes.counts(key)?.suggestDisable == true)
-    }
-
     /** Private prepared invocation only; status/cancel/duplicates never take a Task admission. */
     private fun replayWork(call: McpServer.Dispatch.Call): PhoneCallWork {
         fun reply(value: Map<String, Any?>) = PhoneCallWork({ call.run { _, _, _ ->
+            // Internal debt recovery is not a grant to query/execute an old source. Even a
+            // rejected/retired invocation can trigger it on the existing call executor.
+            skillReplaySelections.retryAccounting(skillReplayOutcomes)
             PhoneSkillReplaySelections.output(value)
         } })
         fun rejected() = reply(mapOf("v" to 1, "state" to "rejected", "stepDispatch" to "not_dispatched",
@@ -247,7 +242,7 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
         if (operation != "start") {
             skillReplaySelections.control(selection, caller, operation == "cancel") ?: return rejected()
             return PhoneCallWork({ call.run { _, _, _ ->
-                settleReplayAccounting(selection)
+                skillReplaySelections.retryAccounting(skillReplayOutcomes)
                 PhoneSkillReplaySelections.output(skillReplaySelections.snapshot(selection))
             } })
         }
@@ -271,7 +266,7 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
                 } finally {
                     skillReplaySelections.finish(selection, normal, sessions.deadlineMs(admission))
                     // Only call executor threads settle IO. The deadline callback below does not.
-                    settleReplayAccounting(selection)
+                    skillReplaySelections.retryAccounting(skillReplayOutcomes)
                 }
                 PhoneSkillReplaySelections.output(skillReplaySelections.snapshot(selection))
             } },

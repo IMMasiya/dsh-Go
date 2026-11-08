@@ -51,14 +51,22 @@ internal class PhoneSkillReplaySelections(private val clock: () -> Long) {
         internal var failedPost = false
         internal var verified = false
         internal var outcome: PhoneSkillOutcomes.Outcome? = null
-        internal var accountingPending = false
-        internal var suggestDisable = false
+        internal var accounting: Accounting? = null
     }
     sealed interface Claim {
         data class Start(val selection: Selection) : Claim
         data class Existing(val result: Map<String, Any?>) : Claim
         data object Refused : Claim
     }
+    /** Small accounting responsibility, independent of the public selection/source lifetime.
+     * Reserved before first execution; no route, callbacks, App identity or action authority. */
+    internal class Accounting(val invocation: String, val key: PhoneSkillOutcomes.Key) {
+        var outcome: PhoneSkillOutcomes.Outcome? = null
+        var ready = false
+        var settled = false
+        var suggestDisable = false
+    }
+    private val accounting = LinkedHashMap<String, Accounting>()
     private val lock = Any()
     private val records = LinkedHashMap<String, Selection>()
 
@@ -89,6 +97,13 @@ internal class PhoneSkillReplaySelections(private val clock: () -> Long) {
         val run = selection.run
         if (run != null) return@synchronized if (run == caller.runId) Claim.Existing(snapshot(selection)) else Claim.Refused
         if (selection.cancelled || selection.terminal) return@synchronized Claim.Refused
+        // A retired/evicted public record must not free an unsettled accounting reservation.
+        if (accounting.size >= MAX_RECORDS) return@synchronized Claim.Refused
+        Accounting(selection.invocation, PhoneSkillOutcomes.Key(selection.request.name,
+            selection.request.revision, selection.bundle.routeSha256)).also {
+            accounting[selection.invocation] = it
+            selection.accounting = it
+        }
         selection.run = caller.runId
         Claim.Start(selection)
         }
@@ -108,15 +123,37 @@ internal class PhoneSkillReplaySelections(private val clock: () -> Long) {
     fun retire() = synchronized(lock) {
         records.values.forEach { it.cancelled = true }
         records.clear() // Another Runtime cannot claim or query this Runtime's records.
+        // Original frozen outcomes and outstanding call reservations remain internal only.
     }
     fun retireClient(client: PhoneSkillDrafts.Client) = synchronized(lock) {
         records.values.filter { it.client === client }.forEach { it.cancelled = true }
         records.entries.removeAll { it.value.client === client && it.value.run == null }
     }
     fun terminalOutcome(selection: Selection): PhoneSkillOutcomes.Outcome? = synchronized(lock) { selection.outcome }
-    fun accounting(selection: Selection, pending: Boolean, suggestDisable: Boolean) = synchronized(lock) {
-        selection.accountingPending = pending
-        selection.suggestDisable = suggestDisable
+    /** Existing call executor only. Never invoked by the deadline callback. Storage IO occurs
+     * outside this monitor; concurrent drains can only settle the same immutable outcome.
+     * Ready means invoke's finally ran: a timeout alone cannot race a later begin() into an
+     * absent-active UNCHANGED acknowledgement. No original source/owner grant is needed. */
+    fun retryAccounting(outcomes: PhoneSkillOutcomes) {
+        val debts = synchronized(lock) {
+            accounting.values.filter { it.ready && it.outcome != null }.map { it to checkNotNull(it.outcome) }
+        }
+        if (!outcomes.retryStorage()) return
+        for ((debt, terminal) in debts) {
+            when (outcomes.settle(debt.invocation, terminal)) {
+                PhoneSkillOutcomes.Result.SAVED, PhoneSkillOutcomes.Result.UNCHANGED -> {
+                    val suggest = outcomes.counts(debt.key)?.suggestDisable == true
+                    synchronized(lock) {
+                        if (accounting[debt.invocation] === debt) {
+                            debt.settled = true
+                            debt.suggestDisable = suggest
+                            accounting.remove(debt.invocation)
+                        }
+                    }
+                }
+                else -> return // Preserve this and all remaining debts; never re-run actions.
+            }
+        }
     }
     fun dispatched(selection: Selection) = synchronized(lock) {
         selection.attempted = true
@@ -140,6 +177,7 @@ internal class PhoneSkillReplaySelections(private val clock: () -> Long) {
             selection.dispatch = "unknown"
             selection.reason = "调用期限结束，原物理步骤可能仍在排空；不要重新执行。"
             selection.outcome = PhoneSkillOutcomes.Outcome.UNKNOWN
+            selection.accounting?.outcome = PhoneSkillOutcomes.Outcome.UNKNOWN
         }
         snapshot(selection)
     }
@@ -148,6 +186,9 @@ internal class PhoneSkillReplaySelections(private val clock: () -> Long) {
      * the same elapsedRealtime clock and original absolute deadline as Sessions/CallWork.
      * null is only the no-admission failure path and can never grant SUCCESS. */
     fun finish(selection: Selection, normal: Boolean, deadlineMs: Long?): PhoneSkillOutcomes.Outcome = synchronized(lock) {
+        // finish is called by the original invoke finally (or failed admission), after any
+        // preparation/begin call has returned. Retiring the public record does not remove it.
+        selection.accounting?.ready = true
         selection.outcome?.let { return@synchronized it }
         val expired = deadlineMs != null && clock() >= deadlineMs
         val value = when {
@@ -160,6 +201,7 @@ internal class PhoneSkillReplaySelections(private val clock: () -> Long) {
         }
         if (expired) { selection.uncertain = true; selection.dispatch = "unknown" }
         selection.outcome = value
+        selection.accounting?.outcome = value
         selection.terminal = true
         selection.state = when (value) {
             PhoneSkillOutcomes.Outcome.SUCCESS -> "succeeded"
@@ -183,8 +225,8 @@ internal class PhoneSkillReplaySelections(private val clock: () -> Long) {
             "revision" to selection.request.revision, "state" to selection.state,
             "stepDispatch" to selection.dispatch, "completedSteps" to selection.completed,
             "cancelRequested" to selection.cancelled).also { selection.reason?.let { reason ->
-                it["reason"] = reason + if (selection.accountingPending) " 计数落盘待确认，不会重执行动作。"
-                    else if (selection.suggestDisable) " 连续失败已达三次，建议停用或重录；未自动停用。" else ""
+                it["reason"] = reason + if (selection.accounting?.let { debt -> debt.outcome != null && !debt.settled } == true) " 计数落盘待确认，不会重执行动作。"
+                    else if (selection.accounting?.suggestDisable == true) " 连续失败已达三次，建议停用或重录；未自动停用。" else ""
             } }
     }
     companion object {
