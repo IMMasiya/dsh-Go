@@ -261,16 +261,19 @@ interface UserGate {
  * it never reaches a task selected later. Main thread; must return quickly.
  */
 interface TaskControls {
+    val taskId: Long
+    val lifecycle: Long
+
     fun isPaused(): Boolean
 
     /** 暂停 (true) / 继续 (false). While paused, MAIN actions are refused by the driver as well. */
-    fun setPaused(paused: Boolean)
+    fun setPaused(paused: Boolean): Boolean
 
     /** [reason] is Chinese (for the agent). */
-    fun stop(reason: String)
+    fun stop(reason: String): Boolean
 
     /** Text the person typed into 插话 and sent; meant for the agent as a user message. */
-    fun interject(text: String)
+    fun interject(text: String): Boolean
 }
 
 /**

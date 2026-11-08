@@ -11,6 +11,16 @@ internal class StatusOwnership {
     var controls: TaskControls? = null
         private set
 
+    var editingControls: TaskControls? = null
+        private set
+
+    fun beginEditing(): Boolean {
+        editingControls = controls
+        return editingControls != null
+    }
+
+    fun endEditing() { editingControls = null }
+
     fun publish(ifCurrent: (() -> Unit) -> Boolean): Boolean = publish(ifCurrent) { null }
 
     /** [capture] runs inside [ifCurrent], so the controls belong to the very status being shown. */
@@ -19,10 +29,14 @@ internal class StatusOwnership {
         if (!ifCurrent { captured = capture() }) return false
         current = ifCurrent
         controls = captured
+        val editor = editingControls
+        if (editor != null && (captured == null || editor.taskId != captured.taskId || editor.lifecycle != captured.lifecycle)) {
+            editingControls = null
+        }
         return true
     }
 
-    fun clear() { current = null; controls = null }
+    fun clear() { current = null; controls = null; editingControls = null }
 
     /** A newer task may invalidate an old cleanup ticket without owning the old status. */
     fun takeStale(): Boolean {
