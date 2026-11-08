@@ -413,8 +413,22 @@ class PhoneCore(
             return Out(it.message, error = true, app = app.label,
                 summary = ui.get("phone_log_open_background", "后台屏打开 %1\$s", app.packageName), decision = "refused:${it.rule}") // l10n:keep test default
         }
+        val openRefusal = AtomicReference<SafetyGate.Verdict.Refuse?>(null)
         val ticket = skillTrace.beginOpen(owner, PhoneScreen.BACKGROUND)
-        val res = traceResult(ticket) { driver.open(app.identity) }
+        val res = traceResult(ticket) {
+            driver.open(app.identity) {
+                if (!current(owner) || openRefusal.get() != null) false else {
+                    safety.checkOpen(app.packageName, app.label)?.let { openRefusal.compareAndSet(null, it) }
+                    openRefusal.get() == null
+                }
+            }
+        }
+        openRefusal.get()?.let { refused ->
+            if (!current(owner)) return stoppedOut("open")
+            return Out(refused.message, error = true, app = app.label,
+                summary = ui.get("phone_log_open_background", "后台屏打开 %1\$s", app.packageName),
+                decision = "refused:${refused.rule}") // l10n:keep test default
+        }
         call.backgroundOpenConfirmed = res.backgroundOpenConfirmed
         if (!current(owner) || !tasks.setAppIfCurrent(owner, app.label)) return stoppedOut("open")
         if (!current(owner)) return stoppedOut("open")

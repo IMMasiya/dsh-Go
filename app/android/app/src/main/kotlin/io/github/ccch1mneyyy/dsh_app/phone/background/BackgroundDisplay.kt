@@ -86,8 +86,11 @@ class BackgroundDisplay internal constructor(
         // l10n:keep agent screen protocol
         resourceIo.peer() ?: channelProvider() ?: throw IllegalStateException("背景屏通道未就绪")
 
-    override fun open(target: PhoneAppIdentity): ActionResult = try {
+    override fun open(target: PhoneAppIdentity): ActionResult = open(target) { true }
+
+    override fun open(target: PhoneAppIdentity, allowed: () -> Boolean): ActionResult = try {
         resourceIo.call {
+            if (!allowed()) throw NotAdmitted()
             clearSnapshot()
             targetReady = false
             currentTarget = target
@@ -113,7 +116,12 @@ class BackgroundDisplay internal constructor(
                 check(mayUse() && !resourceIo.previewClosed()) { Reasons.of("deviceUnavailable") }
                 check(resourceScope.begin(birth)) { BackgroundResourceJournal.REFUSAL }
                 val allocated = OwnerScopeProtocol.first(resourceIo, active,
-                    BackgroundRecoveryProtocol.allocate(ownerToken, "task", viewport.preset), admitUse)
+                    BackgroundRecoveryProtocol.allocate(ownerToken, "task", viewport.preset)) { commit ->
+                    admitUse {
+                        if (!allowed()) throw NotAdmitted()
+                        commit()
+                    }
+                }
                 val actualId = BackgroundRecoveryProtocol.allocationId(allocated::get)
                     ?: error("后台屏分配未确认，本次启动未执行；请先清理原后台资源。") // l10n:keep agent resource result
                 check(resourceScope.allocated(actualId) { mayUse() && !resourceIo.previewClosed() }) {
@@ -134,6 +142,7 @@ class BackgroundDisplay internal constructor(
             }
             val response = OwnerScopeProtocol.execute(active, ownerToken, request) {
                 check(admitUse {
+                    if (!allowed()) throw NotAdmitted()
                     check(resourceScope.allocationReady)
                     resourceIo.checkDispatch()
                 }) { Reasons.of("deviceUnavailable") }
@@ -150,7 +159,7 @@ class BackgroundDisplay internal constructor(
         clearSnapshot()
         targetReady = false
         if (resourceIo.peer() == null) resourceIo.seal()
-        throw error
+        if (error is NotAdmitted) ActionResult(false, PhoneTasks.STOPPED_MESSAGE) else throw error
     }
 
     override fun observe(detail: Boolean, image: Boolean): ScreenSnapshot = observeFrame(detail, image, true)

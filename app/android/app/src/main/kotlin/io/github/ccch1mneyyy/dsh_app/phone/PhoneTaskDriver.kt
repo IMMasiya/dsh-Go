@@ -112,9 +112,10 @@ class PhoneTaskObservations(private val tasks: PhoneTasks) {
                 result
             } finally { syncCurrentScope() }
         }
-        override fun open(target: PhoneAppIdentity): ActionResult {
+        override fun open(target: PhoneAppIdentity): ActionResult = open(target) { true }
+        override fun open(target: PhoneAppIdentity, allowed: () -> Boolean): ActionResult {
             current()
-            return try { result(driver.open(target)) } finally { syncCurrentScope() }
+            return try { result(driver.open(target) { taskAllowed() && allowed() }) } finally { syncCurrentScope() }
         }
         override fun foregroundPackage(): String? {
             current()

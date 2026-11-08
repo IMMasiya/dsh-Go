@@ -176,6 +176,10 @@ interface PhoneDriver {
     /** Launches the native-resolved [target] on this screen (BACKGROUND moves the task to the virtual display). */
     fun open(target: PhoneAppIdentity): ActionResult
 
+    /** Original-call admission; asynchronous drivers recheck at their physical launch gate. */
+    fun open(target: PhoneAppIdentity, allowed: () -> Boolean): ActionResult =
+        if (allowed()) open(target) else ActionResult(false, PhoneTasks.STOPPED_MESSAGE)
+
     /** Package of the app in front on this screen, if known (for per-app approval and deny lists). */
     fun foregroundPackage(): String?
 }

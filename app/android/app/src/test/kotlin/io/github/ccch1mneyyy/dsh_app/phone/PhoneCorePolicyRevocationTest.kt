@@ -57,6 +57,7 @@ class PhoneCorePolicyRevocationTest {
     private class Driver(override val screen: PhoneScreen) : PhoneDriver {
         var writes = 0
         var opens = 0
+        var openWithGate: ((PhoneAppIdentity, () -> Boolean) -> ActionResult)? = null
         var packageName = "example.app"
         var secret = false
         var scope: VisualScope? = null
@@ -75,7 +76,13 @@ class PhoneCorePolicyRevocationTest {
             VisualTarget(it, target(action.screenId, 1))
         }
         override fun collect(screenId: String, listElementId: Int, maxPages: Int, until: String?): CollectResult = error("unused")
-        override fun open(target: PhoneAppIdentity): ActionResult { opens++; return ActionResult(true, "opened") }
+        override fun open(target: PhoneAppIdentity): ActionResult = open(target) { true }
+        override fun open(target: PhoneAppIdentity, allowed: () -> Boolean): ActionResult {
+            openWithGate?.let { return it(target, allowed) }
+            if (!allowed()) return ActionResult(false, "not admitted")
+            opens++
+            return ActionResult(true, "opened")
+        }
         override fun perform(action: PhoneAction): ActionResult { writes++; return ActionResult(true, "done", returnedScreen) }
         override fun perform(action: PhoneAction, allowed: () -> Boolean,
                              coordinateAdmission: ((() -> Boolean) -> Boolean)?): ActionResult {
@@ -248,4 +255,64 @@ class PhoneCorePolicyRevocationTest {
         assertEquals(1, asked); assertEquals(0, background.opens)
         assertTrue(tasks.isActive)
     }
+    @Test fun denyWhileTheActualBackgroundLaunchChannelWaitsPreventsLaunch() {
+        queuedBackgroundOpenPolicyChange(denyTarget = true)
+    }
+
+    @Test fun unrelatedPolicyChangeWhileBackgroundLaunchWaitsPreservesOriginalLaunch() {
+        queuedBackgroundOpenPolicyChange(denyTarget = false)
+    }
+
+    private fun queuedBackgroundOpenPolicyChange(denyTarget: Boolean) {
+        val display = BackgroundDisplay(
+            journal = BackgroundResourceJournal({ null }, { true }).apply { load() },
+            mayUse = { true }, admitUse = { action -> action(); true },
+            channelProvider = { error("test owns the channel admission") },
+        )
+        val peer = object : PrivilegedChannel {
+            override fun execute(request: Bundle, beforeSend: () -> Unit): Bundle = error("no Android Bundle exchange")
+            override fun alive() = true
+            override fun close() {}
+        }
+        @Suppress("UNCHECKED_CAST")
+        val io = BackgroundDisplay::class.java.getDeclaredField("resourceIo")
+            .apply { isAccessible = true }.get(display) as BackgroundDisplayIo<PrivilegedChannel>
+        io.call { io.startResource(peer, { commit -> commit() }) { true } }
+        val calls = PrivilegedCalls()
+        val holding = CountDownLatch(1); val release = CountDownLatch(1); val waiting = CountDownLatch(1)
+        val pool = Executors.newFixedThreadPool(2)
+        try {
+            val holder = pool.submit { calls.execute { holding.countDown(); check(release.await(3, TimeUnit.SECONDS)) } }
+            assertTrue(holding.await(3, TimeUnit.SECONDS))
+            var original: PhoneAppIdentity? = null
+            background.openWithGate = { target, allowed ->
+                original = target
+                val reply = display.dispatch(allowed) { beforeSend ->
+                    waiting.countDown()
+                    calls.execute(beforeSend = beforeSend) { background.opens++; "accepted" }
+                }
+                if (reply == null) ActionResult(false, "not admitted") else ActionResult(true, reply)
+            }
+            val action = pool.submit<ToolOutput> {
+                core.call(PhoneToolCatalog.OPEN, mapOf("app" to "example.app", "background" to true))
+            }
+            assertTrue(waiting.await(3, TimeUnit.SECONDS))
+            assertEquals(1, asked)
+            policies = policies.copy(denyPackages = listOf(if (denyTarget) "example.app" else "other.app"))
+            release.countDown()
+            val output = action.get(3, TimeUnit.SECONDS)
+            assertEquals(denyTarget, output.isError)
+            if (denyTarget) {
+                assertTrue(output.text.contains(SafetyGate.denied("Example")))
+                assertFalse(output.text.contains(PhoneTasks.STOPPED_MESSAGE))
+            }
+            holder.get(3, TimeUnit.SECONDS)
+            assertEquals(if (denyTarget) 0 else 1, background.opens)
+            assertEquals(PhoneAppIdentity("example.app", 10123), original)
+            assertSame(peer, io.peer()) // A refusal cannot prove or release the original resource.
+            assertTrue(tasks.isActive)
+            assertEquals("next", calls.execute { "next" })
+        } finally { release.countDown(); calls.retire(); pool.shutdownNow() }
+    }
+
 }
