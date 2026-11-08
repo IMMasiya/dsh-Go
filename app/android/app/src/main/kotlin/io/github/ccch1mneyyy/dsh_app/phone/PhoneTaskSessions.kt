@@ -93,10 +93,26 @@ class PhoneTaskSessions(
         if (selfCheck === lease) lease.sealed = true
     }
 
-    /** Only the actual coordinator calls this after its physical IO has drained and released. */
+    /** The original diagnostic owner returns this only after its physical work has drained/released. */
     fun releaseSelfCheck(lease: SelfCheckLease): Boolean = synchronized(lock) {
         if (selfCheck !== lease) false
         else { selfCheck = null; lock.notifyAll(); true }
+    }
+
+    /** Local on-device read, without a model task. Null means an existing owner is busy. */
+    fun <T> readForSelfCheck(worker: SerialWorker, budgetMs: Long, maxTotalMs: Long, read: () -> T): SerialWorker.Outcome<T>? {
+        val lease = tryReserveSelfCheck() ?: return null
+        try {
+            val result = worker.run(budgetMs, maxTotalMs, owner = lease) {
+                if (!selfCheckCurrent(lease) || Thread.currentThread().isInterrupted) throw InterruptedException()
+                read()
+            }
+            return if (selfCheckCurrent(lease)) result else SerialWorker.Outcome.Interrupted
+        } finally {
+            // Timeout/cancel may return before the original system read. Never release its
+            // reservation until that exact body's finally has run, including across retire.
+            worker.afterDrained(lease) { releaseSelfCheck(lease) }
+        }
     }
 
     /** Called while PhoneBridge still holds its launch lock, before dispatch enters its pool. */
@@ -544,7 +560,10 @@ class PhoneTaskSessions(
         return synchronized(lock) { lastAdmitted[task.sessionId] === task } && task.tasks.isCurrent(owner)
     }
 
-    fun stopAll(reason: String) = all().forEach { stop(it, reason) }
+    fun stopAll(reason: String) {
+        synchronized(lock) { selfCheck?.sealed = true }
+        all().forEach { stop(it, reason) }
+    }
     fun retire() {
         val old = synchronized(lock) {
             resetting = true

@@ -5,6 +5,7 @@ import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicLong
+import java.util.concurrent.atomic.AtomicReference
 import org.junit.After
 import org.junit.Assert.*
 import org.junit.Test
@@ -91,6 +92,116 @@ class PhoneTaskSessionsTest {
         assertEquals(0L, ids.get())
         assertTrue(sessions.releaseSelfCheck(lease))
         assertFalse(invoke("new-session").isError)
+    }
+
+    @Test fun localDiagnosticReadRejectsActiveTasksAndDoesNotCreateItsOwnTask() {
+        assertFalse(invoke("A").isError)
+        assertNull(sessions.readForSelfCheck(worker, 8_000, 15_000) { error("busy read must not run") })
+        end("A")
+        val before = sessions.all().toList()
+        val idsBefore = ids.get()
+        val read = sessions.readForSelfCheck(worker, 8_000, 15_000) { "local screen" }
+        assertTrue(read is SerialWorker.Outcome.Done && read.value == "local screen")
+        assertEquals(before, sessions.all())
+        assertEquals(idsBefore, ids.get())
+        val lease = checkNotNull(sessions.tryReserveSelfCheck())
+        assertTrue(sessions.releaseSelfCheck(lease))
+        val failed = sessions.readForSelfCheck(worker, 8_000, 15_000) { error("system read failed") }
+        assertTrue(failed is SerialWorker.Outcome.Failed)
+        assertFalse(invoke("B").isError)
+    }
+
+    @Test fun localDiagnosticStopSealsTheOriginalReadAndSuppressesLateSuccess() {
+        val entered = CountDownLatch(1); val reply = CountDownLatch(1)
+        val result = pool.submit<SerialWorker.Outcome<String>?> {
+            sessions.readForSelfCheck(worker, 8_000, 15_000) {
+                entered.countDown(); check(reply.await(5, TimeUnit.SECONDS)); "late screen"
+            }
+        }
+        try {
+            assertTrue(entered.await(5, TimeUnit.SECONDS))
+            sessions.stopAll("stop local read")
+            assertNull(sessions.tryReserveSelfCheck())
+            assertTrue(invoke("A").isError)
+            reply.countDown()
+            assertSame(SerialWorker.Outcome.Interrupted, result.get(5, TimeUnit.SECONDS))
+            assertFalse(invoke("A").isError)
+        } finally { reply.countDown() }
+    }
+
+    @Test fun localDiagnosticRetirementKeepsTheOldReadFenceUntilItsBodyReturns() {
+        val entered = CountDownLatch(1); val reply = CountDownLatch(1)
+        val result = pool.submit<SerialWorker.Outcome<String>?> {
+            sessions.readForSelfCheck(worker, 8_000, 15_000) {
+                entered.countDown()
+                // A committed platform read may still finish after worker retirement.
+                while (true) {
+                    try { check(reply.await(5, TimeUnit.SECONDS)); break }
+                    catch (_: InterruptedException) { }
+                }
+                "old launch screen"
+            }
+        }
+        try {
+            assertTrue(entered.await(5, TimeUnit.SECONDS))
+            sessions.retire()
+            assertNull(sessions.tryReserveSelfCheck())
+            assertTrue(invoke("new launch").isError)
+            reply.countDown()
+            assertSame(SerialWorker.Outcome.Interrupted, result.get(5, TimeUnit.SECONDS))
+            assertFalse(invoke("new launch").isError)
+        } finally { reply.countDown() }
+    }
+
+    @Test fun localDiagnosticTimeoutDoesNotReleaseAnAbandonedPhysicalBody() {
+        val entered = CountDownLatch(1); val reply = CountDownLatch(1)
+        val body = AtomicReference<Thread>()
+        val result = pool.submit<SerialWorker.Outcome<String>?> {
+            sessions.readForSelfCheck(worker, 8_000, 15_000) {
+                body.set(Thread.currentThread()); entered.countDown()
+                while (true) {
+                    try { check(reply.await(5, TimeUnit.SECONDS)); break }
+                    catch (_: InterruptedException) { }
+                }
+                "late screen"
+            }
+        }
+        try {
+            assertTrue(entered.await(5, TimeUnit.SECONDS))
+            time.addAndGet(20_000) // Advance the real worker's clock; do not sleep through its budget.
+            val timedOut = result.get(5, TimeUnit.SECONDS)
+            assertTrue(timedOut is SerialWorker.Outcome.TimedOut && !timedOut.queued)
+            assertNull(sessions.tryReserveSelfCheck())
+            assertTrue(invoke("A").isError)
+            reply.countDown()
+            // This executor was actually abandoned/shut down. Its thread exits only after
+            // Callable.finally has delivered the production afterDrained callback.
+            body.get().join(5_000)
+            assertFalse(body.get().isAlive)
+            assertFalse(invoke("A").isError)
+        } finally { reply.countDown() }
+    }
+
+    @Test fun localDiagnosticStoppedBeforeWorkerClaimNeverReads() {
+        val atClock = CountDownLatch(1); val clockReply = CountDownLatch(1)
+        val localWorker = SerialWorker("local-read-claim", {
+            if (Thread.currentThread().name.startsWith("local-read-claim-")) {
+                atClock.countDown(); check(clockReply.await(5, TimeUnit.SECONDS))
+            }
+            time.get()
+        }) { false }
+        val reads = AtomicLong()
+        val result = pool.submit<SerialWorker.Outcome<Long>?> {
+            sessions.readForSelfCheck(localWorker, 8_000, 15_000) { reads.incrementAndGet() }
+        }
+        try {
+            assertTrue(atClock.await(5, TimeUnit.SECONDS))
+            sessions.stopAll("stop queued read")
+            clockReply.countDown()
+            assertSame(SerialWorker.Outcome.Interrupted, result.get(5, TimeUnit.SECONDS))
+            assertEquals(0L, reads.get())
+            assertFalse(invoke("A").isError)
+        } finally { clockReply.countDown(); localWorker.shutdown() }
     }
 
     @Test fun pendingCallAndActiveThinkingBothExcludeSelfCheck() {

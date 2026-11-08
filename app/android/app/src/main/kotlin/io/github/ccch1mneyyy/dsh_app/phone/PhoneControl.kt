@@ -584,10 +584,13 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
     fun testScreen(): Map<String, Any?> {
         val driver = PhoneRegistry.mainDriver
             ?: return mapOf("ok" to false, "reason" to if (a11yEnabledInSettings()) AppStrings.get(app, R.string.phone_a11y_connecting) else AppStrings.get(app, R.string.phone_a11y_off))
-        val outcome = core.worker.run(8_000, 15_000) {
+        val outcome = sessions.readForSelfCheck(core.worker, 8_000, 15_000) {
+            if (PhoneRegistry.mainDriver !== driver) throw InterruptedException()
             val av = driver.availability()
-            if (!av.ok) null to (av.userReason ?: av.reason ?: AppStrings.get(app, R.string.phone_a11y_unavailable)) else driver.observe(detail = false, image = false) to null
-        }
+            val read = if (!av.ok) null to (av.userReason ?: av.reason ?: AppStrings.get(app, R.string.phone_a11y_unavailable)) else driver.observe(detail = false, image = false) to null
+            if (PhoneRegistry.mainDriver !== driver) throw InterruptedException()
+            read
+        } ?: return mapOf("ok" to false, "reason" to AppStrings.get(app, R.string.phone_busy))
         return when (outcome) {
             is SerialWorker.Outcome.Done -> {
                 val (snap, reason) = outcome.value
