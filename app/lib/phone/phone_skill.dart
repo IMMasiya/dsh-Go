@@ -122,7 +122,9 @@ class PhoneSkillReply {
         if (phase != 'staging' && phase != 'committing') return const PhoneSkillReply.unavailable();
         final name = raw['name'];
         if (bundle != null && (name is! String || !_skillName.hasMatch(name)) ||
-            bundle == null && raw.containsKey('name')) return const PhoneSkillReply.unavailable();
+            bundle == null && raw.containsKey('name')) {
+          return const PhoneSkillReply.unavailable();
+        }
         return PhoneSkillReply._(PhoneSkillReplyKind.saving, phase: phase as String,
           name: name as String?, bundleRevision: bundle as String?);
       case 'unverified':

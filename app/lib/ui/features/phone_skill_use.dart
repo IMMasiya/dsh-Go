@@ -5,7 +5,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../l10n/l10n.dart';
-import '../../phone/phone_channel.dart';
 import '../../state/phone_skill_use.dart';
 import '../../state/phone_state.dart';
 

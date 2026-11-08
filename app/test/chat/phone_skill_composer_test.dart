@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'dart:convert';
 
+import 'package:dsh_client/dsh_client.dart';
 import 'package:dsh_app/l10n/l10n.dart';
 import 'package:dsh_app/phone/phone_channel.dart';
 import 'package:dsh_app/pets/pet_signals.dart';
@@ -39,36 +40,19 @@ const _invocation = 'cccccccccccccccccccccccccccccccc';
 const _text = 'Only replay this reviewed route: $_invocation';
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
   setUp(() => SharedPreferences.setMockInitialValues({}));
   final messenger = TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
   tearDown(() => messenger.setMockMethodCallHandler(_method, null));
 
-  Future<SyncHarness> open(WidgetTester tester) async {
-    usePhoneView(tester);
-    mockClipboard(tester);
-    final ui = ChatHarness(session: 'S');
-    late HostConnection connection;
-    final overrides = [
-      petScopedStateProvider.overrideWith((ref, scope) => const PetState()),
-      for (final override in ui.overrides)
-        if (override.origin != activeConnectionProvider && override.origin != chatProvider &&
-            override.origin != localConnectionProvider) override,
-      activeHostProvider.overrideWith(_Host.new),
-      localConnectionProvider.overrideWith(() => _Local(connection)),
-    ];
-    final h = await tester.runAsync(() => HttpOverrides.runWithHttpOverrides(
-      () => SyncHarness.start(overrides: overrides), RealSyncHttp()));
-    if (h == null) fail('Loopback startup failed; see the original runAsync exception');
+  Future<void> disposeHarness(WidgetTester tester, SyncHarness h) async {
     try {
-      connection = HostConnection(client: h.client, isLocal: true);
-      await h.container.read(localConnectionProvider.future);
-      await fixture.mount(tester, h);
-      await pumpFrames(tester);
-      return h;
-    } catch (_) {
-      await disposeHarness(tester, h);
-      rethrow;
+      await tester.pumpWidget(const SizedBox());
+      await tester.pump(const Duration(milliseconds: 600));
+    } finally {
+      await tester.runAsync(h.close);
     }
+    await tester.pump();
   }
 
   Future<void> settleIo(WidgetTester tester, bool Function() ready) async {
@@ -81,14 +65,57 @@ void main() {
     }
   }
 
-  Future<void> disposeHarness(WidgetTester tester, SyncHarness h) async {
+  Future<SyncHarness> open(WidgetTester tester) async {
+    usePhoneView(tester);
+    mockClipboard(tester);
+    final ui = ChatHarness(session: 'S');
+    late HostConnection connection;
+    SessionFollowEpoch? observedEpoch;
+    final overrides = [
+      petScopedStateProvider.overrideWith((ref, scope) => const PetState()),
+      for (final override in ui.overrides)
+        if (override.origin != activeConnectionProvider && override.origin != chatProvider &&
+            override.origin != localConnectionProvider) override,
+      activeHostProvider.overrideWith(_Host.new),
+      localConnectionProvider.overrideWith(() => _Local(connection)),
+    ];
+    final h = await tester.runAsync(() => HttpOverrides.runWithHttpOverrides(
+      () => SyncHarness.start(overrides: overrides, observe: (event) {
+        if (event is SessionSnapshotEvent) observedEpoch = event.followEpoch;
+      }), RealSyncHttp()));
+    if (h == null) fail('Loopback startup failed; see the original runAsync exception');
     try {
-      await tester.pumpWidget(const SizedBox());
-      await tester.pump(const Duration(milliseconds: 600));
-    } finally {
-      await tester.runAsync(h.close);
+      connection = HostConnection(client: h.client, isLocal: true);
+      await h.container.read(localConnectionProvider.future);
+      await fixture.mount(tester, h);
+      await pumpFrames(tester);
+      final epoch = observedEpoch;
+      if (epoch == null) fail('The real follow did not publish its epoch');
+      // Chat interaction starts a generation-shared GET / capability probe. Its
+      // independent HTTP deadline is cancelled only by that request's finally,
+      // not by closing the mux. Join the same production future before teardown.
+      expect(epoch.isCurrent, isTrue);
+      expect(identical(h.client.mux.generation, epoch.generation), isTrue);
+      expect(h.host.indexHtml, isEmpty);
+      var activationDone = false;
+      bool? supported;
+      final follows = h.follows.length;
+      final activation = h.client.activateSessionForInteraction('S', epoch: epoch,
+        allowed: () => identical(h.client.mux.generation, epoch.generation),
+        onActivationChecked: (value) { supported = value; });
+      final completed = activation.then((_) { activationDone = true; });
+      await settleIo(tester, () => activationDone);
+      await completed;
+      // No supported Host release was established. A failed HTTP read also
+      // joins the release future; neither case opens an auxiliary follow.
+      expect(supported, isFalse); // null means stale/early refusal, not a joined probe.
+      expect(await activation, isFalse);
+      expect(h.follows.length, follows);
+      return h;
+    } catch (_) {
+      await disposeHarness(tester, h);
+      rethrow;
     }
-    await tester.pump();
   }
 
   PreparedPhoneSkill selection(SyncHarness h, {String invocation = _invocation}) => PreparedPhoneSkill(

@@ -52,6 +52,29 @@ void main() {
   late HttpOverrides? previousHttp;
   PreparedPhoneSkill? prepared;
 
+  Future<void> close(WidgetTester tester) async {
+    try {
+      await tester.pumpWidget(const SizedBox());
+      await tester.pump();
+    } finally {
+      try {
+        openedContainer?.dispose();
+        openedContainer = null;
+      } finally {
+        try {
+          await tester.runAsync(() async {
+            try { await openedClient?.close(); } finally { await openedHost?.close(); }
+          });
+        } finally {
+          openedClient = null;
+          openedHost = null;
+          HttpOverrides.global = previousHttp;
+          messenger.setMockMethodCallHandler(_method, null);
+        }
+      }
+    }
+  }
+
   Future<void> open(WidgetTester tester) async {
     SharedPreferences.setMockInitialValues({});
     previousHttp = HttpOverrides.current;
@@ -86,29 +109,6 @@ void main() {
     } catch (_) {
       await close(tester);
       rethrow;
-    }
-  }
-
-  Future<void> close(WidgetTester tester) async {
-    try {
-      await tester.pumpWidget(const SizedBox());
-      await tester.pump();
-    } finally {
-      try {
-        openedContainer?.dispose();
-        openedContainer = null;
-      } finally {
-        try {
-          await tester.runAsync(() async {
-            try { await openedClient?.close(); } finally { await openedHost?.close(); }
-          });
-        } finally {
-          openedClient = null;
-          openedHost = null;
-          HttpOverrides.global = previousHttp;
-          messenger.setMockMethodCallHandler(_method, null);
-        }
-      }
     }
   }
 

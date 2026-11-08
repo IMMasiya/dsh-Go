@@ -19,7 +19,9 @@ class PhoneSkillUseOrigin {
     final local = container.read(localConnectionProvider);
     if (container.read(activeHostProvider) != HostRef.local || active.isLoading || active.hasError ||
         local.isLoading || local.hasError || active.value?.isLocal != true || local.value?.isLocal != true ||
-        container.read(currentSessionProvider) != sessionId) return null;
+        container.read(currentSessionProvider) != sessionId) {
+      return null;
+    }
     final client = local.value!.client;
     final generation = client.mux.generation;
     if (!identical(active.value?.client, client) || generation == null) return null;
