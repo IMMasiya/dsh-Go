@@ -198,7 +198,7 @@ class BackgroundDisplay(
         // l10n:keep agent screen protocol
         val active = channel()
         if (Thread.currentThread().isInterrupted) throw InterruptedException()
-        return toResult(active.execute(request), "已在后台屏执行")
+        return toResult(active.execute(request), "已在后台屏执行", textAction = action is PhoneAction.Type)
     }
 
     override fun foregroundPackage(): String? = currentPackage
@@ -229,9 +229,14 @@ class BackgroundDisplay(
         previousLabels = emptySet()
     }
 
-    private fun toResult(response: Bundle, okMessage: String): ActionResult {
+    private fun toResult(response: Bundle, okMessage: String, textAction: Boolean = false): ActionResult {
         val ok = response.getBoolean(Proto.OK)
-        val message = if (ok) okMessage + backgroundVisualNote(response.get(Proto.VISUAL_CHANGE)) else Reasons.of(response.getString(Proto.ERROR), response.getString(Proto.ERROR_DETAIL))
+        val message = if (ok) okMessage + backgroundVisualNote(response.get(Proto.VISUAL_CHANGE)) else Reasons.of(
+            response.getString(Proto.ERROR), response.getString(Proto.ERROR_DETAIL),
+            // ACTION_SET_TEXT may have returned true before a later refresh/submit failed.
+            // This acknowledgement is not text readback or business-success evidence.
+            textAccepted = textAction && response.get(Proto.ACCEPTED) == true,
+        )
         if (!ok && response.getString(Proto.ERROR) == "staleSnapshot") {
             // Invalidate before any optional snapshot decoding or subsequent refresh can fail.
             clearSnapshot()

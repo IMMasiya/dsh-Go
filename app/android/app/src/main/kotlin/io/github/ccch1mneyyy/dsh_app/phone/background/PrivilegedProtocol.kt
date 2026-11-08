@@ -124,7 +124,22 @@ object Proto {
 
 /** Stable reason codes → one short Chinese sentence for the model (after Phase's set). */
 object Reasons {
-    fun of(code: String?, detail: String?): String = withDetail(of(code), detail)
+    fun of(code: String?, detail: String?, textAccepted: Boolean = false): String {
+        if (textAccepted) {
+            val after = when (code) {
+                // l10n:keep agent input receipt
+                "textTargetChanged" -> "随后输入框或焦点发生变化"
+                // l10n:keep agent input receipt
+                "textReadbackMismatch" -> "回读与预期不一致"
+                // l10n:keep agent input receipt
+                else -> "后续核验或提交未确认"
+            }
+            // No text/readback is included, and an accepted request is not a verified write.
+            // l10n:keep agent input receipt
+            return "输入框已接受文字请求，但$after。请先重新观察，不要自动重复输入或提交。"
+        }
+        return withDetail(of(code), detail)
+    }
 
     fun withDetail(reason: String, detail: String?): String = reason + detail?.let { "（$it）" }.orEmpty()
 
