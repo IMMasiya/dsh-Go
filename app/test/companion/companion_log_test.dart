@@ -163,4 +163,43 @@ void main() {
     await tester.pump();
     expect(loads, greaterThanOrEqualTo(2));
   });
+
+  testWidgets('a fetch whose items land with the next build still counts as progress', (tester) async {
+    var loads = 0;
+    var history = 1;
+    late StateSetter rebuild;
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: buildDarkTheme(),
+        localizationsDelegates: L10n.localizationsDelegates,
+        supportedLocales: L10n.supportedLocales,
+        locale: const Locale('zh'),
+        home: Scaffold(
+          body: StatefulBuilder(
+            builder: (context, setState) {
+              rebuild = setState;
+              return CompanionLog(
+                entries: const [CompanionLogEntry.you('在吗')],
+                name: '小鲸',
+                onClose: () {},
+                history: history,
+                // Three pages, each landing a build after the fetch is over.
+                onLoadOlder: loads < 3
+                    ? () async {
+                        loads++;
+                        rebuild(() => history += 2);
+                      }
+                    : null,
+              );
+            },
+          ),
+        ),
+      ),
+    );
+    for (var i = 0; i < 12; i++) {
+      await tester.pump();
+    }
+    expect(loads, 3);
+    expect(find.text('加载更早的记录'), findsNothing);
+  });
 }

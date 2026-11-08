@@ -177,6 +177,8 @@ class _CompanionLogState extends State<CompanionLog> {
     final before = widget.history;
     try {
       await load();
+      // What it brought reaches this widget with the next build.
+      await WidgetsBinding.instance.endOfFrame;
     } on Object {
       // Counted below as bringing nothing.
     }
