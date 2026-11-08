@@ -15,6 +15,9 @@ import android.app.PendingIntent
 import android.app.UiAutomation
 import android.content.Context
 import android.content.Intent
+import io.github.ccch1mneyyy.dsh_app.phone.a11y.ImageGeometry
+import io.github.ccch1mneyyy.dsh_app.phone.a11y.ImageObservation
+import io.github.ccch1mneyyy.dsh_app.phone.a11y.VisualFrame
 import android.graphics.Bitmap
 import android.graphics.PixelFormat
 import android.graphics.Rect
@@ -60,6 +63,9 @@ import kotlin.concurrent.withLock
  * deadline. Never throws across the call boundary: faults become a stable [Proto.ERROR] code.
  */
 class PrivilegedDisplayCore(private val context: Context) {
+
+    // Guarded by lock, one recent frame only; never a permission to drive coordinates.
+    private var visualObservation: BackgroundVisualObservation? = null
 
     private val privileged: Context by lazy {
         if (Process.myUid() == Process.SHELL_UID)
@@ -134,7 +140,10 @@ class PrivilegedDisplayCore(private val context: Context) {
                 response.putBoolean(Proto.OK, true)
                 return response
             }
-            lock.withLock { dispatch(op, request, response) }
+            lock.withLock {
+                try { dispatch(op, request, response) }
+                catch (e: Throwable) { visualObservation = null; throw e }
+            }
             if (!response.containsKey(Proto.ERROR)) response.putBoolean(Proto.OK, true)
         } catch (e: Throwable) {
             response.putBoolean(Proto.OK, false)
@@ -170,6 +179,12 @@ class PrivilegedDisplayCore(private val context: Context) {
         val pkg = request.getString(Proto.PKG).orEmpty()
         if (!PACKAGE.matches(pkg)) throw Fault("invalidArguments")
 
+        val localVisual = request.getBoolean(Proto.LOCAL_VISUAL) && when (op) {
+            Proto.OP_CREATE, Proto.OP_LAUNCH, Proto.OP_OBSERVE, Proto.OP_TAP, Proto.OP_SCROLL -> true
+            else -> false
+        }
+        val previousVisual = if (localVisual && (op == Proto.OP_TAP || op == Proto.OP_SCROLL)) visualObservation else null
+        visualObservation = null // Consume before any dispatch, including failed or non-opt-in operations.
         when (op) {
             Proto.OP_CREATE, Proto.OP_LAUNCH -> {
                 owner = ownerId
@@ -177,23 +192,27 @@ class PrivilegedDisplayCore(private val context: Context) {
                 response.putInt(Proto.DISPLAY_ID, displayId())
                 launchPackage(pkg)
                 sleepChecked(300)
-                observe(pkg, request.getBoolean(Proto.WANT_IMAGE), response)
+                observe(pkg, request.getBoolean(Proto.WANT_IMAGE), response, localVisual = localVisual)
             }
             Proto.OP_OBSERVE -> {
                 requireDisplay(); requireForeground(pkg)
-                observe(pkg, request.getBoolean(Proto.WANT_IMAGE), response, requireTree = true, detail = request.getBoolean(Proto.DETAIL))
+                observe(pkg, request.getBoolean(Proto.WANT_IMAGE), response, requireTree = true, detail = request.getBoolean(Proto.DETAIL), localVisual = localVisual)
             }
             Proto.OP_TAP -> {
                 requireDisplay(); requireForeground(pkg)
                 tap(pkg, request)
                 sleepChecked(250)
-                observe(pkg, false, response)
+                observe(pkg, false, response, localVisual = localVisual)
+                if (localVisual) response.putString(Proto.VISUAL_CHANGE,
+                    visualObservation?.changeFrom(previousVisual, SystemClock.uptimeMillis()) ?: "unavailable")
             }
             Proto.OP_SCROLL -> {
                 requireDisplay(); requireForeground(pkg)
                 scroll(pkg, request)
                 sleepChecked(250)
-                observe(pkg, false, response)
+                observe(pkg, false, response, localVisual = localVisual)
+                if (localVisual) response.putString(Proto.VISUAL_CHANGE,
+                    visualObservation?.changeFrom(previousVisual, SystemClock.uptimeMillis()) ?: "unavailable")
             }
             Proto.OP_KEY -> {
                 requireDisplay(); requireForeground(pkg)
@@ -312,6 +331,7 @@ class PrivilegedDisplayCore(private val context: Context) {
     }
 
     private fun releaseAll() = lock.withLock {
+        visualObservation = null
         stopPreview()
         preview.invalidate()
         owner = null
@@ -323,12 +343,13 @@ class PrivilegedDisplayCore(private val context: Context) {
 
     // ---- observation (tree + optional screenshot) --------------------------
 
-    private fun observe(pkg: String, wantImage: Boolean, response: Bundle, requireTree: Boolean = false, detail: Boolean = false) {
+    private fun observe(pkg: String, wantImage: Boolean, response: Bundle, requireTree: Boolean = false, detail: Boolean = false, localVisual: Boolean = false) {
+        visualObservation = null
         val id = displayId()
         response.putInt(Proto.DISPLAY_ID, id)
         response.putString(Proto.FG_PKG, pkg)
         response.putBoolean(Proto.PORTRAIT, height >= width)
-        val captureResult = runCatching { tracePhase("dsh.bg.capture") { capture() } }
+        val captureResult = runCatching { tracePhase("dsh.bg.capture") { capture(localVisual) } }
         val captureFailure = captureResult.exceptionOrNull()
         if (captureFailure is InterruptedException ||
             captureFailure is Fault && captureFailure.code == "cancelled") throw captureFailure
@@ -336,7 +357,7 @@ class PrivilegedDisplayCore(private val context: Context) {
         val shot = captureResult.getOrNull()
         val label = runCatching { appLabel(pkg) }.getOrNull()
         label?.let { response.putString(Proto.APP_LABEL, if (detail) BackgroundTree.cap(it) else it) }
-        val treeResult = runCatching { readTree(id, pkg, scanOtherWindows = wantImage && shot != null) }
+        val treeResult = runCatching { readTree(id, pkg, scanOtherWindows = wantImage && shot != null, inspectVisual = localVisual && shot?.local != null) }
         val failure = treeResult.exceptionOrNull()
         if (failure is InterruptedException || failure is Fault && failure.code == "cancelled") throw failure
         // Pixels alone never identify FLAG_SECURE. Keep an explicit secure failure authoritative.
@@ -370,6 +391,16 @@ class PrivilegedDisplayCore(private val context: Context) {
             } else {
                 response.putBoolean(Proto.IMAGE_OMITTED, true)
             }
+        }
+        if (localVisual && tree != null) {
+            val vd = display
+            val currentOwner = owner
+            val scope = if (vd != null && currentOwner != null) tree.visualWindow?.let {
+                BackgroundVisualObservation.Scope(vd, currentOwner, pkg, it)
+            } else null
+            visualObservation = BackgroundVisualObservation.create(scope, shot?.local,
+                tree.complete && tree.elements.count { it.label.isNotEmpty() } >= 5,
+                tree.hasSecrets, tree.hasSensitive, SystemClock.uptimeMillis())
         }
         val elements = tree?.elements.orEmpty()
         if (detail) {
@@ -437,10 +468,10 @@ class PrivilegedDisplayCore(private val context: Context) {
         return runCatching { pm.getApplicationLabel(pm.getApplicationInfo(pkg, 0)).toString() }.getOrNull()
     }
 
-    private class CaptureResult(val jpeg: ByteArray, val raw: BackgroundPreviewState.RawFrame?)
+    private class CaptureResult(val jpeg: ByteArray, val raw: BackgroundPreviewState.RawFrame?, val local: ImageObservation?)
 
     /** Null means only absent/black frames; other capture failures remain distinguishable. */
-    private fun capture(): CaptureResult? {
+    private fun capture(localVisual: Boolean = false): CaptureResult? {
         val ir = ImageReader.newInstance(width, height, PixelFormat.RGBA_8888, 2)
         try {
             lock.withLock {
@@ -462,6 +493,7 @@ class PrivilegedDisplayCore(private val context: Context) {
                     sleepChecked(minOf(40L, remaining))
                     image = ir.acquireLatestImage()
                 }
+                val capturedAt = SystemClock.uptimeMillis()
                 try {
                     val plane = image.planes.singleOrNull() ?: throw Fault("screenshotFailed")
                     if (plane.pixelStride != 4 || plane.rowStride < width * 4) throw Fault("screenshotFailed")
@@ -489,7 +521,14 @@ class PrivilegedDisplayCore(private val context: Context) {
                                 // No JPEG decode round-trip: both preview sources compare identical pixels.
                                 val raw = if (preview.acceptsCandidate())
                                     BackgroundPreviewState.RawFrame(width, height, pixels.array()) else null
-                                return CaptureResult(buffer.toByteArray(), raw)
+                                // Sampling cannot turn an existing successful capture/action into a failure.
+                                val local = if (localVisual) try {
+                                    val frame = VisualFrame.capture(width, height) { y, row ->
+                                        bitmap.getPixels(row, 0, width, 0, y, width, 1)
+                                    }
+                                    ImageObservation(ImageGeometry(0, 0, 1f, 1f, width, height), capturedAt, frame)
+                                } catch (_: Exception) { null } else null
+                                return CaptureResult(buffer.toByteArray(), raw, local)
                             }
                         }
                     } finally { bitmap.recycle() }
@@ -642,7 +681,9 @@ class PrivilegedDisplayCore(private val context: Context) {
 
     // ---- UiAutomation control-tree read ------------------------------------
 
-    private class TreeRead(val targetId: Int = 0) {
+    private class TreeRead(val targetId: Int = 0, val inspectVisual: Boolean = false) {
+        var visualWindow: BackgroundVisualObservation.Window? = null
+        var hasSensitive = false
         val elements = ArrayList<BgNode>()
         var visited = 0
         var complete = true
@@ -650,7 +691,7 @@ class PrivilegedDisplayCore(private val context: Context) {
         var target: AccessibilityNodeInfo? = null
     }
 
-    private fun readTree(displayId: Int, pkg: String, scanOtherWindows: Boolean = false): TreeRead {
+    private fun readTree(displayId: Int, pkg: String, scanOtherWindows: Boolean = false, inspectVisual: Boolean = false): TreeRead {
         val vd = display ?: throw Fault("displayMissing")
         val conn = TreeConnection(context, pkg)
         try {
@@ -658,20 +699,21 @@ class PrivilegedDisplayCore(private val context: Context) {
                 tracePhase("dsh.bg.treeConnect") { conn.open(vd.display) }
             } catch (_: Throwable) { throw Fault("treeUnavailable") }
             return tracePhase("dsh.bg.treeRead") {
-                readTree(automation, displayId, pkg, scanOtherWindows = scanOtherWindows)
+                readTree(automation, displayId, pkg, scanOtherWindows = scanOtherWindows, inspectVisual = inspectVisual)
             }
         } finally { tracePhase("dsh.bg.treeClose") { conn.close() } }
     }
 
     private fun readTree(
         automation: UiAutomation, displayId: Int, pkg: String,
-        targetId: Int = 0, scanOtherWindows: Boolean = false,
+        targetId: Int = 0, scanOtherWindows: Boolean = false, inspectVisual: Boolean = false,
     ): TreeRead {
         runCatching { invoke(automation, "clearCache") }
         @Suppress("UNCHECKED_CAST")
         val all = invoke(automation, "getWindowsOnAllDisplays") as? SparseArray<List<AccessibilityWindowInfo>>
             ?: throw Fault("treeUnavailable")
-        val windows = all.get(displayId).orEmpty().filter {
+        val displayWindows = all.get(displayId).orEmpty()
+        val windows = displayWindows.filter {
             it.type == AccessibilityWindowInfo.TYPE_APPLICATION
         }
         val roots = ArrayList<AccessibilityNodeInfo?>()
@@ -679,7 +721,14 @@ class PrivilegedDisplayCore(private val context: Context) {
             for (window in windows) roots.add(window.root)
             val selected = BackgroundTree.selectApplicationWindow(roots.map { it?.packageName?.toString() }, pkg)
                 ?: throw Fault(if (roots.firstOrNull() != null) "displayTargetChanged" else "treeUnavailable")
-            val tree = TreeRead(targetId)
+            val tree = TreeRead(targetId, inspectVisual)
+            if (inspectVisual && displayWindows.size == 1 && windows.size == 1) {
+                val window = windows[selected.index]
+                tree.visualWindow = try {
+                    val bounds = Rect().also { window.getBoundsInScreen(it) }
+                    BackgroundVisualObservation.Window(window.id, bounds.left, bounds.top, bounds.right, bounds.bottom)
+                } catch (_: Exception) { null } // Extra metadata failure only disables the local summary.
+            }
             if (!scanOtherWindows && roots.size > 1) tree.complete = false
             try {
                 walk(roots[selected.index]!!, tree, 0, 600)
@@ -709,10 +758,16 @@ class PrivilegedDisplayCore(private val context: Context) {
         if (tree.visited >= budget) { tree.complete = false; return }
         tree.visited++
         if (node.isVisibleToUser && isSecret(node)) tree.hasSecrets = true
+        val text = if (emitElements || tree.inspectVisual) bestText(node) else ""
+        if (tree.inspectVisual && node.isVisibleToUser && !tree.hasSensitive) {
+            tree.hasSensitive = try {
+                // Check raw text too: bestText may drop an oversized blank value.
+                backgroundVisualSensitive(node.text, node.contentDescription, node.hintText, node.viewIdResourceName)
+            } catch (_: Exception) { true } // Incomplete additional privacy evidence cannot fail the element action.
+        }
         var childIndent = indent
         if (emitElements) {
             val actionable = node.isClickable || node.isLongClickable || node.isEditable || node.isCheckable || node.isScrollable
-            val text = bestText(node)
             val emit = actionable || (text.isNotEmpty() && node.isVisibleToUser)
             if (emit && node.isVisibleToUser) {
                 val rect = Rect().also { node.getBoundsInScreen(it) }

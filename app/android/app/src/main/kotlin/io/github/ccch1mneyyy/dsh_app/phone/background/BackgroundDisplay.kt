@@ -53,6 +53,7 @@ class BackgroundDisplay(
             putString(Proto.PKG, packageName)
             putInt(Proto.SHORT_SIDE, 720)
             putInt(Proto.WANT_IMAGE, 0)
+            putBoolean(Proto.LOCAL_VISUAL, true)
         }
         currentPackage = packageName
         val response = channel().execute(request)
@@ -68,6 +69,7 @@ class BackgroundDisplay(
             putString(Proto.PKG, pkg)
             putBoolean(Proto.DETAIL, detail)
             putBoolean(Proto.WANT_IMAGE, image)
+            putBoolean(Proto.LOCAL_VISUAL, true)
         }
         val response = try {
             channel().execute(request)
@@ -153,6 +155,7 @@ class BackgroundDisplay(
         when (action) {
             is PhoneAction.Tap -> {
                 request.putString(Proto.OP, Proto.OP_TAP)
+                request.putBoolean(Proto.LOCAL_VISUAL, true)
                 request.putInt(Proto.ELEMENT, action.elementId)
                 request.putBoolean(Proto.LONG, action.long)
                 fingerprint(action.elementId, request)
@@ -168,6 +171,7 @@ class BackgroundDisplay(
             }
             is PhoneAction.Scroll -> {
                 request.putString(Proto.OP, Proto.OP_SCROLL)
+                request.putBoolean(Proto.LOCAL_VISUAL, true)
                 request.putString(Proto.DIR, action.direction.name.lowercase())
                 action.elementId?.let { id ->
                     request.putInt(Proto.ELEMENT, id)
@@ -217,7 +221,7 @@ class BackgroundDisplay(
 
     private fun toResult(response: Bundle, okMessage: String): ActionResult {
         val ok = response.getBoolean(Proto.OK)
-        val message = if (ok) okMessage else Reasons.of(response.getString(Proto.ERROR), response.getString(Proto.ERROR_DETAIL))
+        val message = if (ok) okMessage + backgroundVisualNote(response.get(Proto.VISUAL_CHANGE)) else Reasons.of(response.getString(Proto.ERROR), response.getString(Proto.ERROR_DETAIL))
         if (!ok && response.getString(Proto.ERROR) == "staleSnapshot") {
             // Invalidate before any optional snapshot decoding or subsequent refresh can fail.
             clearSnapshot()

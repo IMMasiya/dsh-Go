@@ -54,6 +54,9 @@ object Proto {
     const val OP_CREATE = "create"
     const val OP_LAUNCH = "launch"
     const val OP_OBSERVE = "observe"
+    // Optional local summary only; independent of image delivery.
+    const val LOCAL_VISUAL = "localVisual"
+    const val VISUAL_CHANGE = "visualChange"
     const val OP_TAP = "tap"
     const val OP_SCROLL = "scroll"
     const val OP_KEY = "key"
