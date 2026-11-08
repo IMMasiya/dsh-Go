@@ -82,12 +82,39 @@ class PhoneCore(
         val decision: String? = null,
     )
 
+    /** One invocation's native plan. Never re-resolve it after resource admission. */
+    internal class PreparedCall(
+        val name: String, val args: Args, val owner: PhoneTasks.Owner,
+        val screens: List<PhoneScreen>, val launch: SystemLaunch? = null,
+        val shareSubject: AppEntry? = null,
+    ) {
+        val knownApp: PhoneAppIdentity? get() = (launch?.target as? SystemTarget.Known)?.app?.identity
+        // A MAIN observation has no trustworthy window UID. BG open only queries the
+        // selected package on MAIN before moving it; its actual target is checked by T1a.
+        val unknownApp: Boolean get() = PhoneScreen.MAIN in screens &&
+            !(name == PhoneToolCatalog.OPEN && args.bool("background") == true)
+    }
+
+    /** Production Sessions already owns begin/callStarted; PM work never takes the action worker. */
+    internal fun prepareCall(name: String, args: Map<String, Any?>, owner: PhoneTasks.Owner): Either<ToolOutput, PreparedCall> {
+        val result = try { prepare(name, Args(args.toMap()), owner) }
+        catch (_: InterruptedException) { Thread.currentThread().interrupt(); Either.Left(stoppedOut(name)) }
+        catch (e: Exception) { Either.Left(failedOut(name, e)) }
+        return when (result) {
+            is Either.Left -> { tasks.touch(owner); Either.Left(output(name, owner, result.value)) }
+            is Either.Right -> result
+        }
+    }
+
+    internal fun call(prepared: PreparedCall): ToolOutput =
+        runCall(prepared.name, prepared.args, AtomicReference<PhoneTasks.Owner?>(prepared.owner), prepared)
+
     fun call(name: String, args: Map<String, Any?>, admittedOwner: PhoneTasks.Owner? = null): ToolOutput {
         // In flight from here until the result goes back: no turn ends while a call runs (PhoneTasks.finish).
         val owner = AtomicReference(admittedOwner)
         if (admittedOwner == null) tasks.callStarted()
         try {
-            return runCall(name, args, owner)
+            return runCall(name, Args(args), owner)
         } finally {
             if (admittedOwner == null) tasks.callEnded(owner.get())
         }
@@ -106,9 +133,9 @@ class PhoneCore(
         return null
     }
 
-    private fun runCall(name: String, args: Map<String, Any?>, callOwner: AtomicReference<PhoneTasks.Owner?>): ToolOutput {
+    private fun runCall(name: String, args: Args, callOwner: AtomicReference<PhoneTasks.Owner?>, prepared: PreparedCall? = null): ToolOutput {
         rejection(name)?.let { return it }
-        val outcome = worker.run(budgetMs(name), MAX_TOTAL_MS, owner = tasks) { scope -> execute(name, Args(args), scope, callOwner) }
+        val outcome = worker.run(budgetMs(name), MAX_TOTAL_MS, owner = tasks) { scope -> execute(name, args, scope, callOwner, prepared) }
         val owner = callOwner.get()
         if (owner != null && name in TRACE_ACTIONS && outcome !is SerialWorker.Outcome.Done) {
             skillTrace.markIncomplete(owner, PhoneTaskTrace.Gap.UNCERTAIN_RESULT)
@@ -127,14 +154,18 @@ class PhoneCore(
                 Out(text, error = true, summary = name, decision = "timeout")
             }
             SerialWorker.Outcome.Interrupted -> Out(PhoneTasks.STOPPED_MESSAGE + "。", error = true, summary = name, decision = "stopped")
-            is SerialWorker.Outcome.Failed -> Out(
-                // l10n:keep agent tool result
-                "手机操作出错：${outcome.error.javaClass.simpleName}${outcome.error.message?.let { "：$it" } ?: ""}",
-                error = true,
-                summary = name,
-                decision = "error",
-            )
+            is SerialWorker.Outcome.Failed -> failedOut(name, outcome.error)
         }
+        return output(name, owner, out)
+    }
+
+    private fun failedOut(name: String, error: Throwable) = Out(
+        // l10n:keep agent tool result
+        "手机操作出错：${error.javaClass.simpleName}${error.message?.let { "：$it" } ?: ""}",
+        error = true, summary = name, decision = "error",
+    )
+
+    private fun output(name: String, owner: PhoneTasks.Owner?, out: Out): ToolOutput {
         out.summary?.let { log.add(name, out.app, it, out.decision ?: if (out.error) "error" else "ok") }
         var interjections = emptyList<String>()
         if (owner != null) tasks.runIfCurrent(owner) {
@@ -160,7 +191,7 @@ class PhoneCore(
         }
     }
 
-    private fun execute(name: String, a: Args, scope: SerialWorker.Scope, callOwner: AtomicReference<PhoneTasks.Owner?>): Out {
+    private fun execute(name: String, a: Args, scope: SerialWorker.Scope, callOwner: AtomicReference<PhoneTasks.Owner?>, prepared: PreparedCall?): Out {
         val admitted = callOwner.get()
         val owner = admitted ?: when (val b = tasks.begin()) {
             is PhoneTasks.Begin.Refused -> return Out(b.message + "。", error = true, summary = name, decision = "stopped")
@@ -190,10 +221,17 @@ class PhoneCore(
                 }
             }
             if (!current(owner)) return stoppedOut(name)
+            // Direct Core callers retain their original begin/pause timing. Both paths use
+            // this one preparer; production arrives with the already-admitted native plan.
+            val call = prepared ?: when (val result = prepare(name, a, owner)) {
+                is Either.Left -> return result.value
+                is Either.Right -> result.value
+            }
+            if (!current(owner)) return stoppedOut(name)
             return when (name) {
                 PhoneToolCatalog.APPS -> apps(a, owner)
-                PhoneToolCatalog.OPEN -> open(a, scope, owner)
-                PhoneToolCatalog.INTENT -> intent(a, owner)
+                PhoneToolCatalog.OPEN -> open(call, scope, owner)
+                PhoneToolCatalog.INTENT -> intent(call, owner)
                 PhoneToolCatalog.NOTIFY -> notify(a, owner)
                 PhoneToolCatalog.CLIPBOARD -> clipboard(a, owner)
                 PhoneToolCatalog.SCREEN -> screen(a, owner)
@@ -242,22 +280,81 @@ class PhoneCore(
             AppMatch.Result.NotFound -> Either.Left("没找到应用「$query」。用 apps 查一下名称或包名。")
         }
 
-    private fun open(a: Args, scope: SerialWorker.Scope, owner: PhoneTasks.Owner): Out {
+    private fun prepare(name: String, a: Args, owner: PhoneTasks.Owner): Either<Out, PreparedCall> {
+        if (!current(owner)) return Either.Left(stoppedOut(name))
+        val screens = when (val route = requiredScreens(name, a)) {
+            is Either.Left -> return Either.Left(Out(route.value, error = true))
+            is Either.Right -> route.value
+        }
+        var launch: SystemLaunch? = null
+        var shareSubject: AppEntry? = null
+        when (name) {
+            PhoneToolCatalog.OPEN -> {
+                val appQ = a.str("app")
+                val url = a.str("url")
+                // l10n:keep agent tool result
+                if ((appQ == null) == (url == null)) return Either.Left(Out("open 需要 app 或 url，二选一。", error = true))
+                if (env.isLocked()) return Either.Left(locked("open"))
+                if (url != null) {
+                    // l10n:keep agent tool result
+                    if (a.bool("background") == true) return Either.Left(Out("后台屏只能用 app 打开应用，不支持链接。", error = true))
+                    UrlPolicy.check(url)?.let {
+                        return Either.Left(Out(it, error = true, summary = ui.get("phone_log_open_url", "打开链接"), decision = "refused:url")) // l10n:keep test default
+                    }
+                    launch = when (val result = env.system().prepareUrl(url)) {
+                        is Either.Left -> return Either.Left(Out(result.value, error = true, decision = "refused:url"))
+                        is Either.Right -> result.value
+                    }
+                } else {
+                    val selected = when (val result = resolveApp(checkNotNull(appQ))) {
+                        is Either.Left -> return Either.Left(Out(result.value, error = true))
+                        is Either.Right -> result.value
+                    }
+                    launch = when (val result = env.system().prepareLaunch(selected)) {
+                        is Either.Left -> return Either.Left(Out(result.value, error = true))
+                        is Either.Right -> result.value
+                    }
+                    if (launch.target !is SystemTarget.Known)
+                        return Either.Left(Out(Reasons.of("targetIdentityUnavailable"), error = true))
+                }
+            }
+            PhoneToolCatalog.INTENT -> {
+                val spec = when (val parsed = IntentSpec.parse(a, env.zone())) {
+                    is Either.Left -> return Either.Left(Out(parsed.value, error = true))
+                    is Either.Right -> parsed.value
+                }
+                val kind = a.str("kind") ?: ""
+                if (env.isLocked()) return Either.Left(locked("intent $kind"))
+                val appQuery = when (spec) {
+                    is IntentSpec.Share -> spec.app
+                    is IntentSpec.Settings -> spec.app
+                    else -> null
+                }
+                val selected = appQuery?.let { query ->
+                    when (val result = resolveApp(query)) {
+                        is Either.Left -> return Either.Left(Out(result.value, error = true))
+                        is Either.Right -> result.value
+                    }
+                }
+                if (spec is IntentSpec.Share) shareSubject = selected
+                launch = when (val result = env.system().prepareIntent(spec, selected)) {
+                    is Either.Left -> return Either.Left(Out(result.value, error = true, summary = "intent $kind", decision = "refused:identity"))
+                    is Either.Right -> result.value
+                }
+            }
+        }
+        if (!current(owner)) return Either.Left(stoppedOut(name))
+        return Either.Right(PreparedCall(name, a, owner, screens, launch, shareSubject))
+    }
+
+    private fun open(call: PreparedCall, scope: SerialWorker.Scope, owner: PhoneTasks.Owner): Out {
         if (!current(owner)) return stoppedOut("open")
-        val appQ = a.str("app")
+        val a = call.args
         val url = a.str("url")
         val background = a.bool("background") == true
-        // l10n:keep agent tool result
-        if ((appQ == null) == (url == null)) return Out("open 需要 app 或 url，二选一。", error = true)
         if (env.isLocked()) return locked("open")
+        val plan = checkNotNull(call.launch)
         if (url != null) {
-            // l10n:keep agent tool result
-            if (background) return Out("后台屏只能用 app 打开应用，不支持链接。", error = true)
-            UrlPolicy.check(url)?.let { return Out(it, error = true, summary = ui.get("phone_log_open_url", "打开链接"), decision = "refused:url") } // l10n:keep test default
-            val plan = when (val prepared = env.system().prepareUrl(url)) {
-                is Either.Left -> return Out(prepared.value, error = true, decision = "refused:url")
-                is Either.Right -> prepared.value
-            }
             val target = (plan.target as? SystemTarget.Known)?.app
             target?.let { handler ->
                 safety.checkOpen(handler.packageName, handler.label)?.let { refusal ->
@@ -268,15 +365,6 @@ class PhoneCore(
             skillTrace.markIncomplete(owner)
             val r = env.system().launch(plan, tasks.systemDispatch(owner))
             return afterSystem(owner, r, ui.get("phone_log_open_url_scheme", "打开链接 %1\$s:", url.substringBefore(':'))) // l10n:keep test default
-        }
-        val selected = when (val r = resolveApp(appQ!!)) {
-            is Either.Left -> return Out(r.value, error = true)
-            is Either.Right -> r.value
-        }
-        // The list may be cached; approvals and dispatch use a fresh native PM identity.
-        val plan = when (val r = env.system().prepareLaunch(selected)) {
-            is Either.Left -> return Out(r.value, error = true)
-            is Either.Right -> r.value
         }
         val app = (plan.target as? SystemTarget.Known)?.app
             ?: return Out(Reasons.of("targetIdentityUnavailable"), error = true)
@@ -367,35 +455,16 @@ class PhoneCore(
         }
     }
 
-    private fun intent(a: Args, owner: PhoneTasks.Owner): Out {
+    private fun intent(call: PreparedCall, owner: PhoneTasks.Owner): Out {
         if (!current(owner)) return stoppedOut("intent")
-        val spec = when (val p = IntentSpec.parse(a, env.zone())) {
-            is Either.Left -> return Out(p.value, error = true)
-            is Either.Right -> p.value
-        }
-        val kind = a.str("kind") ?: ""
+        val kind = call.args.str("kind") ?: ""
         if (env.isLocked()) return locked("intent $kind")
-        var shareTo: AppEntry? = null
-        val appQuery = when (spec) {
-            is IntentSpec.Share -> spec.app
-            is IntentSpec.Settings -> spec.app
-            else -> null
-        }
-        if (appQuery != null) {
-            shareTo = when (val r = resolveApp(appQuery)) {
-                is Either.Left -> return Out(r.value, error = true)
-                is Either.Right -> r.value
-            }
-            if (spec is IntentSpec.Share) {
-                safety.checkOpen(shareTo.packageName, shareTo.label)?.let {
-                    return Out(it.message, error = true, app = shareTo.label, summary = "intent $kind", decision = "refused:${it.rule}")
-                }
+        call.shareSubject?.let { subject ->
+            safety.checkOpen(subject.packageName, subject.label)?.let {
+                return Out(it.message, error = true, app = subject.label, summary = "intent $kind", decision = "refused:${it.rule}")
             }
         }
-        val plan = when (val prepared = env.system().prepareIntent(spec, shareTo)) {
-            is Either.Left -> return Out(prepared.value, error = true, summary = "intent $kind", decision = "refused:identity")
-            is Either.Right -> prepared.value
-        }
+        val plan = checkNotNull(call.launch)
         (plan.target as? SystemTarget.Known)?.app?.let { handler ->
             safety.checkOpen(handler.packageName, handler.label)?.let {
                 return Out(it.message, error = true, app = handler.label, summary = "intent $kind", decision = "refused:${it.rule}")
@@ -472,7 +541,10 @@ class PhoneCore(
 
     /** Admission uses the same argument coercion and routing as the actual tool body. */
     fun requiredScreens(name: String, args: Map<String, Any?>): Either<String, List<PhoneScreen>> {
-        val a = Args(args)
+        return requiredScreens(name, Args(args))
+    }
+
+    private fun requiredScreens(name: String, a: Args): Either<String, List<PhoneScreen>> {
         return when (name) {
             PhoneToolCatalog.APPS, PhoneToolCatalog.NOTIFY, PhoneToolCatalog.CLIPBOARD -> Either.Right(emptyList())
             PhoneToolCatalog.OPEN -> Either.Right(if (a.bool("background") == true)

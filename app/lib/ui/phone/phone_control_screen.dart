@@ -344,6 +344,26 @@ class _PhoneControlScreenState extends ConsumerState<PhoneControlScreen> {
             ],
           ),
         ],
+        for (final waiting in status.tasks.where((item) => item.id != null && item.waitingForResources &&
+            !item.stopped && !item.finishing && !item.draining)) ...[
+          const SizedBox(height: 12),
+          ListPageCard(
+            children: [
+              ListPageRow(
+                key: ValueKey('phone-waiting-${waiting.id}'),
+                icon: AppIcons.phoneControl,
+                title: l10n.phoneTaskWaiting(waiting.id!),
+                subtitle: waiting.waitingForApp != null
+                    ? waiting.waitingForApp!.packageName != null
+                        ? l10n.phoneTaskWaitingApp(waiting.waitingForApp!.packageName!, waiting.waitingForMs ~/ 1000)
+                        : l10n.phoneTaskWaitingUnknown(waiting.waitingForMs ~/ 1000)
+                    : l10n.phoneTaskWaitingScreen(
+                        waiting.waitingForScreen == 'background' ? l10n.phoneTaskBackgroundResource : l10n.phoneTaskMainResource,
+                        waiting.waitingForMs ~/ 1000),
+              ),
+            ],
+          ),
+        ],
         for (final stopped in stoppedSessions.values) ...[
           const SizedBox(height: 12),
           ListPageCard(

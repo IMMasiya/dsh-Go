@@ -303,12 +303,30 @@ class PhoneBackgroundStatus {
       const [PhonePrivilegedMode.off, PhonePrivilegedMode.shizuku, PhonePrivilegedMode.adb];
 }
 
+/// Only the caller's target is published; no holder/session/UID is retained here.
+class PhoneAppWait {
+  const PhoneAppWait._(this.packageName);
+
+  /// Null means that the current interface has no confirmed app identity.
+  final String? packageName;
+
+  static PhoneAppWait? fromValue(Object? value) {
+    if (value is! Map) return null;
+    if (value['kind'] == 'unknown' && !value.containsKey('packageName')) return const PhoneAppWait._(null);
+    if (value['kind'] != 'known') return null;
+    final packageName = _text(value['packageName']);
+    return packageName == null ? null : PhoneAppWait._(packageName);
+  }
+}
+
 class PhoneTaskStatus {
   const PhoneTaskStatus({
     this.sessionId,
     this.runId,
     this.generation,
     this.waitingForScreen,
+    this.waitingForApp,
+    this.waitingForMs = 0,
     this.pendingCalls = 0,
     this.finishing = false,
     this.draining = false,
@@ -331,6 +349,8 @@ class PhoneTaskStatus {
     runId: _text(m['runId']),
     generation: _int(m['generation']),
     waitingForScreen: _text(m['waitingForScreen']),
+    waitingForApp: PhoneAppWait.fromValue(m['waitingForApp']),
+    waitingForMs: m['waitingForMs'] is int && (m['waitingForMs'] as int) >= 0 ? m['waitingForMs'] as int : 0,
     pendingCalls: _int(m['pendingCalls']) ?? 0,
     finishing: _flag(m['finishing']),
     draining: _flag(m['draining']),
@@ -352,6 +372,9 @@ class PhoneTaskStatus {
   final String? runId;
   final int? generation;
   final String? waitingForScreen;
+  final PhoneAppWait? waitingForApp;
+  final int waitingForMs;
+  bool get waitingForResources => waitingForApp != null || const {'main', 'background'}.contains(waitingForScreen);
   final int pendingCalls;
   final bool finishing;
   final bool draining;

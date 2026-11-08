@@ -531,5 +531,45 @@
       }
     }
   },
-  "phoneSelfCheckTargetC2Scope": "Uses a fixed local target for launch, tree reading, one button tap, ASCII and Chinese ACTION_SET_TEXT replacement/readback, local pattern capture and limited controlled refresh. This does not measure FPS or smoothness. Finite MAIN samples cannot prove there was no disturbance between samples. OCR is not installed; touch receiver, scrolling and back are not tested. Cleanup alone does not prove a display was created."
+  "phoneSelfCheckTargetC2Scope": "Uses a fixed local target for launch, tree reading, one button tap, ASCII and Chinese ACTION_SET_TEXT replacement/readback, local pattern capture and limited controlled refresh. This does not measure FPS or smoothness. Finite MAIN samples cannot prove there was no disturbance between samples. OCR is not installed; touch receiver, scrolling and back are not tested. Cleanup alone does not prove a display was created.",
+  "phoneTaskWaiting": "Task {taskId} · Waiting for resources",
+  "phoneTaskWaitingApp": "Waiting for app {packageName} · {seconds} seconds elapsed.",
+  "phoneTaskWaitingUnknown": "Waiting for the interface (app identity unconfirmed) · {seconds} seconds elapsed.",
+  "phoneTaskWaitingScreen": "Waiting for {screen} · {seconds} seconds elapsed.",
+  "phoneTaskMainResource": "the main screen",
+  "phoneTaskBackgroundResource": "the background screen",
+  "@phoneTaskWaiting": {
+    "placeholders": {
+      "taskId": {
+        "type": "int"
+      }
+    }
+  },
+  "@phoneTaskWaitingApp": {
+    "placeholders": {
+      "packageName": {
+        "type": "String"
+      },
+      "seconds": {
+        "type": "int"
+      }
+    }
+  },
+  "@phoneTaskWaitingUnknown": {
+    "placeholders": {
+      "seconds": {
+        "type": "int"
+      }
+    }
+  },
+  "@phoneTaskWaitingScreen": {
+    "placeholders": {
+      "screen": {
+        "type": "String"
+      },
+      "seconds": {
+        "type": "int"
+      }
+    }
+  }
 }

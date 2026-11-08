@@ -20,6 +20,11 @@ class PhoneTaskSessionsTest {
     @Volatile private var confirm: (ConfirmRequest) -> Decision = { Decision.UNAVAILABLE }
     private val actions = AtomicLong()
     @Volatile private var open: (PhoneAppIdentity) -> ActionResult = { error("unexpected launch") }
+    @Volatile private var appEntries = listOf(AppEntry("Example", PhoneAppIdentity("example.app", 10123)))
+    @Volatile private var prepareLaunch: (AppEntry) -> SystemLaunch = { TestSystemLaunch(SystemTarget.Known(it)) }
+    @Volatile private var launch: (SystemLaunch, PhoneTasks.SystemDispatch) -> SysResult = { _, _ -> error("unexpected launch") }
+    @Volatile private var prepareUrl: (String) -> SystemLaunch = { error("unexpected URL") }
+
     @Volatile private var changed: () -> Unit = {}
     @Volatile private var lookup: () -> Unit = {}
     @Volatile private var observe: () -> Unit = {}
@@ -52,11 +57,11 @@ class PhoneTaskSessionsTest {
         override fun zone() = ZoneId.of("UTC")
         override fun notifyFix(kind: String) {}
         override fun system() = object : SystemApi {
-            override fun apps(): List<AppEntry> { lookup(); return listOf(AppEntry("Example", PhoneAppIdentity("example.app", 10123))) }
+            override fun apps(): List<AppEntry> { lookup(); return appEntries }
             override fun isInstalled(pkg: String) = true
-            override fun prepareLaunch(app: AppEntry): Either<String, SystemLaunch> = Either.Right(TestSystemLaunch(SystemTarget.Known(app)))
-            override fun launch(plan: SystemLaunch, dispatch: PhoneTasks.SystemDispatch): SysResult = error("unexpected launch")
-            override fun prepareUrl(url: String): Either<String, SystemLaunch> = error("unexpected lookup")
+            override fun prepareLaunch(app: AppEntry): Either<String, SystemLaunch> = Either.Right(this@PhoneTaskSessionsTest.prepareLaunch(app))
+            override fun launch(plan: SystemLaunch, dispatch: PhoneTasks.SystemDispatch): SysResult = this@PhoneTaskSessionsTest.launch(plan, dispatch)
+            override fun prepareUrl(url: String): Either<String, SystemLaunch> = Either.Right(this@PhoneTaskSessionsTest.prepareUrl(url))
             override fun prepareIntent(spec: IntentSpec, selectedApp: AppEntry?): Either<String, SystemLaunch> = error("unexpected intent")
             override fun notify(title: String, text: String): SysResult = error("unexpected notify")
             override fun clipboardSet(text: String): SysResult = error("unexpected clipboard")
@@ -798,6 +803,217 @@ class PhoneTaskSessionsTest {
         pool.submit { checkNotNull(queued.get())() }.get(5, TimeUnit.SECONDS)
         assertNotNull(finish.get(5, TimeUnit.SECONDS))
         assertTrue(legacyRecord.resourcesReleased); assertFalse(sessions.isBusy(legacyRecord))
+    }
+
+    private fun openApp(session: String, pkg: String, background: Boolean = true): ToolOutput =
+        sessions.run(admit(session), PhoneToolCatalog.OPEN, mapOf("app" to pkg, "background" to background))
+
+    @Test fun nativePlanPreparationDoesNotOccupyTheSharedWorkerAndStopRejectsItsLateResult() {
+        val entered = CountDownLatch(1); val exit = CountDownLatch(1)
+        val launches = AtomicLong()
+        prepareLaunch = { app -> entered.countDown(); assertTrue(exit.await(5, TimeUnit.SECONDS)); TestSystemLaunch(SystemTarget.Known(app)) }
+        open = { launches.incrementAndGet(); ActionResult(true, "opened") }
+        val preparing = pool.submit<ToolOutput> { openApp("A", "example.app") }
+        try {
+            assertTrue(entered.await(5, TimeUnit.SECONDS))
+            assertFalse(pool.submit<ToolOutput> { invoke("B") }.get(5, TimeUnit.SECONDS).isError)
+            val a = task("A")
+            assertEquals(1, a.pending); assertTrue(a.running)
+            assertTrue(sessions.stop(a, "stop while preparing"))
+            exit.countDown()
+            assertTrue(preparing.get(5, TimeUnit.SECONDS).isError)
+            assertEquals(0L, launches.get()); assertTrue(a.heldApps.isEmpty())
+        } finally { exit.countDown() }
+    }
+
+    @Test fun retiringWhilePreparingCannotAcquireAliasesOrDispatchOnTheNextLaunch() {
+        val entered = CountDownLatch(1); val exit = CountDownLatch(1)
+        prepareLaunch = { app -> entered.countDown(); assertTrue(exit.await(5, TimeUnit.SECONDS)); TestSystemLaunch(SystemTarget.Known(app)) }
+        val preparing = pool.submit<ToolOutput> { openApp("A", "example.app") }
+        try {
+            assertTrue(entered.await(5, TimeUnit.SECONDS))
+            val a = task("A")
+            sessions.retire()
+            assertFalse(invoke("B").isError)
+            exit.countDown()
+            assertTrue(preparing.get(5, TimeUnit.SECONDS).isError)
+            assertTrue(a.heldApps.isEmpty()); assertTrue(a.resourcesReleased)
+        } finally { exit.countDown() }
+    }
+
+    @Test fun resourceWaitPreservesTheExactPreparedPlanThroughTheActualCoreDispatch() {
+        assertFalse(invoke("holder", tool = PhoneToolCatalog.SCREEN).isError)
+        val prepared = TestSystemLaunch(SystemTarget.Known(appEntries.single()))
+        val preparations = AtomicLong(); val launches = AtomicLong(); val waiting = CountDownLatch(1)
+        prepareLaunch = { preparations.incrementAndGet(); time.addAndGet(5_000); prepared }
+        launch = { actual, dispatch ->
+            assertSame(prepared, actual); assertTrue(dispatch.commitStart()); launches.incrementAndGet()
+            SysResult(false, "attempted once", actual.target)
+        }
+        changed = { if (sessions.snapshot().any { it["sessionId"] == "B" && it["waitingForApp"] != null }) waiting.countDown() }
+        val call = pool.submit<ToolOutput> { openApp("B", "example.app", background = false) }
+        assertTrue(waiting.await(5, TimeUnit.SECONDS)); assertEquals(1L, preparations.get()); assertEquals(0L, launches.get())
+        assertEquals(0L, sessions.snapshot().single { it["sessionId"] == "B" }["waitingForMs"]) // PM time is not resource-wait time.
+        end("holder")
+        assertTrue(call.get(5, TimeUnit.SECONDS).text.contains("attempted once"))
+        assertEquals(1L, preparations.get()); assertEquals(1L, launches.get())
+    }
+
+    @Test fun appAliasesUseBothPackageAndFullUidAndPublishOnlyTheRequestersOwnPackage() {
+        open = { ActionResult(true, "opened") }
+        for ((index, pair) in listOf(
+            PhoneAppIdentity("first.app", 10123) to PhoneAppIdentity("second.app", 10123),
+            PhoneAppIdentity("same.app", 10123) to PhoneAppIdentity("same.app", 20234),
+            PhoneAppIdentity("first.app", 10123) to PhoneAppIdentity("second.app", 20234),
+        ).withIndex()) {
+            val (first, second) = pair
+            val a = "A$index"; val b = "B$index"
+            appEntries = listOf(AppEntry("First", first))
+            assertFalse(openApp(a, first.packageName).isError)
+            appEntries = listOf(AppEntry("Second", second))
+            val waiting = CountDownLatch(1)
+            changed = { if (sessions.snapshot().any { it["sessionId"] == b && it["waitingForScreen"] != null }) waiting.countDown() }
+            val call = pool.submit<ToolOutput> { openApp(b, second.packageName) }
+            assertTrue(waiting.await(5, TimeUnit.SECONDS))
+            val view = sessions.snapshot().single { it["sessionId"] == b }
+            if (index < 2) assertEquals(mapOf("kind" to "known", "packageName" to second.packageName), view["waitingForApp"])
+            else assertNull(view["waitingForApp"]) // Still waits for the real single background display.
+            assertEquals(0L, view["waitingForMs"])
+            end(a)
+            assertFalse(call.get(5, TimeUnit.SECONDS).isError)
+            assertEquals(setOf(second), task(b).heldApps)
+            end(b)
+        }
+    }
+
+    @Test fun unknownMainWaitDoesNotOccupyTheWorkerAndStopClearsOnlyItsWaitingState() {
+        val identity = PhoneAppIdentity("first.app", 10123)
+        appEntries = listOf(AppEntry("First", identity)); open = { ActionResult(true, "opened") }
+        assertFalse(openApp("A", identity.packageName).isError)
+        val waiting = CountDownLatch(1)
+        changed = { if (sessions.snapshot().any { it["sessionId"] == "B" && it["waitingForApp"] != null }) waiting.countDown() }
+        val b = pool.submit<ToolOutput> { invoke("B", tool = PhoneToolCatalog.SCREEN) }
+        assertTrue(waiting.await(5, TimeUnit.SECONDS))
+        assertFalse(pool.submit<ToolOutput> { invoke("metadata") }.get(5, TimeUnit.SECONDS).isError)
+        time.addAndGet(1_501)
+        val view = sessions.snapshot().single { it["sessionId"] == "B" }
+        assertEquals(mapOf("kind" to "unknown"), view["waitingForApp"])
+        assertEquals(1_501L, view["waitingForMs"])
+        assertTrue(sessions.stop(task("B"), "cancel waiting"))
+        assertTrue(b.get(5, TimeUnit.SECONDS).isError)
+        assertNull(sessions.snapshot().single { it["sessionId"] == "B" }["waitingForMs"])
+        assertEquals(setOf(identity), task("A").heldApps)
+    }
+
+    @Test fun mainUnknownIsStickyAcrossReadResultsAndBlocksKnownBackgroundLaunch() {
+        assertFalse(invoke("A", tool = PhoneToolCatalog.SCREEN).isError)
+        assertTrue(task("A").holdsUnknownApp)
+        assertFalse(invoke("A", tool = PhoneToolCatalog.SCREEN).isError)
+        val waiting = CountDownLatch(1)
+        changed = { if (sessions.snapshot().any { it["sessionId"] == "B" && it["waitingForApp"] != null }) waiting.countDown() }
+        val b = pool.submit<ToolOutput> { openApp("B", "example.app") }
+        assertTrue(waiting.await(5, TimeUnit.SECONDS))
+        assertEquals(mapOf("kind" to "known", "packageName" to "example.app"), sessions.snapshot().single { it["sessionId"] == "B" }["waitingForApp"])
+        assertTrue(sessions.stop(task("B"), "cancel")); assertTrue(b.get(5, TimeUnit.SECONDS).isError)
+        assertTrue(task("A").holdsUnknownApp)
+        end("A"); assertFalse(task("A").holdsUnknownApp)
+    }
+
+    @Test fun attemptedAppsStayReservedAcrossAnotherOpenAndTheSixteenthIdentityIsTheLastAdmission() {
+        appEntries = (1..17).map { AppEntry("App$it", PhoneAppIdentity("pkg$it.app", 10000 + it)) }
+        val opened = AtomicLong(); open = { opened.incrementAndGet(); ActionResult(true, "opened") }
+        for (app in appEntries.take(16)) assertFalse(openApp("A", app.packageName).isError)
+        assertEquals(appEntries.take(16).map { it.identity }.toSet(), task("A").heldApps)
+        val refused = openApp("A", appEntries.last().packageName)
+        assertTrue(refused.isError); assertTrue(refused.text.contains("16")); assertEquals(16L, opened.get())
+        assertEquals(16, task("A").heldApps.size)
+        assertFalse(openApp("A", appEntries.first().packageName).isError)
+        end("A"); assertTrue(task("A").heldApps.isEmpty())
+    }
+
+    @Test fun strictCleanupFailureAndRetirementRetainAppAliasesUntilOriginalCleanupRetry() {
+        val identity = PhoneAppIdentity("first.app", 10123)
+        appEntries = listOf(AppEntry("First", identity)); open = { ActionResult(true, "opened") }
+        assertFalse(openApp("A", identity.packageName).isError)
+        val original = task("A"); val originalId = original.tasks.snapshot().id
+        cleanup = { throw IllegalStateException("release unconfirmed") }
+        sessions.retire()
+        assertTrue(original.cleanupFailed); assertEquals(setOf(identity), original.heldApps)
+        val waiting = CountDownLatch(1)
+        changed = { if (sessions.snapshot().any { it["sessionId"] == "B" && it["waitingForApp"] != null }) waiting.countDown() }
+        val b = pool.submit<ToolOutput> { openApp("B", identity.packageName) }
+        assertTrue(waiting.await(5, TimeUnit.SECONDS))
+        cleanup = { assertEquals(originalId, it) }
+        assertTrue(sessions.retryCleanup(originalId))
+        assertFalse(b.get(5, TimeUnit.SECONDS).isError)
+        assertTrue(original.heldApps.isEmpty()); assertEquals(setOf(identity), task("B").heldApps)
+    }
+
+    @Test fun appWaitingUsesTheSingleResourceDeadlineAndNeverDropsTheHoldersAliases() {
+        val identity = PhoneAppIdentity("first.app", 10123)
+        appEntries = listOf(AppEntry("First", identity)); open = { ActionResult(true, "opened") }
+        assertFalse(openApp("A", identity.packageName).isError)
+        val waiting = CountDownLatch(1)
+        changed = { if (sessions.snapshot().any { it["sessionId"] == "B" && it["waitingForApp"] != null }) waiting.countDown() }
+        val b = pool.submit<ToolOutput> { openApp("B", identity.packageName) }
+        assertTrue(waiting.await(5, TimeUnit.SECONDS))
+        time.addAndGet(30_001)
+        val out = b.get(5, TimeUnit.SECONDS)
+        assertTrue(out.isError); assertTrue(out.text.contains("屏幕或应用"))
+        assertEquals(setOf(identity), task("A").heldApps)
+        assertTrue(task("B").heldApps.isEmpty())
+    }
+
+    @Test fun timedOutLaunchRetainsAppAliasesUntilItsBodyAndStrictCleanupBothFinish() {
+        val identity = PhoneAppIdentity("first.app", 10123)
+        appEntries = listOf(AppEntry("First", identity))
+        val entered = CountDownLatch(1); val bodyExit = CountDownLatch(1)
+        val cleanupEntered = CountDownLatch(1); val cleanupExit = CountDownLatch(1); val waiting = CountDownLatch(1)
+        open = {
+            entered.countDown()
+            var done = false
+            while (!done) try { done = bodyExit.await(5, TimeUnit.SECONDS) } catch (_: InterruptedException) { }
+            ActionResult(true, "opened")
+        }
+        val a = pool.submit<ToolOutput> { openApp("A", identity.packageName) }
+        try {
+            assertTrue(entered.await(5, TimeUnit.SECONDS))
+            val original = task("A")
+            time.addAndGet(120_000)
+            assertTrue(a.get(5, TimeUnit.SECONDS).isError)
+            assertTrue(original.running); assertEquals(setOf(identity), original.heldApps)
+            cleanup = { cleanupEntered.countDown(); assertTrue(cleanupExit.await(5, TimeUnit.SECONDS)) }
+            end("A")
+            changed = { if (sessions.snapshot().any { it["sessionId"] == "B" && it["waitingForApp"] != null }) waiting.countDown() }
+            open = { ActionResult(true, "opened next") }
+            val b = pool.submit<ToolOutput> { openApp("B", identity.packageName) }
+            assertTrue(waiting.await(5, TimeUnit.SECONDS)); assertFalse(b.isDone)
+            bodyExit.countDown()
+            assertTrue(cleanupEntered.await(5, TimeUnit.SECONDS))
+            assertEquals(setOf(identity), original.heldApps); assertFalse(b.isDone)
+            cleanupExit.countDown()
+            assertFalse(b.get(5, TimeUnit.SECONDS).isError)
+            assertTrue(original.heldApps.isEmpty())
+        } finally { bodyExit.countDown(); cleanupExit.countDown() }
+    }
+
+    @Test fun chooserHasNoInventedKnownIdentityAndDispatchesItsOriginalPlanOnce() {
+        assertFalse(invoke("holder", tool = PhoneToolCatalog.SCREEN).isError)
+        val chooser = TestSystemLaunch(SystemTarget.UserChoice, "url")
+        val prepared = AtomicLong(); val started = AtomicLong(); val waiting = CountDownLatch(1)
+        prepareUrl = { prepared.incrementAndGet(); chooser }
+        launch = { plan, dispatch ->
+            assertSame(chooser, plan); assertTrue(dispatch.commitStart()); started.incrementAndGet()
+            SysResult(false, "chooser attempted", plan.target)
+        }
+        changed = { if (sessions.snapshot().any { it["sessionId"] == "B" && it["waitingForApp"] != null }) waiting.countDown() }
+        val b = pool.submit<ToolOutput> { sessions.run(admit("B"), PhoneToolCatalog.OPEN, mapOf("url" to "https://example.com/")) }
+        assertTrue(waiting.await(5, TimeUnit.SECONDS))
+        assertEquals(mapOf("kind" to "unknown"), sessions.snapshot().single { it["sessionId"] == "B" }["waitingForApp"])
+        end("holder")
+        assertTrue(b.get(5, TimeUnit.SECONDS).text.contains("chooser attempted"))
+        assertEquals(1L, prepared.get()); assertEquals(1L, started.get())
+        assertTrue(task("B").holdsUnknownApp); assertTrue(task("B").heldApps.isEmpty())
     }
 
 }

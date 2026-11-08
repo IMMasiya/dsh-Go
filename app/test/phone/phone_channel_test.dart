@@ -30,6 +30,28 @@ void main() {
     expect(PhoneTaskStatus.fromMap({}).completion, 'unknown');
   });
 
+  test('resource waiting parses only its own typed target and nonnegative integer elapsed time', () {
+    final known = PhoneTaskStatus.fromMap({
+      'waitingForApp': {'kind': 'known', 'packageName': 'example.app', 'uid': 10123, 'holderSession': 'private'},
+      'waitingForMs': 1501,
+    });
+    expect(known.waitingForApp!.packageName, 'example.app');
+    expect(known.waitingForMs, 1501); expect(known.waitingForResources, isTrue);
+    final unknown = PhoneTaskStatus.fromMap({'waitingForApp': {'kind': 'unknown'}});
+    expect(unknown.waitingForApp, isNotNull); expect(unknown.waitingForApp!.packageName, isNull);
+    expect(unknown.waitingForMs, 0);
+    for (final invalid in [null, 'app', {'kind': 'known'}, {'kind': 'known', 'packageName': ' '},
+      {'kind': 'unknown', 'packageName': 'invented'}, {'kind': 'future', 'packageName': 'example.app'}]) {
+      expect(PhoneTaskStatus.fromMap({'waitingForApp': invalid}).waitingForApp, isNull);
+    }
+    for (final invalid in [null, -1, 1000.5, '1000', true]) {
+      expect(PhoneTaskStatus.fromMap({'waitingForMs': invalid}).waitingForMs, 0);
+    }
+    expect(PhoneTaskStatus.fromMap({}).waitingForResources, isFalse);
+    expect(PhoneTaskStatus.fromMap({'waitingForScreen': 'main'}).waitingForResources, isTrue);
+    expect(PhoneTaskStatus.fromMap({'waitingForScreen': 'other'}).waitingForResources, isFalse);
+  });
+
   test('status parses every field of the contract', () async {
     final native = FakePhoneNative(
       status: phoneStatus(

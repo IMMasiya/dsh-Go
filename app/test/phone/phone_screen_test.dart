@@ -295,6 +295,46 @@ void main() {
     expect(find.text('正在操作「美团」'), findsNothing);
   });
 
+  testWidgets('resource wait rows consume native targets and elapsed snapshots without exposing holders', (tester) async {
+    Map<String, Object?> status(List<Map<String, Object?>> tasks) => {
+      ...phoneStatus(a11y: true), 'taskProtocol': 1, 'tasks': tasks,
+    };
+    final native = FakePhoneNative(status: status([
+      {'id': 71, 'sessionId': 'secret-holder', 'active': true, 'waitingForApp':
+        {'kind': 'known', 'packageName': 'example.app', 'uid': 10123}, 'waitingForMs': 2501},
+      {'id': 72, 'active': true, 'waitingForApp': {'kind': 'unknown'}, 'waitingForMs': 900},
+    ]));
+    await pumpPhone(tester, const PhoneControlScreen(), native: native);
+    expect(find.text('任务 71 · 等待资源'), findsOneWidget);
+    expect(find.text('等待应用 example.app，已等待 2 秒。'), findsOneWidget);
+    expect(find.text('等待界面资源（应用身份未确认），已等待 0 秒。'), findsOneWidget);
+    expect(find.textContaining('secret-holder'), findsNothing);
+    expect(find.textContaining('10123'), findsNothing);
+    native.push(status([
+      {'id': 71, 'active': true, 'waitingForApp': {'kind': 'known', 'packageName': 'example.app'}, 'waitingForMs': 4501},
+    ]));
+    await settlePhone(tester);
+    expect(find.text('等待应用 example.app，已等待 4 秒。'), findsOneWidget);
+    expect(find.byKey(const ValueKey('phone-waiting-72')), findsNothing);
+    native.push(status([{'id': 71, 'active': true}]));
+    await settlePhone(tester);
+    expect(find.byKey(const ValueKey('phone-waiting-71')), findsNothing);
+  });
+
+  testWidgets('legacy screen waiting remains visible and malformed app status does not invent a target', (tester) async {
+    await pumpPhone(tester, const PhoneControlScreen(), native: FakePhoneNative(status: {
+      ...phoneStatus(a11y: true), 'taskProtocol': 1, 'tasks': [
+        {'id': 81, 'active': true, 'waitingForScreen': 'background', 'waitingForMs': 3000},
+        {'id': 82, 'active': true, 'waitingForApp': {'kind': 'known'}, 'waitingForMs': 999},
+        {'id': 83, 'stopped': true, 'sessionId': 'stopped', 'waitingForApp': {'kind': 'unknown'}},
+      ],
+    }));
+    expect(find.text('等待后台屏，已等待 3 秒。'), findsOneWidget);
+    expect(find.byKey(const ValueKey('phone-waiting-82')), findsNothing);
+    expect(find.byKey(const ValueKey('phone-waiting-83')), findsNothing);
+    expect(find.byKey(const ValueKey('phone-resume-83')), findsOneWidget);
+  });
+
   testWidgets('inactive modern sessions have an explicit exact resume action', (tester) async {
     final status = {
       ...phoneStatus(a11y: true),
