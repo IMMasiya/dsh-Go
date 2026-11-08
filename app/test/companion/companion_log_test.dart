@@ -125,32 +125,42 @@ void main() {
 
   testWidgets('a fetch of earlier history that brings nothing stops; a tap tries again', (tester) async {
     var loads = 0;
-    Widget log({required bool loading}) => MaterialApp(
-      theme: buildDarkTheme(),
-      localizationsDelegates: L10n.localizationsDelegates,
-      supportedLocales: L10n.supportedLocales,
-      locale: const Locale('zh'),
-      home: Scaffold(
-        body: CompanionLog(
-          entries: const [CompanionLogEntry.you('在吗')],
-          name: '小鲸',
-          onClose: () {},
-          loadingOlder: loading,
-          onLoadOlder: () => loads++,
+    var history = 1;
+    late StateSetter rebuild;
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: buildDarkTheme(),
+        localizationsDelegates: L10n.localizationsDelegates,
+        supportedLocales: L10n.supportedLocales,
+        locale: const Locale('zh'),
+        home: Scaffold(
+          body: StatefulBuilder(
+            builder: (context, setState) {
+              rebuild = setState;
+              return CompanionLog(
+                entries: const [CompanionLogEntry.you('在吗')],
+                name: '小鲸',
+                onClose: () {},
+                history: history,
+                onLoadOlder: () async => loads++,
+              );
+            },
+          ),
         ),
       ),
     );
-    await tester.pumpWidget(log(loading: false));
+    await tester.pump();
+    await tester.pump();
+    // Brought nothing: no second try on its own.
+    expect(loads, 1);
     await tester.pump();
     expect(loads, 1);
-    await tester.pumpWidget(log(loading: true));
-    await tester.pumpWidget(log(loading: false));
-    await tester.pump();
-    await tester.pump();
-    // Failed (nothing new came): no second try on its own.
-    expect(loads, 1);
+    expect(find.text('加载更早的记录'), findsOneWidget);
+    // A page with nothing the log shows still counts as progress.
     await tester.tap(find.text('加载更早的记录'));
+    rebuild(() => history = 5);
     await tester.pump();
-    expect(loads, 2);
+    await tester.pump();
+    expect(loads, greaterThanOrEqualTo(2));
   });
 }

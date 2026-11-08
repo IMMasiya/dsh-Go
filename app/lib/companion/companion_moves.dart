@@ -8,6 +8,7 @@
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/widgets.dart' show StringCharacters;
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'companion_reply.dart';
@@ -148,7 +149,14 @@ class CompanionMoves {
   static String _numbered(String label, int n) {
     final suffix = ' $n';
     final room = 40 - suffix.length;
-    return '${label.length > room ? label.substring(0, room).trimRight() : label}$suffix';
+    if (label.length <= room) return '$label$suffix';
+    // Whole characters only (an emoji is two code units).
+    final kept = StringBuffer();
+    for (final c in label.characters) {
+      if (kept.length + c.length > room) break;
+      kept.write(c);
+    }
+    return '${kept.toString().trimRight()}$suffix';
   }
 
   /// How many of each kind the AI is told about, at most.

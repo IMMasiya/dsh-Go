@@ -60,6 +60,12 @@ class UserPetsController extends AsyncNotifier<List<PetPack>> {
   Future<List<PetPack>> _list() async {
     final ticket = ++_asked;
     final found = await ref.read(petLibraryProvider).list();
+    // A pet that failed to read while it was away (an interrupted replacement,
+    // put right by this listing) is read again.
+    for (final pack in found) {
+      final read = petPackProvider(pack.id);
+      if (ref.exists(read) && ref.read(read).hasError) ref.invalidate(read);
+    }
     if (ticket < _landed) return _latest;
     _landed = ticket;
     return _latest = found;

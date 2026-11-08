@@ -4,6 +4,7 @@
 // line of narration between them. Newest at the bottom; scrolling up reads back,
 // and in full mode reaching the top fetches what came before.
 
+import 'dart:async';
 import 'dart:ui' show ImageFilter;
 
 import 'package:dsh_client/dsh_client.dart';
@@ -56,16 +57,19 @@ enum CompanionLogSpeaker { her, you, narration }
 
 /// The log of a light conversation, kept on this phone. Her marks are taken
 /// out; so is the aside the page put in front of the person's lines.
+/// [speaking]: what she is saying right now, still arriving.
 List<CompanionLogEntry> companionLogFromLight(
   List<CompanionLine> lines, {
   Map<String, String> emotions = const {},
   Map<String, String> actions = const {},
+  String? speaking,
 }) => [
   for (final line in lines)
     if (line.fromHer)
       ?_her(line.text, emotions, actions)
     else if (companionSaidText(line.text) case final said when said.isNotEmpty)
       CompanionLogEntry.you(said),
+  if (speaking != null) ?_her(speaking, emotions, actions, streaming: true),
 ];
 
 /// The log of her full-mode session: what the person said, what she said, and
@@ -78,6 +82,7 @@ List<CompanionLogEntry> companionLogFromChat(
   // Items don't change once made (an update is a new item), so what one reads
   // as is kept with it; her labels changing starts over.
   final labels = Object.hash(
+    appL10n.localeName,
     Object.hashAllUnordered(emotions.entries.map((e) => (e.key, e.value))),
     Object.hashAllUnordered(actions.entries.map((e) => (e.key, e.value))),
   );
@@ -101,8 +106,8 @@ CompanionLogEntry? _entryOf(ChatItem item, Map<String, String> emotions, Map<Str
     case UserChatItem(:final text):
       final said = companionSaidText(text);
       return said.isEmpty ? null : CompanionLogEntry.you(said);
-    case AssistantChatItem(:final text):
-      return _her(text, emotions, actions);
+    case AssistantChatItem(:final text, :final streaming):
+      return _her(text, emotions, actions, streaming: streaming);
     case ToolChatItem():
       final view = ToolView.of(item);
       final subject = view.summary.trim();
@@ -115,14 +120,21 @@ CompanionLogEntry? _entryOf(ChatItem item, Map<String, String> emotions, Map<Str
   }
 }
 
-CompanionLogEntry? _her(String text, Map<String, String> emotions, Map<String, String> actions) {
-  final words = parseCompanionReply(text, emotions: emotions, actions: actions).words;
+CompanionLogEntry? _her(
+  String text,
+  Map<String, String> emotions,
+  Map<String, String> actions, {
+  bool streaming = false,
+}) {
+  final words = parseCompanionReply(text, streaming: streaming, emotions: emotions, actions: actions).words;
   return words.isEmpty ? null : CompanionLogEntry.her(words);
 }
 
 /// The backlog over the room. [onLoadOlder] is there while there is more to
-/// fetch (full mode); [onOpenChat] when the conversation also lives in the main
-/// chat, for its tool details.
+/// fetch (full mode), and [history] counts what has been fetched (every item,
+/// shown or not), so a fetch that brought nothing can be told from one that
+/// brought only what the log leaves out. [onOpenChat] when the conversation
+/// also lives in the main chat, for its tool details.
 class CompanionLog extends StatefulWidget {
   const CompanionLog({
     super.key,
@@ -131,6 +143,7 @@ class CompanionLog extends StatefulWidget {
     required this.onClose,
     this.onLoadOlder,
     this.loadingOlder = false,
+    this.history = 0,
     this.onOpenChat,
   });
 
@@ -139,8 +152,9 @@ class CompanionLog extends StatefulWidget {
   /// Her name, over her lines.
   final String name;
   final VoidCallback onClose;
-  final VoidCallback? onLoadOlder;
+  final Future<void> Function()? onLoadOlder;
   final bool loadingOlder;
+  final int history;
   final VoidCallback? onOpenChat;
 
   @override
@@ -152,24 +166,33 @@ class _CompanionLogState extends State<CompanionLog> {
 
   /// The last fetch brought nothing (it failed): no more on its own.
   bool _stalled = false;
-  int _before = 0;
 
-  /// Asked for, and not loading yet: one fetch at a time.
-  bool _asked = false;
+  /// A fetch is out: one at a time, over when its future is.
+  bool _fetching = false;
 
-  @override
-  void didUpdateWidget(CompanionLog old) {
-    super.didUpdateWidget(old);
-    if (widget.loadingOlder) _asked = false;
-    if (old.loadingOlder && !widget.loadingOlder && widget.entries.length <= _before) _stalled = true;
+  Future<void> _load() async {
+    final load = widget.onLoadOlder;
+    if (load == null || widget.loadingOlder || _fetching) return;
+    _fetching = true;
+    final before = widget.history;
+    try {
+      await load();
+    } on Object {
+      // Counted below as bringing nothing.
+    }
+    if (!mounted) return;
+    _fetching = false;
+    if (widget.history <= before) {
+      setState(() => _stalled = true);
+    } else {
+      // Brought something, maybe nothing the log shows: on to the next page.
+      WidgetsBinding.instance.addPostFrameCallback((_) => _fillUp());
+    }
   }
 
-  void _load() {
-    final load = widget.onLoadOlder;
-    if (load == null || widget.loadingOlder || _asked) return;
-    _before = widget.entries.length;
-    _asked = true;
-    load();
+  void _retry() {
+    setState(() => _stalled = false);
+    unawaited(_load());
   }
 
   @override
@@ -180,14 +203,15 @@ class _CompanionLogState extends State<CompanionLog> {
 
   /// Near the top (the end of a reversed list): fetch what came before.
   bool _onScroll(ScrollNotification notification) {
-    if (!_stalled && notification.metrics.extentAfter < 240) _load();
+    if (!_stalled && notification.metrics.extentAfter < 240) unawaited(_load());
     return false;
   }
 
   /// A log too short to scroll never scrolls near its top: look after layout.
+  /// One with nothing to show yet has no list at all: fetch on.
   void _fillUp() {
-    if (!mounted || _stalled || !_scroll.hasClients) return;
-    if (_scroll.position.extentAfter < 240) _load();
+    if (!mounted || _stalled) return;
+    if (widget.entries.isEmpty || (_scroll.hasClients && _scroll.position.extentAfter < 240)) unawaited(_load());
   }
 
   @override
@@ -207,11 +231,19 @@ class _CompanionLogState extends State<CompanionLog> {
         ? Center(
             child: Padding(
               padding: const EdgeInsets.all(32),
-              child: Text(
-                l10n.companionLogEmpty,
-                textAlign: TextAlign.center,
-                style: theme.textTheme.bodyLarge?.copyWith(color: colors.textTertiary),
-              ),
+              child: older && !_stalled
+                  ? const SizedBox.square(dimension: 18, child: CircularProgressIndicator(strokeWidth: 2))
+                  : Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          l10n.companionLogEmpty,
+                          textAlign: TextAlign.center,
+                          style: theme.textTheme.bodyLarge?.copyWith(color: colors.textTertiary),
+                        ),
+                        if (older) TextButton(onPressed: _retry, child: Text(l10n.companionLogOlder)),
+                      ],
+                    ),
             ),
           )
         : NotificationListener<ScrollNotification>(
@@ -233,13 +265,7 @@ class _CompanionLogState extends State<CompanionLog> {
                   if (index == entries.length) {
                     if (_stalled && !widget.loadingOlder) {
                       return Center(
-                        child: TextButton(
-                          onPressed: () {
-                            setState(() => _stalled = false);
-                            _load();
-                          },
-                          child: Text(l10n.companionLogOlder),
-                        ),
+                        child: TextButton(onPressed: _retry, child: Text(l10n.companionLogOlder)),
                       );
                     }
                     return const Padding(

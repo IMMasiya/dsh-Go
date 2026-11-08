@@ -466,6 +466,43 @@ void main() {
     }
   });
 
+  testWidgets('an approval waits while its arguments are still arriving', (tester) async {
+    final room = _Room(temporary);
+    await room.open(tester);
+    try {
+      final wire = _Wire(room)
+        ..beginTurn()
+        ..start('streaming-args');
+      wire.text('我看一下。');
+      wire.endText();
+      wire.chunk({'type': 'block-start', 'index': 1, 'blockType': 'tool-call'});
+      wire.chunk({
+        'type': 'tool-call-delta',
+        'index': 1,
+        'id': 'call-streaming',
+        'name': 'bash',
+        'argumentsDelta': '{"command":"rm -',
+      });
+      await flush(tester);
+      room.client.events.add(
+        HostEvent.fromFrame({
+          'type': 'waterfall',
+          'event': 'approval/request',
+          'eventId': 'approval-streaming',
+          'agentId': _session,
+          'request': {'toolName': 'bash', 'callId': 'call-streaming'},
+        }),
+      );
+      await flush(tester);
+      await tester.pump(const Duration(milliseconds: 600));
+      // Its call is there, its command half written: nothing to allow yet.
+      expect(room.state.items.whereType<ToolChatItem>().single.status, ToolStatus.streaming);
+      expect(find.byType(ApprovalCard), findsNothing);
+    } finally {
+      await room.close(tester);
+    }
+  });
+
   testWidgets('an approval whose call never shows up is shown after a short wait, as the main chat does', (
     tester,
   ) async {

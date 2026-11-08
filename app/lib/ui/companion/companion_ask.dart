@@ -5,6 +5,7 @@
 // glass so they belong to the room instead of sending the person elsewhere.
 
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:dsh_client/dsh_client.dart';
 import 'package:flutter/material.dart';
@@ -40,6 +41,9 @@ class _CompanionAskState extends ConsumerState<CompanionAsk> {
   String? _waitedFor;
   Timer? _wait;
 
+  /// The approval [_wait] is counting for.
+  String? _waitingFor;
+
   @override
   void dispose() {
     _wait?.cancel();
@@ -69,14 +73,16 @@ class _CompanionAskState extends ConsumerState<CompanionAsk> {
         approval.callId != null &&
         (tool == null || tool.status == ToolStatus.streaming) &&
         _waitedFor != approval.eventId;
-    if (waiting && _wait == null) {
-      final id = approval.eventId;
+    if (waiting && _waitingFor != approval.eventId) {
+      _wait?.cancel();
+      final id = _waitingFor = approval.eventId;
       _wait = Timer(CompanionAsk.detailWait, () {
         if (mounted) setState(() => _waitedFor = id);
       });
     } else if (!waiting) {
       _wait?.cancel();
       _wait = null;
+      _waitingFor = null;
     }
     Widget? card;
     if (approval != null && !waiting) {
@@ -111,11 +117,19 @@ class _CompanionAskState extends ConsumerState<CompanionAsk> {
               padding: const EdgeInsets.only(bottom: 8),
               child: ConstrainedBox(
                 // A long command or a plan to review scrolls inside; she stays in view.
-                constraints: BoxConstraints(maxHeight: MediaQuery.sizeOf(context).height * 0.5),
+                constraints: BoxConstraints(maxHeight: _roomFor(context)),
                 child: SingleChildScrollView(child: CompanionDeepCards(child: card)),
               ),
             ),
     );
+  }
+
+  /// At most half the screen, and never more than the keyboard, the top bar,
+  /// the input and a line of her words leave.
+  static double _roomFor(BuildContext context) {
+    final media = MediaQuery.of(context);
+    final left = media.size.height - media.viewInsets.bottom - media.padding.top - 260;
+    return left.clamp(140.0, math.max(140.0, media.size.height * 0.5));
   }
 
   /// The tool call the approval is about: its command or path is the card's body.

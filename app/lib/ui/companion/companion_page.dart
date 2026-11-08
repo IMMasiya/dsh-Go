@@ -1662,13 +1662,11 @@ class _CompanionPageState extends ConsumerState<CompanionPage> implements Compan
       return CompanionLog(
         key: const ValueKey('log-light'),
         entries: companionLogFromLight(
-          [
-            ...?_lightHistory?.lines,
-            // What she is saying right now, already in her bubble.
-            if (_lightReply != null && _lightText.isNotEmpty) CompanionLine.her(_lightText),
-          ],
+          _lightHistory?.lines ?? const [],
           emotions: _moves.emotionLabels,
           actions: _moves.actionLabels,
+          // What she is saying right now, already in her bubble.
+          speaking: _lightReply != null && _lightText.isNotEmpty ? _lightText : null,
         ),
         name: name,
         onClose: _closeLog,
@@ -1689,7 +1687,8 @@ class _CompanionPageState extends ConsumerState<CompanionPage> implements Compan
           name: name,
           onClose: _closeLog,
           loadingOlder: chat.loading,
-          onLoadOlder: chat.more ? () => unawaited(ref.read(chatProvider(sessionId).notifier).loadOlder()) : null,
+          history: chat.items.length,
+          onLoadOlder: chat.more ? ref.read(chatProvider(sessionId).notifier).loadOlder : null,
           onOpenChat: () {
             _closeLog();
             _openFullChat();
@@ -2115,6 +2114,8 @@ class _CompanionPageState extends ConsumerState<CompanionPage> implements Compan
     setState(() {
       _phase = _Phase.setup;
       _stageReady = false;
+      _adaptOffer = null;
+      _probe = null;
     });
     await _store?.remove();
   }
