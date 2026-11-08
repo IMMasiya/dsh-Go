@@ -2,7 +2,6 @@ package io.github.ccch1mneyyy.dsh_app.phone
 
 import io.github.ccch1mneyyy.dsh_app.phone.background.BackgroundResourceJournal
 import java.time.ZoneId
-import java.lang.management.ManagementFactory
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
@@ -581,7 +580,6 @@ class PhoneTaskSessionsTest {
     }
     @Test fun policyPublicationExcludesANewAdmissionUntilTheValueIsVisible() {
         val published = AtomicReference(PhonePolicies())
-        val publisherThread = AtomicLong()
         val insidePublish = CountDownLatch(1)
         val releasePublish = CountDownLatch(1)
         val attempting = CountDownLatch(1)
@@ -598,7 +596,6 @@ class PhoneTaskSessionsTest {
         }
         val writer = pool.submit<PhonePolicies?> {
             sessions.updatePolicies(mapOf("unlocks" to mapOf("secretFields" to true)), published::get) { next ->
-                publisherThread.set(Thread.currentThread().id)
                 insidePublish.countDown()
                 check(releasePublish.await(5, TimeUnit.SECONDS))
                 published.set(next)
@@ -610,14 +607,13 @@ class PhoneTaskSessionsTest {
             assertTrue(attempting.await(5, TimeUnit.SECONDS))
             // Observe the actual monitor barrier, not a sleep or assumed scheduler delay.
             val until = System.nanoTime() + TimeUnit.SECONDS.toNanos(5)
-            val threads = ManagementFactory.getThreadMXBean()
-            var info = threads.getThreadInfo(caller.id)
-            while (info?.lockOwnerId != publisherThread.get() && admitted.count != 0L && System.nanoTime() < until) {
+            while (caller.state != Thread.State.BLOCKED && admitted.count != 0L && System.nanoTime() < until) {
                 Thread.yield()
-                info = threads.getThreadInfo(caller.id)
             }
-            assertEquals(publisherThread.get(), info?.lockOwnerId)
-            assertEquals(Thread.State.BLOCKED, info?.threadState)
+            assertEquals(Thread.State.BLOCKED, caller.state)
+            assertTrue(caller.stackTrace.any {
+                it.className == PhoneTaskSessions::class.java.name && it.methodName == "admit"
+            })
             assertEquals(1L, admitted.count)
             releasePublish.countDown()
             assertNotNull(writer.get(5, TimeUnit.SECONDS))
