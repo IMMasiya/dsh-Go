@@ -23,6 +23,7 @@ import io.github.ccch1mneyyy.dsh_app.MainActivity
 import io.github.ccch1mneyyy.dsh_app.R
 import io.github.ccch1mneyyy.dsh_app.notify.LiveActivity
 import io.github.ccch1mneyyy.dsh_app.phone.a11y.A11yKeeper
+import io.github.ccch1mneyyy.dsh_app.phone.a11y.MlKitLocalOcr
 import io.github.ccch1mneyyy.dsh_app.phone.a11y.PhoneA11yService
 import io.github.ccch1mneyyy.dsh_app.phone.background.BackgroundControl
 import io.github.ccch1mneyyy.dsh_app.phone.background.BackgroundPreview
@@ -304,6 +305,11 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
     }
 
     fun setPolicies(map: Map<*, *>?): Boolean {
+        applyLocalOcrPolicyUpdate(map,
+            publish = { MlKitLocalOcr.get(app).setEnabled(it) },
+            commit = { app.getSharedPreferences(MlKitLocalOcr.PREFS, Context.MODE_PRIVATE)
+                .edit().putBoolean(MlKitLocalOcr.KEY, it).commit() },
+        )?.let { return it }
         // Partial updates keep what they don't mention (the 免确认 switch sends only its flag).
         // 解除限制 is refused while any task, selected or not, may still act; restoring never is.
         val p = sessions.updatePolicies(map, { policiesCache }, { policiesCache = it }) ?: return false
@@ -319,7 +325,8 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
         for (pkg in (p.denyPackages + p.confirmEveryWritePackages + PhonePolicies().denyPackages + PhonePolicies().confirmEveryWritePackages).distinct()) {
             label(pkg)?.let { labels[pkg] = it }
         }
-        return p.toMap() + mapOf("labels" to labels, "defaults" to PhonePolicies().toMap())
+        return p.toMap() + mapOf("labels" to labels, "defaults" to PhonePolicies().toMap(),
+            LOCAL_OCR_POLICY_FIELD to MlKitLocalOcr.get(app).enabled)
     }
 
     private fun label(pkg: String): String? = try {
@@ -925,4 +932,20 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
         fun switchedOn(context: Context): Boolean =
             context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getBoolean(K_ENABLED, false)
     }
+}
+
+private const val LOCAL_OCR_POLICY_FIELD = "localOcrEnabled"
+
+/** Null leaves the existing policy update untouched. OCR uses its own single-key transaction. */
+internal fun applyLocalOcrPolicyUpdate(map: Map<*, *>?, publish: (Boolean) -> Unit,
+    commit: (Boolean) -> Boolean): Boolean? {
+    if (map?.containsKey(LOCAL_OCR_POLICY_FIELD) != true) return null
+    if (map.size != 1) return false
+    val enabled = map[LOCAL_OCR_POLICY_FIELD] as? Boolean ?: return false
+    // OFF revokes admission even if storage fails. ON waits for a confirmed save.
+    if (!enabled) publish(false)
+    val saved = try { commit(enabled) } catch (_: Exception) { false }
+    if (!saved) return false
+    if (enabled) publish(true)
+    return true
 }
