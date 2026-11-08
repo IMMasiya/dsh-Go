@@ -66,6 +66,8 @@ class PrivilegedDisplayCore(private val context: Context) {
 
     // Guarded by lock, one recent frame only; never a permission to drive coordinates.
     private var visualObservation: BackgroundVisualObservation? = null
+    // Same owner and Core lock; never replace an unconfirmed platform registration.
+    private var treeConnection: TreeConnection? = null
 
     private val privileged: Context by lazy {
         if (Process.myUid() == Process.SHELL_UID)
@@ -165,6 +167,7 @@ class PrivilegedDisplayCore(private val context: Context) {
             }
             if (op == Proto.OP_GRANT_SECURE_SETTINGS) {
                 lock.withLock {
+                    requireTreeReady()
                     if (selfCheckOwner) throw Fault("identityChanged")
                     grantSecureSettings(request.getInt(Proto.USER))
                 }
@@ -201,6 +204,7 @@ class PrivilegedDisplayCore(private val context: Context) {
 
     private fun dispatch(op: String?, request: Bundle, response: Bundle) {
         if (op == Proto.OP_SELF_CHECK_PROBE) {
+            requireTreeReady()
             selfCheckProbe(request, response)
             return
         }
@@ -221,6 +225,7 @@ class PrivilegedDisplayCore(private val context: Context) {
             }
             return
         }
+        requireTreeReady()
         if (selfCheckOwner) throw Fault("identityChanged")
         if (owner != null && owner != ownerId) throw Fault("identityChanged")
         if ((op == Proto.OP_CREATE || op == Proto.OP_LAUNCH) && request.containsKey(Proto.RELEASE_RECEIPT)) {
@@ -346,6 +351,7 @@ class PrivilegedDisplayCore(private val context: Context) {
 
     /** Test a real input receiver, not an empty display. Never launches or touches a user app. */
     private fun gateProbe(response: Bundle) {
+        requireTreeReady()
         // A settings probe must not replace or release an active task's display.
         if (owner != null || display != null) throw Fault("probeBusy")
         try {
@@ -471,6 +477,7 @@ class PrivilegedDisplayCore(private val context: Context) {
     /** Old callers keep their best-effort contract. Strict owners use releaseStrict instead. */
     private fun releaseAll() = lock.withLock {
         if (strictOwner) throw Fault("releaseReceiptRequired") // Never downgrade a strict owner's cleanup.
+        closeTreeConnection()
         visualObservation = null
         stopPreview()
         preview.invalidate()
@@ -494,6 +501,7 @@ class PrivilegedDisplayCore(private val context: Context) {
         // Only the last completed identity/variant is cached; it never touches a new owner.
         if (lastReleasedOwner == ownerId) return lastReleaseNeverCreated
         if (owner != ownerId || !strictOwner) throw Fault("identityChanged")
+        closeTreeConnection()
         visualObservation = null
         stopPreview()
         preview.invalidate()
@@ -554,8 +562,10 @@ class PrivilegedDisplayCore(private val context: Context) {
             response.putBoolean(Proto.POOR, false); response.putInt(Proto.COUNT, 0); return
         }
         // Local preview never enters ScreenSnapshot / MCP. Publish only after the secure verdict.
-        if (shot != null) shot.raw?.let { preview.captured(it) }
-        else preview.observationUnavailable(if (captureResult.isSuccess) null else "captureFailed")
+        if (treeConnection == null) {
+            if (shot != null) shot.raw?.let { preview.captured(it) }
+            else preview.observationUnavailable(if (captureResult.isSuccess) null else "captureFailed")
+        }
         // A read must report its failure; observation after an already-dispatched write
         // must not turn that write into a failed action that a caller might replay.
         val tree = if (requireTree) treeResult.getOrThrow() else treeResult.getOrNull()
@@ -761,6 +771,7 @@ class PrivilegedDisplayCore(private val context: Context) {
             if (!lock.tryLock()) return previewReply(request, busy = true)
         } else lock.lock()
         val reply = try {
+            if (enabled) requireTreeReady()
             if (selfCheckOwner) throw Fault("identityChanged")
             val requestedOwner = request.getString(Proto.OWNER)
             if (requestedOwner.isNullOrEmpty() || requestedOwner != owner) throw Fault("identityChanged")
@@ -883,17 +894,42 @@ class PrivilegedDisplayCore(private val context: Context) {
         var target: AccessibilityNodeInfo? = null
     }
 
-    private fun readTree(displayId: Int, pkg: String, scanOtherWindows: Boolean = false, inspectVisual: Boolean = false): TreeRead {
-        val vd = display ?: throw Fault("displayMissing")
-        val conn = TreeConnection(context, pkg)
+    private fun requireTreeReady() {
+        if (treeConnection != null) throw Fault("treeCleanupPending")
+    }
+
+    private fun closeTreeConnection() {
+        val original = treeConnection ?: return
+        if (tracePhase("dsh.bg.treeClose") { original.close() }) {
+            treeConnection = null
+        } else {
+            visualObservation = null
+            stopPreview()
+            preview.invalidate()
+            throw Fault("treeCleanupPending")
+        }
+    }
+
+    /** Core lock covers open, every live node use/recycle, and this same connection's close. */
+    private fun <T> withTreeConnection(targetDisplay: Display, pkg: String, unavailable: String, read: (UiAutomation) -> T): T {
+        requireTreeReady()
+        val connection = TreeConnection(context, pkg)
+        treeConnection = connection
         try {
             val automation = try {
-                tracePhase("dsh.bg.treeConnect") { conn.open(vd.display) }
-            } catch (_: Throwable) { throw Fault("treeUnavailable") }
-            return tracePhase("dsh.bg.treeRead") {
+                tracePhase("dsh.bg.treeConnect") { connection.open(targetDisplay) }
+            } catch (_: Throwable) { throw Fault(unavailable) }
+            return read(automation)
+        } finally { closeTreeConnection() }
+    }
+
+    private fun readTree(displayId: Int, pkg: String, scanOtherWindows: Boolean = false, inspectVisual: Boolean = false): TreeRead {
+        val vd = display ?: throw Fault("displayMissing")
+        return withTreeConnection(vd.display, pkg, "treeUnavailable") { automation ->
+            tracePhase("dsh.bg.treeRead") {
                 readTree(automation, displayId, pkg, scanOtherWindows = scanOtherWindows, inspectVisual = inspectVisual)
             }
-        } finally { tracePhase("dsh.bg.treeClose") { conn.close() } }
+        }
     }
 
     private fun readTree(
@@ -1142,9 +1178,7 @@ class PrivilegedDisplayCore(private val context: Context) {
         val index = request.getInt(Proto.ELEMENT, -1)
         if (index < 1 || text.isEmpty() || text.length > 500 || '\u0000' in text) throw Fault("invalidArguments")
         val vd = display ?: throw Fault("displayMissing")
-        val conn = TreeConnection(context, pkg)
-        try {
-            val automation = try { conn.open(vd.display) } catch (_: Throwable) { throw Fault("textConnectionUnavailable") }
+        withTreeConnection(vd.display, pkg, "textConnectionUnavailable") { automation ->
             val node = readTree(automation, vd.display.displayId, pkg, index).target ?: throw Fault("elementMissing")
             try {
                 if (!node.refresh()) throw Fault("textTargetChanged")
@@ -1184,7 +1218,7 @@ class PrivilegedDisplayCore(private val context: Context) {
                     globalKey("enter")
                 }
             } finally { node.recycle() }
-        } finally { conn.close() }
+        }
     }
 
     // ---- injection shims (hidden APIs via reflection) ----------------------
@@ -1310,7 +1344,9 @@ class PrivilegedDisplayCore(private val context: Context) {
                 Class.forName("android.os.ServiceManager").getMethod("getService", String::class.java)
                     .invoke(null, Context.ACCESSIBILITY_SERVICE))
         private val token = Binder()
-        private var client: Any? = null
+        private val registration = TreeRegistration<Any> { original ->
+            managerType.getMethod("unregisterUiTestAutomationService", clientType).invoke(manager, original)
+        }
         private var automation: UiAutomation? = null
 
         fun open(display: Display): UiAutomation {
@@ -1319,8 +1355,10 @@ class PrivilegedDisplayCore(private val context: Context) {
             val connection = Proxy.newProxyInstance(connectionType.classLoader, arrayOf(connectionType)) { proxy, method, args ->
                 when (method.name) {
                     "asBinder" -> token
+                    // Let UiAutomation reach its normal init/timeout state even if register's
+                    // reply fails. The registration retains the client independently of this wait.
                     "connect" -> { runCatching { register(args!![0]!!) }; null }
-                    "disconnect" -> { unregister(); null }
+                    "disconnect" -> { registration.unregister(); null }
                     "toString" -> "DshTreeConnection"
                     "hashCode" -> System.identityHashCode(proxy)
                     "equals" -> proxy === args?.get(0)
@@ -1347,22 +1385,19 @@ class PrivilegedDisplayCore(private val context: Context) {
                 .invoke(info, AccessibilityServiceInfo.CAPABILITY_CAN_RETRIEVE_WINDOW_CONTENT)
             val userId = Class.forName("android.os.UserHandle").getMethod("getUserId", Int::class.javaPrimitiveType)
                 .invoke(null, context.applicationInfo.uid)
-            managerType.getMethod("registerUiTestAutomationService", IBinder::class.java, clientType,
+            val method = managerType.getMethod("registerUiTestAutomationService", IBinder::class.java, clientType,
                 AccessibilityServiceInfo::class.java, Int::class.javaPrimitiveType, Int::class.javaPrimitiveType)
-                .invoke(manager, token, value, info, userId, UiAutomation.FLAG_DONT_SUPPRESS_ACCESSIBILITY_SERVICES)
-            client = value
+            registration.register(value) { original ->
+                method.invoke(manager, token, original, info, userId, UiAutomation.FLAG_DONT_SUPPRESS_ACCESSIBILITY_SERVICES)
+            }
         }
 
-        private fun unregister() {
-            val value = client ?: return
-            runCatching { managerType.getMethod("unregisterUiTestAutomationService", clientType).invoke(manager, value) }
-            client = null
-        }
-
-        fun close() {
-            runCatching { automation?.let { UiAutomation::class.java.getMethod("disconnect").invoke(it) } }
-            automation = null
-            unregister()
+        fun close(): Boolean {
+            val complete = registration.close {
+                automation?.let { UiAutomation::class.java.getMethod("disconnect").invoke(it) }
+            }
+            if (complete) automation = null
+            return complete
         }
     }
 

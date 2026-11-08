@@ -131,6 +131,8 @@ object Proto {
 object Reasons {
     fun of(code: String?, detail: String?, textAccepted: Boolean = false): String {
         if (textAccepted) {
+            // l10n:keep agent input receipt
+            if (code == "treeCleanupPending") return "输入框已接受文字请求，但树连接清理未确认。请先结束任务或重试清理，不要自动重复输入或提交。"
             val after = when (code) {
                 // l10n:keep agent input receipt
                 "textTargetChanged" -> "随后输入框或焦点发生变化"
@@ -186,6 +188,8 @@ object Reasons {
         "textUnsupported" -> "此输入框不支持直接写入文字"
         // l10n:keep privileged protocol
         "textConnectionUnavailable" -> "后台屏文字输入服务不可用"
+        // l10n:keep privileged protocol
+        "treeCleanupPending" -> "后台屏树连接清理未确认，请先结束任务或重试清理；不要自动重复刚才动作"
         // l10n:keep privileged protocol
         "textFocusMissing" -> "后台屏上没有已聚焦的输入框"
         // l10n:keep privileged protocol

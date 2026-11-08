@@ -44,6 +44,23 @@ class PrivilegedInputReasonTest {
         }
     }
 
+    @Test fun cleanupPendingAfterAcceptedTextNamesCleanupAndDoesNotInviteAnotherWrite() {
+        val reason = Reasons.of("treeCleanupPending", "private detail", textAccepted = true)
+        assertTrue(reason, reason.contains("已接受文字请求"))
+        assertTrue(reason, reason.contains("树连接清理未确认"))
+        assertTrue(reason, reason.contains("重试清理"))
+        assertTrue(reason, reason.contains("不要自动重复输入或提交"))
+        assertFalse(reason, reason.contains("private detail"))
+        assertFalse(reason, reason.contains("请先重新观察"))
+    }
+
+    @Test fun cleanupPendingWithoutAcceptanceDoesNotClaimTheActionWasUnexecuted() {
+        val reason = Reasons.of("treeCleanupPending")
+        assertTrue(reason, reason.contains("重试清理"))
+        assertFalse(reason, reason.contains("已接受"))
+        assertFalse(reason, reason.contains("未执行"))
+    }
+
     // The generic message hides which step failed; a report can only name it through the detail (#342).
     @Test fun aGenericFailureNamesTheStepWhenItIsKnown() {
         assertTrue(Reasons.of("deviceUnavailable", "adb closed").endsWith("（adb closed）"))
