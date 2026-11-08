@@ -45,7 +45,9 @@ class _PhoneSkillSectionState extends ConsumerState<PhoneSkillSection> {
     // or enabling the setting. A new completion can ask while this page is visible.
     if (_presenting || !widget.autoPromptReady || oldWidget.promptBaseline != widget.promptBaseline ||
         WidgetsBinding.instance.lifecycleState != AppLifecycleState.resumed ||
-        !oldWidget.status.askAfterSuccess || !widget.status.askAfterSuccess) return;
+        !oldWidget.status.askAfterSuccess || !widget.status.askAfterSuccess) {
+      return;
+    }
     final previous = {for (final c in oldWidget.status.candidates) (c.taskId, c.generation)};
     for (final candidate in widget.status.candidates) {
       if (previous.contains((candidate.taskId, candidate.generation))) continue;

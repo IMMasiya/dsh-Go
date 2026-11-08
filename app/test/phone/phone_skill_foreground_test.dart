@@ -49,8 +49,11 @@ void main() {
     _resume(tester);
     await settlePhone(tester);
     expect(find.text(appL10n.phoneSkillConfirmGoal), findsNothing);
+    expect(phoneOf(tester).status.skills.candidates.map((candidate) => candidate.taskId), [7]);
     final save = find.text(appL10n.phoneSkillSaveAction);
-    await tester.ensureVisible(save);
+    // AppPage uses a lazy SliverList; ensureVisible requires an already built element.
+    await tester.scrollUntilVisible(save, 200, scrollable: find.byType(Scrollable).first);
+    expect(save, findsOneWidget);
     await tester.tap(save);
     await tester.pumpAndSettle();
     expect(find.text(appL10n.phoneSkillConfirmGoal), findsOneWidget);

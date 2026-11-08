@@ -94,7 +94,7 @@ void main() {
     test('modern protocol with unknown capability never cancels all: $capability', () async {
       Map<String, Object?> status(bool stopped) => {
         ...phoneStatus(taskStopped: stopped), 'taskProtocol': 1, 'tasks': [],
-        if (capability != null) 'callerCapability': capability,
+        'callerCapability': ?capability,
       };
       final native = FakePhoneNative(status: status(false))..install();
       final client = _Client();
