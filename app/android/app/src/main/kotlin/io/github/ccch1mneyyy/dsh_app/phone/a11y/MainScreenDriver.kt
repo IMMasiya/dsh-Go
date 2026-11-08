@@ -77,7 +77,7 @@ internal class MainScreenDriver(private val service: PhoneA11yService, private v
         /** Notes already shown on this app's previous screen (not repeated). */
         val noteKeys: Set<String>,
     ) {
-        @Volatile var image: ImageGeometry? = null
+        @Volatile var image: ImageObservation? = null
     }
 
     fun close() {
@@ -131,7 +131,7 @@ internal class MainScreenDriver(private val service: PhoneA11yService, private v
                         if (shot.bytes != null) {
                             bytes = shot.bytes
                             mime = shot.mime
-                            snap.image = shot.geometry
+                            snap.image = shot.observation
                             // l10n:keep agent screen result
                             text.append("\n截图上的数字是元素编号；tap_xy 用截图像素（${shot.geometry!!.width}×${shot.geometry.height}）。")
                             // l10n:keep agent screen result
@@ -472,7 +472,10 @@ internal class MainScreenDriver(private val service: PhoneA11yService, private v
             return ActionResult(false, "屏幕编号 ${a.screenId} 已过期，坐标对不上了。请重新 screen 加 image 再点。", now)
         }
         // l10n:keep agent screen result
-        val geometry = snap.image ?: return ActionResult(false, "屏幕 ${a.screenId} 没有截图。坐标点击要先用 screen 加 image 拿一张标号截图。")
+        val image = snap.image ?: return ActionResult(false, "屏幕 ${a.screenId} 没有截图。坐标点击要先用 screen 加 image 拿一张标号截图。")
+        val geometry = image.geometry
+        // l10n:keep agent screen result
+        if (!image.isFresh(SystemClock.uptimeMillis())) return ActionResult(false, "截图已超过 30 秒，没有点击。请重新 screen 加 image 再点。", observeQuiet())
         val point = geometry.toScreen(a.x, a.y)
             // l10n:keep agent screen result
             ?: return ActionResult(false, "坐标 (${a.x}, ${a.y}) 不在这张截图里（${geometry.width}×${geometry.height}）。")
@@ -482,24 +485,34 @@ internal class MainScreenDriver(private val service: PhoneA11yService, private v
         if (snap.protectedPage && !lifted.systemPages) return ActionResult(false, "这是系统权限 / 安全相关页面，DSH 不在这里点击。需要的话请用 handoff 交给用户。")
         // l10n:keep agent screen result
         if (snap.hidden || snap.unreadable) return ActionResult(false, "这一屏读不到内容（可能受敏感视图策略限制），不盲点。请 handoff。", observeQuiet())
+        val beforeImage: ImageObservation
         val cap = capture()
         try {
             // l10n:keep agent screen result
             if (unavailable(cap)) return ActionResult(false, "这一屏读不到内容（可能受敏感视图策略限制），不盲点。请 handoff。", toSnapshot(publish(cap, false)))
             // l10n:keep agent screen result
             if (!observation(cap).reusableCoordinates(snap.observation)) return ActionResult(false, "无法确认当前界面仍与截图一致，没有点击。请重新看屏幕。", toSnapshot(publish(cap, false)))
+            val currentImage = captureImageObservation(cap)
+            if (cancelled(gen)) throw InterruptedException()
+            // l10n:keep agent screen result
+            if (currentImage == null || !image.sameViewportAs(currentImage, SystemClock.uptimeMillis())) return ActionResult(false,
+                "截图已过期、窗口几何已变化或无法重新截图，没有点击。请重新 screen 加 image 再点。", toSnapshot(publish(cap, false)))
+            beforeImage = currentImage
         } finally { cap.recycle() }
+        if (cancelled(gen)) throw InterruptedException()
+        // A dispatched gesture consumes the coordinates even if its callback or verification fails.
+        snap.image = null
         val before = clock.count
         // l10n:keep agent screen result
         if (!actuator.tap(point.first, point.second)) return ActionResult(false, "系统没有接受这次点击。", observeQuiet())
         // l10n:keep agent screen result
-        return after(before, snap, gen, "已提交点击截图上的 (${a.x}, ${a.y})。")
+        return after(before, snap, gen, "已提交点击截图上的 (${a.x}, ${a.y})。", previousImage = beforeImage)
     }
 
     /** Waits for the UI to settle, reads the new screen (`+` marks) and says whether anything changed. */
-    private fun after(before: Long, previous: Snapshot?, gen: Long, message: String, scrolled: Boolean = false): ActionResult {
+    private fun after(before: Long, previous: Snapshot?, gen: Long, message: String, scrolled: Boolean = false, previousImage: ImageObservation? = null): ActionResult {
         clock.settle(before, 1_500, 300, 3_000) { cancelled(gen) }
-        val cap = try { settledCapture(previous, gen) } catch (e: InterruptedException) { throw e } catch (e: Exception) {
+        val cap = try { if (previousImage == null) settledCapture(previous, gen) else capture() } catch (e: InterruptedException) { throw e } catch (e: Exception) {
             Log.w(TAG, "observation after an accepted action failed", e)
             // l10n:keep agent screen result
             return ActionResult(true, "$message（动作已提交，但没能读到新屏幕，无法验证结果。）")
@@ -515,8 +528,28 @@ internal class MainScreenDriver(private val service: PhoneA11yService, private v
             val note = ScreenVerdict.note(comparable = comparable, changed = changed, keyboard = keyboard, scrolled = scrolled)
             val canReuse = comparable && observation.sameContext(old) && observation.keyboardShown == old.keyboardShown
             val text = ScreenDigest.text(previous?.id, previous?.screen, snap.id, snap.screen, canReuse = canReuse, observationChanged = changed)
-            return ActionResult(true, message + note, toSnapshot(snap, text))
+            val visualNote = if (previousImage == null) "" else {
+                val nextImage = if (!unavailable(cap) && !snap.ownApp && !snap.protectedPage && old != null && observation.sameContext(old)) {
+                    try { captureImageObservation(cap) } catch (e: InterruptedException) { throw e } catch (_: Exception) { null }
+                } else null
+                val change = nextImage?.changeFrom(previousImage) ?: VisualFrame.Change.UNAVAILABLE
+                when (change) {
+                    // l10n:keep agent screen result
+                    VisualFrame.Change.CHANGED -> "（截图中有明显画面变化；这不代表目标操作已成功。）"
+                    // l10n:keep agent screen result
+                    VisualFrame.Change.UNCHANGED -> "（截图未见明显画面变化，无法确认点中目标；不要自动重复点击。）"
+                    // l10n:keep agent screen result
+                    VisualFrame.Change.UNAVAILABLE -> "（动作已提交，但截图无法比较，不能验证结果；不要自动重复点击。）"
+                }
+            }
+            return ActionResult(true, message + note + visualNote, toSnapshot(snap, text))
         } finally { cap.recycle() }
+    }
+
+    /** Verification frames stay local: no JPEG, no element numbering and no published observation. */
+    private fun captureImageObservation(cap: Capture): ImageObservation? {
+        val window = cap.windows.singleOrNull()
+        return shooter.shoot(window, cap.screen, emptyList(), emptyList(), 2_500, image = false).observation
     }
 
     /**
