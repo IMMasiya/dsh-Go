@@ -28,6 +28,7 @@ import android.os.Bundle
 import android.os.IBinder
 import android.os.Process
 import android.os.SystemClock
+import android.os.Trace
 import android.text.InputType
 import android.util.SparseArray
 import android.view.Display
@@ -327,7 +328,7 @@ class PrivilegedDisplayCore(private val context: Context) {
         response.putInt(Proto.DISPLAY_ID, id)
         response.putString(Proto.FG_PKG, pkg)
         response.putBoolean(Proto.PORTRAIT, height >= width)
-        val captureResult = runCatching { capture() }
+        val captureResult = runCatching { tracePhase("dsh.bg.capture") { capture() } }
         val captureFailure = captureResult.exceptionOrNull()
         if (captureFailure is InterruptedException ||
             captureFailure is Fault && captureFailure.code == "cancelled") throw captureFailure
@@ -447,7 +448,9 @@ class PrivilegedDisplayCore(private val context: Context) {
                             BackgroundFrameReadiness.Next.RETRY -> Unit
                             BackgroundFrameReadiness.Next.READY -> {
                                 val buffer = ByteArrayOutputStream()
-                                bitmap.compress(Bitmap.CompressFormat.JPEG, 80, buffer)
+                                tracePhase("dsh.bg.jpeg") {
+                                    bitmap.compress(Bitmap.CompressFormat.JPEG, 80, buffer)
+                                }
                                 // Reuse the already-copied RGBA buffer only for an active local preview.
                                 // No JPEG decode round-trip: both preview sources compare identical pixels.
                                 val raw = if (preview.acceptsCandidate())
@@ -617,9 +620,13 @@ class PrivilegedDisplayCore(private val context: Context) {
         val vd = display ?: throw Fault("displayMissing")
         val conn = TreeConnection(context, pkg)
         try {
-            val automation = try { conn.open(vd.display) } catch (_: Throwable) { throw Fault("treeUnavailable") }
-            return readTree(automation, displayId, pkg, scanOtherWindows = scanOtherWindows)
-        } finally { conn.close() }
+            val automation = try {
+                tracePhase("dsh.bg.treeConnect") { conn.open(vd.display) }
+            } catch (_: Throwable) { throw Fault("treeUnavailable") }
+            return tracePhase("dsh.bg.treeRead") {
+                readTree(automation, displayId, pkg, scanOtherWindows = scanOtherWindows)
+            }
+        } finally { tracePhase("dsh.bg.treeClose") { conn.close() } }
     }
 
     private fun readTree(
@@ -991,6 +998,12 @@ class PrivilegedDisplayCore(private val context: Context) {
         } catch (e: InvocationTargetException) {
             throw e.targetException
         }
+    }
+
+    /** Fixed phase labels only: never pass screen content, app names, or task identifiers. */
+    private inline fun <T> tracePhase(name: String, block: () -> T): T {
+        Trace.beginSection(name)
+        try { return block() } finally { Trace.endSection() }
     }
 
     private fun invoke(target: Any, method: String): Any? =
