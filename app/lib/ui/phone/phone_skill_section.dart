@@ -10,8 +10,10 @@ import '../theme/app_icons.dart';
 
 /// Only offers local, completed native candidates; opening and saving are separate decisions.
 class PhoneSkillSection extends ConsumerStatefulWidget {
-  const PhoneSkillSection({super.key, required this.status});
+  const PhoneSkillSection({super.key, required this.status, this.autoPromptReady = true, this.promptBaseline = 0});
   final PhoneSkillStatus status;
+  final bool autoPromptReady;
+  final int promptBaseline;
 
   @override
   ConsumerState<PhoneSkillSection> createState() => _PhoneSkillSectionState();
@@ -20,20 +22,41 @@ class PhoneSkillSection extends ConsumerStatefulWidget {
 class _PhoneSkillSectionState extends ConsumerState<PhoneSkillSection> {
   bool _presenting = false;
   bool _setting = false;
+  late final AppLifecycleListener _lifecycle;
+  int _visibilityEpoch = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _lifecycle = AppLifecycleListener(onStateChange: (_) { _visibilityEpoch++; });
+  }
+
+  @override
+  void dispose() {
+    _lifecycle.dispose();
+    super.dispose();
+  }
+
 
   @override
   void didUpdateWidget(PhoneSkillSection oldWidget) {
     super.didUpdateWidget(oldWidget);
     // Existing candidates do not produce a burst of prompts on entering the page
     // or enabling the setting. A new completion can ask while this page is visible.
-    if (_presenting || !oldWidget.status.askAfterSuccess || !widget.status.askAfterSuccess) return;
+    if (_presenting || !widget.autoPromptReady || oldWidget.promptBaseline != widget.promptBaseline ||
+        WidgetsBinding.instance.lifecycleState != AppLifecycleState.resumed ||
+        !oldWidget.status.askAfterSuccess || !widget.status.askAfterSuccess) return;
     final previous = {for (final c in oldWidget.status.candidates) (c.taskId, c.generation)};
     for (final candidate in widget.status.candidates) {
       if (previous.contains((candidate.taskId, candidate.generation))) continue;
       _presenting = true;
+      final epoch = _visibilityEpoch;
+      final baseline = widget.promptBaseline;
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;
-        if (ModalRoute.of(context)?.isCurrent != true) {
+        if (_visibilityEpoch != epoch || widget.promptBaseline != baseline || !widget.autoPromptReady ||
+            WidgetsBinding.instance.lifecycleState != AppLifecycleState.resumed ||
+            ModalRoute.of(context)?.isCurrent != true) {
           setState(() => _presenting = false);
           return;
         }

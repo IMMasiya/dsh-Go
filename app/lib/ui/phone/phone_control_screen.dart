@@ -86,6 +86,9 @@ class _PhoneControlScreenState extends ConsumerState<PhoneControlScreen> {
   bool _testing = false;
   bool _interruptionBusy = false;
   bool _backgroundGuideShown = false;
+  bool _skillPromptsReady = false;
+  int _skillPromptBaseline = 0;
+  int _resumeRead = 0;
 
   PhoneController get _phone => ref.read(phoneProvider.notifier);
 
@@ -94,8 +97,15 @@ class _PhoneControlScreenState extends ConsumerState<PhoneControlScreen> {
     super.initState();
     _lifecycle = AppLifecycleListener(onResume: _onResume);
     // A fresh read each time the page opens (the provider may be older).
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) unawaited(_phone.refresh());
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      if (!mounted) return;
+      final read = ++_resumeRead;
+      final ready = await _phone.refresh();
+      if (!mounted || read != _resumeRead) return;
+      setState(() {
+        _skillPromptsReady = ready;
+        _skillPromptBaseline++;
+      });
     });
   }
 
@@ -106,8 +116,15 @@ class _PhoneControlScreenState extends ConsumerState<PhoneControlScreen> {
   }
 
   Future<void> _onResume() async {
-    await _phone.refreshStatus();
-    if (!mounted || !_awaitingA11y) return;
+    final read = ++_resumeRead;
+    setState(() => _skillPromptsReady = false);
+    final ready = await _phone.refreshStatus();
+    if (!mounted || read != _resumeRead) return;
+    setState(() {
+      _skillPromptsReady = ready;
+      _skillPromptBaseline++;
+    });
+    if (!_awaitingA11y) return;
     final on = ref.read(phoneProvider).status.a11y.enabled;
     setState(() {
       _awaitingA11y = false;
@@ -445,7 +462,8 @@ class _PhoneControlScreenState extends ConsumerState<PhoneControlScreen> {
           const PhoneSelfCheckPanel(),
           if (status.skills.available) ...[
             gap,
-            PhoneSkillSection(status: status.skills),
+            PhoneSkillSection(status: status.skills, autoPromptReady: _skillPromptsReady,
+                promptBaseline: _skillPromptBaseline),
           ],
           if (status.enabled) ...[
             gap,

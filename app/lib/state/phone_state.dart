@@ -109,20 +109,22 @@ class PhoneController extends Notifier<PhoneState> {
   }
 
   /// Status, app list and recent log, all at once.
-  Future<void> refresh() async {
-    await refreshStatus();
-    if (!ref.mounted || !state.status.ready) return;
+  Future<bool> refresh() async {
+    final ready = await refreshStatus();
+    if (!ref.mounted || !ready) return false;
     await Future.wait([refreshPolicies(), refreshLog()]);
+    return ready;
   }
 
-  Future<void> refreshStatus() async {
+  Future<bool> refreshStatus() async {
     final status = await _channel.status();
-    if (!ref.mounted) return;
+    if (!ref.mounted) return false;
     _apply(status);
     if (status.ready) {
       // Only now: activating the event stream with no native side reports an error.
       _sub ??= _channel.statusChanges.listen(_apply, onError: (_) {});
     }
+    return status.ready;
   }
 
   void _apply(PhoneStatus status) {

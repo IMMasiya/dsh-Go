@@ -183,6 +183,8 @@ class FakePhoneNative {
   /// Reply of `setEnabled` / `setPolicies`.
   bool accept = true;
 
+  Future<Map<String, Object?>> Function()? onStatus;
+
   /// Reply of `finishTask`; null: closed, and back in the app exactly when asked to reopen.
   Map<String, Object?>? finish;
 
@@ -250,7 +252,7 @@ class FakePhoneNative {
     final args = call.arguments is Map ? (call.arguments as Map).cast<String, Object?>() : const <String, Object?>{};
     switch (call.method) {
       case 'status':
-        return status;
+        return onStatus?.call() ?? status;
       case 'setEnabled':
         if (accept) status = {...status, 'enabled': args['enabled']};
         return accept;
