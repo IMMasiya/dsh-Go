@@ -623,5 +623,9 @@
         "type": "int"
       }
     }
-  }
+  },
+  "phoneSkillBundlePublishedUnverified": "The files were published, but full verification has not succeeded. Do not save again.",
+  "phoneSkillBundleUnknown": "The save result is not confirmed. Files may already have been written. Do not save again.",
+  "phoneSkillBundleRevision": "Route revision: {revision}",
+  "@phoneSkillBundleRevision": {"placeholders": {"revision": {"type": "String"}}}
 }

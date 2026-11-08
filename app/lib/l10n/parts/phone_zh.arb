@@ -852,5 +852,9 @@
         "type": "int"
       }
     }
-  }
+  },
+  "phoneSkillBundlePublishedUnverified": "文件已发布，但尚未通过完整核验。不要重复保存。",
+  "phoneSkillBundleUnknown": "保存结果尚未确认，文件可能已经写入。不要重复保存。",
+  "phoneSkillBundleRevision": "路线版本：{revision}",
+  "@phoneSkillBundleRevision": {"placeholders": {"revision": {"type": "String"}}}
 }

@@ -190,7 +190,10 @@ class _PhoneSkillEditorState extends State<PhoneSkillEditor> {
   bool _closing = false;
   bool _allowPop = false;
   bool _saved = false;
+  PhoneSkillDraftView? _writeDraft;
+  PhoneSkillReply? _unverified;
   String? _savedPath;
+  String? _savedBundleRevision;
   String? _error;
 
   @override
@@ -207,11 +210,19 @@ class _PhoneSkillEditorState extends State<PhoneSkillEditor> {
       if (reply.draft case final draft?) unawaited(widget.channel.discardSkillDraft(draft));
       return;
     }
-    _accept(reply);
+    _accept(reply, fromOpen: true);
   }
 
-  void _accept(PhoneSkillReply reply) {
+  bool _matchesWrite(PhoneSkillReply reply) {
+    final expected = _writeDraft ?? _draft;
+    if (expected == null || reply.bundleRevision != expected.bundleRevision) return false;
+    if (reply.kind == PhoneSkillReplyKind.saving && expected.bundleRevision == null) return reply.name == null;
+    return reply.name == expected.skillName;
+  }
+
+  void _accept(PhoneSkillReply reply, {bool fromOpen = false}) {
     if (!mounted) return;
+    final openTerminal = fromOpen && _draft == null && _writeDraft == null;
     setState(() {
       _busy = false;
       _error = null;
@@ -224,20 +235,38 @@ class _PhoneSkillEditorState extends State<PhoneSkillEditor> {
             _error = 'stale';
             return;
           }
+          final frozen = _writeDraft;
+          if (_unverified != null || frozen != null && frozen.bundleRevision != null &&
+              (view.revision != frozen.revision || view.bundleRevision != frozen.bundleRevision ||
+               view.skillName != frozen.skillName)) {
+            _error = 'stale';
+            return;
+          }
           _draft = view;
           _order = [...view.stepOrder];
           for (final index in _order) { _checks.putIfAbsent(index, TextEditingController.new); }
           _dirty = false;
           _confirmed = false;
-          _pendingWrite = view.phase == 'staging' || view.phase == 'committing';
+          _pendingWrite = _writeDraft?.bundleRevision != null || view.phase == 'staging' || view.phase == 'committing';
         case PhoneSkillReplyKind.saved:
+          if (!openTerminal && !_matchesWrite(reply)) { _error = 'stale'; _confirmed = false; return; }
           _saved = true;
+          _unverified = null;
           _pendingWrite = false;
           _savedPath = reply.relativePath;
+          _savedBundleRevision = reply.bundleRevision;
           _goal.clear();
           _prerequisites.clear();
           for (final controller in _checks.values) { controller.clear(); }
+        case PhoneSkillReplyKind.unverified:
+          if (!openTerminal && (_draft?.bundleRevision == null || !_matchesWrite(reply))) {
+            _error = 'stale'; _confirmed = false; return;
+          }
+          _unverified = reply;
+          _pendingWrite = false;
+          _confirmed = false;
         case PhoneSkillReplyKind.saving:
+          if (!_matchesWrite(reply)) { _error = 'stale'; _confirmed = false; return; }
           _pendingWrite = true;
           _confirmed = false;
         case PhoneSkillReplyKind.rejected:
@@ -245,6 +274,7 @@ class _PhoneSkillEditorState extends State<PhoneSkillEditor> {
           // reply cannot establish whether the write has finished.
           if (reply.code == 'io' || reply.code == 'no_home' || reply.code == 'conflict') {
             _pendingWrite = false;
+            _writeDraft = null;
           }
           _error = reply.code;
           _confirmed = false;
@@ -257,6 +287,7 @@ class _PhoneSkillEditorState extends State<PhoneSkillEditor> {
   void _changed() => setState(() { _dirty = true; _confirmed = false; });
 
   Future<void> _applyEdits() async {
+    if (_busy || _pendingWrite || _unverified != null || _saved || _closing) return;
     final draft = _draft!;
     setState(() { _busy = true; _confirmed = false; });
     final reply = await widget.channel.editSkillDraft(draft, goal: _goal.text,
@@ -266,12 +297,18 @@ class _PhoneSkillEditorState extends State<PhoneSkillEditor> {
   }
 
   Future<void> _save() async {
+    if (_busy || _pendingWrite || _unverified != null || _saved || _closing || !_confirmed || _dirty) return;
     final draft = _draft!;
-    setState(() { _busy = true; _confirmed = false; });
+    setState(() {
+      _busy = true; _confirmed = false; _writeDraft = draft;
+      // Freeze before dispatch: losing this ACK does not establish that no bundle was published.
+      if (draft.bundleRevision != null) _pendingWrite = true;
+    });
     _accept(await widget.channel.saveSkillDraft(draft, confirmed: true));
   }
 
   Future<void> _checkWrite() async {
+    if (_busy || _closing || _draft == null) return;
     setState(() => _busy = true);
     _accept(await widget.channel.viewSkillDraft(_draft!));
   }
@@ -280,7 +317,7 @@ class _PhoneSkillEditorState extends State<PhoneSkillEditor> {
     if (_closing) return;
     setState(() => _closing = true);
     final draft = _draft;
-    if (!_saved && draft != null) {
+    if (!_saved && _unverified == null && draft != null) {
       final reply = await widget.channel.discardSkillDraft(draft);
       if (!mounted) return;
       if (reply.code == 'cannot_cancel' || reply.code == 'unavailable') {
@@ -308,7 +345,7 @@ class _PhoneSkillEditorState extends State<PhoneSkillEditor> {
   @override
   void dispose() {
     final draft = _draft;
-    if (!_saved && !_allowPop && draft != null) unawaited(widget.channel.discardSkillDraft(draft));
+    if (!_saved && _unverified == null && !_allowPop && draft != null) unawaited(widget.channel.discardSkillDraft(draft));
     _goal.dispose();
     _prerequisites.dispose();
     for (final controller in _checks.values) { controller.dispose(); }
@@ -319,7 +356,7 @@ class _PhoneSkillEditorState extends State<PhoneSkillEditor> {
   Widget build(BuildContext context) {
     final l10n = context.l10n;
     final draft = _draft;
-    final editable = !_busy && !_pendingWrite && !_saved && !_closing;
+    final editable = !_busy && !_pendingWrite && _unverified == null && !_saved && !_closing;
     return PopScope(
       canPop: _allowPop,
       onPopInvokedWithResult: (didPop, _) { if (!didPop) unawaited(_close()); },
@@ -334,7 +371,19 @@ class _PhoneSkillEditorState extends State<PhoneSkillEditor> {
               if (_saved) ...[
                 Text(l10n.phoneSkillSavedBody),
                 SelectableText(_savedPath!),
-              ] else if (draft != null) ...[
+                if (_savedBundleRevision case final revision?) Text(l10n.phoneSkillBundleRevision(revision)),
+              ],
+              if (_unverified != null) ...[
+                Text(_unverified!.publication == 'published'
+                  ? l10n.phoneSkillBundlePublishedUnverified : l10n.phoneSkillBundleUnknown),
+                SelectableText(_unverified!.relativePath!),
+                if (draft == null) Text(l10n.phoneSkillBundleRevision(_unverified!.bundleRevision!)),
+              ],
+              if (!_saved && draft != null) ...[
+                if (draft.bundleRevision case final revision?) ...[
+                  SelectableText(draft.skillName),
+                  Text(l10n.phoneSkillBundleRevision(revision)),
+                ],
                 Text(l10n.phoneSkillPrivacyHint),
                 const SizedBox(height: 12),
                 TextField(controller: _goal, enabled: editable, maxLength: 2000, onChanged: (_) => _changed(),
@@ -368,15 +417,16 @@ class _PhoneSkillEditorState extends State<PhoneSkillEditor> {
                 CheckboxListTile(contentPadding: EdgeInsets.zero, value: _confirmed,
                   onChanged: editable && !_dirty ? (value) => setState(() => _confirmed = value == true) : null,
                   title: Text(l10n.phoneSkillFinalConfirmation)),
-                if (_pendingWrite) Text(l10n.phoneSkillWriting),
+                if (_pendingWrite) Text(draft.bundleRevision != null && _error != null
+                  ? l10n.phoneSkillBundleUnknown : l10n.phoneSkillWriting),
               ],
             ],
           )),
         ),
         actions: [
           TextButton(onPressed: _closing ? null : _close, child: Text(l10n.commonClose)),
-          if (_pendingWrite) TextButton(onPressed: _busy ? null : _checkWrite, child: Text(l10n.phoneSkillCheckWrite)),
-          if (!_saved && !_pendingWrite) FilledButton(
+          if (draft != null && (_pendingWrite || _unverified != null)) TextButton(onPressed: _busy ? null : _checkWrite, child: Text(l10n.phoneSkillCheckWrite)),
+          if (!_saved && !_pendingWrite && _unverified == null) FilledButton(
             onPressed: editable && draft != null && !_dirty && _confirmed ? _save : null,
             child: Text(l10n.commonSave),
           ),
