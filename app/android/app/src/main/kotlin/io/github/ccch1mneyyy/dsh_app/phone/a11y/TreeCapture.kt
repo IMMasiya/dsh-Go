@@ -53,6 +53,8 @@ internal class Capture(
     val visualComplete: Boolean = false,
     val visualOcclusions: List<Box> = emptyList(),
     val imageWindows: List<CapturedImageWindow> = emptyList(),
+    /** Same read counter; consumers must still compare current transitions after their own work. */
+    val typedTransitions: Long? = null,
 ) {
     fun native(ref: Int): AccessibilityNodeInfo? = natives.getOrNull(ref)
 
@@ -80,17 +82,18 @@ internal object TreeCapture {
         )
     }
 
-    private class State(val deadline: Long) {
+    private class State(val deadline: Long, val typedTransitions: Long?) {
         val natives = ArrayList<AccessibilityNodeInfo>(256)
         var count = 0
+        var typedFresh = true
         var truncated = false
         var partial = false
         var visualComplete = true
         val rect = Rect()
     }
 
-    fun capture(service: AccessibilityService, screen: Box, ownPackage: String, budgetMs: Long): Capture {
-        val st = State(SystemClock.uptimeMillis() + budgetMs)
+    fun capture(service: AccessibilityService, screen: Box, ownPackage: String, budgetMs: Long, typedTransitions: Long? = null): Capture {
+        val st = State(SystemClock.uptimeMillis() + budgetMs, typedTransitions)
         val all = try { service.windows } catch (_: Throwable) { null }
         val sorted = all.orEmpty().sortedByDescending { it.layer }
         // Scan every window before the content loop can stop at an opaque app window.
@@ -114,7 +117,7 @@ internal object TreeCapture {
                     }
                     AccessibilityWindowInfo.TYPE_ACCESSIBILITY_OVERLAY -> {
                         val root = w.root
-                        try { if (root?.packageName?.toString() != ownPackage) complete = false }
+                        try { refreshTyped(root, st); if (root?.packageName?.toString() != ownPackage) complete = false }
                         finally { root?.let(::release) }
                     }
                     else -> complete = false // IME, divider, magnifier or unknown overlay.
@@ -143,7 +146,7 @@ internal object TreeCapture {
                         // API 33 permits no prefetch. Older getRoot may prefetch
                         // internally; this code never inspects child/text data.
                         val root = if (Build.VERSION.SDK_INT >= 33) w.getRoot(0) else w.root
-                        try { pkg = root?.packageName?.toString()?.takeIf { it.isNotBlank() } }
+                        try { refreshTyped(root, st); pkg = root?.packageName?.toString()?.takeIf { it.isNotBlank() } }
                         finally { root?.let(::release) }
                     } catch (_: Exception) {
                         // A failed root lookup establishes no package identity.
@@ -178,6 +181,7 @@ internal object TreeCapture {
                     }
                     continue
                 }
+                refreshTyped(root, st)
                 val pkg = root.packageName?.toString()
                 if (chosen.isEmpty()) {
                     topPackage = pkg
@@ -185,7 +189,7 @@ internal object TreeCapture {
                     systemFront = w.type == AccessibilityWindowInfo.TYPE_SYSTEM
                 }
                 val title = if (Build.VERSION.SDK_INT >= 24) w.title?.toString() else null
-                val node = convert(root, 0, st)
+                val node = convert(root, 0, st, refresh = false)
                 // Inspect the whole subtree, not just the root's child count. A chain of empty
                 // layouts is still unreadable; an unlabelled canvas is not evidence of filtering.
                 val emptyFront = chosen.isEmpty() && w.type == AccessibilityWindowInfo.TYPE_APPLICATION &&
@@ -218,6 +222,7 @@ internal object TreeCapture {
                 hidden == null && unreadable == null && chosen.size == 1 && chosen.single().id == visual?.first,
             visualOcclusions = visual?.third.orEmpty(),
             imageWindows = imageWindows.toList(),
+            typedTransitions = st.typedTransitions.takeIf { st.typedFresh },
         )
     }
 
@@ -251,7 +256,19 @@ internal object TreeCapture {
     @Suppress("DEPRECATION")
     private fun release(node: AccessibilityNodeInfo) { if (Build.VERSION.SDK_INT < 33) runCatching { node.recycle() } }
 
-    private fun convert(node: AccessibilityNodeInfo, depth: Int, st: State): UiNode? {
+    private fun refreshTyped(node: AccessibilityNodeInfo?, st: State) {
+        if (st.typedTransitions == null) return
+        if (node == null || Thread.currentThread().isInterrupted || SystemClock.uptimeMillis() > st.deadline) {
+            st.typedFresh = false
+            return
+        }
+        val refreshed = try { node.refresh() } catch (_: Exception) { false }
+        if (!refreshed || Thread.currentThread().isInterrupted || SystemClock.uptimeMillis() > st.deadline)
+            st.typedFresh = false
+    }
+
+    private fun convert(node: AccessibilityNodeInfo, depth: Int, st: State, refresh: Boolean = true): UiNode? {
+        if (refresh) refreshTyped(node, st)
         if (!node.isVisibleToUser) { release(node); return null }
         node.getBoundsInScreen(st.rect)
         val bounds = Box(st.rect.left, st.rect.top, st.rect.right, st.rect.bottom)

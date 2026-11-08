@@ -583,7 +583,7 @@ internal class MainScreenDriver(private val service: PhoneA11yService, private v
             io.github.ccch1mneyyy.dsh_app.phone.skills.PhoneSkillRoute.Post.OptionSelected)
         if (step.relation != relation || Looper.myLooper() == Looper.getMainLooper() || !availability().ok)
             return Either.Left("当前页面不能核实这条公共路线，未执行。") // l10n:keep
-        val cap = capture()
+        val cap = capture(typed = true)
         try {
             val observed = MarkorNavigation.selectedObservation(service, cap, step.app)
                 ?: return Either.Left("当前应用或导航页面不符合已核路线，未执行。") // l10n:keep
@@ -596,6 +596,7 @@ internal class MainScreenDriver(private val service: PhoneA11yService, private v
                 snap.screen.elements.singleOrNull { it.fingerprint == hit.fingerprint }
                     ?: return Either.Left("当前路线目标没有唯一可核对编号，未执行。") // l10n:keep
             }
+            if (!typedCurrent(cap)) return Either.Left("窗口已变化，未建立路线步骤。") // l10n:keep
             Either.Right(NavigationReplayPlan(step, observed.windowId, snap, el, satisfied, abortGen))
         } finally { cap.recycle() }
     }
@@ -619,7 +620,7 @@ internal class MainScreenDriver(private val service: PhoneA11yService, private v
             actionBeforeImage = null
             if (cancelled(generation) || !allowed() || !availability().ok || !awaitInputIdle() || !allowed())
                 return ActionResult(false, "原路线步骤已停止，没有继续操作。") // l10n:keep
-            val cap = capture()
+            val cap = capture(typed = true)
             try {
                 val observed = MarkorNavigation.selectedObservation(service, cap, step.app)
                     ?.takeIf { it.windowId == window }
@@ -628,7 +629,7 @@ internal class MainScreenDriver(private val service: PhoneA11yService, private v
                 val app = MarkorNavigation.App(step.app.uid, step.app.version, step.app.updated, step.app.signers)
                 val navigation = MarkorNavigation.Before(app, observed)
                 if (observed.selected == "nav_more") {
-                    if (!allowed() || cancelled(generation)) return ActionResult(false, "原路线步骤已停止。") // l10n:keep
+                    if (!allowed() || cancelled(generation) || !typedCurrent(cap)) return ActionResult(false, "原路线步骤已停止或窗口已变化。") // l10n:keep
                     post = SkillReplayPost.SATISFIED
                     return ActionResult(true, "更多已选中；本步没有再次点击，仅核验该公开选中状态。", // l10n:keep
                         toSnapshot(snap), navigationWitness = io.github.ccch1mneyyy.dsh_app.phone.skills.PhoneSkillNavigationWitness(
@@ -641,7 +642,7 @@ internal class MainScreenDriver(private val service: PhoneA11yService, private v
                     ?: return ActionResult(false, "原路线目标不可核对，没有操作。") // l10n:keep
                 val node = cap.native(hit.ref) ?: return ActionResult(false, "原路线目标不可读取，没有操作。") // l10n:keep
                 refuseWrite(Resolved(snap, el, cap, node, hit))?.let { return it }
-                if (!observed.moreCanClick || !node.isEnabled || !allowed() || cancelled(generation))
+                if (!observed.moreCanClick || !node.isEnabled || !allowed() || cancelled(generation) || !typedCurrent(cap))
                     return ActionResult(false, "原路线目标或权限改变，没有操作。") // l10n:keep
                 val events = clock.count
                 attempted = true
@@ -896,7 +897,7 @@ internal class MainScreenDriver(private val service: PhoneA11yService, private v
     private class Resolved(val snap: Snapshot, val el: ScreenElement, val cap: Capture, val node: AccessibilityNodeInfo, val found: IndexedElement)
 
     /** The element of the latest snapshot, re-verified against a fresh capture; or the refusal. */
-    private fun resolve(screenId: String, elementId: Int): Any {
+    private fun resolve(screenId: String, elementId: Int, typedNavigation: Boolean = false): Any {
         val snap = latest
         if (snap == null || snap.id != screenId) {
             val now = observeQuiet()
@@ -909,7 +910,7 @@ internal class MainScreenDriver(private val service: PhoneA11yService, private v
         val el = snap.screen.element(elementId)
             // l10n:keep agent screen result
             ?: return ActionResult(false, "屏幕 $screenId 里没有编号 $elementId（共 ${snap.screen.elements.size} 项）。")
-        val cap = capture()
+        val cap = capture(typed = typedNavigation && el.packageName == MarkorNavigation.PACKAGE)
         val hit = locate(cap, el)
         val node = hit?.let { cap.native(it.ref) }
         if (hit == null || node == null) {
@@ -935,7 +936,7 @@ internal class MainScreenDriver(private val service: PhoneA11yService, private v
 
     private fun tap(a: PhoneAction.Tap, gen: Long, allowed: () -> Boolean,
                     actionSourcesAllowed: (Set<String>) -> Boolean): ActionResult {
-        val res = resolve(a.screenId, a.elementId)
+        val res = resolve(a.screenId, a.elementId, typedNavigation = !a.long)
         val r = res as? Resolved ?: return res as ActionResult
         try {
             refuseWrite(r)?.let { return it }
@@ -949,10 +950,13 @@ internal class MainScreenDriver(private val service: PhoneA11yService, private v
             }
             val sources = r.cap.windows.mapNotNull { it.packageName }.toSet()
             refuseHalted { allowed() && actionSourcesAllowed(sources) }?.let { return it }
-            val navigation = if (!a.long) MarkorNavigation.before(service, r.cap, r.found.ref) else null
+            var navigation = if (!a.long) MarkorNavigation.before(service, r.cap, r.found.ref)
+                ?.takeIf { typedCurrent(r.cap) } else null
             val before = clock.count
             val out = actuator.click(r.node, r.el.bounds, r.cap.screen, a.long) {
-                !cancelled(gen) && allowed() && actionSourcesAllowed(sources)
+                val admitted = !cancelled(gen) && allowed() && actionSourcesAllowed(sources)
+                if (!typedCurrent(r.cap)) navigation = null
+                admitted
             }
             val what = short(r.el.label.ifEmpty { r.el.role })
             // l10n:keep agent screen result
@@ -1198,7 +1202,7 @@ internal class MainScreenDriver(private val service: PhoneA11yService, private v
         if (cancelled(gen)) throw InterruptedException()
         clock.settle(before, 1_500, 300, 3_000) { cancelled(gen) }
         if (cancelled(gen)) throw InterruptedException()
-        val cap = try { if (previousImage == null) settledCapture(previous, gen) else capture() } catch (e: InterruptedException) { throw e } catch (e: Exception) {
+        val cap = try { if (previousImage == null) settledCapture(previous, gen, typed = navigation != null) else capture(typed = navigation != null) } catch (e: InterruptedException) { throw e } catch (e: Exception) {
             Log.w(TAG, "observation after an accepted action failed", e)
             // l10n:keep agent screen result
             return ActionResult(ok, "$message（没能读到新屏幕，无法追加验证；不要自动重试。）")
@@ -1275,7 +1279,7 @@ internal class MainScreenDriver(private val service: PhoneA11yService, private v
                 }
             }
             val observedNavigation = if (ok && !snap.hidden && !screenshotSecure && !cancelled(gen))
-                navigation?.let { MarkorNavigation.afterObservation(service, it, cap) } else null
+                navigation?.let { MarkorNavigation.afterObservation(service, it, cap) }?.takeIf { typedCurrent(cap) } else null
             if (observedNavigation != null) navigationPost?.invoke(
                 if (observedNavigation.selected == "nav_more") SkillReplayPost.SATISFIED else SkillReplayPost.DIFFERENT)
             val witness = if (observedNavigation?.selected == "nav_more") navigation?.app?.let {
@@ -1301,13 +1305,13 @@ internal class MainScreenDriver(private val service: PhoneA11yService, private v
      * A capture after an action. Right after a transition the new window may have no root yet
      * or an empty tree (Chrome, Settings sub-pages): retry a few times while that lasts.
      */
-    private fun settledCapture(previous: Snapshot?, gen: Long): Capture {
-        var cap = capture()
+    private fun settledCapture(previous: Snapshot?, gen: Long, typed: Boolean = false): Capture {
+        var cap = capture(typed = typed)
         var tries = 0
         while (tries++ < 4 && !cancelled(gen) && looksUnfinished(cap, previous)) {
             cap.recycle()
             clock.pause(400) { cancelled(gen) }
-            cap = capture()
+            cap = capture(typed = typed)
         }
         return cap
     }
@@ -1353,11 +1357,16 @@ internal class MainScreenDriver(private val service: PhoneA11yService, private v
 
     // ---- snapshots --------------------------------------------------------------------------------
 
-    private fun capture(timeoutMs: Long = CAPTURE_MS): Capture {
+    private fun typedCurrent(cap: Capture): Boolean = cap.typedTransitions?.let {
+        published() && it == visual.transitions()
+    } == true
+
+    private fun capture(timeoutMs: Long = CAPTURE_MS, typed: Boolean = false): Capture {
+        val transitions = if (typed) visual.transitions() else null
         // Cache invalidation is a qualification input, not an assertion of an atomic WMS snapshot.
         val fresh = Build.VERSION.SDK_INT in 34..37 && runCatching { service.clearCache() }.getOrDefault(false)
         try {
-            return TreeCapture.capture(service, screenBox(), ownPackage, timeoutMs).also { cap ->
+            return TreeCapture.capture(service, screenBox(), ownPackage, timeoutMs, transitions.takeIf { fresh }).also { cap ->
                 val window = cap.windows.singleOrNull()
                 val titles = cap.windows.mapNotNull { it.title } + ProtectedPages.titleTexts(window?.root, cap.screen.height)
                 val known = fresh && published() && cap.visualComplete && window?.kind == WindowKind.APP &&
