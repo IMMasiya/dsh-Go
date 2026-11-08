@@ -893,13 +893,8 @@ internal class MainScreenDriver(private val service: PhoneA11yService, private v
 
     private fun AccessibilityNodeInfo.isShowingHintTextCompat() = android.os.Build.VERSION.SDK_INT >= 26 && isShowingHintText
 
-    /** Equal, or equal once the field's own formatting (spaces, dashes) is ignored. */
-    private fun sameText(got: String?, expected: String): Boolean {
-        if (got == expected) return true
-        if (got == null) return false
-        fun norm(s: String) = s.filterNot { it.isWhitespace() || it == '-' || it == '​' }
-        return norm(got) == norm(expected)
-    }
+    /** Only the exact requested text counts as a matching read-back. */
+    private fun sameText(got: String?, expected: String): Boolean = got == expected
 
     private fun awaitInputIdle(): Boolean {
         val deadline = SystemClock.uptimeMillis() + 8_000
