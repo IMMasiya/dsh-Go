@@ -63,6 +63,34 @@ class BackgroundControl private constructor(context: Context) {
     @Volatile private var driver: BackgroundDisplay? = null
     @Volatile private var driverTaskId: Long? = null
     private val endedTaskId = AtomicLong(Long.MIN_VALUE)
+    // Lock order: this or keepGuard -> previewGuard. Never IPC or a reverse lock under previewGuard.
+    private val previewGuard = Any()
+    @Volatile private var previewTarget: BackgroundPreviewTarget? = null
+    @Volatile var onPreviewChanged: () -> Unit = {}
+
+    fun previewTarget(): BackgroundPreviewTarget? = previewTarget
+
+    private fun replaceChannel(value: PrivilegedChannel?) {
+        val changed = synchronized(previewGuard) {
+            if (channel === value) false else {
+                channel = value
+                previewTarget = null
+                true
+            }
+        }
+        if (changed) onPreviewChanged()
+    }
+
+    /** Republish only after the actual driver obtains this channel, never from a reconnect callback. */
+    private fun publishPreviewTarget(taskId: Long, value: PrivilegedChannel) {
+        val changed = synchronized(previewGuard) {
+            val active = driver
+            if (driverTaskId != taskId || active == null || PhoneRegistry.backgroundDriver !== active || channel !== value) false
+            else if (previewTarget?.let { it.taskId == taskId && it.driver === active && it.channel === value } == true) false
+            else { previewTarget = BackgroundPreviewTarget(taskId, "task", value, active); true }
+        }
+        if (changed) onPreviewChanged()
+    }
 
     private fun notifyChanged() = runCatching { onStatusChanged() }
 
@@ -186,7 +214,7 @@ class BackgroundControl private constructor(context: Context) {
             val owner = if (changing) Any().also { selectionChange = it } else null
             keep.select(selected)
             rootSelected = selected == "root"
-            if (changing) channel = null
+            if (changing) replaceChannel(null)
             keep.selectionTicket() to owner?.let { it to leaving }
         }
         if (transition != null) {
@@ -215,7 +243,7 @@ class BackgroundControl private constructor(context: Context) {
             "shizuku", "sui" -> shizuku.ensureListeners()
             // 不打扰模式's only su; tasks just connect() to what it leaves.
             "root" -> root.start(allowed)?.let { connected ->
-                synchronized(keepGuard) { if (allowed()) channel = connected }
+                synchronized(keepGuard) { if (allowed()) replaceChannel(connected) }
             }
         }
         notifyChanged()
@@ -387,25 +415,31 @@ class BackgroundControl private constructor(context: Context) {
                 Thread.currentThread().interrupt(); return false
             } catch (_: Exception) { return false }
         }
-        if (Thread.currentThread().isInterrupted || activeChannel() == null) return false
+        if (Thread.currentThread().isInterrupted) return false
+        val connected = activeChannel() ?: return false
         synchronized(this) {
             if (mode == "off" || taskId <= endedTaskId.get() || (driverTaskId ?: Long.MIN_VALUE) > taskId) return false
             if (driverTaskId == taskId && driver != null && PhoneRegistry.backgroundDriver === driver) return true
             if (driver != null) endTask()
             val d = BackgroundDisplay(
-                channelProvider = { activeChannel() },
+                channelProvider = { activeChannel()?.also { publishPreviewTarget(taskId, it) } },
                 releaseChannelProvider = { channel?.takeIf { it.alive() } },
-            ).also { driver = it }
+            )
             // Publish the pending owner before checking cancellation: a stop
             // either records the ended ID first, or sees this owner and releases
             // it after the remaining registration (which performs no setup IPC).
-            driverTaskId = taskId
-            if (taskId <= endedTaskId.get()) {
-                driver = null
-                driverTaskId = null
-                return false
+            synchronized(previewGuard) {
+                driver = d
+                driverTaskId = taskId
+                if (taskId <= endedTaskId.get()) {
+                    driver = null
+                    driverTaskId = null
+                    return false
+                }
+                PhoneRegistry.backgroundDriver = d
+                if (channel === connected) previewTarget = BackgroundPreviewTarget(taskId, "task", connected, d)
             }
-            PhoneRegistry.backgroundDriver = d
+            onPreviewChanged()
             notifyChanged()
             return true
         }
@@ -421,10 +455,15 @@ class BackgroundControl private constructor(context: Context) {
         }
         synchronized(this) {
             if (expectedTaskId != null && expectedTaskId != driverTaskId) return
-            val ended = driver
-            driver = null
-            driverTaskId = null
-            if (PhoneRegistry.backgroundDriver === ended) PhoneRegistry.backgroundDriver = null
+            val ended = synchronized(previewGuard) {
+                val previous = driver
+                previewTarget = null
+                driver = null
+                driverTaskId = null
+                if (PhoneRegistry.backgroundDriver === previous) PhoneRegistry.backgroundDriver = null
+                previous
+            }
+            onPreviewChanged()
             ended?.release()
             notifyChanged()
         }
@@ -466,12 +505,12 @@ class BackgroundControl private constructor(context: Context) {
         } ?: return null
         return synchronized(keepGuard) {
             if (!allowed()) null
-            else { channel = connected; gate.connected(observed, connected); connected }
+            else { replaceChannel(connected); gate.connected(observed, connected); connected }
         }
     }
 
     private fun disconnectAll(closes: (String) -> Boolean = { true }) {
-        synchronized(keepGuard) { channel = null }
+        synchronized(keepGuard) { replaceChannel(null) }
         disconnectTransports(closes)
     }
 
@@ -649,7 +688,7 @@ class BackgroundControl private constructor(context: Context) {
             val connected = value?.takeIf { it.alive() }
             synchronized(keepGuard) {
                 if (selectionChange == null && keep.current(ticket) && connected != null) {
-                    channel = connected
+                    replaceChannel(connected)
                     gate.connected(observed, connected)
                 }
             }
@@ -679,6 +718,17 @@ class BackgroundControl private constructor(context: Context) {
     }
 
     private fun transportChanged(source: String) {
+        if (mode == source || source == "sharedApi" && mode in setOf("sui", "shizuku")) {
+            recovery.execute {
+                val previous = previewTarget
+                if (previous != null && !previous.channel.alive()) {
+                    val removed = synchronized(previewGuard) {
+                        if (previewTarget !== previous) false else { previewTarget = null; true }
+                    }
+                    if (removed) onPreviewChanged()
+                }
+            }
+        }
         notifyChanged()
         // These callbacks may run on main; startup/PROBE always run on recovery's single slot.
         if (keep.enabled && (mode == source || source == "sharedApi" && mode in setOf("sui", "shizuku"))) restoreKeptChannel()

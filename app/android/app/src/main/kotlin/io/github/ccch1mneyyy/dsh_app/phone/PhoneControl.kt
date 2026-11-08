@@ -25,6 +25,7 @@ import io.github.ccch1mneyyy.dsh_app.notify.LiveActivity
 import io.github.ccch1mneyyy.dsh_app.phone.a11y.A11yKeeper
 import io.github.ccch1mneyyy.dsh_app.phone.a11y.PhoneA11yService
 import io.github.ccch1mneyyy.dsh_app.phone.background.BackgroundControl
+import io.github.ccch1mneyyy.dsh_app.phone.background.BackgroundPreview
 import io.github.ccch1mneyyy.dsh_app.phone.background.SecureSettingsGrant
 import io.github.ccch1mneyyy.dsh_app.runtime.DshService
 import io.github.ccch1mneyyy.dsh_app.shortcuts.EntryActivity
@@ -140,6 +141,10 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
     private var screenReceiver: BroadcastReceiver? = null
     private val sinks = CopyOnWriteArraySet<(Map<String, Any?>) -> Unit>()
     val background: BackgroundControl = BackgroundControl.get(app)
+    val preview = BackgroundPreview(app, background::previewTarget, { taskId ->
+        val task = tasks.snapshot()
+        task.active && task.id == taskId && !isLocked()
+    }, ::emitStatus)
 
     init {
         PhoneRegistry.notificationGate = notificationGate
@@ -147,6 +152,7 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
         PhoneRegistry.controlListener = this
         PhoneRegistry.unlocks = { policies().unlocks }
         background.onStatusChanged = { emitStatus() }
+        background.onPreviewChanged = { main.post { preview.refresh() } }
         (app as? Application)?.let { AppVisibility.register(it) }
         tasks.addListener { onTask(it) }
         ticker.scheduleWithFixedDelay({ tick() }, 2, 2, TimeUnit.SECONDS)
@@ -338,6 +344,7 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
     }
 
     private fun onTask(s: PhoneTasks.Snapshot) {
+        preview.refresh() // Clear local pixels before endTask can enter blocking release IPC.
         prompts.check()
         if (s.active && s.id != keptTask) {
             keptTask = s.id
@@ -387,6 +394,7 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
         val r = object : BroadcastReceiver() {
             override fun onReceive(context: Context, intent: Intent) {
                 if (intent.action != Intent.ACTION_SCREEN_OFF) return
+                preview.refresh()
                 // l10n:keep agent stop reason
                 onStopRequested("熄屏")
                 if (PhoneRegistry.backgroundDriver != null) runCatching { background.interrupt() }
@@ -462,9 +470,9 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
     )
 
     private fun backgroundStatus(): Map<String, Any?> = try {
-        background.status()
+        background.status() + ("preview" to mapOf("v" to 1, "enabled" to preview.enabled))
     } catch (e: Exception) {
-        linkedMapOf("mode" to "off", "ready" to false, "reason" to (e.message ?: AppStrings.get(app, R.string.phone_background_error)), "androidOk" to (Build.VERSION.SDK_INT >= 34))
+        linkedMapOf("mode" to "off", "ready" to false, "reason" to (e.message ?: AppStrings.get(app, R.string.phone_background_error)), "androidOk" to (Build.VERSION.SDK_INT >= 34), "preview" to mapOf("v" to 1, "enabled" to preview.enabled))
     }
 
     /** 自动恢复无障碍: whether it may work (the permission), the one-tap way to it, the command for the other. */

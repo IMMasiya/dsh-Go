@@ -4,6 +4,7 @@
 // (MissingPluginException → "未就绪") or failing (PlatformException → a reason).
 
 import 'dart:async';
+import 'dart:typed_data';
 
 import 'package:flutter/services.dart';
 
@@ -230,6 +231,8 @@ class PhoneBackgroundStatus {
     this.adb = const AdbStatus(),
     this.root = const PhoneRootStatus(),
     this.privileged,
+    this.previewVersion,
+    this.previewEnabled = false,
   });
 
   factory PhoneBackgroundStatus.fromMap(Map<Object?, Object?> m) => PhoneBackgroundStatus(
@@ -241,6 +244,8 @@ class PhoneBackgroundStatus {
     adb: AdbStatus.fromMap(_map(m['adb'])),
     root: PhoneRootStatus.fromMap(_map(m['root'])),
     privileged: PhonePrivilegedStatus.parse(m['privileged']),
+    previewVersion: _int(_map(m['preview'])['v']),
+    previewEnabled: _flag(_map(m['preview'])['enabled']),
   );
 
   final PhoneBackgroundMode mode;
@@ -257,6 +262,8 @@ class PhoneBackgroundStatus {
   final AdbStatus adb;
   final PhoneRootStatus root;
   final PhonePrivilegedStatus? privileged;
+  final int? previewVersion;
+  final bool previewEnabled;
 
   PhonePrivilegedMode get effectiveMode =>
       privileged?.mode ??
@@ -906,14 +913,58 @@ class PhoneLogEntry {
 
 // ── Channel ──────────────────────────────────────────────────────────────────
 
-/// Typed wrapper over `dsh/phone` + `dsh/phone/events`.
+/// A bounded local-only preview message; it never joins ordinary phone status.
+class PhonePreviewFrame {
+  const PhonePreviewFrame({
+    required this.taskId,
+    required this.generation,
+    required this.sequence,
+    required this.state,
+    this.width = 0,
+    this.height = 0,
+    this.imageBytes,
+  });
+
+  static PhonePreviewFrame? parse(Object? raw) {
+    if (raw is! Map) return null;
+    final taskId = raw['taskId'];
+    final generation = raw['generation'];
+    final sequence = raw['sequence'];
+    final state = raw['state'];
+    if (taskId is! int || taskId <= 0 || generation is! int || generation < 0 ||
+        sequence is! int || sequence < 0 ||
+        !const {'off', 'waiting', 'frame', 'unavailable', 'protected'}.contains(state)) return null;
+    if (state != 'frame') {
+      return PhonePreviewFrame(taskId: taskId, generation: generation, sequence: sequence, state: state as String);
+    }
+    final bytes = raw['imageBytes'];
+    final width = raw['width'];
+    final height = raw['height'];
+    if (bytes is! Uint8List || bytes.isEmpty || bytes.lengthInBytes > 128 * 1024 ||
+        width is! int || width < 1 || width > 800 || height is! int || height < 1 || height > 800) return null;
+    return PhonePreviewFrame(taskId: taskId, generation: generation, sequence: sequence,
+        state: 'frame', width: width, height: height, imageBytes: bytes);
+  }
+
+  final int taskId;
+  final int generation;
+  final int sequence;
+  final String state;
+  final int width;
+  final int height;
+  final Uint8List? imageBytes;
+}
+
+/// Typed wrapper over the private phone method, status, and preview channels.
 class PhoneChannel {
-  PhoneChannel({MethodChannel? methods, EventChannel? events})
+  PhoneChannel({MethodChannel? methods, EventChannel? events, EventChannel? preview})
     : _methods = methods ?? const MethodChannel('dsh/phone'),
-      _events = events ?? const EventChannel('dsh/phone/events');
+      _events = events ?? const EventChannel('dsh/phone/events'),
+      _preview = preview ?? const EventChannel('dsh/phone/preview');
 
   final MethodChannel _methods;
   final EventChannel _events;
+  final EventChannel _preview;
   Stream<PhoneStatus>? _stream;
 
   /// Status pushes. Listen only after [status] came back ready: activating the
@@ -936,6 +987,12 @@ class PhoneChannel {
   }
 
   Future<bool> setEnabled(bool enabled) => _bool('setEnabled', {'enabled': enabled});
+
+  Future<bool> setBackgroundPreview(bool enabled) => _bool('setBackgroundPreview', {'enabled': enabled});
+
+  /// One App viewer at a time. Cancelling its subscription releases only that viewer.
+  Stream<PhonePreviewFrame?> previewFrames(int taskId) =>
+      _preview.receiveBroadcastStream({'taskId': taskId}).map(PhonePreviewFrame.parse);
 
   Future<bool> openAccessibilitySettings() => _bool('openAccessibilitySettings');
 

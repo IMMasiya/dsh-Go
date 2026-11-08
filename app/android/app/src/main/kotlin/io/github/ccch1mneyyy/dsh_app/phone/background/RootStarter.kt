@@ -149,9 +149,13 @@ private class RootChannel(
     val process: RootProcess,
     private val onFailure: (String) -> Unit,
 ) : PrivilegedChannel {
+    private val calls = PrivilegedCalls()
     override fun alive(): Boolean = process.alive()
     override fun close() = process.close()
-    override fun execute(request: Bundle): Bundle = try {
+    override fun execute(request: Bundle): Bundle = calls.execute { exchange(request) }
+    override fun tryExecute(request: Bundle): Bundle? = calls.tryPreview { exchange(request) }
+
+    private fun exchange(request: Bundle): Bundle = try {
         Bundles.unmarshal(process.exchange(Bundles.marshal(request), 30_000))
     } catch (error: Exception) {
         val timeout = error is IOException && error.message == "rootTimeout"

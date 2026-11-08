@@ -18,6 +18,7 @@ import '../shell/page_frame.dart';
 import '../theme/app_icons.dart';
 import '../theme/theme.dart';
 import 'phone_widgets.dart';
+import 'background_preview.dart';
 import 'restricted_settings_guide.dart' show RomFamily;
 
 /// Shizuku's own download page (official site).
@@ -72,6 +73,7 @@ class _PhoneDndPageState extends ConsumerState<PhoneDndPage> {
   /// the one in use unfolds while it isn't ready), off for none.
   PhonePrivilegedMode? _open;
   bool _busy = false;
+  bool _previewOpen = false;
   String? _error;
   late final AppLifecycleListener _lifecycle;
 
@@ -171,10 +173,23 @@ class _PhoneDndPageState extends ConsumerState<PhoneDndPage> {
     await _run(() => _phone.adbConnect(port: port), done: l10n.phoneDndConnected);
   }
 
+  Future<void> _showPreview(int taskId) async {
+    if (_previewOpen) return;
+    _previewOpen = true;
+    try {
+      await showAppDialog<void>(context: context, builder: (_) => PhoneBackgroundPreviewDialog(
+        channel: ref.read(phoneChannelProvider), taskId: taskId,
+      ));
+    } finally {
+      _previewOpen = false;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final l10n = context.l10n;
     final bg = ref.watch(phoneProvider.select((s) => s.status.background));
+    final task = ref.watch(phoneProvider.select((s) => s.status.task));
     final using = bg.effectiveMode;
     final waiting = using == PhonePrivilegedMode.root && bg.root.starting;
     final open = _open ?? (bg.effectiveReady ? PhonePrivilegedMode.off : using);
@@ -200,6 +215,19 @@ class _PhoneDndPageState extends ConsumerState<PhoneDndPage> {
               ),
               // Old native modules neither report nor save a keep choice.
               if (bg.privileged != null) _keepRow(using, bg.keep),
+              if (bg.previewVersion == 1) ...[
+                ListPageRow(
+                  leading: const SizedBox(),
+                  title: l10n.phonePreviewTitle,
+                  subtitle: l10n.phonePreviewDescription,
+                  subtitleMaxLines: 4,
+                  trailing: Switch(value: bg.previewEnabled, onChanged: _busy ? null : (enabled) =>
+                    unawaited(_run(() async => PhoneResult(await _phone.setBackgroundPreview(enabled))))),
+                ),
+                if (task.id case final taskId? when bg.previewEnabled && task.active)
+                  ListPageRow(leading: const SizedBox(), title: l10n.phonePreviewOpen,
+                    onTap: () => unawaited(_showPreview(taskId))),
+              ],
             ],
           ),
           // The channel's own reason, whole: a failure never quietly becomes another channel.

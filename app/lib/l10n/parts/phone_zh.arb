@@ -664,5 +664,11 @@
   },
   "phoneDndManualConnect": "按端口连接",
   "phoneDndConnectPortLabel": "连接端口",
-  "phoneDndConnectPortHint": "在系统「无线调试」首页查看「IP 地址和端口」，填写冒号后的端口。请不要使用配对码页面的端口。"
+  "phoneDndConnectPortHint": "在系统「无线调试」首页查看「IP 地址和端口」，填写冒号后的端口。请不要使用配对码页面的端口。",
+  "phonePreviewTitle": "实时查看后台屏",
+  "phonePreviewDescription": "仅在预览可见时取帧。画面只留在本机；预览不可点击。",
+  "phonePreviewOpen": "查看后台屏",
+  "phonePreviewOff": "任务已结束或预览已关闭",
+  "phonePreviewUnavailable": "画面暂不可预览，或受到保护",
+  "phonePreviewWaiting": "等待后台屏的新画面"
 }

@@ -449,5 +449,11 @@
   },
   "phoneDndManualConnect": "Connect by port",
   "phoneDndConnectPortLabel": "Connection port",
-  "phoneDndConnectPortHint": "On the main Wireless debugging settings page, find “IP address & port” and enter the port after the colon. Do not use the pairing-code dialog’s port."
+  "phoneDndConnectPortHint": "On the main Wireless debugging settings page, find “IP address & port” and enter the port after the colon. Do not use the pairing-code dialog’s port.",
+  "phonePreviewTitle": "Live background preview",
+  "phonePreviewDescription": "Frames are read only while the preview is visible and stay on this device. The preview is view-only.",
+  "phonePreviewOpen": "View background screen",
+  "phonePreviewOff": "The task ended or preview is off",
+  "phonePreviewUnavailable": "Preview is unavailable or the screen is protected",
+  "phonePreviewWaiting": "Waiting for a new background frame"
 }

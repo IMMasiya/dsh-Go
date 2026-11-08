@@ -2,8 +2,11 @@ package io.github.ccch1mneyyy.dsh_app.phone
 
 import io.github.ccch1mneyyy.dsh_app.i18n.AppStrings
 import io.github.ccch1mneyyy.dsh_app.R
+import android.app.Activity
+import android.app.Application
 import android.content.Context
 import android.content.Intent
+import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
@@ -25,6 +28,23 @@ import java.util.concurrent.Executors
 class PhonePlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandler, EventChannel.StreamHandler, PluginRegistry.NewIntentListener {
     private lateinit var methods: MethodChannel
     private lateinit var events: EventChannel
+    private lateinit var previewEvents: EventChannel
+    private val previewOwner = Any()
+    private var previewTaskId: Long? = null
+    private var previewSink: EventChannel.EventSink? = null
+    private val previewLifecycle = object : Application.ActivityLifecycleCallbacks {
+        override fun onActivityPaused(host: Activity) {
+            if (activity?.activity === host) control.preview.removeConsumer(previewOwner)
+        }
+        override fun onActivityResumed(host: Activity) {
+            if (activity?.activity === host) attachPreviewConsumer()
+        }
+        override fun onActivityCreated(host: Activity, state: Bundle?) {}
+        override fun onActivityStarted(host: Activity) {}
+        override fun onActivityStopped(host: Activity) {}
+        override fun onActivitySaveInstanceState(host: Activity, state: Bundle) {}
+        override fun onActivityDestroyed(host: Activity) {}
+    }
     private lateinit var appContext: Context
     private lateinit var control: PhoneControl
     private var activity: ActivityPluginBinding? = null
@@ -39,15 +59,43 @@ class PhonePlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandle
     override fun onAttachedToEngine(binding: FlutterPlugin.FlutterPluginBinding) {
         appContext = binding.applicationContext
         control = PhoneControl.get(appContext)
+        (appContext as Application).registerActivityLifecycleCallbacks(previewLifecycle)
         promptOwner = Any()
         attached = true
         control.background.restoreKeptChannel()
         methods = MethodChannel(binding.binaryMessenger, "dsh/phone").also { it.setMethodCallHandler(this) }
         events = EventChannel(binding.binaryMessenger, "dsh/phone/events").also { it.setStreamHandler(this) }
+        previewEvents = EventChannel(binding.binaryMessenger, "dsh/phone/preview").also { channel ->
+            channel.setStreamHandler(object : EventChannel.StreamHandler {
+                override fun onListen(arguments: Any?, events: EventChannel.EventSink) {
+                    control.preview.removeConsumer(previewOwner)
+                    previewTaskId = null
+                    previewSink = null
+                    val taskId = ((arguments as? Map<*, *>)?.get("taskId") as? Number)?.toLong()
+                    if (taskId == null || taskId <= 0) {
+                        events.error("invalid_task", "A current task ID is required", null)
+                        return
+                    }
+                    previewTaskId = taskId
+                    previewSink = events
+                    attachPreviewConsumer()
+                }
+                override fun onCancel(arguments: Any?) {
+                    control.preview.removeConsumer(previewOwner)
+                    previewTaskId = null
+                    previewSink = null
+                }
+            })
+        }
     }
 
     override fun onDetachedFromEngine(binding: FlutterPlugin.FlutterPluginBinding) {
         attached = false
+        (appContext as Application).unregisterActivityLifecycleCallbacks(previewLifecycle)
+        control.preview.removeConsumer(previewOwner)
+        previewTaskId = null
+        previewSink = null
+        previewEvents.setStreamHandler(null)
         control.background.cancelUnwantedPending()
         control.prompts.detachOwner(promptOwner)
         activity?.removeOnNewIntentListener(this)
@@ -63,6 +111,7 @@ class PhonePlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandle
         binding.addOnNewIntentListener(this)
         control.prompts.attachActivity(promptOwner, binding.activity)
         control.prompts.handleOpenIntent(binding.activity.intent)
+        attachPreviewConsumer()
     }
 
     override fun onDetachedFromActivityForConfigChanges() = onDetachedFromActivity()
@@ -70,9 +119,19 @@ class PhonePlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandle
     override fun onReattachedToActivityForConfigChanges(binding: ActivityPluginBinding) = onAttachedToActivity(binding)
 
     override fun onDetachedFromActivity() {
+        control.preview.removeConsumer(previewOwner)
         activity?.removeOnNewIntentListener(this)
         control.prompts.attachActivity(promptOwner, null)
         activity = null
+    }
+
+    private fun attachPreviewConsumer() {
+        val taskId = previewTaskId ?: return
+        val events = previewSink ?: return
+        val host = activity?.activity ?: return
+        if (attached && AppVisibility.isResumed(host)) {
+            control.preview.addConsumer(previewOwner, taskId) { events.success(it) }
+        }
     }
 
     override fun onNewIntent(intent: Intent): Boolean = attached && control.prompts.handleOpenIntent(intent)
@@ -107,6 +166,7 @@ class PhonePlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandle
     override fun onMethodCall(call: MethodCall, result: MethodChannel.Result) {
         when (call.method) {
             "status" -> async(result, shortControl = true) { control.status() }
+            "setBackgroundPreview" -> result.success(control.preview.setEnabled(call.argument<Boolean>("enabled") == true))
             "setBackgroundKeep" -> {
                 val selected = call.argument<String>("mode").orEmpty()
                 val enabled = call.argument<Boolean>("enabled") == true
