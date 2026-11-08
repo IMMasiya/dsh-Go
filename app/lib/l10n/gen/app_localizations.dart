@@ -4967,7 +4967,7 @@ abstract class L10n {
   /// No description provided for @botsTerminalSupportedHosts.
   ///
   /// In zh, this message translates to:
-  /// **'在本机或 SSH 主机上可用'**
+  /// **'在本机、SSH 主机或 Remote 电脑上可用'**
   String get botsTerminalSupportedHosts;
 
   /// No description provided for @botsTerminalOpening.
@@ -14323,6 +14323,36 @@ abstract class L10n {
   /// In zh, this message translates to:
   /// **'对话'**
   String get fileChatFallback;
+
+  /// No description provided for @fileUploadToHost.
+  ///
+  /// In zh, this message translates to:
+  /// **'传文件到电脑'**
+  String get fileUploadToHost;
+
+  /// No description provided for @fileUploadToHostHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'放进这个对话在电脑上的工作区，原文件不压缩'**
+  String get fileUploadToHostHint;
+
+  /// No description provided for @fileUploadProgress.
+  ///
+  /// In zh, this message translates to:
+  /// **'正在传 {done}/{total}：{name}'**
+  String fileUploadProgress(int done, int total, String name);
+
+  /// No description provided for @fileUploadDone.
+  ///
+  /// In zh, this message translates to:
+  /// **'已传到电脑：{names}'**
+  String fileUploadDone(String names);
+
+  /// No description provided for @fileUploadFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'没能传到电脑'**
+  String get fileUploadFailed;
 
   /// No description provided for @hostDetailsConnectionType.
   ///
@@ -31249,6 +31279,12 @@ abstract class L10n {
   /// In zh, this message translates to:
   /// **'没能启动终端'**
   String get stateTerminalStartFailed;
+
+  /// No description provided for @stateTerminalDisabledOnHost.
+  ///
+  /// In zh, this message translates to:
+  /// **'这台电脑关掉了远程终端。在电脑上打开 Remote 设置里的「终端」，再回来重试'**
+  String get stateTerminalDisabledOnHost;
 
   /// No description provided for @stateTileDuotone.
   ///

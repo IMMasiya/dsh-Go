@@ -2700,7 +2700,7 @@ class L10nZh extends L10n {
   String get botsTerminalUnsupported => '这个连接用不了终端';
 
   @override
-  String get botsTerminalSupportedHosts => '在本机或 SSH 主机上可用';
+  String get botsTerminalSupportedHosts => '在本机、SSH 主机或 Remote 电脑上可用';
 
   @override
   String get botsTerminalOpening => '正在打开终端…';
@@ -7790,6 +7790,25 @@ class L10nZh extends L10n {
 
   @override
   String get fileChatFallback => '对话';
+
+  @override
+  String get fileUploadToHost => '传文件到电脑';
+
+  @override
+  String get fileUploadToHostHint => '放进这个对话在电脑上的工作区，原文件不压缩';
+
+  @override
+  String fileUploadProgress(int done, int total, String name) {
+    return '正在传 $done/$total：$name';
+  }
+
+  @override
+  String fileUploadDone(String names) {
+    return '已传到电脑：$names';
+  }
+
+  @override
+  String get fileUploadFailed => '没能传到电脑';
 
   @override
   String get hostDetailsConnectionType => '连接方式';
@@ -16964,6 +16983,9 @@ class L10nZh extends L10n {
 
   @override
   String get stateTerminalStartFailed => '没能启动终端';
+
+  @override
+  String get stateTerminalDisabledOnHost => '这台电脑关掉了远程终端。在电脑上打开 Remote 设置里的「终端」，再回来重试';
 
   @override
   String get stateTileDuotone => '扁平双色';

@@ -820,7 +820,7 @@
   },
   "botsTerminalCloseBody": "里面的进程会结束",
   "botsTerminalUnsupported": "这个连接用不了终端",
-  "botsTerminalSupportedHosts": "在本机或 SSH 主机上可用",
+  "botsTerminalSupportedHosts": "在本机、SSH 主机或 Remote 电脑上可用",
   "botsTerminalOpening": "正在打开终端…",
   "botsTerminalNone": "没有打开的终端",
   "botsTerminalNew": "新建终端",
