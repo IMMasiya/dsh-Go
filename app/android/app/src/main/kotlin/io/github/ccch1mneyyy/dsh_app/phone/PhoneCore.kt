@@ -1115,7 +1115,7 @@ class PhoneCore(
             return action().also { result ->
                 val post = result.screen
                 val readable = post != null && !post.secure && safety.checkRead(post.packageName, post.appLabel) == null
-                skillTrace.finish(ticket, result.ok, result.staleSnapshot, readable)
+                skillTrace.finish(ticket, result.ok, result.staleSnapshot, readable, result.navigationWitness)
             }
         } catch (e: Throwable) { skillTrace.fail(ticket); throw e }
     }

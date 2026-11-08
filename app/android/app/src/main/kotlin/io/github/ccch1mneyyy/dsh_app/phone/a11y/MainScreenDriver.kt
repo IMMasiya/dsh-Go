@@ -864,6 +864,7 @@ internal class MainScreenDriver(private val service: PhoneA11yService, private v
             }
             val sources = r.cap.windows.mapNotNull { it.packageName }.toSet()
             refuseHalted { allowed() && actionSourcesAllowed(sources) }?.let { return it }
+            val navigation = if (!a.long) MarkorNavigation.before(service, r.cap, r.found.ref) else null
             val before = clock.count
             val out = actuator.click(r.node, r.el.bounds, r.cap.screen, a.long) {
                 !cancelled(gen) && allowed() && actionSourcesAllowed(sources)
@@ -873,7 +874,8 @@ internal class MainScreenDriver(private val service: PhoneA11yService, private v
             if (!out.accepted) return after(before, r.snap, gen,
                 "系统未确认这次${if (a.long) "长按" else "点击"}「$what」完成，可能已有部分效果；请先核对新屏幕，不要直接重试。", ok = false)
             // l10n:keep agent screen result
-            return after(before, r.snap, gen, "已提交${if (a.long) "长按" else "点击"}「$what」。")
+            return after(before, r.snap, gen, "已提交${if (a.long) "长按" else "点击"}「$what」。",
+                navigation = navigation.takeIf { out.via == Actuator.Via.NODE })
         } finally { r.cap.recycle() }
     }
 
@@ -1106,7 +1108,8 @@ internal class MainScreenDriver(private val service: PhoneA11yService, private v
     }
 
     /** Waits for the UI to settle, reads the new screen (`+` marks) and says whether anything changed. */
-    private fun after(before: Long, previous: Snapshot?, gen: Long, message: String, scrolled: Boolean = false, previousImage: ImageObservation? = actionBeforeImage, ok: Boolean = true): ActionResult {
+    private fun after(before: Long, previous: Snapshot?, gen: Long, message: String, scrolled: Boolean = false, previousImage: ImageObservation? = actionBeforeImage, ok: Boolean = true,
+                      navigation: MarkorNavigation.Before? = null): ActionResult {
         if (cancelled(gen)) throw InterruptedException()
         clock.settle(before, 1_500, 300, 3_000) { cancelled(gen) }
         if (cancelled(gen)) throw InterruptedException()
@@ -1186,7 +1189,10 @@ internal class MainScreenDriver(private val service: PhoneA11yService, private v
                     VisualFrame.Change.UNAVAILABLE -> "（截图无法比较，不能验证这次操作；不要自动重复操作。）"
                 }
             }
-            return ActionResult(ok, message + note + visualNote, toSnapshot(snap, text + ocrText).copy(secure = snap.hidden || screenshotSecure))
+            val witness = if (ok && !snap.hidden && !screenshotSecure && !cancelled(gen))
+                navigation?.let { MarkorNavigation.after(service, it, cap) } else null
+            return ActionResult(ok, message + note + visualNote, toSnapshot(snap, text + ocrText).copy(secure = snap.hidden || screenshotSecure),
+                navigationWitness = witness)
         } finally { cap.recycle() }
     }
 

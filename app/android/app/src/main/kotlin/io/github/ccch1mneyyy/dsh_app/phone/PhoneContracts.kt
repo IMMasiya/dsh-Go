@@ -113,6 +113,8 @@ data class ActionResult(
     val staleSnapshot: Boolean = false,
     /** Internal, this BG open only: the original peer confirmed its valid VD and full target identity. */
     val backgroundOpenConfirmed: Boolean = false,
+    /** Same-call native navigation facts; never supplied by a tool argument or serialized. */
+    internal val navigationWitness: io.github.ccch1mneyyy.dsh_app.phone.skills.PhoneSkillNavigationWitness? = null,
 )
 
 data class CollectResult(
