@@ -180,8 +180,11 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
     private val server = McpServer(PhoneToolCatalog.listJson(), { name, args, _ -> sessions.run(sessions.admit(null), name, args) }, SERVER_VERSION)
     private val bridge = PhoneBridge(server, { line -> logger(line) }, { call ->
         val admission = sessions.admit(call.caller)
-        val invoke: () -> String = { call.run { name, args, _ -> sessions.run(admission, name, args) } }
-        invoke
+        PhoneCallWork(
+            invoke = { call.run { name, args, _ -> sessions.run(admission, name, args) } },
+            remainingMs = { sessions.remainingMs(admission) },
+            expiredReply = { call.run { _, _, _ -> sessions.expire(admission) } },
+        )
     }, { end ->
         try {
             val task = sessions.admitEnd(end.sessionId, end.runId, end.completion)

@@ -1055,6 +1055,113 @@ class PhoneTaskSessionsTest {
     private fun openApp(session: String, pkg: String, background: Boolean = true): ToolOutput =
         sessions.run(admit(session), PhoneToolCatalog.OPEN, mapOf("app" to pkg, "background" to background))
 
+    @Test fun admissionTimeCountsBeforePreparationStarts() {
+        val lookups = AtomicLong(); lookup = { lookups.incrementAndGet() }
+        val admitted = admit("expired")
+        time.addAndGet(PhoneCore.MAX_TOTAL_MS)
+        assertTrue(sessions.run(admitted, PhoneToolCatalog.OPEN, mapOf("app" to "example.app")).isError)
+        assertEquals(0L, lookups.get())
+        assertEquals(0, task("expired").pending)
+        assertFalse(task("expired").running)
+        assertTrue(task("expired").heldApps.isEmpty())
+    }
+
+    @Test fun preparationConsumesTheSameDeadlineAndCannotAcquireOrOpenLate() {
+        val opens = AtomicLong(); open = { opens.incrementAndGet(); ActionResult(true, "opened") }
+        prepareLaunch = { app -> time.addAndGet(PhoneCore.MAX_TOTAL_MS); TestSystemLaunch(SystemTarget.Known(app)) }
+        val output = openApp("expired", "example.app")
+        assertTrue(output.isError)
+        assertEquals(0L, opens.get())
+        assertTrue(task("expired").heldApps.isEmpty())
+        assertTrue(task("expired").resourcesReleased)
+    }
+
+    @Test fun releasingAResourceDoesNotAdmitAWaiterWhoseOverallDeadlineExpired() {
+        assertFalse(screen("holder").isError)
+        val admission = admit("waiter")
+        time.addAndGet(PhoneCore.MAX_TOTAL_MS - 1_000)
+        val waiting = CountDownLatch(1); val reads = AtomicLong()
+        observe = { reads.incrementAndGet() }
+        changed = { if (sessions.snapshot().any { it["sessionId"] == "waiter" && it["waitingForScreen"] == "main" }) waiting.countDown() }
+        val result = pool.submit<ToolOutput> { sessions.run(admission, PhoneToolCatalog.SCREEN, emptyMap()) }
+        try {
+            assertTrue(waiting.await(5, TimeUnit.SECONDS))
+            time.addAndGet(1_000)
+            end("holder")
+            assertTrue(result.get(5, TimeUnit.SECONDS).isError)
+            assertEquals(0L, reads.get())
+            assertTrue(task("waiter").resourcesReleased)
+            assertTrue(task("waiter").heldApps.isEmpty())
+        } finally { end("holder"); end("waiter") }
+    }
+
+    @Test fun deadlineReplyDoesNotReleaseANonReturningPreparationOrPublishItsLateResult() {
+        assertFalse(invoke("A", tool = PhoneToolCatalog.SCREEN).isError)
+        val entered = CountDownLatch(1); val exit = CountDownLatch(1); val interrupted = CountDownLatch(1)
+        val opens = AtomicLong(); open = { opens.incrementAndGet(); ActionResult(true, "opened") }
+        prepareLaunch = { app ->
+            entered.countDown()
+            var done = false
+            while (!done) {
+                try { check(exit.await(5, TimeUnit.SECONDS)); done = true }
+                catch (_: InterruptedException) { interrupted.countDown() }
+            }
+            TestSystemLaunch(SystemTarget.Known(app))
+        }
+        val admission = admit("A")
+        val work = PhoneCallWork(
+            { sessions.run(admission, PhoneToolCatalog.OPEN, mapOf("app" to "example.app", "background" to true)).text },
+            { sessions.remainingMs(admission) }, { sessions.expire(admission).text },
+        )
+        val response = pool.submit<String?> { work.run() }
+        try {
+            assertTrue(entered.await(5, TimeUnit.SECONDS))
+            val a = task("A")
+            time.addAndGet(PhoneCore.MAX_TOTAL_MS)
+            assertNotNull(work.expire()) // Same method as the timer; no real deadline wait.
+            assertTrue(interrupted.await(5, TimeUnit.SECONDS))
+            assertFalse(response.isDone)
+            assertTrue(a.running); assertEquals(1, a.pending)
+            assertFalse(a.resourcesReleased); assertNull(sessions.tryReserveSelfCheck())
+            assertNull(work.expire()) // Exactly one reply commitment.
+            exit.countDown()
+            assertNull(response.get(5, TimeUnit.SECONDS)) // Late completion cannot become another reply.
+            assertEquals(0L, opens.get()); assertEquals(0, a.pending); assertFalse(a.running)
+            assertFalse(a.resourcesReleased) // The existing scope still owns its earlier MAIN lease.
+            end("A")
+            assertTrue(a.resourcesReleased)
+        } finally { exit.countDown() }
+    }
+
+    @Test fun timeoutBeforeTheCallPoolStartsStillDrainsAdmissionWithoutPreparing() {
+        val calls = AtomicLong(); lookup = { calls.incrementAndGet() }
+        val admission = admit("A")
+        val work = PhoneCallWork(
+            { sessions.run(admission, PhoneToolCatalog.APPS, emptyMap()).text },
+            { sessions.remainingMs(admission) }, { sessions.expire(admission).text },
+        )
+        time.addAndGet(PhoneCore.MAX_TOTAL_MS)
+        assertNotNull(work.expire())
+        assertEquals(1, task("A").pending) // Reply cancellation is not physical drain.
+        assertNull(work.run())
+        assertEquals(0L, calls.get()); assertEquals(0, task("A").pending)
+        assertFalse(task("A").running)
+    }
+
+    @Test fun completedBodyCannotCommitSuccessAfterTheOriginalDeadline() {
+        val admission = admit("A")
+        val work = PhoneCallWork({
+            val result = sessions.run(admission, PhoneToolCatalog.APPS, emptyMap())
+            assertFalse(result.isError)
+            time.addAndGet(PhoneCore.MAX_TOTAL_MS)
+            "LATE_SUCCESS"
+        }, { sessions.remainingMs(admission) }, { sessions.expire(admission).text })
+        val reply = checkNotNull(work.run())
+        assertFalse(reply.contains("LATE_SUCCESS"))
+        assertNull(work.expire())
+        assertEquals(0, task("A").pending)
+    }
+
     @Test fun nativePlanPreparationDoesNotOccupyTheSharedWorkerAndStopRejectsItsLateResult() {
         val entered = CountDownLatch(1); val exit = CountDownLatch(1)
         val launches = AtomicLong()

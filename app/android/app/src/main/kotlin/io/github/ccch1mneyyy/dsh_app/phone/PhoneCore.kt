@@ -109,8 +109,8 @@ class PhoneCore(
         }
     }
 
-    internal fun call(prepared: PreparedCall, executionWorker: SerialWorker): ToolOutput =
-        runCall(prepared.name, prepared.args, AtomicReference<PhoneTasks.Owner?>(prepared.owner), prepared, executionWorker)
+    internal fun call(prepared: PreparedCall, executionWorker: SerialWorker, remainingMs: () -> Long = { MAX_TOTAL_MS }): ToolOutput =
+        runCall(prepared.name, prepared.args, AtomicReference<PhoneTasks.Owner?>(prepared.owner), prepared, executionWorker, remainingMs)
 
     fun call(name: String, args: Map<String, Any?>, admittedOwner: PhoneTasks.Owner? = null): ToolOutput {
         // In flight from here until the result goes back: no turn ends while a call runs (PhoneTasks.finish).
@@ -137,9 +137,14 @@ class PhoneCore(
     }
 
     private fun runCall(name: String, args: Args, callOwner: AtomicReference<PhoneTasks.Owner?>, prepared: PreparedCall? = null,
-                        executionWorker: SerialWorker = worker): ToolOutput {
+                        executionWorker: SerialWorker = worker, remainingMs: () -> Long = { MAX_TOTAL_MS }): ToolOutput {
         rejection(name)?.let { return it }
-        val outcome = executionWorker.run(budgetMs(name), MAX_TOTAL_MS, owner = tasks) { scope -> execute(name, args, scope, callOwner, prepared) }
+        val remaining = remainingMs()
+        val outcome = if (remaining <= 0) SerialWorker.Outcome.TimedOut(queued = true) else
+            executionWorker.run(budgetMs(name), remaining, owner = tasks) { scope ->
+                if (remainingMs() <= 0) throw InterruptedException()
+                execute(name, args, scope, callOwner, prepared)
+            }
         val owner = callOwner.get()
         if (owner != null && name in TRACE_ACTIONS && outcome !is SerialWorker.Outcome.Done) {
             skillTrace.markIncomplete(owner, PhoneTaskTrace.Gap.UNCERTAIN_RESULT)
