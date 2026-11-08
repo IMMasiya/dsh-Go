@@ -452,13 +452,20 @@ internal class MainScreenDriver(private val service: PhoneA11yService, private v
                     // l10n:keep agent screen result
                     val node = cap.native(list.ref) ?: run { stop = "列表不见了（界面变了）"; null } ?: break
                     // Node failure can fall back to a gesture across another known window.
-                    if (!scrollSourcesAllowed(cap.windows.mapNotNull { it.packageName }.toSet())) {
+                    val scrollSources = cap.windows.mapNotNull { it.packageName }.toSet()
+                    if (!scrollSourcesAllowed(scrollSources)) {
                         sourceDenied = true
                         stop = "当前页面来源不允许滚动" // l10n:keep agent screen result
                         break
                     }
                     val before = clock.count
-                    val out = actuator.scroll(node, el.scroll, el.horizontal, list.bounds, cap.screen, direction)
+                    val out = actuator.scroll(node, el.scroll, el.horizontal, list.bounds, cap.screen, direction) {
+                        if (cancelled(gen) || !allowed()) false
+                        else if (!canRead(source) || !scrollSourcesAllowed(scrollSources)) {
+                            sourceDenied = true
+                            false
+                        } else true
+                    }
                     // l10n:keep agent screen result
                     if (!out.accepted) { stop = "系统没有接受滚动，无法确认是否到底"; break }
                     clock.settle(before, 1_200, 350, 3_000) { cancelled(gen) }
@@ -522,10 +529,12 @@ internal class MainScreenDriver(private val service: PhoneA11yService, private v
                 // l10n:keep agent screen result
                 return ActionResult(false, "[${a.elementId}] 是列表本身，不能点。看更多用 scroll，整理全部条目用 collect。")
             }
-            refuseHalted { allowed() && actionSourcesAllowed(r.cap.windows.mapNotNull { it.packageName }.toSet()) }
-                ?.let { return it }
+            val sources = r.cap.windows.mapNotNull { it.packageName }.toSet()
+            refuseHalted { allowed() && actionSourcesAllowed(sources) }?.let { return it }
             val before = clock.count
-            val out = actuator.click(r.node, r.el.bounds, r.cap.screen, a.long)
+            val out = actuator.click(r.node, r.el.bounds, r.cap.screen, a.long) {
+                !cancelled(gen) && allowed() && actionSourcesAllowed(sources)
+            }
             val what = short(r.el.label.ifEmpty { r.el.role })
             // l10n:keep agent screen result
             if (!out.accepted) return after(before, r.snap, gen,
@@ -550,7 +559,7 @@ internal class MainScreenDriver(private val service: PhoneA11yService, private v
             if (a.text.length > 2_000) return ActionResult(false, "一次最多输入 2000 字。")
             refuseHalted(allowed)?.let { return it }
             val before = clock.count
-            if (!actuator.setText(r.node, a.text)) {
+            if (!actuator.setText(r.node, a.text) { !cancelled(gen) && allowed() }) {
                 // l10n:keep agent screen result
                 return after(before, r.snap, gen,
                     "输入未获系统确认，输入、焦点或点击可能已产生部分效果；请先核对新屏幕，不要重复输入。", ok = false)
@@ -567,7 +576,7 @@ internal class MainScreenDriver(private val service: PhoneA11yService, private v
                 // The read-back can take 1.5 s: a pause in it keeps the text but sends nothing.
                 if (!allowed()) return ActionResult(false, "$message 但本任务已暂停或停止，没有提交。") // l10n:keep agent result
                 // l10n:keep agent screen result
-                if (actuator.imeEnter(r.node)) message += "已提交键盘上的发送 / 搜索操作。"
+                if (actuator.imeEnter(r.node) { !cancelled(gen) && allowed() }) message += "已提交键盘上的发送 / 搜索操作。"
                 // l10n:keep agent screen result
                 else return after(before, r.snap, gen,
                     "$message 但键盘提交未获系统确认；不要重复输入或提交，请先核对新屏幕。", ok = false)
@@ -610,12 +619,14 @@ internal class MainScreenDriver(private val service: PhoneA11yService, private v
                     else "无法确认当前界面仍与上一屏一致，没有滚动。请先看新屏幕。" // l10n:keep agent screen result
                     return ActionResult(false, reason, toSnapshot(publish(cap, false)))
                 }
-                refuseHalted { allowed() && actionSourcesAllowed(cap.windows.mapNotNull { it.packageName }.toSet()) }
-                    ?.let { return it }
+                val sources = cap.windows.mapNotNull { it.packageName }.toSet()
+                refuseHalted { allowed() && actionSourcesAllowed(sources) }?.let { return it }
                 val screen = cap.screen
                 val before = clock.count
                 val out = actuator.scroll(null, 0, a.direction == PhoneAction.Direction.LEFT || a.direction == PhoneAction.Direction.RIGHT,
-                    Box(screen.left, screen.top + screen.height / 5, screen.right, screen.bottom - screen.height / 6), screen, a.direction)
+                    Box(screen.left, screen.top + screen.height / 5, screen.right, screen.bottom - screen.height / 6), screen, a.direction) {
+                    !cancelled(gen) && allowed() && actionSourcesAllowed(sources)
+                }
                 // l10n:keep agent screen result
                 if (!out.accepted) return after(before, snap, gen,
                     "系统未确认滑动完成，可能已有部分效果；请先核对新屏幕，不要直接重试。", scrolled = true, ok = false)
@@ -629,10 +640,12 @@ internal class MainScreenDriver(private val service: PhoneA11yService, private v
             // l10n:keep agent screen result
             if ((r.el.packageName == ownPackage || r.snap.ownApp) && !lifted.ownApp) return ActionResult(false, "这是 DSH 自己的界面，不操作。")
             // A failed node scroll falls back to a screen gesture within these bounds.
-            refuseHalted { allowed() && actionSourcesAllowed(r.cap.windows.mapNotNull { it.packageName }.toSet()) }
-                ?.let { return it }
+            val sources = r.cap.windows.mapNotNull { it.packageName }.toSet()
+            refuseHalted { allowed() && actionSourcesAllowed(sources) }?.let { return it }
             val before = clock.count
-            val out = actuator.scroll(r.node, r.el.scroll, r.el.horizontal, r.el.bounds, r.cap.screen, a.direction)
+            val out = actuator.scroll(r.node, r.el.scroll, r.el.horizontal, r.el.bounds, r.cap.screen, a.direction) {
+                !cancelled(gen) && allowed() && actionSourcesAllowed(sources)
+            }
             // l10n:keep agent screen result
             if (!out.accepted) return after(before, r.snap, gen,
                 "系统未确认${dirWord}滚动完成，无法确认是否到底；可能已有部分效果，不要直接重试。", scrolled = true, ok = false)
