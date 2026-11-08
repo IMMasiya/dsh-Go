@@ -979,7 +979,7 @@ internal class MainScreenDriver(private val service: PhoneA11yService, private v
         // l10n:keep agent screen result
         if (cap.truncated) note("truncated", "提示：页面元素太多，只读了一部分。")
         // l10n:keep agent screen result
-        if (cap.partial) note("partial", "提示：部分窗口读不到，当前观测不完整。")
+        if (cap.partial) note("partial", "提示：部分窗口或元素读不到，当前观测不完整。")
         if (cap.hiddenWindowTitle != null) {
             val name = cap.hiddenWindowTitle.takeIf { it.isNotBlank() }?.let { "「$it」" } ?: ""
             // l10n:keep agent screen result

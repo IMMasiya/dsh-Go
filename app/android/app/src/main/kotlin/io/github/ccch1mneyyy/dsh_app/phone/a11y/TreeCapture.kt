@@ -29,7 +29,7 @@ internal class Capture(
     val systemInFront: Boolean,
     /** Hit the node or time cap: the tree may be incomplete. */
     val truncated: Boolean,
-    /** A readable dialog is in front, but a lower application window did not supply a root. */
+    /** A declared tree part could not be read; the available content is retained. */
     val partial: Boolean = false,
     /**
      * Title of a front window whose root the system won't give us. This can happen with
@@ -80,6 +80,7 @@ internal object TreeCapture {
         val natives = ArrayList<AccessibilityNodeInfo>(256)
         var count = 0
         var truncated = false
+        var partial = false
         var visualComplete = true
         val rect = Rect()
     }
@@ -123,7 +124,6 @@ internal object TreeCapture {
         var systemFront = false
         var hidden: String? = null
         var unreadable: String? = null
-        var partial = false
         val screenArea = screen.area.coerceAtLeast(1)
         try {
             for (w in sorted) {
@@ -147,7 +147,7 @@ internal object TreeCapture {
                     if (w.type == AccessibilityWindowInfo.TYPE_APPLICATION) {
                         when (WindowContent.rootGap(chosen)) {
                             WindowContent.RootGap.FRONT -> hidden = (if (Build.VERSION.SDK_INT >= 24) w.title?.toString() else null) ?: ""
-                            WindowContent.RootGap.PARTIAL -> partial = true
+                            WindowContent.RootGap.PARTIAL -> st.partial = true
                         }
                         break
                     }
@@ -185,11 +185,11 @@ internal object TreeCapture {
             ownAppInFront = ownFront,
             systemInFront = systemFront,
             truncated = st.truncated,
-            partial = partial,
+            partial = st.partial,
             hiddenWindowTitle = hidden,
             unreadableWindowTitle = unreadable,
             visualWindowId = visual?.first,
-            visualComplete = visual?.second == true && st.visualComplete && !st.truncated && !partial &&
+            visualComplete = visual?.second == true && st.visualComplete && !st.truncated && !st.partial &&
                 hidden == null && unreadable == null && chosen.size == 1 && chosen.single().id == visual?.first,
             visualOcclusions = visual?.third.orEmpty(),
         )
@@ -239,7 +239,11 @@ internal object TreeCapture {
             for (i in 0 until rawChildren) {
                 if (st.count >= MAX_NODES || SystemClock.uptimeMillis() > st.deadline) { st.truncated = true; break }
                 val child = try { node.getChild(i) } catch (_: Throwable) { null }
-                if (child == null) { st.visualComplete = false; continue }
+                if (child == null) {
+                    st.visualComplete = false
+                    st.partial = true
+                    continue
+                }
                 convert(child, depth + 1, st)?.let(children::add)
             }
         } else if (rawChildren > 0) st.truncated = true
