@@ -27,7 +27,11 @@ internal class MainVisualState(private val driverEpoch: Any) {
     @Synchronized fun isCurrent(scope: VisualScope.Main?, transitions: Long): Boolean =
         current === scope && this.transitions == transitions
     @Synchronized fun transitions(): Long = transitions
-    @Synchronized fun windowChanged() { transitions++ }
+    /**
+     * Any window shown after a screenshot retires its coordinates: the agent must look again. The
+     * scope (and so the per-app visual permission) survives; only a different observed window renews it.
+     */
+    @Synchronized fun windowChanged() { transitions++; imageId = null; accepted = false }
     @Synchronized fun candidate(id: String) {
         if (published?.first == id) { imageId = id; accepted = false }
     }

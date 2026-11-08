@@ -29,6 +29,18 @@ class MainVisualStateTest {
         assertNotSame(returned, state.observed(1, "example.app")); assertNull(state.scope("s2"))
     }
 
+    @Test fun windowTransitionAfterTheScreenshotRetiresItsCoordinatesButKeepsTheScope() {
+        val state = MainVisualState(Any())
+        val scope = state.observed(1, "example.app"); state.publish("s1"); state.candidate("s1"); state.accept("s1")
+        assertTrue(state.imageAccepted("s1"))
+        // Away and back before any capture: nothing observed the other window, the image is still stale.
+        state.windowChanged(); state.windowChanged()
+        assertFalse(state.imageAccepted("s1")); assertFalse(state.consume("s1"))
+        state.accept("s1"); assertFalse(state.imageAccepted("s1"))
+        assertSame(scope, state.scope("s1"))
+        state.publish("s2"); state.candidate("s2"); state.accept("s2"); assertTrue(state.consume("s2"))
+    }
+
     @Test fun filteredCandidateAndTextOnlySnapshotsNeverAuthorizeAnyCoordinate() {
         val state = MainVisualState(Any())
         state.observed(1, "example.app"); state.publish("s1"); state.candidate("s1")
