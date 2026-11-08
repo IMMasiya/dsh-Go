@@ -80,9 +80,10 @@ internal class ScreenShooter(private val service: AccessibilityService, private 
         val useWindow = Build.VERSION.SDK_INT >= 34 && window != null
         val raw = if (useWindow) capture(timeoutMs) { cb -> service.takeScreenshotOfWindow(window.id, callbackExecutor, cb) }
         else {
-            overlay.hideForCapture(true)
-            try { capture(timeoutMs) { cb -> service.takeScreenshot(Display.DEFAULT_DISPLAY, callbackExecutor, cb) } }
-            finally { overlay.hideForCapture(false) }
+            try {
+                overlay.hideForCapture(true)
+                capture(timeoutMs) { cb -> service.takeScreenshot(Display.DEFAULT_DISPLAY, callbackExecutor, cb) }
+            } finally { overlay.hideForCapture(false) }
         }
         // l10n:keep agent screenshot result
         if (raw.secure) return Shot(null, null, null, true, "此页面禁止截图（安全窗口）")
