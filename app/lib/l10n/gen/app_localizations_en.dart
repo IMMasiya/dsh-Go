@@ -15466,6 +15466,10 @@ class L10nEn extends L10n {
   String get remotePairDone => 'Done';
 
   @override
+  String get remotePairErrPinSave =>
+      'Paired, but this phone couldn’t store the computer’s fingerprint. Show a new pairing code on the computer and scan it again.';
+
+  @override
   String get stateWorkspaceFilesHint => 'Files uploaded to the current workspace:';
 
   @override

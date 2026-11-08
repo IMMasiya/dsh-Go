@@ -153,6 +153,7 @@ class _PairingServer {
 class _FlakySecrets extends MemorySecretStore {
   int failCredentialReads = 0;
   bool failPinWrites = false;
+  bool failPinWritesOnce = false;
   int credentialWrites = 0;
 
   @override
@@ -167,6 +168,10 @@ class _FlakySecrets extends MemorySecretStore {
   @override
   Future<void> write(String key, String value) async {
     if (key.endsWith('.pins') && failPinWrites) throw StateError('keystore unavailable');
+    if (key.endsWith('.pins') && failPinWritesOnce) {
+      failPinWritesOnce = false;
+      throw StateError('keystore unavailable');
+    }
     if (key.endsWith('.credentials')) credentialWrites++;
     await super.write(key, value);
   }
@@ -364,14 +369,25 @@ void main() {
     expect(secrets.credentialWrites, 0);
   });
 
-  test('a failed pin save completes once and never writes the credentials again', () async {
+  test('a pin that cannot be stored fails the pairing, keeps the sign-in, never rewrites it', () async {
     final pairing = await account.claimPairing(await account.resolvePairing(scan()));
     secrets.failPinWrites = true;
     server.state = 'completed';
-    final paired = await pairing.result;
-    expect(paired.user.account, server.account);
+    await expectLater(
+      pairing.result,
+      throwsA(isA<PairingException>().having((e) => e.code, 'code', 'PAIRING_PIN_SAVE_FAILED')),
+    );
     expect(secrets.credentialWrites, 1);
     expect(await account.currentUser(), isNotNull);
+  });
+
+  test('a pin save that fails once is retried and the pairing completes', () async {
+    final pairing = await account.claimPairing(await account.resolvePairing(scan()));
+    secrets.failPinWritesOnce = true;
+    server.state = 'completed';
+    await pairing.result;
+    expect(secrets.credentialWrites, 1);
+    expect(secrets.values.keys.where((k) => k.endsWith('.pins')), hasLength(1));
   });
 
   test('an account signed in elsewhere keeps its credentials', () async {

@@ -26960,6 +26960,12 @@ abstract class L10n {
   /// **'完成'**
   String get remotePairDone;
 
+  /// No description provided for @remotePairErrPinSave.
+  ///
+  /// In zh, this message translates to:
+  /// **'已经配对，但没能在手机上保存这台电脑的指纹。请在电脑上重新生成二维码，再扫一次'**
+  String get remotePairErrPinSave;
+
   /// No description provided for @stateWorkspaceFilesHint.
   ///
   /// In zh, this message translates to:

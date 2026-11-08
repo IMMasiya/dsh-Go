@@ -4478,6 +4478,7 @@
   "remotePairSwitchFailedTitle": "Paired with {name}",
   "remotePairSwitchFailedBody": "But switching to it didn’t work. Try again, or pick it under Remote hosts.",
   "remotePairDone": "Done",
+  "remotePairErrPinSave": "Paired, but this phone couldn’t store the computer’s fingerprint. Show a new pairing code on the computer and scan it again.",
   "stateWorkspaceFilesHint": "Files uploaded to the current workspace:",
   "stateRemoteUploadNameInvalid": "The host rejected the filename. Shorten it or remove special characters and try again.",
   "stateRemoteUploadWorkspaceUnavailable": "This chat has no writable working directory",

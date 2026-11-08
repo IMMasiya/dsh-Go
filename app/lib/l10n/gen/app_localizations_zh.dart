@@ -14713,6 +14713,9 @@ class L10nZh extends L10n {
   String get remotePairDone => '完成';
 
   @override
+  String get remotePairErrPinSave => '已经配对，但没能在手机上保存这台电脑的指纹。请在电脑上重新生成二维码，再扫一次';
+
+  @override
   String get stateWorkspaceFilesHint => '已上传到当前工作区的文件：';
 
   @override

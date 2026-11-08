@@ -139,8 +139,9 @@ bool _isKey32(String? value) {
 }
 
 /// A wire timestamp, or null outside what [DateTime] can hold.
-DateTime? _date(int? millis) =>
-    millis == null || millis.abs() > 8640000000000000 ? null : DateTime.fromMillisecondsSinceEpoch(millis);
+DateTime? _date(int? millis) => millis == null || millis < -8640000000000000 || millis > 8640000000000000
+    ? null
+    : DateTime.fromMillisecondsSinceEpoch(millis);
 
 // ---------------------------------------------------------------------------
 // Session and devices

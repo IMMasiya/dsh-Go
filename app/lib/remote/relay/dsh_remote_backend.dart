@@ -393,6 +393,7 @@ class DshRemoteRelayBackend implements RelayBackend, RelayNetworkBackend, RelayP
       'PAIRING_SCAN_INVALID_PROOF' ||
       'PAIRING_DEVICE_CONFLICT' => e(RelayPairingErrorKind.identityMismatch, appL10n.remotePairErrIdentity),
       'HOST_DEVICE_LIMIT_REACHED' => e(RelayPairingErrorKind.other, appL10n.remotePairErrHostLimit),
+      'PAIRING_PIN_SAVE_FAILED' => e(RelayPairingErrorKind.other, appL10n.remotePairErrPinSave),
       'RATE_LIMITED' || 'PAIRING_BUSY' => e(RelayPairingErrorKind.network, appL10n.remoteErrTooManyRequests),
       'CONNECTION_FAILED' ||
       'AUTHORIZATION_SYNC_PENDING' => e(RelayPairingErrorKind.network, appL10n.remotePairErrNetwork),

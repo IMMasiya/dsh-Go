@@ -1004,18 +1004,24 @@ class RemoteAccount {
     );
   }
 
-  /// Pins the Host key from the code the person confirmed. A failed save
-  /// keeps the pin for this run; after a restart the first connect asks for
-  /// the fingerprint as for any new Host. Never re-commits credentials.
+  /// Pins the Host key from the code the person confirmed, retrying the
+  /// read and the save. Never re-commits credentials: when the pin cannot be
+  /// stored the pairing fails with `PAIRING_PIN_SAVE_FAILED` and the stored
+  /// sign-in stays (pairing again pins it).
   Future<void> _pinPairedHost(PairingDevice host) async {
-    final pins = await _loadPins();
-    pins[host.deviceId] = _Pin(host.identityKey, host.name, DateTime.now());
     for (var attempt = 1; ; attempt++) {
       try {
+        final pins = await _loadPins();
+        pins[host.deviceId] = _Pin(host.identityKey, host.name, DateTime.now());
         await _savePins(pins);
         return;
       } on Object {
-        if (attempt == 3) return;
+        if (attempt == 3) {
+          throw const PairingException(
+            'PAIRING_PIN_SAVE_FAILED',
+            'The computer key could not be stored on this phone; pair again.',
+          );
+        }
         await Future<void>.delayed(Duration(milliseconds: 200 * attempt));
       }
     }
