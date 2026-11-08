@@ -120,6 +120,11 @@ class _RemotePairingPageState extends ConsumerState<RemotePairingPage> {
 
 // ── Pieces ──────────────────────────────────────────────────────────────────
 
+String _fingerprintLines(String fingerprint) {
+  final groups = formatPairingFingerprint(fingerprint).split(' ');
+  return [for (var i = 0; i < groups.length; i += 4) groups.skip(i).take(4).join(' ')].join('\n');
+}
+
 class _Card extends StatelessWidget {
   const _Card({required this.child, this.padding = const EdgeInsets.fromLTRB(18, 18, 18, 18)});
 
@@ -304,7 +309,8 @@ class _ConfirmStep extends ConsumerWidget {
                   shape: Squircle.border(AppShape.md, side: BorderSide(color: colors.codeWellBorder, width: 0.5)),
                 ),
                 child: Text(
-                  formatPairingFingerprint(offer.fingerprint),
+                  // Four groups a line: the same rows the computer shows, read one by one.
+                  _fingerprintLines(offer.fingerprint),
                   style: AppType.mono(size: 13, color: colors.codeWellFg, height: 1.6),
                 ),
               ),

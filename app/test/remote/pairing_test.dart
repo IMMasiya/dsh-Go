@@ -218,7 +218,11 @@ void main() {
       expect(find.text('要连接这台电脑吗？'), findsOneWidget);
       expect(find.text('Studio Mac'), findsOneWidget);
       expect(find.text('https://dsh.r2049.cn'), findsOneWidget);
-      expect(find.textContaining('0f1e 2d3c 4b5a 6978'), findsOneWidget, reason: 'all 64 digits, grouped');
+      expect(
+        find.textContaining('0f1e 2d3c 4b5a 6978\n8796 a5b4 c3d2 e1f0\n'),
+        findsOneWidget,
+        reason: 'all 64 digits, 4 groups a line',
+      );
       expect(find.textContaining('c3d2 e1f0'), findsOneWidget);
 
       await tester.tap(find.text('确认是这台电脑，开始配对'));

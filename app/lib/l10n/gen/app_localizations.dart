@@ -26555,7 +26555,7 @@ abstract class L10n {
   /// No description provided for @remotePairCodeHint.
   ///
   /// In zh, this message translates to:
-  /// **'在电脑的 Remote 插件里输入，再点「确认绑定」。手机这边不用再操作。'**
+  /// **'在电脑的 Remote 插件里输入，点「确认绑定」。手机不用再操作。'**
   String get remotePairCodeHint;
 
   /// No description provided for @remotePairOneAttempt.

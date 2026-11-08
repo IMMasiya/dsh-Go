@@ -14479,7 +14479,7 @@ class L10nZh extends L10n {
   }
 
   @override
-  String get remotePairCodeHint => '在电脑的 Remote 插件里输入，再点「确认绑定」。手机这边不用再操作。';
+  String get remotePairCodeHint => '在电脑的 Remote 插件里输入，点「确认绑定」。手机不用再操作。';
 
   @override
   String get remotePairOneAttempt => '只有一次机会：输错后这次配对作废，要在电脑上重新生成二维码再扫。';
