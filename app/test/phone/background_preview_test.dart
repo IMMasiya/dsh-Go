@@ -52,15 +52,29 @@ class _CancelAckMessenger implements BinaryMessenger {
   _CancelAckMessenger(this.delegate);
   final TestDefaultBinaryMessenger delegate;
   Completer<void>? cancelAck;
+  Completer<void>? firstListenAck;
+  bool _firstListenSeen = false;
   final calls = <String>[];
 
   @override
   Future<ByteData?> send(String channel, ByteData? message) async {
     final call = channel == _events.name && message != null
         ? _events.codec.decodeMethodCall(message) : null;
-    if (call != null) calls.add(call.method);
+    if (call != null) {
+      calls.add(call.method);
+    }
+    Completer<void>? listenAck;
+    if (call?.method == 'listen' && !_firstListenSeen) {
+      _firstListenSeen = true;
+      listenAck = firstListenAck;
+    }
     final response = await delegate.send(channel, message);
-    if (call?.method == 'cancel') await cancelAck?.future;
+    if (listenAck != null) {
+      await listenAck.future;
+    }
+    if (call?.method == 'cancel') {
+      await cancelAck?.future;
+    }
     return response;
   }
 
@@ -202,7 +216,28 @@ void main() {
       expect(native.calls, ['listen', 'cancel']);
       navigator.pop();
       await _flush(tester);
-      expect(native.calls, ['listen', 'cancel', 'listen']);
+      final routeDialogElements = find
+          .byType(PhoneBackgroundPreviewDialog, skipOffstage: false)
+          .evaluate()
+          .toList();
+      final routeDialog =
+          routeDialogElements.length == 1 ? routeDialogElements.single : null;
+      final routeCurrent = routeDialog != null && routeDialog.mounted
+          ? ModalRoute.of(routeDialog)?.isCurrent
+          : null;
+      final routeError = tester.takeException();
+      final routeFacts =
+          'after cover pop: dialogs=${routeDialogElements.length}, '
+          'mounted=${routeDialog?.mounted}, current=$routeCurrent, '
+          'covers=${find.text('cover', skipOffstage: false).evaluate().length}, '
+          'lifecycle=${tester.binding.lifecycleState}, '
+          'scheduledFrame=${tester.binding.hasScheduledFrame}, '
+          'nativeCalls=${native.calls}, exception=$routeError';
+      expect(routeError, isNull, reason: routeFacts);
+      expect(routeDialogElements, hasLength(1), reason: routeFacts);
+      expect(routeDialog?.mounted, isTrue, reason: routeFacts);
+      expect(routeCurrent, isTrue, reason: routeFacts);
+      expect(native.calls, ['listen', 'cancel', 'listen'], reason: routeFacts);
     } finally {
       await _unmount(tester);
     }
@@ -215,6 +250,8 @@ void main() {
     final gate = _CancelAckMessenger(TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger);
     final channel = PhoneChannel(preview: EventChannel(_events.name, _events.codec, gate));
     await _mount(tester, channel);
+    expect(gate.calls, ['listen']);
+    expect(native.calls, ['listen']);
     final ack = Completer<void>();
     gate.cancelAck = ack;
     try {
@@ -231,6 +268,53 @@ void main() {
       gate.cancelAck = null;
       await _unmount(tester);
     }
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('retired viewer cancels before reopen even when its listen ACK is late', (tester) async {
+    final native = _NativePreview()..install();
+    final gate = _CancelAckMessenger(TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger);
+    final channel = PhoneChannel(preview: EventChannel(_events.name, _events.codec, gate));
+    final firstAck = Completer<void>();
+    gate.firstListenAck = firstAck;
+    try {
+      await _mount(tester, channel);
+      expect(gate.calls, ['listen']);
+      expect(native.calls, ['listen']);
+      expect(firstAck.isCompleted, isFalse);
+
+      await _unmount(tester);
+      await _mount(tester, channel);
+      // Capture both sides before releasing A's reply, then complete the late
+      // response before checking the saved sequence and B's active subscription.
+      final beforeAck = List<String>.of(gate.calls);
+      final nativeBeforeAck = List<String>.of(native.calls);
+      expect(native.calls.where((call) => call == 'listen'), hasLength(2));
+      expect(firstAck.isCompleted, isFalse);
+      firstAck.complete();
+      await _flush(tester);
+
+      expect(beforeAck, ['listen', 'cancel', 'listen'],
+          reason: 'A must send cancel without waiting for its listen response.');
+      expect(nativeBeforeAck, ['listen', 'cancel', 'listen']);
+      expect(gate.calls, ['listen', 'cancel', 'listen'],
+          reason: 'Releasing A\'s late listen response must not send a cancel for B.');
+      expect(native.calls, ['listen', 'cancel', 'listen']);
+      expect(native.arguments, [{'taskId': 7}, {'taskId': 7}]);
+      native.emit(_event('off', 1));
+      await _flush(tester);
+      expect(find.text(appL10n.phonePreviewOff), findsOneWidget,
+          reason: 'B must still receive events through its registered handler.');
+      expect(find.byType(RawImage), findsNothing);
+    } finally {
+      if (!firstAck.isCompleted) {
+        firstAck.complete();
+      }
+      gate.firstListenAck = null;
+      await _unmount(tester);
+    }
+    expect(gate.calls, ['listen', 'cancel', 'listen', 'cancel']);
+    expect(native.calls, ['listen', 'cancel', 'listen', 'cancel']);
     expect(tester.takeException(), isNull);
   });
 
@@ -292,7 +376,7 @@ void main() {
         expect(tester.widget<RawImage>(find.byType(RawImage)).image, same(image));
         native.emit(_event('off', 11));
         await _flush(tester);
-        expect(find.byType(RawImage), findsNothing);
+        expect(find.byType(RawImage), findsNothing, reason: 'after current off sequence 11');
         expect(find.text(appL10n.phonePreviewOff), findsOneWidget);
         expect(image.debugDisposed, isTrue);
         // Older waiting/protected events must not revive or relabel the cleared observation.
@@ -304,7 +388,7 @@ void main() {
         expect(tester.widget<RawImage>(find.byType(RawImage)).image, same(recovered));
         native.emit({'malformed': true});
         await _flush(tester);
-        expect(find.byType(RawImage), findsNothing);
+        expect(find.byType(RawImage), findsNothing, reason: 'after malformed event');
         expect(recovered.debugDisposed, isTrue);
         expect(find.text(appL10n.phonePreviewUnavailable), findsOneWidget);
       } finally {

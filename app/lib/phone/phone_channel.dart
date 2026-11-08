@@ -1213,9 +1213,51 @@ class PhoneChannel {
 
   Future<bool> setBackgroundPreview(bool enabled) => _bool('setBackgroundPreview', {'enabled': enabled});
 
-  /// One App viewer at a time. Cancelling its subscription releases only that viewer.
-  Stream<PhonePreviewFrame?> previewFrames(int taskId) =>
-      _preview.receiveBroadcastStream({'taskId': taskId}).map(PhonePreviewFrame.parse);
+  /// One App viewer at a time. Cancellation completes after the native ACK.
+  Stream<PhonePreviewFrame?> previewFrames(int taskId) {
+    final messenger = _preview.binaryMessenger;
+    final control = MethodChannel(_preview.name, _preview.codec, messenger);
+    final arguments = <String, Object>{'taskId': taskId};
+    late final StreamController<Object?> controller;
+    var cancelled = false;
+
+    Future<void> start() async {
+      try {
+        await control.invokeMethod<void>('listen', arguments);
+      } catch (error, stack) {
+        if (!cancelled && !controller.isClosed) {
+          controller.addError(error, stack);
+        }
+      }
+    }
+
+    controller = StreamController<Object?>(
+      onListen: () {
+        messenger.setMessageHandler(_preview.name, (reply) async {
+          if (cancelled || controller.isClosed) {
+            return null;
+          }
+          if (reply == null) {
+            unawaited(controller.close());
+          } else {
+            try {
+              controller.add(_preview.codec.decodeEnvelope(reply));
+            } on PlatformException catch (error, stack) {
+              controller.addError(error, stack);
+            }
+          }
+          return null;
+        });
+        unawaited(start());
+      },
+      onCancel: () async {
+        cancelled = true;
+        messenger.setMessageHandler(_preview.name, null);
+        await control.invokeMethod<void>('cancel', arguments);
+      },
+    );
+    return controller.stream.map(PhonePreviewFrame.parse);
+  }
 
   Future<bool> setSkillSavePrompt(bool enabled) => _bool('setSkillSavePrompt', {'enabled': enabled});
 
