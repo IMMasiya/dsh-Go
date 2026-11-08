@@ -20384,6 +20384,18 @@ abstract class L10n {
   /// **'查看后台屏'**
   String get phonePreviewOpen;
 
+  /// No description provided for @phonePreviewTask.
+  ///
+  /// In zh, this message translates to:
+  /// **'预览任务 {taskId}'**
+  String phonePreviewTask(String taskId);
+
+  /// No description provided for @phonePreviewInUse.
+  ///
+  /// In zh, this message translates to:
+  /// **'正在预览另一任务'**
+  String get phonePreviewInUse;
+
   /// No description provided for @phonePreviewOff.
   ///
   /// In zh, this message translates to:
@@ -20707,6 +20719,72 @@ abstract class L10n {
   /// In zh, this message translates to:
   /// **'默认开启。关闭时，识别请求不会触发 SDK 加载或初始化。截图和识别文字可能发送给你配置的模型。关闭后不再开始新的本机文字识别；已经开始的识别可能仍在收尾。关闭不会卸载 SDK，也不承诺清除或停止发送此前积累的 SDK 统计。'**
   String get phoneLocalOcrDetails;
+
+  /// No description provided for @phoneBackgroundParallelTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'后台任务上限'**
+  String get phoneBackgroundParallelTitle;
+
+  /// No description provided for @phoneBackgroundParallelStatus.
+  ///
+  /// In zh, this message translates to:
+  /// **'设置上限：{configured} · 当前可用上限：{effective} · 已占用：{held}'**
+  String phoneBackgroundParallelStatus(int configured, int effective, int held);
+
+  /// No description provided for @phoneBackgroundParallelDescription.
+  ///
+  /// In zh, this message translates to:
+  /// **'调低上限会保留已有任务。新任务仍需等待应用和主屏资源可用。'**
+  String get phoneBackgroundParallelDescription;
+
+  /// No description provided for @phoneBackgroundParallelChoice.
+  ///
+  /// In zh, this message translates to:
+  /// **'{limit} 个后台任务槽位'**
+  String phoneBackgroundParallelChoice(int limit);
+
+  /// No description provided for @phoneBackgroundParallelOff.
+  ///
+  /// In zh, this message translates to:
+  /// **'后台通道已关闭。保存此偏好不会开启通道。'**
+  String get phoneBackgroundParallelOff;
+
+  /// No description provided for @phoneBackgroundParallelUnsupported.
+  ///
+  /// In zh, this message translates to:
+  /// **'此设备当前无法使用后台操作。'**
+  String get phoneBackgroundParallelUnsupported;
+
+  /// No description provided for @phoneBackgroundParallelConnection.
+  ///
+  /// In zh, this message translates to:
+  /// **'建立连接后才能接纳新的后台任务。'**
+  String get phoneBackgroundParallelConnection;
+
+  /// No description provided for @phoneBackgroundParallelBusy.
+  ///
+  /// In zh, this message translates to:
+  /// **'后台通道正在准备或维护，暂不能接纳新任务。'**
+  String get phoneBackgroundParallelBusy;
+
+  /// No description provided for @phoneBackgroundParallelRecovery.
+  ///
+  /// In zh, this message translates to:
+  /// **'请先处理未完成的后台资源恢复，再开始新任务。'**
+  String get phoneBackgroundParallelRecovery;
+
+  /// No description provided for @phoneBackgroundParallelPeer.
+  ///
+  /// In zh, this message translates to:
+  /// **'当前连接的服务不支持所需的后台能力。'**
+  String get phoneBackgroundParallelPeer;
+
+  /// No description provided for @phoneBackgroundParallelSerial.
+  ///
+  /// In zh, this message translates to:
+  /// **'此连接支持一个后台槽位，设置偏好仍会保留。'**
+  String get phoneBackgroundParallelSerial;
 
   /// No description provided for @phoneTaskResultReady.
   ///
