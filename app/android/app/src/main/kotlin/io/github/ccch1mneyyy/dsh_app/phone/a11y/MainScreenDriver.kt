@@ -879,13 +879,13 @@ internal class MainScreenDriver(private val service: PhoneA11yService, private v
         cap.hiddenWindowTitle == null &&
             (cap.windows.isEmpty() || (ScreenFormat.textCount(cap.windows) < ScreenFormat.POOR_TREE && previous?.screen?.poorTree != true))
 
-    /** Polls the field until it shows [expected] (or 1.5 s pass); returns what it shows. */
+    /** Polls refreshed content; null means refresh failed. The 1.5 s limit does not bound a platform call. */
     private fun readBack(node: AccessibilityNodeInfo, expected: String, gen: Long): String? {
         val deadline = SystemClock.uptimeMillis() + 1_500
         var got: String? = null
         while (true) {
-            node.refresh()
-            got = if (node.isShowingHintTextCompat()) "" else node.text?.toString()
+            if (!node.refresh()) return null
+            got = if (node.isShowingHintTextCompat()) "" else node.text?.toString().orEmpty()
             if (sameText(got, expected) || SystemClock.uptimeMillis() > deadline || cancelled(gen)) return got
             clock.pause(100) { cancelled(gen) }
         }
@@ -1053,9 +1053,11 @@ internal class MainScreenDriver(private val service: PhoneA11yService, private v
          */
         internal fun readBackMismatch(got: String?, target: TargetInfo): String {
             // l10n:keep agent screen result
+            if (got == null) return "已输入，但未能确认当前输入框内容。没有重试，也没有提交；请看新屏幕决定下一步。"
+            // l10n:keep agent screen result
             val now = if (SafetyRules.isSecretTarget(target)) "这是密码 / 验证码框，框里的内容不回传"
             // l10n:keep agent screen result
-            else "框里现在是" + ScreenMask.mask(got.orEmpty()).let { if (it.isEmpty()) "空" else "「${ScreenFormat.clip(it, 40)}」" }
+            else "框里现在是" + ScreenMask.mask(got).let { if (it.isEmpty()) "空" else "「${ScreenFormat.clip(it, 40)}」" }
             // l10n:keep agent screen result
             return "已输入，但回读不一致：$now。没有重试，也没有提交；请看新屏幕决定下一步。"
         }

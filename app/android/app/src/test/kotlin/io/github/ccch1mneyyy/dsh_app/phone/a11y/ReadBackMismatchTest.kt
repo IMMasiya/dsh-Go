@@ -36,7 +36,36 @@ class ReadBackMismatchTest {
             "已输入，但回读不一致：框里现在是「小明 123456」。没有重试，也没有提交；请看新屏幕决定下一步。",
             MainScreenDriver.readBackMismatch("小明 123456", nickname),
         )
-        assertTrue(MainScreenDriver.readBackMismatch(null, nickname).contains("框里现在是空"))
+        assertTrue(MainScreenDriver.readBackMismatch("", nickname).contains("框里现在是空"))
         assertTrue(MainScreenDriver.readBackMismatch("4111 1111 1111 1111", nickname).contains("«银行卡 ****1111»"))
+    }
+
+    @Test fun anUnknownReadBackDoesNotClaimAnyCurrentContent() {
+        val message = MainScreenDriver.readBackMismatch(null, field(hint = "昵称"))
+        assertTrue(message, message.contains("已输入"))
+        assertTrue(message, message.contains("没有重试，也没有提交"))
+        assertFalse(message, message.contains("框里现在是"))
+        assertFalse(message, message.contains("空"))
+        assertFalse(message, message.contains("回读一致"))
+        assertTrue(message, message.contains("无法确认") || message.contains("未能确认"))
+    }
+
+    @Test fun aKnownEmptyReadBackStillReportsEmptyContent() {
+        val message = MainScreenDriver.readBackMismatch("", field(hint = "昵称"))
+        assertTrue(message, message.contains("已输入"))
+        assertTrue(message, message.contains("框里现在是空"))
+        assertTrue(message, message.contains("没有重试，也没有提交"))
+    }
+
+    @Test fun anUnknownSecretReadBackDoesNotInventAnEmptyValue() {
+        for (target in listOf(field(hint = "验证码"), field(hint = "密码", password = true))) {
+            val message = MainScreenDriver.readBackMismatch(null, target)
+            assertTrue(message, message.contains("已输入"))
+            assertTrue(message, message.contains("没有重试，也没有提交"))
+            assertFalse(message, message.contains("框里现在是"))
+            assertFalse(message, message.contains("空"))
+            assertFalse(message, message.contains("回读一致"))
+            assertTrue(message, message.contains("无法确认") || message.contains("未能确认"))
+        }
     }
 }
