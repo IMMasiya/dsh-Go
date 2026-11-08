@@ -956,6 +956,7 @@ class PhonePolicies {
     this.defaultConfirm = const [],
     this.confirmMode = PhoneConfirmMode.ask,
     this.unlocks = const {},
+    this.localOcrEnabled,
   });
 
   factory PhonePolicies.fromMap(Map<Object?, Object?> m) {
@@ -971,6 +972,7 @@ class PhonePolicies {
       defaultDeny: _strings(defaults['denyPackages']),
       defaultConfirm: _strings(defaults['confirmEveryWritePackages']),
       confirmMode: PhoneConfirmMode.parse(m['confirmMode']),
+      localOcrEnabled: _maybeFlag(m['localOcrEnabled']),
       // Only an explicit true lifts a rule.
       unlocks: {
         for (final u in PhoneUnlock.values)
@@ -994,6 +996,9 @@ class PhonePolicies {
   /// The hard rules the person lifted; empty by default.
   final Set<PhoneUnlock> unlocks;
 
+  /// Missing, malformed or unread native settings remain unknown.
+  final bool? localOcrEnabled;
+
   Map<String, Object?> toWire() => {
     'denyPackages': denyPackages,
     'confirmEveryWritePackages': confirmEveryWritePackages,
@@ -1008,6 +1013,7 @@ class PhonePolicies {
     defaultConfirm: defaultConfirm,
     confirmMode: mode,
     unlocks: unlocks,
+    localOcrEnabled: localOcrEnabled,
   );
 
   PhonePolicies withUnlock(PhoneUnlock unlock, bool on) => PhonePolicies(
@@ -1018,6 +1024,18 @@ class PhonePolicies {
     defaultConfirm: defaultConfirm,
     confirmMode: confirmMode,
     unlocks: on ? {...unlocks, unlock} : ({...unlocks}..remove(unlock)),
+    localOcrEnabled: localOcrEnabled,
+  );
+
+  PhonePolicies withLocalOcrEnabled(bool? enabled) => PhonePolicies(
+    denyPackages: denyPackages,
+    confirmEveryWritePackages: confirmEveryWritePackages,
+    labels: labels,
+    defaultDeny: defaultDeny,
+    defaultConfirm: defaultConfirm,
+    confirmMode: confirmMode,
+    unlocks: unlocks,
+    localOcrEnabled: enabled,
   );
 
   AppRule ruleFor(String package) {
@@ -1057,6 +1075,7 @@ class PhonePolicies {
       defaultConfirm: defaultConfirm,
       confirmMode: confirmMode,
       unlocks: unlocks,
+      localOcrEnabled: localOcrEnabled,
     );
   }
 }
@@ -1375,6 +1394,9 @@ class PhoneChannel {
   }
 
   Future<bool> setPolicies(PhonePolicies policies) => _bool('setPolicies', policies.toWire());
+
+  Future<bool> setLocalOcrEnabled(bool enabled) =>
+      _bool('setPolicies', {'localOcrEnabled': enabled});
 
   /// Lifts or restores one hard rule, and nothing else (`setPolicies` keeps
   /// what it isn't sent).

@@ -136,12 +136,18 @@ class PhoneController extends Notifier<PhoneState> {
 
   Future<void> refreshPolicies() async {
     final policies = await _channel.getPolicies();
-    if (ref.mounted && policies != null) {
-      state = state.copyWith(policies: policies);
-      // A first-run choice the native side didn't take yet goes in now.
-      if (await _pendingConfirmMode() != null && ref.mounted) {
-        unawaited(applyPendingConfirmMode());
+    if (!ref.mounted) return;
+    if (policies == null) {
+      final current = state.policies;
+      if (current != null) {
+        state = state.copyWith(policies: current.withLocalOcrEnabled(null));
       }
+      return;
+    }
+    state = state.copyWith(policies: policies);
+    // A first-run choice the native side didn't take yet goes in now.
+    if (await _pendingConfirmMode() != null && ref.mounted) {
+      unawaited(applyPendingConfirmMode());
     }
   }
 
@@ -291,7 +297,7 @@ class PhoneController extends Notifier<PhoneState> {
     final ok = await _channel.setPolicies(next);
     if (!ok || !ref.mounted) return false;
     state = state.copyWith(
-      policies: next,
+      policies: _acceptedPolicyWrite(next),
       retained: state.retained.contains(package) ? state.retained : [...state.retained, package],
     );
     return true;
@@ -306,9 +312,39 @@ class PhoneController extends Notifier<PhoneState> {
     final next = current.withConfirmMode(mode);
     final ok = await _channel.setPolicies(next);
     if (!ok || !ref.mounted) return false;
-    state = state.copyWith(policies: next);
+    state = state.copyWith(policies: _acceptedPolicyWrite(next));
     await _clearPendingConfirmMode();
     return true;
+  }
+
+  // The old setter writes these three fields. Preserve newer read-only settings,
+  // unlocks and OCR state rather than restoring the pre-await object.
+  PhonePolicies? _acceptedPolicyWrite(PhonePolicies written) {
+    final current = state.policies;
+    if (current == null) return null;
+    return PhonePolicies(
+      denyPackages: written.denyPackages,
+      confirmEveryWritePackages: written.confirmEveryWritePackages,
+      confirmMode: written.confirmMode,
+      labels: current.labels,
+      defaultDeny: current.defaultDeny,
+      defaultConfirm: current.defaultConfirm,
+      unlocks: current.unlocks,
+      localOcrEnabled: current.localOcrEnabled,
+    );
+  }
+
+  Future<bool> setLocalOcrEnabled(bool enabled) async {
+    if (state.policies?.localOcrEnabled == null) return false;
+    final ok = await _channel.setLocalOcrEnabled(enabled);
+    if (!ref.mounted) return ok;
+    final readback = await _channel.getPolicies();
+    if (!ref.mounted) return ok;
+    final current = state.policies;
+    if (current != null) {
+      state = state.copyWith(policies: current.withLocalOcrEnabled(readback?.localOcrEnabled));
+    }
+    return ok;
   }
 
   /// First run's 关键步骤先问我 / 全程自动, through the same `setPolicies` as

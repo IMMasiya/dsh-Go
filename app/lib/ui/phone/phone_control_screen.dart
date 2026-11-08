@@ -84,6 +84,7 @@ class _PhoneControlScreenState extends ConsumerState<PhoneControlScreen> {
   /// Came back from there still off: point at the restricted-settings guide.
   bool _a11yAttemptFailed = false;
   bool _testing = false;
+  bool _ocrSaving = false;
   bool _interruptionBusy = false;
   bool _backgroundGuideShown = false;
   bool _skillPromptsReady = false;
@@ -130,6 +131,15 @@ class _PhoneControlScreenState extends ConsumerState<PhoneControlScreen> {
       _awaitingA11y = false;
       _a11yAttemptFailed = !on;
     });
+  }
+
+  Future<void> _setLocalOcr(bool enabled) async {
+    if (_ocrSaving) return;
+    setState(() => _ocrSaving = true);
+    final ok = await ref.read(phoneProvider.notifier).setLocalOcrEnabled(enabled);
+    if (!mounted) return;
+    setState(() => _ocrSaving = false);
+    _toast(ok ? context.l10n.commonSaved : context.l10n.phoneActionFailedLater);
   }
 
   void _toast(String text) {
@@ -460,6 +470,8 @@ class _PhoneControlScreenState extends ConsumerState<PhoneControlScreen> {
           ..._rules(state),
           gap,
           const PhoneSelfCheckPanel(),
+          gap,
+          _localOcr(state),
           if (status.skills.available) ...[
             gap,
             PhoneSkillSection(status: status.skills, autoPromptReady: _skillPromptsReady,
@@ -634,6 +646,34 @@ class _PhoneControlScreenState extends ConsumerState<PhoneControlScreen> {
             onTap: () => unawaited(_setReturn(!returnAfterDone)),
             trailing: Switch(value: returnAfterDone, onChanged: (v) => unawaited(_setReturn(v))),
           ),
+        ),
+      ],
+    );
+  }
+
+  Widget _localOcr(PhoneState state) {
+    final enabled = state.policies?.localOcrEnabled;
+    final l10n = context.l10n;
+    return ListPageCard(
+      title: l10n.phoneLocalOcrTitle,
+      children: [
+        ListPageRow(
+          title: l10n.phoneLocalOcrTitle,
+          titleMaxLines: 2,
+          subtitle: enabled == null ? l10n.phoneLocalOcrUnknown : l10n.phoneLocalOcrDisclosure,
+          subtitleMaxLines: 8,
+          trailing: enabled == null
+              ? null
+              : Switch(
+                  key: const ValueKey('phone-local-ocr-switch'),
+                  value: enabled,
+                  onChanged: _ocrSaving ? null : (value) => unawaited(_setLocalOcr(value)),
+                ),
+          chevron: false,
+        ),
+        Padding(
+          padding: const EdgeInsets.all(16),
+          child: Text(l10n.phoneLocalOcrDetails),
         ),
       ],
     );

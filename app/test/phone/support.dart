@@ -184,6 +184,8 @@ class FakePhoneNative {
   bool accept = true;
 
   Future<Map<String, Object?>> Function()? onStatus;
+  Future<Map<String, Object?>?> Function()? onGetPolicies;
+  Future<bool> Function(Map<String, Object?>)? onSetPolicies;
 
   /// Reply of `finishTask`; null: closed, and back in the app exactly when asked to reopen.
   Map<String, Object?>? finish;
@@ -301,8 +303,9 @@ class FakePhoneNative {
         }
         return result;
       case 'getPolicies':
-        return policies;
+        return onGetPolicies != null ? onGetPolicies!() : policies;
       case 'setPolicies':
+        if (onSetPolicies != null) return onSetPolicies!(args);
         // As natively: what isn't sent stays, inside `unlocks` too.
         if (accept) {
           final unlocks = args['unlocks'];
