@@ -145,7 +145,7 @@ internal class Actuator(private val service: AccessibilityService, private val o
     fun imeEnter(node: AccessibilityNodeInfo, allowed: () -> Boolean): Boolean {
         if (Build.VERSION.SDK_INT < 30) return false
         val id = AccessibilityAction.ACTION_IME_ENTER.id
-        node.refresh()
+        if (!node.refresh()) return false
         if (node.actionList.none { it.id == id }) return false
         if (!allowed()) return false
         return node.performAction(id)
