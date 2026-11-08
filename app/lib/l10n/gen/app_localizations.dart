@@ -4748,6 +4748,90 @@ abstract class L10n {
   /// **'来自 DSH-TUI'**
   String get botsPetSource;
 
+  /// No description provided for @botsPetImport.
+  ///
+  /// In zh, this message translates to:
+  /// **'导入'**
+  String get botsPetImport;
+
+  /// No description provided for @botsPetImportHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'导入你自己的像素宠物：一个 zip，里面是 pack.json 和序列帧 PNG，格式见仓库里的 docs/design/pets.md。长按导入的宠物可以删除。'**
+  String get botsPetImportHint;
+
+  /// No description provided for @botsPetImportDone.
+  ///
+  /// In zh, this message translates to:
+  /// **'「{name}」来了'**
+  String botsPetImportDone(String name);
+
+  /// No description provided for @botsPetImportReplaced.
+  ///
+  /// In zh, this message translates to:
+  /// **'「{name}」换成了新的'**
+  String botsPetImportReplaced(String name);
+
+  /// No description provided for @botsPetImportNotZip.
+  ///
+  /// In zh, this message translates to:
+  /// **'这不是 zip 文件'**
+  String get botsPetImportNotZip;
+
+  /// No description provided for @botsPetImportNoPack.
+  ///
+  /// In zh, this message translates to:
+  /// **'zip 里没有 pack.json'**
+  String get botsPetImportNoPack;
+
+  /// No description provided for @botsPetImportBadPack.
+  ///
+  /// In zh, this message translates to:
+  /// **'pack.json 有问题：{detail}'**
+  String botsPetImportBadPack(String detail);
+
+  /// No description provided for @botsPetImportMissingSheet.
+  ///
+  /// In zh, this message translates to:
+  /// **'zip 里少了序列帧图 {name}'**
+  String botsPetImportMissingSheet(String name);
+
+  /// No description provided for @botsPetImportBadSheet.
+  ///
+  /// In zh, this message translates to:
+  /// **'序列帧图不对：{name}（要完整的 PNG，每边不超过 4096 像素，每一帧都在图内）'**
+  String botsPetImportBadSheet(String name);
+
+  /// No description provided for @botsPetImportTooLarge.
+  ///
+  /// In zh, this message translates to:
+  /// **'这个宠物包太大了'**
+  String get botsPetImportTooLarge;
+
+  /// No description provided for @botsPetImportStorage.
+  ///
+  /// In zh, this message translates to:
+  /// **'没能存到手机上，再试一次'**
+  String get botsPetImportStorage;
+
+  /// No description provided for @botsPetRemoveTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'删除「{name}」？'**
+  String botsPetRemoveTitle(String name);
+
+  /// No description provided for @botsPetRemoveBody.
+  ///
+  /// In zh, this message translates to:
+  /// **'删除后可以再导入。'**
+  String get botsPetRemoveBody;
+
+  /// No description provided for @botsPetRemoveFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'没能删除「{name}」，再试一次'**
+  String botsPetRemoveFailed(String name);
+
   /// No description provided for @botsPetSize.
   ///
   /// In zh, this message translates to:
@@ -8306,11 +8390,35 @@ abstract class L10n {
   /// **'这句话没送出去，要不要再说一次？'**
   String get companionSendFailed;
 
-  /// No description provided for @companionNeedsAttention.
+  /// No description provided for @companionLogTitle.
   ///
   /// In zh, this message translates to:
-  /// **'有件事要你确认，点这里去看'**
-  String get companionNeedsAttention;
+  /// **'聊天记录'**
+  String get companionLogTitle;
+
+  /// No description provided for @companionLogEmpty.
+  ///
+  /// In zh, this message translates to:
+  /// **'还没有说过话。'**
+  String get companionLogEmpty;
+
+  /// No description provided for @companionLogYou.
+  ///
+  /// In zh, this message translates to:
+  /// **'你'**
+  String get companionLogYou;
+
+  /// No description provided for @companionLogOpenChat.
+  ///
+  /// In zh, this message translates to:
+  /// **'在主对话里看'**
+  String get companionLogOpenChat;
+
+  /// No description provided for @companionLogOlder.
+  ///
+  /// In zh, this message translates to:
+  /// **'加载更早的记录'**
+  String get companionLogOlder;
 
   /// No description provided for @companionMenuHistory.
   ///
@@ -8405,7 +8513,7 @@ abstract class L10n {
   /// No description provided for @companionPackNoModel.
   ///
   /// In zh, this message translates to:
-  /// **'包里没有找到 Live2D 模型（.model3.json）。'**
+  /// **'包里没有找到 Live2D 模型（.model3.json）。把模型的整个文件夹打成 zip 再试。'**
   String get companionPackNoModel;
 
   /// No description provided for @companionPackUnsafe.
@@ -8945,7 +9053,7 @@ abstract class L10n {
   /// No description provided for @companionSetupBodyBundled.
   ///
   /// In zh, this message translates to:
-  /// **'她就在 App 里，点一下就到，素材只解压到这台手机上。也可以导入别的素材包（zip）。'**
+  /// **'她就在 App 里，点一下就到，素材只解压到这台手机上。也可以导入别的素材包，或者把 Live2D 模型的文件夹打成 zip 直接导入。'**
   String get companionSetupBodyBundled;
 
   /// No description provided for @companionSetupImportOther.
@@ -9535,6 +9643,162 @@ abstract class L10n {
   /// In zh, this message translates to:
   /// **'轻量模式下一句就生效；完整模式会在你下一条消息里把新设定告诉她。'**
   String get companionPersonaFooter;
+
+  /// No description provided for @companionMenuMoves.
+  ///
+  /// In zh, this message translates to:
+  /// **'动作和表情'**
+  String get companionMenuMoves;
+
+  /// No description provided for @companionMovesHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'这些是模型自带的。开着的会交给 AI（表情、动作各最多 24 个，按列表顺序），她回复时会自己用；点名字改个好懂的叫法，点 ▶ 先在她身上试试。'**
+  String get companionMovesHint;
+
+  /// No description provided for @companionMovesNone.
+  ///
+  /// In zh, this message translates to:
+  /// **'这个模型没有自带的表情和动作，她用的是内置的那些。'**
+  String get companionMovesNone;
+
+  /// No description provided for @companionMovesRename.
+  ///
+  /// In zh, this message translates to:
+  /// **'改个叫法'**
+  String get companionMovesRename;
+
+  /// No description provided for @companionMovesTry.
+  ///
+  /// In zh, this message translates to:
+  /// **'试一下'**
+  String get companionMovesTry;
+
+  /// No description provided for @companionPackLegacyModel.
+  ///
+  /// In zh, this message translates to:
+  /// **'这是 Cubism 2 的旧模型（.moc 和 model.json），手机上的运行库只认 Cubism 3 以后的 .moc3。用 Cubism Editor 打开后导出成 moc3 再导入就行。'**
+  String get companionPackLegacyModel;
+
+  /// No description provided for @companionFailedMocVersion.
+  ///
+  /// In zh, this message translates to:
+  /// **'这个模型是用更新版本的 Cubism 导出的（moc 版本 {version}），手机上的运行库最高只认到 {latest}。在 Cubism Editor 里导出成旧一点的版本再导入就行。'**
+  String companionFailedMocVersion(String version, String latest);
+
+  /// No description provided for @companionMenuAdapt.
+  ///
+  /// In zh, this message translates to:
+  /// **'适配这个模型'**
+  String get companionMenuAdapt;
+
+  /// No description provided for @companionAdaptHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'用你配好的模型（你的 Key，按次计费）看一遍这个角色，把转头、眨眼、表情和摸哪里对上。会发出去的：模型名、参数名单、表情动作和部件的名字、你下面写的话和现在的适配表；模型文件和贴图不发。'**
+  String get companionAdaptHint;
+
+  /// No description provided for @companionAdaptOffer.
+  ///
+  /// In zh, this message translates to:
+  /// **'这个模型要适配一下：用你配好的模型看一遍它的参数名单和表情动作的名字（不发模型文件），会用你的 Key 调用一次。以后的新模型就自动来，菜单里能关。'**
+  String get companionAdaptOffer;
+
+  /// No description provided for @companionAdaptOfferYes.
+  ///
+  /// In zh, this message translates to:
+  /// **'适配'**
+  String get companionAdaptOfferYes;
+
+  /// No description provided for @companionAdaptOfferNo.
+  ///
+  /// In zh, this message translates to:
+  /// **'不用了'**
+  String get companionAdaptOfferNo;
+
+  /// No description provided for @companionAdaptNote.
+  ///
+  /// In zh, this message translates to:
+  /// **'哪里不对？（可以不填）'**
+  String get companionAdaptNote;
+
+  /// No description provided for @companionAdaptNoteHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'比如：摸头没反应，开心的时候脸是黑的'**
+  String get companionAdaptNoteHint;
+
+  /// No description provided for @companionAdaptRun.
+  ///
+  /// In zh, this message translates to:
+  /// **'让 AI 适配'**
+  String get companionAdaptRun;
+
+  /// No description provided for @companionAdaptUndo.
+  ///
+  /// In zh, this message translates to:
+  /// **'撤销适配'**
+  String get companionAdaptUndo;
+
+  /// No description provided for @companionAdaptAuto.
+  ///
+  /// In zh, this message translates to:
+  /// **'导入新模型时自动适配'**
+  String get companionAdaptAuto;
+
+  /// No description provided for @companionAdaptStart.
+  ///
+  /// In zh, this message translates to:
+  /// **'让我适应一下这个新身体……'**
+  String get companionAdaptStart;
+
+  /// No description provided for @companionAdaptDone.
+  ///
+  /// In zh, this message translates to:
+  /// **'好啦，这个身体我会用了。'**
+  String get companionAdaptDone;
+
+  /// No description provided for @companionAdaptDoneNote.
+  ///
+  /// In zh, this message translates to:
+  /// **'好啦，这个身体我会用了。{note}'**
+  String companionAdaptDoneNote(String note);
+
+  /// No description provided for @companionAdaptUndone.
+  ///
+  /// In zh, this message translates to:
+  /// **'好，换回原来的样子了。'**
+  String get companionAdaptUndone;
+
+  /// No description provided for @companionAdaptNoKey.
+  ///
+  /// In zh, this message translates to:
+  /// **'要用你的模型帮我适配，先在设置里填上 API Key。'**
+  String get companionAdaptNoKey;
+
+  /// No description provided for @companionAdaptFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'这次没适应好（{reason}），可以在菜单的「适配这个模型」里再试一次。'**
+  String companionAdaptFailed(String reason);
+
+  /// No description provided for @companionAdaptUnreadable.
+  ///
+  /// In zh, this message translates to:
+  /// **'模型的回答看不懂'**
+  String get companionAdaptUnreadable;
+
+  /// No description provided for @companionAdaptEmpty.
+  ///
+  /// In zh, this message translates to:
+  /// **'模型没找到能用的对应'**
+  String get companionAdaptEmpty;
+
+  /// No description provided for @companionAdaptNetwork.
+  ///
+  /// In zh, this message translates to:
+  /// **'网络不通'**
+  String get companionAdaptNetwork;
 
   /// No description provided for @systemImeTitle.
   ///

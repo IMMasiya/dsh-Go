@@ -287,7 +287,7 @@ def main(argv):
     if check_only:
         return 0
     for lang in langs:
-        # LF on every OS: CI regenerates these and diffs them byte for byte.
+        # LF on every platform: Windows would write CRLF, and CI diffs against LF.
         with open(os.path.join(L10N, f'app_{lang}.arb'), 'w', encoding='utf-8', newline='\n') as f:
             json.dump(merged[lang], f, ensure_ascii=False, indent=2)
             f.write('\n')

@@ -2,7 +2,9 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:dsh_app/companion/companion_adapt.dart';
 import 'package:dsh_app/companion/companion_keeper.dart';
+import 'package:dsh_app/companion/companion_moves.dart';
 import 'package:dsh_app/companion/companion_pack.dart';
 import 'package:dsh_app/companion/companion_state.dart';
 import 'package:dsh_app/pets/pet_mood.dart';
@@ -15,6 +17,7 @@ import 'package:http/testing.dart';
 import 'package:dsh_app/l10n/gen/app_localizations.dart';
 import 'package:dsh_app/state/connection_state.dart';
 import 'package:dsh_app/ui/companion/companion_chrome.dart';
+import 'package:dsh_app/ui/companion/companion_log.dart';
 import 'package:dsh_app/ui/companion/companion_page.dart';
 import 'package:dsh_app/ui/companion/companion_stage.dart';
 import 'package:dsh_app/ui/theme/app_icons.dart';
@@ -487,6 +490,8 @@ void main() {
         required String apiKey,
         required http.Client client,
         CompanionKeeper? phone,
+        CompanionModelInfo? model,
+        ValueChanged<CompanionStageEvents>? events,
       }) async {
         SharedPreferences.setMockInitialValues({'companion_touch_hint_done': true, 'companion_home_hint_done': true});
         final commands = <(String, Map<String, Object?>)>[];
@@ -508,7 +513,10 @@ void main() {
             phone: phone,
           ),
         );
-        (await _stageUp(tester, () => stageEvents)).onReady();
+        final up = await _stageUp(tester, () => stageEvents);
+        if (model != null) up.onModel?.call(model);
+        events?.call(up);
+        up.onReady();
         await _settle(tester);
         await tester.pump(const Duration(seconds: 8)); // The greeting goes.
         await _settle(tester);
@@ -550,6 +558,268 @@ void main() {
         await say(tester, '今天好累');
         expect(asked, hasLength(2));
         expect((asked.last['messages']! as List).map((m) => (m as Map)['role']), ['user', 'assistant', 'user']);
+
+        await tester.pumpWidget(const SizedBox());
+        await tester.pump(const Duration(seconds: 20));
+      });
+
+      testWidgets('聊天记录: read back right here, over her; back closes it first', (tester) async {
+        final client = MockClient.streaming(
+          (_, _) async => http.StreamedResponse(Stream.value(utf8.encode(_sse(['[表情:开心]', '你来啦。']))), 200),
+        );
+        await openLight(tester, apiKey: 'sk-test', client: client);
+        await say(tester, '你好');
+        await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 200)));
+        await tester.pump(const Duration(seconds: 12));
+
+        await tester.tap(find.byIcon(AppIcons.history));
+        await tester.pumpAndSettle();
+        final log = find.byType(CompanionLog);
+        expect(log, findsOneWidget);
+        // Only what was said: no aside, no marks.
+        expect(find.descendant(of: log, matching: find.text('你好')), findsOneWidget);
+        expect(find.descendant(of: log, matching: find.text('你来啦。')), findsOneWidget);
+        expect(find.descendant(of: log, matching: find.textContaining('〔')), findsNothing);
+
+        // Back closes the log, not the room.
+        await tester.binding.handlePopRoute();
+        await tester.pumpAndSettle();
+        expect(find.byType(CompanionLog), findsNothing);
+        expect(find.byType(CompanionPage), findsOneWidget);
+
+        await tester.pumpWidget(const SizedBox());
+        await tester.pump(const Duration(seconds: 20));
+      });
+
+      testWidgets("her model's own expressions and motions: she is told, and they play", (tester) async {
+        final asked = <Map<String, Object?>>[];
+        final client = MockClient.streaming((request, body) async {
+          asked.add(jsonDecode(await body.bytesToString()) as Map<String, Object?>);
+          return http.StreamedResponse(Stream.value(utf8.encode(_sse(['[表情:脸黑]', '哼。', '[动作:TapBody]']))), 200);
+        });
+        final commands = await openLight(
+          tester,
+          apiKey: 'sk-test',
+          client: client,
+          model: const CompanionModelInfo(expressions: ['03 脸黑', '11 尾巴消失'], motions: ['TapBody', 'Idle']),
+        );
+        commands.clear();
+
+        await say(tester, '你又偷吃了');
+        final system = asked.single['system']! as String;
+        expect(system, contains('[表情:脸黑]'));
+        expect(system, contains('[动作:TapBody]'));
+        expect(system, isNot(contains('尾巴消失')));
+        expect(system, isNot(contains('[动作:Idle]')));
+        expect(find.text('哼。'), findsOneWidget);
+        expect(commands.where((c) => c.$1 == 'emotion').map((c) => c.$2['name']), contains('03 脸黑'));
+        expect(commands.where((c) => c.$1 == 'action').map((c) => c.$2['name']), contains('TapBody'));
+        // Sent as the model's own, so a feeling of hers with that name can't stand in.
+        expect(commands.firstWhere((c) => c.$2['name'] == 'TapBody').$2['native'], isTrue);
+
+        await tester.pumpWidget(const SizedBox());
+        await tester.pump(const Duration(seconds: 20));
+      });
+
+      testWidgets('动作和表情: try one on her, keep it from the AI, give it a name', (tester) async {
+        tester.view.physicalSize = const Size(1080, 3200);
+        tester.view.devicePixelRatio = 2;
+        addTearDown(tester.view.reset);
+        final client = MockClient((_) async => http.Response('', 500));
+        final commands = await openLight(
+          tester,
+          apiKey: 'sk-test',
+          client: client,
+          model: const CompanionModelInfo(expressions: ['03 脸黑'], motions: ['TapBody']),
+        );
+        commands.clear();
+
+        await tester.tap(find.byIcon(AppIcons.more));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('动作和表情'));
+        await tester.pumpAndSettle();
+        expect(find.text('脸黑'), findsOneWidget);
+        expect(find.text('TapBody'), findsOneWidget);
+
+        await tester.tap(find.byTooltip('试一下').last);
+        await tester.pump();
+        expect(commands.last.$1, 'action');
+        expect(commands.last.$2['name'], 'TapBody');
+
+        await tester.tap(find.byType(Switch).last);
+        await tester.pump();
+        await tester.tap(find.text('脸黑'));
+        await tester.pumpAndSettle();
+        await tester.enterText(find.byType(TextField).last, '生闷气');
+        await tester.tap(find.text('保存'));
+        await tester.pumpAndSettle();
+        expect(find.text('生闷气'), findsOneWidget);
+        // Its name in the model stays beside the new one.
+        expect(find.text('03 脸黑'), findsOneWidget);
+
+        await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 100)));
+        final saved = CompanionMoves.from(
+          const CompanionModelInfo(expressions: ['03 脸黑'], motions: ['TapBody']),
+          await companionMovesSaved('鲸鱼娘'),
+        );
+        expect(saved.emotionLabels, {'生闷气': '03 脸黑'});
+        expect(saved.actionLabels, isEmpty);
+
+        await tester.pumpWidget(const SizedBox());
+        await tester.pump(const Duration(seconds: 20));
+      });
+
+      // A bare model: no zones, no emotions of its own, its eyes under other names.
+      final bareProbe = CompanionProbe.fromJson({
+        'moc': 'm.moc3',
+        'parameterCount': 3,
+        'params': [
+          {'id': 'EyeOpenL', 'name': '左眼', 'group': '眼睛', 'min': 0, 'max': 1, 'def': 1},
+          {'id': 'EyeOpenR', 'name': '右眼', 'group': '眼睛', 'min': 0, 'max': 1, 'def': 1},
+          {'id': 'MouthA', 'name': '嘴', 'group': '嘴', 'min': 0, 'max': 1, 'def': 0},
+        ],
+        'expressions': ['笑', '哭'],
+        'motions': [],
+        'missing': ['ParamEyeLOpen', 'ParamEyeROpen'],
+        'zonesFrom': 'default',
+        'emotionsFrom': 'default',
+      })!;
+      String adapterAnswer(String notes) => jsonEncode({
+        'params': {
+          'ParamEyeLOpen': {'id': 'EyeOpenL'},
+          'ParamEyeROpen': {'id': 'EyeOpenR'},
+        },
+        'emotions': {
+          'happy': {'expression': '笑'},
+        },
+        'zones': [
+          {'id': 'head', 'from': 0, 'to': 0.25},
+          {'id': 'body', 'from': 0.25, 'to': 1},
+        ],
+        'notes': notes,
+      });
+
+      testWidgets('a model that needs judgement: her own AI fits it once, and she wears it', (tester) async {
+        final adapting = <Map<String, Object?>>[];
+        final client = MockClient.streaming((request, body) async {
+          final json = jsonDecode(await body.bytesToString()) as Map<String, Object?>;
+          if (json['system'] == companionAdaptSystem) {
+            adapting.add(json);
+            return http.StreamedResponse(Stream.value(utf8.encode(_sse([adapterAnswer('眼睛对上了')]))), 200);
+          }
+          return http.StreamedResponse(Stream.value(utf8.encode(_sse(['嗯。']))), 200);
+        });
+        late CompanionStageEvents events;
+        final commands = await openLight(tester, apiKey: 'sk-test', client: client, events: (up) => events = up);
+        commands.clear();
+
+        events.onProbe!(bareProbe);
+        // The first time, nothing goes out before the person says yes.
+        for (var i = 0; i < 4; i++) {
+          await _settle(tester);
+        }
+        expect(adapting, isEmpty);
+        expect(find.textContaining('这个模型要适配一下'), findsOneWidget);
+        await tester.tap(find.text('适配'));
+        final file = File('${root.path}/pack/character/adapter.json');
+        for (var i = 0; i < 40 && !commands.any((c) => c.$1 == 'adapter'); i++) {
+          await _settle(tester);
+        }
+        expect(adapting, hasLength(1));
+        expect(find.textContaining('这个模型要适配一下'), findsNothing);
+        final asked = ((adapting.single['messages']! as List).single as Map)['content'] as String;
+        expect(asked, contains('EyeOpenL 左眼 0..1 =1'));
+        final written = jsonDecode(file.readAsStringSync()) as Map;
+        expect((written['params'] as Map)['ParamEyeLOpen'], {'id': 'EyeOpenL'});
+        expect(commands.map((c) => c.$1), containsAll(['adapter', 'emotion', 'action']));
+        expect(find.text('好啦，这个身体我会用了。眼睛对上了'), findsOneWidget);
+
+        // The same model again: not asked twice on its own.
+        await tester.pump(const Duration(seconds: 10));
+        events.onProbe!(bareProbe);
+        for (var i = 0; i < 4; i++) {
+          await _settle(tester);
+        }
+        expect(adapting, hasLength(1));
+
+        await tester.pumpWidget(const SizedBox());
+        await tester.pump(const Duration(seconds: 20));
+      });
+
+      testWidgets('the fitting offer turned down: nothing sent, and not offered again for that model', (tester) async {
+        final adapting = <Object>[];
+        final client = MockClient.streaming((request, body) async {
+          adapting.add(request);
+          return http.StreamedResponse(Stream.value(utf8.encode(_sse([adapterAnswer('')]))), 200);
+        });
+        late CompanionStageEvents events;
+        await openLight(tester, apiKey: 'sk-test', client: client, events: (up) => events = up);
+        events.onProbe!(bareProbe);
+        for (var i = 0; i < 4; i++) {
+          await _settle(tester);
+        }
+        await tester.tap(find.text('不用了'));
+        for (var i = 0; i < 4; i++) {
+          await _settle(tester);
+        }
+        expect(find.textContaining('这个模型要适配一下'), findsNothing);
+        events.onProbe!(bareProbe);
+        for (var i = 0; i < 4; i++) {
+          await _settle(tester);
+        }
+        expect(find.textContaining('这个模型要适配一下'), findsNothing);
+        expect(adapting, isEmpty);
+
+        await tester.pumpWidget(const SizedBox());
+        await tester.pump(const Duration(seconds: 20));
+      });
+
+      testWidgets('适配这个模型: what is off goes with the request; undo takes it off', (tester) async {
+        tester.view.physicalSize = const Size(1080, 3200);
+        tester.view.devicePixelRatio = 2;
+        addTearDown(tester.view.reset);
+        final adapting = <String>[];
+        final client = MockClient.streaming((request, body) async {
+          final json = jsonDecode(await body.bytesToString()) as Map<String, Object?>;
+          adapting.add(((json['messages']! as List).single as Map)['content'] as String);
+          return http.StreamedResponse(Stream.value(utf8.encode(_sse([adapterAnswer('')]))), 200);
+        });
+        late CompanionStageEvents events;
+        final commands = await openLight(tester, apiKey: 'sk-test', client: client, events: (up) => events = up);
+        // Fitted already (another way): nothing happens on its own.
+        events.onProbe!(CompanionProbe.fromJson({'moc': 'm.moc3', 'adapter': true, 'expressions': []})!);
+        await _settle(tester);
+        expect(adapting, isEmpty);
+        commands.clear();
+
+        await tester.tap(find.byIcon(AppIcons.more));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('适配这个模型'));
+        await tester.pumpAndSettle();
+        expect(find.text('导入新模型时自动适配'), findsOneWidget);
+        await tester.enterText(find.byType(TextField).last, '摸头没反应');
+        await tester.tap(find.text('让 AI 适配'));
+        await tester.pumpAndSettle();
+        for (var i = 0; i < 40 && !commands.any((c) => c.$1 == 'adapter'); i++) {
+          await _settle(tester);
+        }
+        expect(adapting.single, contains('用户说哪里不对：摸头没反应'));
+        expect(File('${root.path}/pack/character/adapter.json').existsSync(), isTrue);
+        expect(find.text('好啦，这个身体我会用了。'), findsOneWidget);
+
+        commands.clear();
+        await tester.pump(const Duration(seconds: 10));
+        await tester.tap(find.byIcon(AppIcons.more));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('适配这个模型'));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('撤销适配'));
+        await tester.pumpAndSettle();
+        for (var i = 0; i < 20 && !commands.any((c) => c.$1 == 'adapter'); i++) {
+          await _settle(tester);
+        }
+        expect(File('${root.path}/pack/character/adapter.json').existsSync(), isFalse);
+        expect(find.text('好，换回原来的样子了。'), findsOneWidget);
 
         await tester.pumpWidget(const SizedBox());
         await tester.pump(const Duration(seconds: 20));
