@@ -106,6 +106,10 @@ class _PhoneBackgroundPreviewDialogState extends State<PhoneBackgroundPreviewDia
         frame.generation == _nativeGeneration && frame.sequence <= _nativeSequence) {
       return;
     }
+    if (frame.generation != _nativeGeneration) {
+      _clearImage();
+      setState(() => _state = 'waiting');
+    }
     _nativeGeneration = frame.generation;
     _nativeSequence = frame.sequence;
     if (frame.state != 'frame') {
@@ -113,7 +117,6 @@ class _PhoneBackgroundPreviewDialogState extends State<PhoneBackgroundPreviewDia
       setState(() => _state = frame.state);
       return;
     }
-    _imageRevision++;
     _pending = frame; // one latest pending frame; a slow decoder never accumulates a queue
     unawaited(_decodeLatest());
   }
@@ -135,7 +138,7 @@ class _PhoneBackgroundPreviewDialogState extends State<PhoneBackgroundPreviewDia
           decoded = (await codec.getNextFrame()).image;
         } catch (_) {
           // No exception details or image bytes enter logs or diagnostics.
-          if (mounted && _visible && _epoch == epoch && _imageRevision == revision) {
+          if (mounted && _visible && _epoch == epoch && _imageRevision == revision && _pending == null) {
             _clearImage();
             setState(() => _state = 'unavailable');
           }

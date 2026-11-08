@@ -77,6 +77,16 @@ class _DeliveryPhoneChannel extends PhoneChannel {
   });
 }
 
+/// Forces delivery during a real codec callback; parser and decoder stay real.
+class _SynchronousPreviewChannel extends PhoneChannel {
+  final events = StreamController<PhonePreviewFrame?>(sync: true);
+
+  void emit(Object? event) => events.add(PhonePreviewFrame.parse(event));
+
+  @override
+  Stream<PhonePreviewFrame?> previewFrames(int taskId) => events.stream;
+}
+
 /// MockStreamHandler.onCancel is void. Delay only the encoded ACK, so the
 /// production subscription must await its actual cancel Future before re-listen.
 class _CancelAckMessenger implements BinaryMessenger {
@@ -346,6 +356,99 @@ void main() {
     }
     expect(gate.calls, ['listen', 'cancel', 'listen', 'cancel']);
     expect(native.calls, ['listen', 'cancel', 'listen', 'cancel']);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('continuous same-generation frames do not retire every decoding image', (tester) async {
+    await tester.runAsync<void>(() async {
+      final channel = _SynchronousPreviewChannel();
+      final images = _Images()..install();
+      final lastCreated = Completer<ui.Image>();
+      ui.Image? first;
+      bool? firstRetiredBeforeSecond;
+      try {
+        await _mount(tester, channel);
+        images.retireOnCreate = () {
+          first = images.created.last;
+          images.retireOnCreate = () {
+            firstRetiredBeforeSecond = first!.debugDisposed;
+            images.next = lastCreated;
+            channel.emit(_event('frame', 3));
+          };
+          channel.emit(_event('frame', 2));
+        };
+        channel.emit(_event('frame', 1));
+        final last = await lastCreated.future.timeout(const Duration(seconds: 10));
+        await _flush(tester);
+        expect(firstRetiredBeforeSecond, isFalse,
+            reason: 'The first decode must be held by the viewer while the next decode starts.');
+        expect(tester.widget<RawImage>(find.byType(RawImage)).image, same(last));
+        expect(first!.debugDisposed, isTrue);
+        expect(last.debugDisposed, isFalse);
+      } finally {
+        try {
+          await _unmount(tester);
+          await channel.events.close();
+          expect(images.created.every((image) => image.debugDisposed), isTrue);
+        } finally { images.restore(); }
+      }
+    });
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('a new generation retires the in-flight decode before its replacement', (tester) async {
+    await tester.runAsync<void>(() async {
+      final channel = _SynchronousPreviewChannel();
+      final images = _Images()..install();
+      final replacement = Completer<ui.Image>();
+      ui.Image? old;
+      bool? oldRetired;
+      try {
+        await _mount(tester, channel);
+        images.retireOnCreate = () {
+          old = images.created.last;
+          images.next = replacement;
+          images.retireOnCreate = () { oldRetired = old!.debugDisposed; };
+          channel.emit(_event('frame', 1, generation: 2));
+        };
+        channel.emit(_event('frame', 1));
+        final next = await replacement.future.timeout(const Duration(seconds: 10));
+        await _flush(tester);
+        expect(oldRetired, isTrue);
+        expect(tester.widget<RawImage>(find.byType(RawImage)).image, same(next));
+      } finally {
+        try {
+          await _unmount(tester);
+          await channel.events.close();
+          expect(images.created.every((image) => image.debugDisposed), isTrue);
+        } finally { images.restore(); }
+      }
+    });
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('a failed decode preserves a newer pending frame', (tester) async {
+    await tester.runAsync<void>(() async {
+      final channel = _SynchronousPreviewChannel();
+      final images = _Images()..install();
+      final recovered = Completer<ui.Image>();
+      try {
+        await _mount(tester, channel);
+        images.next = recovered;
+        channel.emit({..._event('frame', 1), 'imageBytes': _png.sublist(0, 8)});
+        channel.emit(_event('frame', 2));
+        final next = await recovered.future.timeout(const Duration(seconds: 10));
+        await _flush(tester);
+        expect(tester.widget<RawImage>(find.byType(RawImage)).image, same(next));
+        expect(find.text(appL10n.phonePreviewUnavailable), findsNothing);
+      } finally {
+        try {
+          await _unmount(tester);
+          await channel.events.close();
+          expect(images.created.every((image) => image.debugDisposed), isTrue);
+        } finally { images.restore(); }
+      }
+    });
     expect(tester.takeException(), isNull);
   });
 
