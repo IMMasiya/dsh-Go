@@ -868,6 +868,12 @@ class PhoneCore(
         if (collectedScreen?.secure == true) {
             return Out(safety.filterScreen(collectedScreen, readPolicy).text, error = true, app = pkg, summary = summary, decision = "refused:read")
         }
+        r.rejection?.let { rejection ->
+            return Out(r.stopReason, error = true,
+                screen = collectedScreen?.let { returnedScreen(driver, it, owner, readPolicy) },
+                app = pkg, summary = summary,
+                decision = if (rejection == CollectRejection.UNAVAILABLE) "unavailable" else "refused:collect")
+        }
         val screen = collectedScreen?.let { returnedScreen(driver, it, owner, readPolicy) }
         val text = buildString {
             // l10n:keep agent tool result

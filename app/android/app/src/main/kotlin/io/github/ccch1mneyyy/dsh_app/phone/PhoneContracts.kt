@@ -119,6 +119,9 @@ data class ActionResult(
     internal val navigationWitness: io.github.ccch1mneyyy.dsh_app.phone.skills.PhoneSkillNavigationWitness? = null,
 )
 
+/** A definite refusal before collection starts; normal empty and partial results have none. */
+enum class CollectRejection { UNAVAILABLE, INVALID_TARGET, READ_REFUSED }
+
 data class CollectResult(
     /** De-duplicated items, one per line, in on-screen order. */
     val items: List<String>,
@@ -128,6 +131,7 @@ data class CollectResult(
     val screen: ScreenSnapshot?,
     /** Union of known packages whose pages contributed items, independent of the last screen. */
     internal val readPackages: Set<String> = emptySet(),
+    internal val rejection: CollectRejection? = null,
 )
 
 /** Whether a driver can work right now, and if not, a sentence the model can relay. */

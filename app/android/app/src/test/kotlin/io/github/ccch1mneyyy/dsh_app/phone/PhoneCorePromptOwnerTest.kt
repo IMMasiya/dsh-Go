@@ -48,6 +48,7 @@ class PhoneCorePromptOwnerTest {
     private var intents = 0
     private val main = Driver(PhoneScreen.MAIN)
     private val background = Driver(PhoneScreen.BACKGROUND)
+    private var boundMain: PhoneDriver? = null
     private val core = PhoneCore(object : PhoneEnv {
         override fun enabled() = true
         override fun policies() = policyRead?.invoke() ?: policies
@@ -66,7 +67,7 @@ class PhoneCorePromptOwnerTest {
                 if (deferStatus) queuedStatuses += apply else apply()
             }
         }
-        override fun driver(screen: PhoneScreen) = if (screen == PhoneScreen.MAIN) main else background
+        override fun driver(screen: PhoneScreen): PhoneDriver = if (screen == PhoneScreen.MAIN) boundMain ?: main else background
         override fun a11yState() = A11yState.CONNECTED
         override fun backgroundUnavailable() = "unavailable"
         override fun zone() = ZoneId.of("UTC")
@@ -157,6 +158,8 @@ class PhoneCorePromptOwnerTest {
         var beforeCollectBatch: () -> Unit = {}
         var afterCollectBatch: () -> Unit = {}
         var collecting: () -> Unit = {}
+        var collectItems = listOf("late collected item")
+        var collectPages = 1
         var collectScreen = true
         var collectReadPackages: Set<String> = emptySet()
         var collectStopReason = "pageLimit"
@@ -176,7 +179,7 @@ class PhoneCorePromptOwnerTest {
             collecting()
             val snapshot = if (collectScreen) collectSnapshot ?: ScreenSnapshot("${screen.prefix}2", "late collected screen",
                 "Example", "example.app", image = byteArrayOf(1, 2, 3), imageMime = "image/png") else null
-            return CollectResult(listOf("late collected item"), 1, collectStopReason, snapshot, readPackages = collectReadPackages)
+            return CollectResult(collectItems, collectPages, collectStopReason, snapshot, readPackages = collectReadPackages)
         }
         override fun collect(screenId: String, listElementId: Int, maxPages: Int, until: String?, allowed: () -> Boolean): CollectResult {
             collectAllowed = allowed
@@ -1624,4 +1627,42 @@ class PhoneCorePromptOwnerTest {
         assertEquals(PhoneSkillOutcomes.Outcome.UNKNOWN, fixture.first.finish(fixture.second, true, 1L))
         assertEquals("unknown", fixture.first.snapshot(fixture.second)["state"])
     }
+    @Test fun foreignObservationCollectIsARealLedgerRefusalWithoutPhysicalCollectionOrStop() {
+        val owner = (tasks.begin() as PhoneTasks.Begin.Go).owner
+        boundMain = PhoneTaskObservations(tasks).bind(main, owner)
+        boundMain!!.observe(false, false)
+        val result = collectCall("s999")
+        assertTrue(result.text, result.isError)
+        assertTrue(result.text.contains("屏幕编号不属于本任务"))
+        assertFalse(result.text.contains("收集到"))
+        assertEquals(0, main.collects)
+        assertTrue(tasks.isCurrent(owner))
+        assertFalse(tasks.isStopped())
+        assertEquals("refused:collect", core.log.last()!!.decision)
+    }
+
+    @Test fun currentLedgerAllowsAnActuallyEmptyCollectionAndKeepsNormalPartialResults() {
+        val owner = (tasks.begin() as PhoneTasks.Begin.Go).owner
+        boundMain = PhoneTaskObservations(tasks).bind(main, owner)
+        boundMain!!.observe(false, false)
+        main.collectScreen = false
+        main.collectItems = emptyList()
+        main.collectPages = 0
+        main.collectStopReason = "empty list"
+        val empty = collectCall("s1")
+        assertFalse(empty.text, empty.isError)
+        assertTrue(empty.text.contains("收集到 0 条"))
+        assertEquals(1, main.collects)
+        assertEquals("ok", core.log.last()!!.decision)
+        main.collectItems = listOf("partial prefix")
+        main.collectPages = 1
+        main.collectStopReason = "list lost after readable page"
+        val partial = collectCall("s1")
+        assertFalse(partial.text, partial.isError)
+        assertTrue(partial.text.contains("partial prefix"))
+        assertEquals(2, main.collects)
+        assertTrue(tasks.isCurrent(owner))
+        assertFalse(tasks.isStopped())
+    }
+
 }

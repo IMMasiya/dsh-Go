@@ -31,6 +31,7 @@ import io.github.ccch1mneyyy.dsh_app.phone.SkillReplayPost
 import io.github.ccch1mneyyy.dsh_app.phone.FocusInput
 import io.github.ccch1mneyyy.dsh_app.phone.FocusObservation
 import io.github.ccch1mneyyy.dsh_app.phone.Availability
+import io.github.ccch1mneyyy.dsh_app.phone.CollectRejection
 import io.github.ccch1mneyyy.dsh_app.phone.CollectResult
 import io.github.ccch1mneyyy.dsh_app.phone.PhoneControl
 import io.github.ccch1mneyyy.dsh_app.phone.PhoneAction
@@ -775,23 +776,23 @@ internal class MainScreenDriver(private val service: PhoneA11yService, private v
                          allowed: () -> Boolean, canRead: (String?) -> Boolean,
                          scrollSourcesAllowed: (Set<String>) -> Boolean): CollectResult {
         // l10n:keep agent screen result
-        if (Looper.myLooper() == Looper.getMainLooper()) return CollectResult(emptyList(), 0, "内部错误：不能在主线程执行", null)
+        if (Looper.myLooper() == Looper.getMainLooper()) return CollectResult(emptyList(), 0, "内部错误：不能在主线程执行", null, rejection = CollectRejection.UNAVAILABLE)
         synchronized(lock) {
-            availability().let { if (!it.ok) return CollectResult(emptyList(), 0, it.reason!!, null) }
+            availability().let { if (!it.ok) return CollectResult(emptyList(), 0, it.reason!!, null, rejection = CollectRejection.UNAVAILABLE) }
             val snap = latest
             if (snap == null || snap.id != screenId) {
                 // l10n:keep agent screen result
-                return CollectResult(emptyList(), 0, "屏幕编号 $screenId 已过期，请先看新屏幕再 collect", observeQuiet())
+                return CollectResult(emptyList(), 0, "屏幕编号 $screenId 已过期，请先看新屏幕再 collect", observeQuiet(), rejection = CollectRejection.INVALID_TARGET)
             }
             // l10n:keep agent screen result
-            if (snap.ownApp && !lifted.ownApp) return CollectResult(emptyList(), 0, "这是 DSH 自己的界面，不读取", null)
+            if (snap.ownApp && !lifted.ownApp) return CollectResult(emptyList(), 0, "这是 DSH 自己的界面，不读取", null, rejection = CollectRejection.READ_REFUSED)
             var el = snap.screen.element(listElementId)
                 // l10n:keep agent screen result
-                ?: return CollectResult(emptyList(), 0, "屏幕 $screenId 里没有编号 $listElementId", null)
+                ?: return CollectResult(emptyList(), 0, "屏幕 $screenId 里没有编号 $listElementId", null, rejection = CollectRejection.INVALID_TARGET)
             if (el.kind != ElementKind.LIST) {
                 el = el.listId?.let { snap.screen.element(it) }
                     // l10n:keep agent screen result
-                    ?: return CollectResult(emptyList(), 0, "[$listElementId] 不是列表，也不在列表里", null)
+                    ?: return CollectResult(emptyList(), 0, "[$listElementId] 不是列表，也不在列表里", null, rejection = CollectRejection.INVALID_TARGET)
             }
             val pages = maxPages.coerceIn(1, 30)
             val wanted = until?.trim()?.takeIf { it.isNotEmpty() }

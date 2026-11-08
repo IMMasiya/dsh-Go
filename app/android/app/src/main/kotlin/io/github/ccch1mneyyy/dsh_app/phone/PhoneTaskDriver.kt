@@ -176,7 +176,7 @@ class PhoneTaskObservations(private val tasks: PhoneTasks) {
                              allowed: () -> Boolean, canRead: (String?) -> Boolean,
                              scrollSourcesAllowed: (Set<String>) -> Boolean): CollectResult {
             current()
-            if (!owns(screenId)) return CollectResult(emptyList(), 0, "屏幕编号不属于本任务，请重新 screen", null) // l10n:keep agent observation ownership result
+            if (!owns(screenId)) return CollectResult(emptyList(), 0, "屏幕编号不属于本任务，请重新 screen", null, rejection = CollectRejection.INVALID_TARGET) // l10n:keep agent observation ownership result
             return try {
                 val result = driver.collect(screenId, listElementId, maxPages, until,
                     { taskAllowed() && allowed() }, { pkg -> taskAllowed() && canRead(pkg) },
