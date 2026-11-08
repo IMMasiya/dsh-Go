@@ -75,9 +75,19 @@ function parsePublication(bytes: Uint8Array, kind: CatalogKind, etag: string): P
   }
   return { ...current, etag, releases: [...history.values()] };
 }
-export async function loadPublication(env: Env, kind: CatalogKind): Promise<Publication | null> {
-  const object = await env.DL.get(publicationKey(kind));
+interface Verified { publication: Publication; size: number }
+interface ReadSlot { verified?: Verified; pending?: Promise<Publication | null> }
+// Two bounded envelopes per live Env, not a TTL authority cache. Every caller
+// checks R2's current ETag. Waiters also do their own conditional read after
+// the single in-flight body validation, so an intervening withdrawal is seen.
+const verified = new WeakMap<Env, Map<CatalogKind, ReadSlot>>();
+async function readCurrentPublication(env: Env, kind: CatalogKind, slot: ReadSlot): Promise<Publication | null> {
+  const cached = slot.verified;
+  const object = cached
+    ? await env.DL.get(publicationKey(kind), { onlyIf: new Headers({ 'If-None-Match': cached.publication.etag }) })
+    : await env.DL.get(publicationKey(kind));
   if (!object) {
+    slot.verified = undefined;
     // R1's bare catalogue cannot prove earlier version bindings. Do not turn
     // its current entries into a fabricated complete history. Operators must
     // stop old publishers, resolve their in-flight/unknown writes, and restore
@@ -87,11 +97,40 @@ export async function loadPublication(env: Env, kind: CatalogKind): Promise<Publ
     if (await env.DL.head(`market/${kind}.json`)) throw new PetMarketError('history-migration-required');
     return null;
   }
+  // An unmet R2 GET precondition returns metadata, not a 304/body. Only the
+  // exact already-validated representation can use that result as authority.
+  const body = (object as R2ObjectBody).body;
+  if (!body) {
+    if (!cached || object.httpEtag !== cached.publication.etag || object.size !== cached.size)
+      throw new PetMarketError('publication-condition');
+    return cached.publication;
+  }
   if (object.size > PUBLICATION_CAP) {
-    void object.body.cancel().catch(() => {});
+    void body.cancel().catch(() => {});
     throw new PetMarketError('stored-publication-too-large');
   }
-  return parsePublication(await readBounded(object.body, PUBLICATION_CAP), kind, object.httpEtag);
+  const bytes = await readBounded(body, PUBLICATION_CAP);
+  if (bytes.length !== object.size) throw new PetMarketError('stored-publication-size');
+  const publication = parsePublication(bytes, kind, object.httpEtag);
+  slot.verified = { publication, size: bytes.length };
+  return publication;
+}
+export async function loadPublication(env: Env, kind: CatalogKind): Promise<Publication | null> {
+  let kinds = verified.get(env);
+  if (!kinds) verified.set(env, kinds = new Map());
+  let slot = kinds.get(kind);
+  if (!slot) kinds.set(kind, slot = {});
+  while (slot.pending) await slot.pending;
+  const current = slot;
+  const pending = readCurrentPublication(env, kind, current).catch(error => {
+    // Missing, unavailable and invalid current state can never authorize from
+    // an old envelope. The separate public stale view remains browse-only.
+    current.verified = undefined;
+    throw error;
+  });
+  current.pending = pending;
+  try { return await pending; }
+  finally { if (current.pending === pending) current.pending = undefined; }
 }
 export function nextPublication(previous: Publication | null, candidate: CatalogText, kind: CatalogKind): string {
   const releases = previous ? [...previous.releases] : [];

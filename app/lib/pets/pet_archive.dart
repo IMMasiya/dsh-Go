@@ -27,6 +27,7 @@ class PetArchive {
     try {
       final directory = ZipDirectory();
       final entries = <String, _PetArchiveEntry>{};
+      final members = <_PetArchiveEntry>[];
       final aliases = <String>{};
       final offsets = <int>[];
       final data = ByteData.sublistView(bytes);
@@ -87,18 +88,60 @@ class PetArchive {
         );
         expanded += header.uncompressedSize;
         offsets.add(header.localHeaderOffset);
-        if (!isDirectory) entries[name] = _PetArchiveEntry(header, rawName, name);
+        final entry = _PetArchiveEntry(header, rawName, name);
+        members.add(entry);
+        if (!isDirectory) entries[name] = entry;
       }
       _require(directory.filePosition >= 0, 'archive-invalid');
       _require(count == directory.totalCentralDirectoryEntries, 'archive-directory');
       _require(count <= petArchiveEntryCap, 'archive-entries');
       offsets.sort();
-      return PetArchive._(bytes, entries, directory.centralDirectoryOffset, offsets);
+      final archive = PetArchive._(bytes, entries, directory.centralDirectoryOffset, offsets);
+      // Even a dropped extra (or a directory) may claim another member's local
+      // header as its payload. Validate every declared interval before returning;
+      // actual decompression and CRC checks remain bounded, on-demand reads.
+      for (final entry in members) {
+        archive._memberStart(entry);
+      }
+      return archive;
     } on PetValidationException {
       rethrow;
     } on Object {
       throw const PetValidationException('archive-invalid');
     }
+  }
+
+  int _memberStart(_PetArchiveEntry entry) {
+    final header = entry.header, path = entry.name;
+    final offset = header.localHeaderOffset;
+    _require(offset >= 0 && offset <= _bytes.length - 30, 'archive-header', path);
+    final data = ByteData.sublistView(_bytes);
+    _require(data.getUint32(offset, Endian.little) == 0x04034b50, 'archive-header', path);
+    final flags = data.getUint16(offset + 6, Endian.little);
+    _require(
+      flags & 0x61 == 0 &&
+          flags == header.generalPurposeBitFlag &&
+          data.getUint16(offset + 8, Endian.little) == header.compressionMethod,
+      'archive-encoding',
+      path,
+    );
+    final nameLength = data.getUint16(offset + 26, Endian.little);
+    final extraLength = data.getUint16(offset + 28, Endian.little);
+    final start = offset + 30 + nameLength + extraLength;
+    _require(start <= _centralStart && nameLength == entry.rawName.length, 'archive-member-range', path);
+    for (var i = 0; i < nameLength; i++) {
+      _require(_bytes[offset + 30 + i] == entry.rawName[i], 'archive-local-name', path);
+    }
+    final next = _offsets.firstWhere((p) => p > offset, orElse: () => _centralStart);
+    _require(
+      _offsets.where((p) => p == offset).length == 1 &&
+          header.compressedSize >= 0 &&
+          header.compressedSize <= next - start &&
+          start + header.compressedSize <= _centralStart,
+      'archive-member-range',
+      path,
+    );
+    return start;
   }
 
   /// Reads only this member, with a hard output budget applied before each
@@ -109,36 +152,7 @@ class PetArchive {
     final header = entry!.header;
     _require(maxBytes >= 0 && header.uncompressedSize <= maxBytes, 'archive-member-size', path);
     try {
-      final offset = header.localHeaderOffset;
-      _require(offset >= 0 && offset <= _bytes.length - 30, 'archive-header', path);
-      final data = ByteData.sublistView(_bytes);
-      _require(data.getUint32(offset, Endian.little) == 0x04034b50, 'archive-header', path);
-      final flags = data.getUint16(offset + 6, Endian.little);
-      _require(
-        flags & 0x61 == 0 &&
-            flags == header.generalPurposeBitFlag &&
-            data.getUint16(offset + 8, Endian.little) == header.compressionMethod,
-        'archive-encoding',
-        path,
-      );
-      final nameLength = data.getUint16(offset + 26, Endian.little);
-      final extraLength = data.getUint16(offset + 28, Endian.little);
-      final start = offset + 30 + nameLength + extraLength;
-      _require(start <= _centralStart && nameLength == entry.rawName.length, 'archive-member-range', path);
-      for (var i = 0; i < nameLength; i++) {
-        _require(_bytes[offset + 30 + i] == entry.rawName[i], 'archive-local-name', path);
-      }
-      // Another local record may not lie inside this member, even if both
-      // central-directory records point to otherwise valid byte ranges.
-      final next = _offsets.firstWhere((p) => p > offset, orElse: () => _centralStart);
-      _require(
-        _offsets.where((p) => p == offset).length == 1 &&
-            header.compressedSize >= 0 &&
-            header.compressedSize <= next - start &&
-            start + header.compressedSize <= _centralStart,
-        'archive-member-range',
-        path,
-      );
+      final start = _memberStart(entry);
       final compressed = Uint8List.sublistView(_bytes, start, start + header.compressedSize);
       final Uint8List result;
       if (header.compressionMethod == 0) {

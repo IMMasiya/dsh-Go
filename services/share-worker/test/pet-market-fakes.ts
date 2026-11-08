@@ -30,7 +30,19 @@ export class PetBucket extends FakeBucket {
   async get(key: string, options?: any) {
     const value = await super.get(key, options);
     const entry = this.objects.get(key);
-    return value && entry ? { ...value, httpEtag: `"${sha(entry.bytes)}"` } : null;
+    if (!value || !entry) return null;
+    const hash = sha(entry.bytes), httpEtag = `"${hash}"`;
+    const metadata = { key: value.key, size: value.size, uploaded: value.uploaded,
+      customMetadata: value.customMetadata, etag: hash, httpEtag,
+      checksums: { sha256: new Uint8Array(Buffer.from(hash, 'hex')).buffer } };
+    // R2 conditional GET returns metadata WITHOUT body when a condition fails.
+    const noneMatch = options?.onlyIf instanceof Headers ? options.onlyIf.get('If-None-Match')
+      : options?.onlyIf?.etagDoesNotMatch;
+    if (noneMatch === httpEtag || noneMatch === hash || noneMatch === '*') {
+      void value.body.cancel().catch(() => {});
+      return metadata;
+    }
+    return { ...value, ...metadata };
   }
   async put(key: string, value: any, options: any = {}) {
     const bytes = value instanceof ReadableStream ? new Uint8Array(await new Response(value).arrayBuffer())

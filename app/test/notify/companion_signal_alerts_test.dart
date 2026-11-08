@@ -67,7 +67,8 @@ void main() {
   late CompanionSignalGate gate;
   late CompanionSignalIngress ingress;
   final deliveries = <CompanionAlertDelivery>[], alerts = <ChatAlert>[], order = <String>[];
-  bool attached = true, armedDispose = false;
+  final reannouncements = <ChatAlert>[];
+  bool attached = true, armedDispose = false, disposeOnPublish = false;
   setUp(() async {
     host = await CompanionSignalTestHost.start();
     client = await host.connect();
@@ -75,9 +76,11 @@ void main() {
     connection = HostConnection(client: client, isLocal: true);
     attached = true;
     armedDispose = false;
+    disposeOnPublish = false;
     deliveries.clear();
     alerts.clear();
     order.clear();
+    reannouncements.clear();
     tracker = HostAlertTracker(
       host: HostRef.local,
       source: source,
@@ -89,14 +92,16 @@ void main() {
       onCompanionSignal: (value) {
         deliveries.add(value);
         order.add(value.signal.kind);
+        if (disposeOnPublish) unawaited(tracker.dispose());
       },
       onAlert: alerts.add,
+      onReannounce: reannouncements.add,
       onWithdraw: (_, _, _) {
         order.add('legacy-withdraw');
       },
       onSessionGone: (_, _) {},
       announceDelay: Duration.zero,
-      reconcileDelay: const Duration(milliseconds: 1),
+      reconcileDelay: const Duration(seconds: 1),
     )..start();
     gate = CompanionSignalGate(monotonicMs: () => 1000000);
     gate.enter(recipientContext: Object(), ownerEpoch: Object());
@@ -125,6 +130,100 @@ void main() {
     await next;
     await _settle();
   }
+
+  test('C907 disposal during terminal publication prevents the following alert', () async {
+    source.outcome = _outcome(23, 'completed');
+    await edge(true);
+    disposeOnPublish = true;
+    await edge(false);
+    expect(deliveries, hasLength(1));
+    expect(deliveries.single.current, isFalse);
+    expect(alerts, isEmpty);
+  });
+  test('C907 disposal during request publication prevents the following alert', () async {
+    disposeOnPublish = true;
+    await request('r');
+    expect(deliveries, hasLength(1));
+    expect(alerts, isEmpty);
+  });
+  test('C907 disposal during replay publication prevents reannouncement', () async {
+    await request('r');
+    expect(alerts, hasLength(1));
+    client.mux.reconnect();
+    await client.mux.ready();
+    await _settle();
+    disposeOnPublish = true;
+    await request('r');
+    expect(deliveries, hasLength(2));
+    expect(alerts, hasLength(1));
+    expect(reannouncements, isEmpty);
+  });
+  test('C907 tracker disposal revokes a terminal slot with a still-current mux and ingress', () async {
+    source.outcome = _outcome(23, 'completed');
+    await edge(true);
+    await edge(false);
+    final delivery = deliveries.single;
+    expect(delivery.receive(gate, ingress), CompanionSignalAdmission.accepted);
+    final slot = gate.slots.single;
+    final speech = gate.speechCandidate(slot)!;
+    final preview = gate.previewMetadata(slot)!;
+    final epoch = Object(), keeper = Object(), model = Object();
+    final target = CompanionLightShareTarget(
+      recipientContext: slot.recipientContext,
+      targetEpoch: epoch,
+      currentTargetEpoch: () => epoch,
+      keeper: keeper,
+      modelConfiguration: model,
+      currentKeeper: () => keeper,
+      currentModelConfiguration: () => model,
+    );
+    final permit = gate.approveShare(preview, target, explicitlyConfirmed: true)!;
+    await tracker.dispose();
+    expect(delivery.provenance.current, isTrue);
+    expect(gate.ingressCurrent(ingress), isTrue);
+    expect(gate.speechCurrent(speech), isFalse);
+    expect(gate.previewMetadata(slot), isNull);
+    expect(gate.approveShare(preview, target, explicitlyConfirmed: true), isNull);
+    var sends = 0;
+    final result = await permit.dispatch((_, _, _) async => ++sends);
+    expect(result.accepted, isFalse);
+    expect(sends, 0);
+    expect(gate.slots, isEmpty);
+  });
+  test('C907 display-wrapper refresh retains scope but retires old receipts', () async {
+    await request('r');
+    final old = deliveries.single;
+    final scope = tracker.requestScope('r');
+    final token = alerts.single.petToken!;
+    expect(old.receive(gate, ingress), CompanionSignalAdmission.accepted);
+    final renamed = HostConnection(client: client, isLocal: true, name: 'new display');
+    expect(tracker.updateCompanionConnection(previous: Object(), next: renamed), isFalse);
+    expect(old.current, isTrue);
+    expect(tracker.updateCompanionConnection(previous: connection, next: renamed), isTrue);
+    expect(tracker.requestScope('r'), same(scope));
+    expect(tracker.petRequestMatches('r', 's', token), isTrue);
+    expect(old.current, isFalse);
+    expect(gate.slots, isEmpty);
+    final selected = CompanionSignalSource.dsh(
+      hostKey: companionHostKey(HostRef.local),
+      client: client,
+      connection: renamed,
+      isAttached: () => attached,
+    );
+    gate.setConsent(selected, const CompanionSignalConsent(state: true));
+    final nextIngress = gate.openIngress(selected)!;
+    expect(old.receive(gate, nextIngress), CompanionSignalAdmission.stale);
+    await request('r');
+    expect(alerts, hasLength(1), reason: 'the same request is not reannounced');
+    await request('next');
+    expect(deliveries.last.connection, same(renamed));
+    expect(deliveries.last.receive(gate, ingress), CompanionSignalAdmission.stale);
+    expect(deliveries.last.receive(gate, nextIngress), CompanionSignalAdmission.accepted);
+    client.mux.reconnect();
+    expect(deliveries.last.current, isFalse);
+    expect(tracker.requestScope('r'), isNull);
+    await client.mux.ready();
+  });
 
   test('real mux live edge carries exact read endSeq turn and no body', () async {
     source.outcome = _outcome(23, 'completed', turn: 4);

@@ -445,7 +445,7 @@ class HostAlertTracker {
     this.onReannounce,
     this.onRequestEpochChanged,
     this.onCompanionSignal,
-    this.companionConnection,
+    this._companionConnection,
     this.isCompanionAttached,
     this.announceDelay = const Duration(milliseconds: 800),
     this.reconcileDelay = const Duration(seconds: 3),
@@ -468,8 +468,18 @@ class HostAlertTracker {
   final void Function(ChatAlert alert)? onReannounce;
   final void Function(HostRef host)? onRequestEpochChanged;
   final void Function(CompanionAlertDelivery delivery)? onCompanionSignal;
-  final Object? companionConnection;
+  Object? _companionConnection;
+  Object? get companionConnection => _companionConnection;
   final bool Function()? isCompanionAttached;
+
+  /// The attachment owner may refresh display metadata for the same Host and
+  /// actual client. This does not replace [source] or any request/delivery
+  /// history. Existing receipts keep their old wrapper and retire immediately.
+  bool updateCompanionConnection({required Object previous, required Object next}) {
+    if (_disposed || !identical(_companionConnection, previous)) return false;
+    _companionConnection = next;
+    return true;
+  }
 
   /// Requests wait this long before alerting, so one that is answered at once
   /// (auto-approve on this or another device) never pops up.
@@ -727,6 +737,7 @@ class HostAlertTracker {
       );
       _requestAlerts[eventId] = alert;
       if (provenance != null) _publishRequest(eventId, agentId, root, kind, provenance, stillPending: current);
+      if (!current()) return;
       (reannounce ? onReannounce : onAlert)?.call(alert);
     }());
   }
@@ -776,6 +787,7 @@ class HostAlertTracker {
       signalFreshness: freshness,
     );
     if (provenance != null) _publishTerminal(alert, provenance);
+    if (!current()) return;
     onAlert(alert);
   }
 
@@ -899,9 +911,9 @@ class HostAlertTracker {
       return;
     }
     final delivery = CompanionAlertDelivery._(signal, provenance, actual.client, connection, () {
-      if (_disposed) return false;
+      if (_disposed || !identical(companionConnection, connection)) return false;
       final current = attached();
-      return current && !_disposed;
+      return current && !_disposed && identical(companionConnection, connection);
     }, stillPending);
     if (delivery.current) onCompanionSignal?.call(delivery);
   }
@@ -951,6 +963,6 @@ final class CompanionAlertDelivery {
         !gate.ingressCurrent(ingress)) {
       return CompanionSignalAdmission.stale;
     }
-    return gate.receive(ingress, signal, provenance: provenance, stillPending: _pending);
+    return gate.receive(ingress, signal, provenance: provenance, stillPending: _pending, receiptCurrent: () => current);
   }
 }

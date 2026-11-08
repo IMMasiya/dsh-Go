@@ -78,13 +78,19 @@ export function createRecallMarkers({ directory, io = promises, syncIO = fs } = 
   return {
     readSync,
     async available() {
-      probe ??= (async () => {
+      if (probe !== undefined) return probe;
+      const attempt = (async () => {
         const target = join(root, `.probe-${randomUUID()}.tmp`);
         try { await publish(target, '{}'); return true; }
         catch { return false; }
         finally { await io.unlink(target).catch(() => {}); }
       })();
-      return probe;
+      probe = attempt;
+      const available = await attempt;
+      // Share an in-flight probe and retain successful capability evidence,
+      // but a temporary storage failure cannot disable recall for this epoch.
+      if (!available && probe === attempt) probe = undefined;
+      return available;
     },
     async write(sessionId, storeId) {
       if (!validRecallSessionId(sessionId) || !canonicalUuid(storeId)) throw unavailable();

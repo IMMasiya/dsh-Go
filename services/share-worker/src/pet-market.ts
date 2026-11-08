@@ -5,8 +5,9 @@ import {
   type Catalog, type CatalogKind, type PetEntry, type AdapterEntry, INDEX_CAP,
   entries, entryId, revoked, validateAdapter, withdrawalKey,
 } from './pet-catalog';
-import { mirrorAsset, PetMarketError, readBounded, readStoredJson, upstream, type MarketAsset, type StoredJson } from './pet-market-io';
+import { failureCode, mirrorAsset, PetMarketError, readBounded, readStoredJson, upstream, type MarketAsset, type StoredJson } from './pet-market-io';
 import { loadPublication, nextPublication, parseCatalog, publicationKey } from './pet-market-state';
+import { resumeStage, saveStage, STAGE_ASSETS } from './pet-market-stage';
 
 interface Snapshot { text: string; catalog: Catalog; etag: string }
 const memory = new WeakMap<Env, Map<CatalogKind, Snapshot>>();
@@ -71,17 +72,29 @@ export async function publishPetCatalog(env: Env, kind: CatalogKind, budget = tr
   const previous = await loadPublication(env, kind);
   assertForward(previous, candidate);
   const unchanged = previous?.text === candidate.text;
-  // Old committed/staged adapters may have passed a previous profile. Even a
-  // byte-identical catalogue must not report successful reuse without checking
-  // its current JSON semantics. Pet blobs keep the original no-op behavior.
-  if (unchanged && kind === 'pets') return;
   const stateText = nextPublication(previous, candidate, kind);
-  const oldAssets = new Map(previous ? entries(previous.catalog).flatMap(e => assets(e).map(([a]) => [a.url, a] as const)) : []);
-  for (const entry of entries(candidate.catalog)) for (const [asset, type] of assets(entry)) {
-    const old = oldAssets.get(asset.url);
-    if ('id' in entry && old?.sha256 === asset.sha256 && old.size === asset.size) continue;
-    await mirrorAsset(env, base, asset, type, 'moc' in entry ? v => validateAdapter(v, entry.moc) : undefined, budget);
+  // Preserve the validated catalogue order: exact candidate bytes and the
+  // build-generated validation profile bind the durable cursor to this list.
+  const pending = entries(candidate.catalog).flatMap(entry => assets(entry).map(([asset, type]) => ({ entry, asset, type })));
+  const stage = await resumeStage(env, kind, candidate.text, base, previous?.etag ?? null, pending.length);
+  let cursor = stage.cursor;
+  try {
+    const stop = Math.min(cursor + STAGE_ASSETS, pending.length);
+    for (; cursor < stop; cursor++) {
+      const { entry, asset, type } = pending[cursor]!;
+      // Unchanged and metadata-only pet catalogues also verify presence and
+      // repair missing ZIPs/previews. JSON always receives current validation.
+      await mirrorAsset(env, base, asset, type, 'moc' in entry ? v => validateAdapter(v, entry.moc) : undefined, budget);
+    }
+    if (cursor < pending.length) throw new PetMarketError('stage-budget');
+  } catch (error) {
+    if (error instanceof PetMarketError && error.code === 'stage-budget') await saveStage(env, stage, cursor);
+    throw error;
   }
+  // A checkpoint CAS loser cannot publish. Reset completed unchanged sweeps
+  // so the next cron really rechecks missing objects; changed publications
+  // invalidate their completed checkpoint by advancing the base ETag.
+  if (stage.etag !== null) await saveStage(env, stage, unchanged ? 0 : cursor);
   if (unchanged) return;
   const result = await env.DL.put(publicationKey(kind), stateText, {
     onlyIf: new Headers(previous ? { 'If-Match': previous.etag } : { 'If-None-Match': '*' }),
@@ -92,13 +105,19 @@ export async function publishPetCatalog(env: Env, kind: CatalogKind, budget = tr
 }
 export async function publishPetMarket(env: Env): Promise<void> {
   const budget = transferBudget();
+  const failures: string[] = [];
   for (const kind of ['pets', 'adapters'] as const) {
     try { await publishPetCatalog(env, kind, budget); }
     catch (error) {
       // Do not log upstream response bodies, URLs, or exception messages.
-      console.error('pet market publish failed', kind, error instanceof PetMarketError ? error.code : 'storage-or-network');
+      const code = failureCode(error);
+      failures.push(`${kind}=${code}`);
+      console.error('pet market publish failed', kind, code);
     }
   }
+  // stage-budget means a durably saved, incomplete sweep. It is deliberately
+  // reported to Cron as deferred failure, never as completed publication.
+  if (failures.length) throw new Error(`pet-market-publish-failed:${failures.join(';')}`);
 }
 
 export function isPetMarketPath(path: string): boolean {

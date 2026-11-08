@@ -44,8 +44,10 @@ abstract final class CodexPetConverter {
       throw const PetValidationException('codex-version', 'spriteVersionNumber');
     }
     final version = versionValue;
-    final sourceName = _text(metadata, 'spritesheetPath')?.trim();
-    final source = sourceName == null || sourceName.isEmpty ? 'spritesheet.webp' : sourceName;
+    final sourceName = _text(metadata, 'spritesheetPath');
+    // Whitespace only selects the CLI default. An authored filename is exact,
+    // including a leading BOM or space retained by the ZIP name decoder.
+    final source = sourceName == null || sourceName.trim().isEmpty ? 'spritesheet.webp' : sourceName;
     if (source.isEmpty ||
         source.length > petSheetNameCap ||
         source.startsWith('.') ||
