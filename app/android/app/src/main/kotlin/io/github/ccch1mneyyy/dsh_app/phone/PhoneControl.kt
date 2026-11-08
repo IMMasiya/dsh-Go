@@ -332,6 +332,7 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
         tasks.invalidateOwners()
         skillLifecycle.retired()
         stopBridge()
+        sessions.beginCallerLaunch()
         this.rootfs = rootfs
         if (!isEnabled() || safe) {
             PhoneGuest.clearConfig(rootfs)
@@ -680,6 +681,7 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
         "task" to tasks.snapshot().toMap(),
         "taskInterruption" to taskJournal.status(),
         "taskProtocol" to 1,
+        "callerCapability" to sessions.callerCapability(),
         "tasks" to sessions.snapshot(),
         "selectedTaskId" to (displaySelection.ticket()?.owner?.taskId ?: 0L),
         "parallelLimit" to 1,

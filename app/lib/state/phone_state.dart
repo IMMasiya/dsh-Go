@@ -447,10 +447,26 @@ final phoneStopWatcherProvider = Provider<void>((ref) {
     // No native side (tests, an older build): nothing to watch.
     if (disposed || !status.ready) return;
     var stopped = status.task.stopped;
+    var launch = status.callerCapability?.launch;
+    var modernSeen = status.callerCapability?.modernSeen == true || status.tasks.any((task) => task.sessionId != null);
+    var versioned = status.taskProtocol == 1 || launch != null;
     sub = channel.statusChanges.listen((s) {
+      final capability = s.callerCapability;
+      final previousLaunch = launch;
+      if (capability != null && previousLaunch != null && capability.launch < previousLaunch) return;
+      final modernTasks = s.tasks.any((task) => task.sessionId != null);
+      if (capability != null && (previousLaunch == null || capability.launch > previousLaunch)) {
+        launch = capability.launch;
+        modernSeen = (previousLaunch == null && modernSeen) || capability.modernSeen || modernTasks;
+        versioned = true;
+        stopped = s.task.stopped;
+        return; // A new launch is a baseline, not a stop edge.
+      }
+      modernSeen = modernSeen || capability?.modernSeen == true || modernTasks;
+      versioned = versioned || s.taskProtocol == 1 || capability != null;
       // Session-aware native owns targeted stopping. The host API has no atomic
       // expected-run cancellation, so never cancel a later turn or every conversation.
-      if ((s.taskProtocol != 1 || !s.tasks.any((task) => task.sessionId != null)) && s.task.stopped && !stopped) unawaited(_cancelLocalTurns(ref));
+      if (!modernSeen && (capability != null || !versioned) && s.task.stopped && !stopped) unawaited(_cancelLocalTurns(ref));
       stopped = s.task.stopped;
     }, onError: (_) {});
   }());

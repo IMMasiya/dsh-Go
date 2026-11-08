@@ -70,6 +70,19 @@ class PhoneTaskSessions(
     private val mainWorker = legacyCore.worker
     private val lock = Object()
     private var epoch = 0L
+    private var callerLaunch = 0L
+    private var modernCallerSeen = false
+
+    /** Only the real runtime launch entry resets capability, never bridge retirement. */
+    fun beginCallerLaunch() = synchronized(lock) {
+        callerLaunch++
+        modernCallerSeen = false
+    }
+
+    fun callerCapability(): Map<String, Any> = synchronized(lock) {
+        mapOf("launch" to callerLaunch, "modernSeen" to modernCallerSeen)
+    }
+
     private var resetting = false
     private val retiring = linkedSetOf<Task>()
     private data class Key(val sessionId: String?, val runId: String?)
@@ -127,6 +140,7 @@ class PhoneTaskSessions(
 
     /** Called while PhoneBridge still holds its launch lock, before dispatch enters its pool. */
     fun admit(attribution: PhoneCaller?): Admission = synchronized(lock) {
+        if (attribution?.runLifecycle == 1) modernCallerSeen = true
         // l10n:keep agent resource admission
         if (selfCheck != null) return Admission(null, epoch, "本地自检正在占用手机，请稍后重试。")
         if (resetting || retiring.any { it.cancelling }) return Admission(null, epoch, PhoneTasks.STOPPED_MESSAGE)

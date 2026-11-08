@@ -54,6 +54,79 @@ void main() {
     expect(client.cancelled, ['busy']);
   });
 
+  for (final initiallyModern in [false, true]) {
+    test('launch capability survives retired task lists and late status (initial=$initiallyModern)', () async {
+      Map<String, Object?> status(int launch, bool modern, bool stopped) => {
+        ...phoneStatus(taskStopped: stopped), 'taskProtocol': 1, 'tasks': [],
+        'callerCapability': {'launch': launch, 'modernSeen': modern},
+      };
+      final native = FakePhoneNative(status: status(1, initiallyModern, false))..install();
+      final client = _Client();
+      final container = ProviderContainer(overrides: [localConnectionProvider.overrideWith(() => _Local(client))]);
+      addTearDown(container.dispose);
+      await container.read(localConnectionProvider.future);
+      container.listen(phoneStopWatcherProvider, (_, _) {});
+      await pumpEventQueue();
+      if (!initiallyModern) {
+        native.push(status(1, true, false));
+        await pumpEventQueue();
+      }
+      native.push(status(1, false, true));
+      await pumpEventQueue();
+      expect(client.cancelled, isEmpty);
+      native.push(status(2, false, true)); // New launch establishes a baseline only.
+      await pumpEventQueue();
+      expect(client.cancelled, isEmpty);
+      native.push(status(1, false, false)); // An old launch cannot reset stopped.
+      await pumpEventQueue();
+      native.push(status(2, false, true));
+      await pumpEventQueue();
+      expect(client.cancelled, isEmpty);
+      native.push(status(2, false, false));
+      await pumpEventQueue();
+      native.push(status(2, false, true));
+      await pumpEventQueue();
+      expect(client.cancelled, ['busy']);
+    });
+  }
+
+  for (final capability in [null, {'launch': 1.0, 'modernSeen': false}, {'launch': 1, 'modernSeen': 0}]) {
+    test('modern protocol with unknown capability never cancels all: $capability', () async {
+      Map<String, Object?> status(bool stopped) => {
+        ...phoneStatus(taskStopped: stopped), 'taskProtocol': 1, 'tasks': [],
+        if (capability != null) 'callerCapability': capability,
+      };
+      final native = FakePhoneNative(status: status(false))..install();
+      final client = _Client();
+      final container = ProviderContainer(overrides: [localConnectionProvider.overrideWith(() => _Local(client))]);
+      addTearDown(container.dispose);
+      await container.read(localConnectionProvider.future);
+      container.listen(phoneStopWatcherProvider, (_, _) {});
+      await pumpEventQueue();
+      native.push(status(true));
+      await pumpEventQueue();
+      expect(client.cancelled, isEmpty);
+    });
+  }
+
+  test('modern tasks prohibit fallback even when the capability snapshot says false', () async {
+    Map<String, Object?> status(bool stopped, bool hasModern) => {
+      ...phoneStatus(taskStopped: stopped), 'taskProtocol': 1,
+      'callerCapability': {'launch': 1, 'modernSeen': false},
+      'tasks': [if (hasModern) {'id': 9, 'sessionId': 'modern', 'active': true}],
+    };
+    final native = FakePhoneNative(status: status(false, true))..install();
+    final client = _Client();
+    final container = ProviderContainer(overrides: [localConnectionProvider.overrideWith(() => _Local(client))]);
+    addTearDown(container.dispose);
+    await container.read(localConnectionProvider.future);
+    container.listen(phoneStopWatcherProvider, (_, _) {});
+    await pumpEventQueue();
+    native.push(status(true, false));
+    await pumpEventQueue();
+    expect(client.cancelled, isEmpty);
+  });
+
   test('without the native side nothing is watched', () async {
     final client = _Client();
     final container = ProviderContainer(overrides: [localConnectionProvider.overrideWith(() => _Local(client))]);

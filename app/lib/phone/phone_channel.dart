@@ -571,6 +571,20 @@ class PhoneTaskInterruption {
   }
 }
 
+/// Native launch history; this counter is not an execution token.
+class PhoneCallerCapability {
+  const PhoneCallerCapability(this.launch, this.modernSeen);
+  final int launch;
+  final bool modernSeen;
+
+  static PhoneCallerCapability? parse(Object? value) {
+    if (value is! Map) return null;
+    final launch = value['launch'];
+    final modern = value['modernSeen'];
+    return launch is int && launch >= 0 && modern is bool ? PhoneCallerCapability(launch, modern) : null;
+  }
+}
+
 class PhoneStatus {
   const PhoneStatus({
     this.ready = true,
@@ -585,6 +599,7 @@ class PhoneStatus {
     this.background = const PhoneBackgroundStatus(),
     this.task = const PhoneTaskStatus(),
     this.taskProtocol = 0,
+    this.callerCapability,
     this.tasks = const [],
     this.parallelLimit = 1,
     this.device = const PhoneDevice(),
@@ -605,6 +620,7 @@ class PhoneStatus {
       background = const PhoneBackgroundStatus(),
       task = const PhoneTaskStatus(),
       taskProtocol = 0,
+      callerCapability = null,
       tasks = const [],
       parallelLimit = 1,
       device = const PhoneDevice(),
@@ -622,6 +638,7 @@ class PhoneStatus {
     background: PhoneBackgroundStatus.fromMap(_map(m['background'])),
     task: _selectedPhoneTask(m),
     taskProtocol: m['taskProtocol'] == 1 ? 1 : 0,
+    callerCapability: PhoneCallerCapability.parse(m['callerCapability']),
     tasks: _phoneTasks(m),
     parallelLimit: _int(m['parallelLimit']) ?? 1,
     device: PhoneDevice.fromMap(_map(m['device'])),
@@ -651,6 +668,7 @@ class PhoneStatus {
   final PhoneBackgroundStatus background;
   final PhoneTaskStatus task;
   final int taskProtocol;
+  final PhoneCallerCapability? callerCapability;
   final List<PhoneTaskStatus> tasks;
   final int parallelLimit;
   final PhoneDevice device;
@@ -674,6 +692,7 @@ class PhoneStatus {
     background: background,
     task: task,
     taskProtocol: taskProtocol,
+    callerCapability: callerCapability,
     tasks: tasks,
     parallelLimit: parallelLimit,
     device: device,

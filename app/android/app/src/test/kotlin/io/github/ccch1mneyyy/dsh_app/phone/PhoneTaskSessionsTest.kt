@@ -90,6 +90,27 @@ class PhoneTaskSessionsTest {
 
     private fun journalCount(): Int = journalBytes?.let { ((Json.parse(it) as Map<*, *>)["records"] as List<*>).size } ?: 0
 
+    @Test fun callerCapabilitySurvivesRetirementAndOnlyANewLaunchResetsIt() {
+        sessions.beginCallerLaunch()
+        assertEquals(mapOf("launch" to 1L, "modernSeen" to false), sessions.callerCapability())
+        assertFalse(invoke(null).isError)
+        assertEquals(false, sessions.callerCapability()["modernSeen"])
+        assertFalse(invoke("A").isError)
+        sessions.retire()
+        assertEquals(mapOf("launch" to 1L, "modernSeen" to true), sessions.callerCapability())
+        sessions.beginCallerLaunch()
+        assertEquals(mapOf("launch" to 2L, "modernSeen" to false), sessions.callerCapability())
+    }
+
+    @Test fun evenARejectedModernAdmissionProvesThisLaunchIsNotLegacyOnly() {
+        sessions.beginCallerLaunch()
+        val lease = checkNotNull(sessions.tryReserveSelfCheck())
+        try {
+            assertTrue(sessions.run(admit("A"), PhoneToolCatalog.APPS, emptyMap()).isError)
+            assertEquals(true, sessions.callerCapability()["modernSeen"])
+        } finally { sessions.releaseSelfCheck(lease) }
+    }
+
     @Test fun durableMarkMustFinishBeforeAnyPreparationAndStopDuringItCannotAct() {
         val entered = CountDownLatch(1); val release = CountDownLatch(1); val lookups = AtomicLong()
         lookup = { lookups.incrementAndGet() }
