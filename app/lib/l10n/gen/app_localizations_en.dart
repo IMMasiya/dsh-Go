@@ -5247,10 +5247,35 @@ class L10nEn extends L10n {
   String get companionInviteYes2 => 'I\'ll get comfy. You relax too.';
 
   @override
-  String get companionMenuInvite => 'Invitations';
+  String get companionMenuPace => 'How often she speaks up';
 
   @override
-  String get companionMenuInviteHint => 'When you sit quietly with her, she may now and then ask you to rest together';
+  String get companionPaceHint =>
+      'She speaks up only while you sit quietly with her: asking you to rest together, or mentioning another conversation. Never late at night, and at most one invitation per visit.';
+
+  @override
+  String get companionPaceQuiet => 'Quiet';
+
+  @override
+  String get companionPaceQuietHint => 'Never unasked; she talks when you talk to her';
+
+  @override
+  String get companionPaceRare => 'Now and then';
+
+  @override
+  String get companionPaceRareHint => 'Up to 2 times a day, at least 6 hours apart';
+
+  @override
+  String get companionPaceOften => 'Often';
+
+  @override
+  String get companionPaceOftenHint => 'Up to 6 times a day, at least 2 hours apart';
+
+  @override
+  String get companionPaceChatty => 'Chatty';
+
+  @override
+  String get companionPaceChattyHint => 'Up to 12 times a day, at least half an hour apart';
 
   @override
   String get companionSetupBundled => 'Bring her home';
@@ -5319,7 +5344,7 @@ class L10nEn extends L10n {
 
   @override
   String get companionSignalsHint =>
-      'These are said only to you, here in her room; nothing goes to the model. She speaks up only while you sit quietly with her, and shares Invitations\' allowance: at most twice a day, at least 6 hours apart, never late at night. With Invitations off she stays quiet too.';
+      'These are said only to you, here in her room; nothing goes to the model. How often follows How often she speaks up, shared with invitations, and never late at night. On Quiet she says nothing.';
 
   @override
   String get companionSignalState => 'Keep track of other conversations';

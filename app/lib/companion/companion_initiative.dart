@@ -14,6 +14,26 @@ abstract final class CompanionInitiativeRules {
   static const maxInvites = 2;
 }
 
+/// How often she may speak up unasked (「她多主动」, the person's pick): how
+/// many invitations and signal lines in a day, how far apart, and how long
+/// the person must be quiet first. At every pace she says nothing at night
+/// and invites at most once a visit.
+enum CompanionInitiativePace {
+  rare(maxPerDay: CompanionInitiativeRules.maxInvites, gapMs: CompanionInitiativeRules.inviteGapMs, quietMs: CompanionInitiativeRules.quietMs),
+  often(maxPerDay: 6, gapMs: 2 * 60 * 60000, quietMs: 30000),
+  chatty(maxPerDay: 12, gapMs: 30 * 60000, quietMs: 20000);
+
+  const CompanionInitiativePace({required this.maxPerDay, required this.gapMs, required this.quietMs});
+  final int maxPerDay;
+  final int gapMs;
+  final int quietMs;
+
+  /// What a saved record may hold, whatever pace it was written under.
+  static const loosest = chatty;
+
+  static CompanionInitiativePace? byName(String? name) => values.where((p) => p.name == name).firstOrNull;
+}
+
 class CompanionInitiativeClock {
   const CompanionInitiativeClock({required this.wallMs, required this.monoMs, this.offsetMinutes = 0});
 
@@ -179,11 +199,11 @@ class CompanionInitiativeRecord {
     final declined = _natural(value['declinedUntilMs']);
     if ((last != null && _natural(last) == null) || declined == null) return null;
     List<int>? times(Object? raw) {
-      if (raw is! List || raw.length > CompanionInitiativeRules.maxInvites) return null;
+      if (raw is! List || raw.length > CompanionInitiativePace.loosest.maxPerDay) return null;
       final result = <int>[];
       for (final v in raw) {
         final t = _natural(v);
-        if (t == null || (result.isNotEmpty && t - result.last < CompanionInitiativeRules.inviteGapMs)) return null;
+        if (t == null || (result.isNotEmpty && t - result.last < CompanionInitiativePace.loosest.gapMs)) return null;
         result.add(t);
       }
       return result;
@@ -193,9 +213,9 @@ class CompanionInitiativeRecord {
     final signals = value['v'] == 1 ? <int>[] : times(value['signalAtMs']);
     if (invites == null || signals == null) return null;
     final all = [...invites, ...signals]..sort();
-    if (all.length > CompanionInitiativeRules.maxInvites) return null;
+    if (all.length > CompanionInitiativePace.loosest.maxPerDay) return null;
     for (var i = 1; i < all.length; i++) {
-      if (all[i] - all[i - 1] < CompanionInitiativeRules.inviteGapMs) return null;
+      if (all[i] - all[i - 1] < CompanionInitiativePace.loosest.gapMs) return null;
     }
     final rawNight = value['night'];
     final night = rawNight == null ? null : CompanionNightRecord.read(rawNight);
@@ -537,6 +557,9 @@ class CompanionInitiativeController {
   }
 
   final bool enforceLocalQuietHours;
+
+  /// The person's pick; a change applies from the next check on.
+  CompanionInitiativePace pace = CompanionInitiativePace.rare;
   late _State _state;
   CompanionInitiativeSignal? get pendingSignal => _state.signal;
   String? get fault => _state.fault;
@@ -628,7 +651,7 @@ class CompanionInitiativeController {
         _userAction(s, effects);
         if (s.fault == null && s.record != null) {
           final r = s.record!;
-          final deadline = now.wallMs + CompanionInitiativeRules.inviteGapMs;
+          final deadline = now.wallMs + pace.gapMs;
           s.record = CompanionInitiativeRecord._(
             r.lastGreetingAtMs,
             r.inviteAtMs,
@@ -636,7 +659,7 @@ class CompanionInitiativeController {
             r.signalAtMs,
             r.night,
           );
-          final monoDeadline = now.monoMs + CompanionInitiativeRules.inviteGapMs;
+          final monoDeadline = now.monoMs + pace.gapMs;
           if (monoDeadline > s.declinedUntilMono) s.declinedUntilMono = monoDeadline;
           _persist(s, effects);
         }
@@ -670,7 +693,7 @@ class CompanionInitiativeController {
                 ? ticket.signalId == s.signal?.id && _signalAllows(s, now)
                 : s.quietEligible &&
                       s.quietSinceMono != null &&
-                      now.monoMs - s.quietSinceMono! >= CompanionInitiativeRules.quietMs &&
+                      now.monoMs - s.quietSinceMono! >= pace.quietMs &&
                       _inviteAllows(s, now.wallMs) &&
                       _dayAllows(now));
         if (!allowed) {
@@ -763,7 +786,7 @@ class CompanionInitiativeController {
           s.quietEligible &&
           _dayAllows(now) &&
           s.quietSinceMono != null &&
-          now.monoMs - s.quietSinceMono! >= CompanionInitiativeRules.quietMs &&
+          now.monoMs - s.quietSinceMono! >= pace.quietMs &&
           _inviteAllows(s, now.wallMs)) {
         _offer(s, CompanionPromptKind.invite, effects);
       }
@@ -842,15 +865,15 @@ class CompanionInitiativeController {
   static List<int> _recent(CompanionInitiativeRecord record, int wallMs) =>
       record.optionalAtMs.where((t) => t > wallMs - CompanionInitiativeRules.windowMs).toList();
 
-  static bool _inviteAllows(_State s, int wallMs) {
+  bool _inviteAllows(_State s, int wallMs) {
     final r = s.record;
     if (r == null || wallMs < r.declinedUntilMs || s.lastNow.monoMs < s.declinedUntilMono) return false;
     final all = r.optionalAtMs;
     final mono = s.optionalMonos.where((t) => t > s.lastNow.monoMs - CompanionInitiativeRules.windowMs).toList();
-    return _recent(r, wallMs).length < CompanionInitiativeRules.maxInvites &&
-        (all.isEmpty || wallMs - all.last >= CompanionInitiativeRules.inviteGapMs) &&
-        mono.length < CompanionInitiativeRules.maxInvites &&
-        (s.optionalMonos.isEmpty || s.lastNow.monoMs - s.optionalMonos.last >= CompanionInitiativeRules.inviteGapMs);
+    return _recent(r, wallMs).length < pace.maxPerDay &&
+        (all.isEmpty || wallMs - all.last >= pace.gapMs) &&
+        mono.length < pace.maxPerDay &&
+        (s.optionalMonos.isEmpty || s.lastNow.monoMs - s.optionalMonos.last >= pace.gapMs);
   }
 
   static bool _greetingAllows(_State s, int wallMs) =>
@@ -903,7 +926,7 @@ class CompanionInitiativeController {
     if (candidate == null ||
         !s.eligible ||
         s.signalQuietSinceMono == null ||
-        now.monoMs - s.signalQuietSinceMono! < CompanionInitiativeRules.quietMs ||
+        now.monoMs - s.signalQuietSinceMono! < pace.quietMs ||
         now.monoMs >= candidate.expiresAtMonoMs ||
         candidate.contextKey != s.view?.contextKey ||
         !_inviteAllows(s, now.wallMs)) {

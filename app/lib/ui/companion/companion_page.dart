@@ -288,6 +288,9 @@ class _CompanionPageState extends ConsumerState<CompanionPage> implements Compan
   void initState() {
     super.initState();
     _initiative = ref.read(companionInitiativeProvider);
+    // How often she may speak up: the person's pick, followed as it changes.
+    _initiative.pace = ref.read(companionInitiativePaceProvider);
+    ref.listenManual(companionInitiativePaceProvider, (_, pace) => _initiative.pace = pace);
     // The gate keeps the owner's clocks, so a line's deadline means the same to both.
     _clock = ref.read(companionInitiativeClockProvider);
     _signals = CompanionSignalGate(
@@ -2441,6 +2444,71 @@ class _CompanionPageState extends ConsumerState<CompanionPage> implements Compan
     );
   }
 
+  /// 她多主动: off, or one of the paces. Off is the old 「主动邀请」 switch, so
+  /// an earlier no stays a no.
+  static List<(CompanionInitiativePace?, String, String)> _paceChoices(L10n l10n) => [
+    (null, l10n.companionPaceQuiet, l10n.companionPaceQuietHint),
+    (CompanionInitiativePace.rare, l10n.companionPaceRare, l10n.companionPaceRareHint),
+    (CompanionInitiativePace.often, l10n.companionPaceOften, l10n.companionPaceOftenHint),
+    (CompanionInitiativePace.chatty, l10n.companionPaceChatty, l10n.companionPaceChattyHint),
+  ];
+
+  static CompanionInitiativePace? _paceChoice(WidgetRef ref) =>
+      (ref.watch(companionInitiativeEnabledProvider) ?? false) ? ref.watch(companionInitiativePaceProvider) : null;
+
+  void _choosePace() {
+    unawaited(
+      showAppSheet<void>(
+        context,
+        builder: (sheet) => Consumer(
+          builder: (sheet, ref, _) {
+            final l10n = sheet.l10n;
+            final chosen = _paceChoice(ref);
+            final ready = ref.watch(companionInitiativeEnabledProvider) != null;
+            return SafeArea(
+              top: false,
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    SheetTitleBar(l10n.companionMenuPace),
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(SheetTitleBar.inset + 8, 0, SheetTitleBar.inset + 8, 12),
+                      child: Text(l10n.companionPaceHint, style: Theme.of(sheet).textTheme.bodySmall),
+                    ),
+                    SheetGroup(
+                      margin: const EdgeInsets.fromLTRB(SheetTitleBar.inset, 0, SheetTitleBar.inset, 12),
+                      children: [
+                        for (final (pace, title, hint) in _paceChoices(l10n))
+                          SettingsTile(
+                            tinted: false,
+                            title: title,
+                            subtitle: hint,
+                            chevron: false,
+                            trailing: pace == chosen ? const Icon(AppIcons.selected, size: 20) : null,
+                            onTap: !ready
+                                ? null
+                                : () {
+                                    Navigator.of(sheet).pop();
+                                    unawaited(ref.read(companionInitiativeEnabledProvider.notifier).set(pace != null));
+                                    if (pace != null) {
+                                      unawaited(ref.read(companionInitiativePaceProvider.notifier).set(pace));
+                                    }
+                                  },
+                          ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        ),
+      ),
+    );
+  }
+
   /// 她会提起什么: the four consents of the signal gate. Each one below needs
   /// the one above it; all of it stays in this room.
   void _openSignals() {
@@ -2651,13 +2719,19 @@ class _CompanionPageState extends ConsumerState<CompanionPage> implements Compan
                       },
                     ),
                     Consumer(
-                      builder: (context, ref, _) => SettingsSwitchTile(
+                      builder: (context, ref, _) => SettingsTile(
                         icon: AppIcons.companionInvite,
                         tinted: false,
-                        title: l10n.companionMenuInvite,
-                        subtitle: l10n.companionMenuInviteHint,
-                        value: ref.watch(companionInitiativeEnabledProvider) ?? false,
-                        onChanged: (on) => unawaited(ref.read(companionInitiativeEnabledProvider.notifier).set(on)),
+                        title: l10n.companionMenuPace,
+                        value: Text(
+                          _paceChoices(
+                            l10n,
+                          ).firstWhere((c) => c.$1 == _paceChoice(ref)).$2,
+                        ),
+                        onTap: () {
+                          Navigator.of(sheet).pop();
+                          _choosePace();
+                        },
                       ),
                     ),
                     SettingsTile(
