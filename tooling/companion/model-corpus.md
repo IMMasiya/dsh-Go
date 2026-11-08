@@ -15,8 +15,12 @@ is needed. The JSON has a developer-report format, not the App adapter format.
 
 ## Exact code and input provenance
 
-The default stage is `app/assets/companion/stage.js`, pinned to the reviewed c76
-SHA-256 `270b4721f5458cb75faf89ea2cb9321c404aa3800366cf0544e23b2830b22a8b`.
+The default stage is `app/assets/companion/stage.js`, pinned to the reviewed
+SHA-256 `25e103c70b5fffa9ebab580d645bd8cb9f0dcc3f818f16a33c47a65db448b22a`
+(the stage after PR #753; the facts were first replayed against c76's
+`270b4721f5458cb75faf89ea2cb9321c404aa3800366cf0544e23b2830b22a8b`, with the
+same 356/432 result). Update the pin and this line together whenever the stage
+changes.
 A byte change fails before evaluation. After inspecting a different trusted
 stage, a maintainer can explicitly provide its SHA:
 
