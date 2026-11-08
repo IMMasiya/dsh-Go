@@ -290,7 +290,7 @@ internal class MainScreenDriver(private val service: PhoneA11yService, private v
                     val beforeCap = capture(minOf(CAPTURE_MS, remaining))
                     try {
                         if (ocrAllowed(beforeCap, previous, gen) && observation(beforeCap).sameContext(previous.observation)) {
-                            actionBeforeImage = captureImageObservation(beforeCap)
+                            actionBeforeImage = captureVerificationShot(beforeCap)?.observation
                         }
                     } finally { beforeCap.recycle() }
                 }
@@ -666,11 +666,16 @@ internal class MainScreenDriver(private val service: PhoneA11yService, private v
                     visualEvidence(cap)?.target(point.first, point.second) != ordinary)) {
                 return ActionResult(false, "截图中的目标或可确认范围已变化，没有执行。请重新读屏。", toSnapshot(publish(cap, false))) // l10n:keep agent safety result
             }
-            val currentImage = captureImageObservation(cap)
+            val shot = captureVerificationShot(cap)
+            val currentImage = shot?.observation
             if (cancelled(gen)) throw InterruptedException()
             // l10n:keep agent screen result
-            if (currentImage == null || !image.sameViewportAs(currentImage, SystemClock.uptimeMillis())) return ActionResult(false,
-                "截图已过期、窗口几何已变化或无法重新截图，没有点击。请重新 screen 加 image 再点。", toSnapshot(publish(cap, false)))
+            if (currentImage == null || !image.sameViewportAs(currentImage, SystemClock.uptimeMillis())) {
+                val refreshed = publish(cap, false)
+                return ActionResult(false,
+                    "截图已过期、窗口几何已变化或无法重新截图，没有点击。请重新 screen 加 image 再点。",
+                    toSnapshot(refreshed).copy(secure = refreshed.hidden || shot?.secure == true))
+            }
             beforeImage = currentImage
         } finally { cap.recycle() }
         if (cancelled(gen)) throw InterruptedException()
@@ -785,14 +790,14 @@ internal class MainScreenDriver(private val service: PhoneA11yService, private v
     }
 
     /** Verification frames stay local: no JPEG, no element numbering and no published observation. */
-    private fun captureImageObservation(cap: Capture): ImageObservation? {
+    private fun captureVerificationShot(cap: Capture): Shot? {
         val window = cap.windows.singleOrNull()
         val remaining = actionDeadline - SystemClock.uptimeMillis()
         if (remaining <= 0) return null
         val shot = shooter.shoot(window, cap.screen, emptyList(), emptyList(), minOf(2_500, remaining), image = false,
             localTextCancelled = { !published() || Thread.currentThread().isInterrupted })
         if (shot.secure) visual.observed(null, null)
-        return shot.observation
+        return shot
     }
 
     /**
