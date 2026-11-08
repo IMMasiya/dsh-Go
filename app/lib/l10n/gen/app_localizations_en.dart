@@ -11271,6 +11271,282 @@ class L10nEn extends L10n {
       'On the main Wireless debugging settings page, find “IP address & port” and enter the port after the colon. Do not use the pairing-code dialog’s port.';
 
   @override
+  String get phonePreviewTitle => 'Live background preview';
+
+  @override
+  String get phonePreviewDescription =>
+      'Frames are read only while the preview is visible and stay on this device. The preview is view-only.';
+
+  @override
+  String get phonePreviewOpen => 'View background screen';
+
+  @override
+  String get phonePreviewOff => 'The task ended or preview is off';
+
+  @override
+  String get phonePreviewUnavailable => 'Preview is unavailable or the screen is protected';
+
+  @override
+  String get phonePreviewWaiting => 'Waiting for a new background frame';
+
+  @override
+  String get phoneViewportTitle => 'Background viewport';
+
+  @override
+  String get phoneViewportDescription =>
+      'Applies when the next background screen is created. The current screen stays unchanged; recreating it after handoff uses the new setting. This does not force apps to rotate.';
+
+  @override
+  String get phoneViewportPortrait => 'Portrait';
+
+  @override
+  String get phoneViewportLandscape => 'Landscape';
+
+  @override
+  String get phoneResumeTask => 'Allow phone control again';
+
+  @override
+  String get phoneResumeTaskHint =>
+      'Allow future phone actions in this conversation. Finished actions will not be replayed.';
+
+  @override
+  String get phoneResumeTaskFailed => 'Could not resume. The previous action may still be finishing.';
+
+  @override
+  String phoneStoppedTask(int task) {
+    return 'Phone task $task stopped';
+  }
+
+  @override
+  String get phoneTaskDrainingHint => 'Waiting for the previous action and background screen cleanup to finish.';
+
+  @override
+  String get phoneTaskCleanupFailedHint =>
+      'Background screen cleanup could not be confirmed. Phone control remains blocked.';
+
+  @override
+  String phoneFinishingTask(int task) {
+    return 'Phone task $task is finishing';
+  }
+
+  @override
+  String get phoneCleanupRetry => 'Retry cleanup';
+
+  @override
+  String get phoneCleanupRetryFailed =>
+      'The previous background screen is still unconfirmed. Its screen access remains reserved.';
+
+  @override
+  String get phoneSelfCheckTitle => 'Local phone self-check';
+
+  @override
+  String get phoneSelfCheckPartial => 'Partial check — only observed items have results';
+
+  @override
+  String get phoneSelfCheckScope =>
+      'Uses the selected connected channel and a temporary presentation display. App launch, text input, screenshots, OCR and MAIN disturbance are not tested. Cleanup alone does not prove a display was created.';
+
+  @override
+  String get phoneSelfCheckStart => 'Start partial check';
+
+  @override
+  String get phoneSelfCheckCancel => 'Request cancellation';
+
+  @override
+  String get phoneSelfCheckRetry => 'Retry cleanup only';
+
+  @override
+  String get phoneSelfCheckRefresh => 'Refresh status';
+
+  @override
+  String get phoneSelfCheckSave => 'Save sanitized report';
+
+  @override
+  String get phoneSelfCheckSaving => 'Saving…';
+
+  @override
+  String get phoneSelfCheckSaved => 'Report saved to Downloads/DSH-Go.';
+
+  @override
+  String get phoneSelfCheckSaveFailed => 'Could not save the report.';
+
+  @override
+  String get phoneSelfCheckReportHint =>
+      'Save only when you choose. The local report contains fixed results, with no screenshots, recognized text, logs, account data or run identifier.';
+
+  @override
+  String phoneSelfCheckRunState(String state) {
+    String _temp0 = intl.Intl.selectLogic(state, {
+      'idle': 'Not started',
+      'running': 'Running partial check',
+      'cleaning': 'Cleaning up; cancellation does not undo sent input',
+      'done': 'Execution and cleanup ended; inspect each result below',
+      'cancelled': 'Cancelled; observed actions remain recorded',
+      'cleanup_pending': 'Cleanup unconfirmed — resources remain reserved',
+      'other': 'Status unavailable',
+    });
+    return '$_temp0';
+  }
+
+  @override
+  String phoneSelfCheckStepState(String state) {
+    String _temp0 = intl.Intl.selectLogic(state, {
+      'not_run': 'Not run / no observation',
+      'running': 'Running',
+      'pass': 'Observed pass',
+      'fail': 'Failed',
+      'skipped': 'Skipped',
+      'unknown': 'Unconfirmed',
+      'cancelled': 'Cancelled',
+      'other': 'Unconfirmed',
+    });
+    return '$_temp0';
+  }
+
+  @override
+  String phoneSelfCheckStage(String stage) {
+    String _temp0 = intl.Intl.selectLogic(stage, {
+      'device': 'Device preconditions',
+      'channel': 'Selected channel',
+      'display': 'Temporary background display',
+      'input_probe': 'Touch receiver',
+      'launch': 'App launch',
+      'tree': 'Accessibility tree',
+      'tap': 'App button tap',
+      'scroll': 'App scrolling',
+      'back': 'App back action',
+      'text_ascii': 'Fixed ASCII input',
+      'text_zh': 'Fixed Chinese input',
+      'capture': 'Local pattern capture',
+      'continuity': 'Limited controlled refresh',
+      'main': 'Limited MAIN observations',
+      'ocr': 'Local OCR',
+      'cleanup': 'Strict cleanup',
+      'other': 'Unknown item',
+    });
+    return '$_temp0';
+  }
+
+  @override
+  String phoneSelfCheckReason(String reason) {
+    String _temp0 = intl.Intl.selectLogic(reason, {
+      'busy': 'The phone or channel is busy.',
+      'unsupported': 'This device or peer does not support this check.',
+      'cancelled': 'This request was cancelled or retired.',
+      'disabled': 'Phone control is turned off.',
+      'locked': 'The device is locked.',
+      'identity': 'The original run or channel no longer matches.',
+      'invalid': 'The request or result could not be verified.',
+      'display': 'The temporary display could not be verified.',
+      'input': 'Input acceptance or delivery was not confirmed. Sent input is not retried.',
+      'cleanup': 'Resource cleanup is unconfirmed. Retry only cleanup.',
+      'denied': 'The system denied the operation.',
+      'timeout': 'The operation timed out; sent work may still complete.',
+      'unavailable': 'The local status or selected channel is unavailable.',
+      'target_unavailable': 'The fixed target could not be verified. Finish cleanup before starting again.',
+      'target_changed': 'The original target changed. Continue only with cleanup.',
+      'target_cleanup': 'Target cleanup is unconfirmed. Retry only cleanup.',
+      'target_main': 'The target was observed on MAIN. Further steps stopped; complete cleanup.',
+      'target_readback': 'The fixed target count or text did not match. Do not repeat the action; complete cleanup.',
+      'tree_cleanup': 'Tree connection cleanup is unconfirmed. Retry only cleanup.',
+      'target_launch': 'Target launch was denied or unconfirmed. Check the device and complete cleanup.',
+      'frame_unavailable': 'No usable local pattern frame was observed. Complete cleanup before a new check.',
+      'frame_mismatch': 'The actual frame did not match this target and phase. Complete cleanup.',
+      'continuity': 'The limited controlled refresh sequence was not confirmed. This is not a frame-rate result.',
+      'main_changed':
+          'MAIN samples changed; this may include user actions. Complete cleanup. This does not establish the cause.',
+      'main_unchanged': 'No change was seen at these finite sampling points. Disturbance between them remains unknown.',
+      'main_incomplete': 'MAIN samples are incomplete. They cannot establish absence of disturbance.',
+      'not_installed': 'No local OCR recognizer is installed. OCR was not tested.',
+      'other': 'An unrecognized result was received.',
+    });
+    return '$_temp0';
+  }
+
+  @override
+  String get phoneSelfCheckTargetScope =>
+      'Uses an ordinary temporary display and a fixed local target for launch, tree reading and one button tap. Text, scrolling, screenshots and OCR are not tested. MAIN can only record an observed failure, never a pass. Cleanup alone does not prove a display was created.';
+
+  @override
+  String get phoneSelfCheckProfileChoice => 'Choose the next check (does not change the report below)';
+
+  @override
+  String phoneSelfCheckProfile(String profile) {
+    String _temp0 = intl.Intl.selectLogic(profile, {
+      'probe_b': 'Input receiver check (B)',
+      'target_c1': 'Fixed target check (C1)',
+      'target_c2': 'Fixed input and frames (C2)',
+      'other': 'Unknown profile',
+    });
+    return '$_temp0';
+  }
+
+  @override
+  String phoneSelfCheckReportProfile(String profile) {
+    String _temp0 = intl.Intl.selectLogic(profile, {
+      'probe_b': 'Report profile: input receiver (B)',
+      'target_c1': 'Report profile: fixed target (C1)',
+      'target_c2': 'Report profile: fixed input and frames (C2)',
+      'other': 'Report profile: unconfirmed',
+    });
+    return '$_temp0';
+  }
+
+  @override
+  String get phoneSelfCheckTargetC2Scope =>
+      'Uses a fixed local target for launch, tree reading, one button tap, ASCII and Chinese ACTION_SET_TEXT replacement/readback, local pattern capture and limited controlled refresh. This does not measure FPS or smoothness. Finite MAIN samples cannot prove there was no disturbance between samples. OCR is not installed; touch receiver, scrolling and back are not tested. Cleanup alone does not prove a display was created.';
+
+  @override
+  String phoneTaskWaiting(int taskId) {
+    return 'Task $taskId · Waiting for resources';
+  }
+
+  @override
+  String phoneTaskWaitingApp(String packageName, int seconds) {
+    return 'Waiting for app $packageName · $seconds seconds elapsed.';
+  }
+
+  @override
+  String phoneTaskWaitingUnknown(int seconds) {
+    return 'Waiting for the interface (app identity unconfirmed) · $seconds seconds elapsed.';
+  }
+
+  @override
+  String phoneTaskWaitingScreen(String screen, int seconds) {
+    return 'Waiting for $screen · $seconds seconds elapsed.';
+  }
+
+  @override
+  String get phoneTaskMainResource => 'the main screen';
+
+  @override
+  String get phoneTaskBackgroundResource => 'the background screen';
+
+  @override
+  String get phoneInterruptionTitle => 'Previous phone tasks did not confirm completion';
+
+  @override
+  String get phoneInterruptionLoading => 'Reading interrupted task records…';
+
+  @override
+  String get phoneInterruptionStorageError =>
+      'Task completion records could not be saved or read. Retry; this does not mean background resources were released.';
+
+  @override
+  String phoneInterruptionHint(int count) {
+    return '$count tasks were interrupted or could not save completion. Actions may already have taken effect. Check first. Acknowledging only confirms you saw this notice; it does not resume actions or prove background resources were released.';
+  }
+
+  @override
+  String get phoneInterruptionAcknowledge => 'I checked the interruption notice';
+
+  @override
+  String get phoneInterruptionRetry => 'Retry saving or reading';
+
+  @override
+  String get phoneInterruptionActionFailed => 'Task records are not confirmed yet. Please retry.';
+
+  @override
   String get phoneTaskResultReady => 'Task complete · View result';
 
   @override
@@ -11347,6 +11623,26 @@ class L10nEn extends L10n {
       'Your root manager (Magisk, KernelSU or APatch) will ask you. If you allow it, DSH Go runs its own background service as root. It asks again on its own after a disconnect or restart only with “Keep root channel” on.';
 
   @override
+  String get phoneGateCleanupTitle => 'Probe cleanup not confirmed';
+
+  @override
+  String get phoneGateCleanupUnknown =>
+      'New background resources are blocked. Retry only the original cleanup if its channel is still available. This does not rerun the probe.';
+
+  @override
+  String get phoneGateCleanupRunning =>
+      'Waiting for the original probe and its cleanup. The channel stays pinned until cleanup is confirmed.';
+
+  @override
+  String get phoneGateCleanupRetry => 'Retry cleanup only';
+
+  @override
+  String get phoneGateCleanupDone => 'Cleanup confirmed. Choose the channel again explicitly to run a fresh check.';
+
+  @override
+  String get phoneGateRetest => 'Check this channel again';
+
+  @override
   String phoneKeepTitle(String mode) {
     String _temp0 = intl.Intl.selectLogic(mode, {
       'shizuku': 'Keep Shizuku channel',
@@ -11390,6 +11686,128 @@ class L10nEn extends L10n {
 
   @override
   String get phoneKeepFailed => 'Couldn’t reconnect. Tries again when you open the app or start a task.';
+
+  @override
+  String get phoneResourceRecoveryTitle => 'Background resources need verification';
+
+  @override
+  String get phoneResourceRecoveryRunning =>
+      'Checking the original resource records. New phone tasks will wait until this finishes.';
+
+  @override
+  String get phoneResourceRecoveryStorage =>
+      'The resource record could not be read or saved. Retry saving or reading it. A confirmed release is not repeated, and past actions are not replayed.';
+
+  @override
+  String get phoneResourceRecoveryPending =>
+      'Old background resources have not been verified. New phone tasks are blocked. Choose the original authorized channel and retry; if verification remains unavailable, restart the device and check again. Past actions may already have happened. Reading the task interruption notice does not clear these resources.';
+
+  @override
+  String get phoneResourceRecoveryRetry => 'Retry resource verification';
+
+  @override
+  String get phoneSkillSectionTitle => 'Completed tasks and skills';
+
+  @override
+  String get phoneSkillAskAfterSuccess => 'Ask to save a skill after a successful task';
+
+  @override
+  String get phoneSkillAskAfterSuccessHint =>
+      'Off by default. A newly completed task asks once while this page is visible. You can also choose a task manually.';
+
+  @override
+  String phoneSkillTask(int taskId, int steps) {
+    return 'Task $taskId · $steps steps';
+  }
+
+  @override
+  String get phoneSkillCandidateHint =>
+      'Check the actual result first; successful tool calls do not prove that your goal was achieved.';
+
+  @override
+  String get phoneSkillSaveAction => 'Save as a skill';
+
+  @override
+  String get phoneSkillConfirmGoal => 'Did this task achieve your goal?';
+
+  @override
+  String get phoneSkillConfirmGoalBody =>
+      'Check the actual result. Your confirmation creates a draft that you can review and edit before saving.';
+
+  @override
+  String get phoneSkillGoalDone => 'Goal achieved · Review draft';
+
+  @override
+  String get phoneSkillPrivacyHint =>
+      'The draft stays on this device. Do not enter passwords, keys, or verification codes. In this version, free text becomes parameters; removing or reordering steps is kept. Review the final preview.';
+
+  @override
+  String get phoneSkillGoal => 'Goal';
+
+  @override
+  String get phoneSkillPrerequisites => 'Requirements (app, version, sign-in state)';
+
+  @override
+  String phoneSkillStep(int number) {
+    return 'Original step $number';
+  }
+
+  @override
+  String get phoneSkillCheckpoint => 'What should appear after this step';
+
+  @override
+  String get phoneSkillMoveUp => 'Move step up';
+
+  @override
+  String get phoneSkillMoveDown => 'Move step down';
+
+  @override
+  String get phoneSkillUpdatePreview => 'Update the redacted preview';
+
+  @override
+  String get phoneSkillPreviewTitle => 'Complete content to be saved';
+
+  @override
+  String get phoneSkillParameterizedHint =>
+      'Free text has been replaced with parameters to fill in and check when using this skill.';
+
+  @override
+  String get phoneSkillFinalConfirmation =>
+      'I have reviewed the complete current preview and agree to save this version.';
+
+  @override
+  String get phoneSkillSavedBody =>
+      'The file was written to the local skills directory. The engine’s refreshed skill list has not been verified; check the Skills page.';
+
+  @override
+  String get phoneSkillWriting => 'Writing the skill';
+
+  @override
+  String get phoneSkillCannotCancel =>
+      'The write may have reached its commit stage and cannot be guaranteed to cancel. Closing only closes this page; a committed file will still be saved.';
+
+  @override
+  String get phoneSkillKeepWaiting => 'Keep viewing';
+
+  @override
+  String get phoneSkillCheckWrite => 'Check write result';
+
+  @override
+  String get phoneSkillStale => 'This draft is no longer current. Close it and choose the task again.';
+
+  @override
+  String get phoneSkillSensitive => 'The edit contains sensitive content. Remove it before updating the preview.';
+
+  @override
+  String get phoneSkillInvalid =>
+      'The edit or step order exceeds the limits. Shorten the text and keep at least one step.';
+
+  @override
+  String get phoneSkillWriteFailed =>
+      'The file could not be written. Check the local runtime and storage; edit and update the preview before confirming another save.';
+
+  @override
+  String get phoneSkillUnavailable => 'Skill drafts are unavailable. Check the local engine state and try again.';
 
   @override
   String get phoneModeTitle => 'How DSH confirms';

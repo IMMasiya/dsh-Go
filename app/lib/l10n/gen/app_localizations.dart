@@ -19832,6 +19832,324 @@ abstract class L10n {
   /// **'在系统「无线调试」首页查看「IP 地址和端口」，填写冒号后的端口。请不要使用配对码页面的端口。'**
   String get phoneDndConnectPortHint;
 
+  /// No description provided for @phonePreviewTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'实时查看后台屏'**
+  String get phonePreviewTitle;
+
+  /// No description provided for @phonePreviewDescription.
+  ///
+  /// In zh, this message translates to:
+  /// **'仅在预览可见时取帧。画面只留在本机；预览不可点击。'**
+  String get phonePreviewDescription;
+
+  /// No description provided for @phonePreviewOpen.
+  ///
+  /// In zh, this message translates to:
+  /// **'查看后台屏'**
+  String get phonePreviewOpen;
+
+  /// No description provided for @phonePreviewOff.
+  ///
+  /// In zh, this message translates to:
+  /// **'任务已结束或预览已关闭'**
+  String get phonePreviewOff;
+
+  /// No description provided for @phonePreviewUnavailable.
+  ///
+  /// In zh, this message translates to:
+  /// **'画面暂不可预览，或受到保护'**
+  String get phonePreviewUnavailable;
+
+  /// No description provided for @phonePreviewWaiting.
+  ///
+  /// In zh, this message translates to:
+  /// **'等待后台屏的新画面'**
+  String get phonePreviewWaiting;
+
+  /// No description provided for @phoneViewportTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'后台视口'**
+  String get phoneViewportTitle;
+
+  /// No description provided for @phoneViewportDescription.
+  ///
+  /// In zh, this message translates to:
+  /// **'下次新建后台屏时生效；当前后台屏不变，交还后重建会采用新设置。视口方向不会强制应用旋转。'**
+  String get phoneViewportDescription;
+
+  /// No description provided for @phoneViewportPortrait.
+  ///
+  /// In zh, this message translates to:
+  /// **'竖屏'**
+  String get phoneViewportPortrait;
+
+  /// No description provided for @phoneViewportLandscape.
+  ///
+  /// In zh, this message translates to:
+  /// **'横屏'**
+  String get phoneViewportLandscape;
+
+  /// No description provided for @phoneResumeTask.
+  ///
+  /// In zh, this message translates to:
+  /// **'重新允许手机操控'**
+  String get phoneResumeTask;
+
+  /// No description provided for @phoneResumeTaskHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'允许此对话之后的手机操作，不重放已经结束的动作。'**
+  String get phoneResumeTaskHint;
+
+  /// No description provided for @phoneResumeTaskFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'暂时没能恢复，上一动作可能仍在收尾。'**
+  String get phoneResumeTaskFailed;
+
+  /// No description provided for @phoneStoppedTask.
+  ///
+  /// In zh, this message translates to:
+  /// **'手机任务 {task} 已停止'**
+  String phoneStoppedTask(int task);
+
+  /// No description provided for @phoneTaskDrainingHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'正在等待上一动作退出并清理后台屏。'**
+  String get phoneTaskDrainingHint;
+
+  /// No description provided for @phoneTaskCleanupFailedHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'未能确认后台屏已清理，手机操控仍被阻挡。'**
+  String get phoneTaskCleanupFailedHint;
+
+  /// No description provided for @phoneFinishingTask.
+  ///
+  /// In zh, this message translates to:
+  /// **'手机任务 {task} 正在收尾'**
+  String phoneFinishingTask(int task);
+
+  /// No description provided for @phoneCleanupRetry.
+  ///
+  /// In zh, this message translates to:
+  /// **'重试清理'**
+  String get phoneCleanupRetry;
+
+  /// No description provided for @phoneCleanupRetryFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'仍未能确认上一后台屏已清理，屏幕占用继续保留。'**
+  String get phoneCleanupRetryFailed;
+
+  /// No description provided for @phoneSelfCheckTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'本机手机自检'**
+  String get phoneSelfCheckTitle;
+
+  /// No description provided for @phoneSelfCheckPartial.
+  ///
+  /// In zh, this message translates to:
+  /// **'部分自检：仅已观察的项目有结果'**
+  String get phoneSelfCheckPartial;
+
+  /// No description provided for @phoneSelfCheckScope.
+  ///
+  /// In zh, this message translates to:
+  /// **'使用已选择并连接的通道和临时展示屏。应用启动、文字输入、截图、OCR及主屏受扰情况均未测试。清理通过不代表展示屏创建成功。'**
+  String get phoneSelfCheckScope;
+
+  /// No description provided for @phoneSelfCheckStart.
+  ///
+  /// In zh, this message translates to:
+  /// **'开始部分自检'**
+  String get phoneSelfCheckStart;
+
+  /// No description provided for @phoneSelfCheckCancel.
+  ///
+  /// In zh, this message translates to:
+  /// **'请求取消'**
+  String get phoneSelfCheckCancel;
+
+  /// No description provided for @phoneSelfCheckRetry.
+  ///
+  /// In zh, this message translates to:
+  /// **'仅重试清理'**
+  String get phoneSelfCheckRetry;
+
+  /// No description provided for @phoneSelfCheckRefresh.
+  ///
+  /// In zh, this message translates to:
+  /// **'刷新状态'**
+  String get phoneSelfCheckRefresh;
+
+  /// No description provided for @phoneSelfCheckSave.
+  ///
+  /// In zh, this message translates to:
+  /// **'保存脱敏报告'**
+  String get phoneSelfCheckSave;
+
+  /// No description provided for @phoneSelfCheckSaving.
+  ///
+  /// In zh, this message translates to:
+  /// **'保存中…'**
+  String get phoneSelfCheckSaving;
+
+  /// No description provided for @phoneSelfCheckSaved.
+  ///
+  /// In zh, this message translates to:
+  /// **'报告已存入下载/DSH-Go。'**
+  String get phoneSelfCheckSaved;
+
+  /// No description provided for @phoneSelfCheckSaveFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'报告保存失败。'**
+  String get phoneSelfCheckSaveFailed;
+
+  /// No description provided for @phoneSelfCheckReportHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'仅在你点击保存时导出。本机报告只含固定结果，不含截图、识别文字、日志、账户数据或运行标识。'**
+  String get phoneSelfCheckReportHint;
+
+  /// No description provided for @phoneSelfCheckRunState.
+  ///
+  /// In zh, this message translates to:
+  /// **'{state, select, idle{尚未开始} running{部分自检进行中} cleaning{正在清理；取消不代表已撤销派发的输入} done{执行和清理已结束，请逐项查看下方结果} cancelled{已取消，已观察到的操作仍保留} cleanup_pending{清理尚未确认，资源仍保留} other{状态不可用}}'**
+  String phoneSelfCheckRunState(String state);
+
+  /// No description provided for @phoneSelfCheckStepState.
+  ///
+  /// In zh, this message translates to:
+  /// **'{state, select, not_run{未运行／无观察} running{进行中} pass{已观察通过} fail{失败} skipped{已跳过} unknown{未确认} cancelled{已取消} other{未确认}}'**
+  String phoneSelfCheckStepState(String state);
+
+  /// No description provided for @phoneSelfCheckStage.
+  ///
+  /// In zh, this message translates to:
+  /// **'{stage, select, device{设备前置条件} channel{已选通道} display{临时后台屏创建} input_probe{触摸接收核验} launch{应用启动} tree{控件树} tap{应用按钮点按} scroll{应用滚动} back{应用返回} text_ascii{固定 ASCII 输入} text_zh{固定中文输入} capture{本地图样截图} continuity{有限受控刷新} main{有限主屏观察} ocr{本机OCR} cleanup{严格清理} other{未知项目}}'**
+  String phoneSelfCheckStage(String stage);
+
+  /// No description provided for @phoneSelfCheckReason.
+  ///
+  /// In zh, this message translates to:
+  /// **'{reason, select, busy{手机或通道正忙。} unsupported{设备或特权端不支持这项自检。} cancelled{本次请求已取消或退役。} disabled{手机操控尚未开启。} locked{设备已锁定。} identity{原运行或通道身份已改变。} invalid{请求或结果无法验证。} display{临时展示屏未能确认。} input{输入受理或送达未确认，不会重放已派发输入。} cleanup{资源清理未确认，仅可重试清理。} denied{系统拒绝了操作。} timeout{操作超时，已派发工作仍可能完成。} unavailable{本机状态或已选通道不可用。} target_unavailable{无法核实固定目标，请完成清理后再开始。} target_changed{原目标已变化，请仅继续清理。} target_cleanup{目标清理未确认，请仅重试清理。} target_main{目标曾出现在主屏，已停止后续步骤，请完成清理。} target_readback{固定目标计数或文本回读不符，不要重复操作，请完成清理。} tree_cleanup{树连接清理未确认，请仅重试清理。} target_launch{目标启动被拒绝或未确认，请检查设备并完成清理。} frame_unavailable{未取得可用的本地图样帧，请完成清理后再开始新的自检。} frame_mismatch{实际画面与本次目标及阶段不符，请完成清理。} continuity{有限受控刷新序列未确认；这不是帧率结果。} main_changed{主屏采样点发生变化，也可能包含用户操作；请完成清理，不能据此判定原因。} main_unchanged{这些有限采样点未见变化，采样之间是否受扰仍未知。} main_incomplete{主屏样本不完整，不能据此证明没有受扰。} not_installed{未安装本机 OCR 识别器，未执行 OCR 测试。} other{收到无法识别的结果。}}'**
+  String phoneSelfCheckReason(String reason);
+
+  /// No description provided for @phoneSelfCheckTargetScope.
+  ///
+  /// In zh, this message translates to:
+  /// **'使用普通临时后台屏和固定本地目标，检查启动、控件树及一次按钮点击。文字、滚动、截图和 OCR 未测试；主屏只记录实际观察到的受扰失败，不提供通过结论。仅清理完成不证明曾创建后台屏。'**
+  String get phoneSelfCheckTargetScope;
+
+  /// No description provided for @phoneSelfCheckProfileChoice.
+  ///
+  /// In zh, this message translates to:
+  /// **'选择下次自检（不会改变下方报告）'**
+  String get phoneSelfCheckProfileChoice;
+
+  /// No description provided for @phoneSelfCheckProfile.
+  ///
+  /// In zh, this message translates to:
+  /// **'{profile, select, probe_b{输入接收探针（B）} target_c1{固定目标自检（C1）} target_c2{固定输入与画面自检（C2）} other{未知模式}}'**
+  String phoneSelfCheckProfile(String profile);
+
+  /// No description provided for @phoneSelfCheckReportProfile.
+  ///
+  /// In zh, this message translates to:
+  /// **'{profile, select, probe_b{本次报告：输入接收探针（B）} target_c1{本次报告：固定目标（C1）} target_c2{本次报告：固定输入与画面（C2）} other{本次报告模式未确认}}'**
+  String phoneSelfCheckReportProfile(String profile);
+
+  /// No description provided for @phoneSelfCheckTargetC2Scope.
+  ///
+  /// In zh, this message translates to:
+  /// **'使用固定本机目标核验启动、控件树、单次按钮点按、ASCII／中文 ACTION_SET_TEXT 整框替换与回读、本地图样截图和有限受控刷新；不衡量 FPS 或流畅度。有限主屏样本不能证明采样间全程无扰。OCR 未安装；触摸接收探针、滚动和返回不在本次范围。仅清理完成也不证明曾创建展示屏。'**
+  String get phoneSelfCheckTargetC2Scope;
+
+  /// No description provided for @phoneTaskWaiting.
+  ///
+  /// In zh, this message translates to:
+  /// **'任务 {taskId} · 等待资源'**
+  String phoneTaskWaiting(int taskId);
+
+  /// No description provided for @phoneTaskWaitingApp.
+  ///
+  /// In zh, this message translates to:
+  /// **'等待应用 {packageName}，已等待 {seconds} 秒。'**
+  String phoneTaskWaitingApp(String packageName, int seconds);
+
+  /// No description provided for @phoneTaskWaitingUnknown.
+  ///
+  /// In zh, this message translates to:
+  /// **'等待界面资源（应用身份未确认），已等待 {seconds} 秒。'**
+  String phoneTaskWaitingUnknown(int seconds);
+
+  /// No description provided for @phoneTaskWaitingScreen.
+  ///
+  /// In zh, this message translates to:
+  /// **'等待{screen}，已等待 {seconds} 秒。'**
+  String phoneTaskWaitingScreen(String screen, int seconds);
+
+  /// No description provided for @phoneTaskMainResource.
+  ///
+  /// In zh, this message translates to:
+  /// **'主屏'**
+  String get phoneTaskMainResource;
+
+  /// No description provided for @phoneTaskBackgroundResource.
+  ///
+  /// In zh, this message translates to:
+  /// **'后台屏'**
+  String get phoneTaskBackgroundResource;
+
+  /// No description provided for @phoneInterruptionTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'上次手机任务未确认结束'**
+  String get phoneInterruptionTitle;
+
+  /// No description provided for @phoneInterruptionLoading.
+  ///
+  /// In zh, this message translates to:
+  /// **'正在读取任务中断记录…'**
+  String get phoneInterruptionLoading;
+
+  /// No description provided for @phoneInterruptionStorageError.
+  ///
+  /// In zh, this message translates to:
+  /// **'无法保存或读取任务结束记录。请重试；这不表示后台资源已清理。'**
+  String get phoneInterruptionStorageError;
+
+  /// No description provided for @phoneInterruptionHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'有 {count} 个任务中断或未能保存结束状态，操作结果可能已发生。请先核对；确认仅表示看过提示，不会恢复操作或证明后台资源已清理。'**
+  String phoneInterruptionHint(int count);
+
+  /// No description provided for @phoneInterruptionAcknowledge.
+  ///
+  /// In zh, this message translates to:
+  /// **'已核对中断提示'**
+  String get phoneInterruptionAcknowledge;
+
+  /// No description provided for @phoneInterruptionRetry.
+  ///
+  /// In zh, this message translates to:
+  /// **'重试保存或读取'**
+  String get phoneInterruptionRetry;
+
+  /// No description provided for @phoneInterruptionActionFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'任务记录尚未确认，请重试'**
+  String get phoneInterruptionActionFailed;
+
   /// No description provided for @phoneTaskResultReady.
   ///
   /// In zh, this message translates to:
@@ -19970,6 +20288,42 @@ abstract class L10n {
   /// **'root 管理器（Magisk、KernelSU 或 APatch）会弹窗问你。允许后，DSH Go 以 root 运行自己的后台服务；只有打开「保持 root 通道」，断开或重启后才会自己再去申请。'**
   String get phonePrivilegedRootRiskBody;
 
+  /// No description provided for @phoneGateCleanupTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'探针清理尚未确认'**
+  String get phoneGateCleanupTitle;
+
+  /// No description provided for @phoneGateCleanupUnknown.
+  ///
+  /// In zh, this message translates to:
+  /// **'新后台资源已被阻止。原通道仍可用时，只能重试原清理，不会重跑探针。'**
+  String get phoneGateCleanupUnknown;
+
+  /// No description provided for @phoneGateCleanupRunning.
+  ///
+  /// In zh, this message translates to:
+  /// **'正在等待原探针及清理完成；清理确认前保留原通道。'**
+  String get phoneGateCleanupRunning;
+
+  /// No description provided for @phoneGateCleanupRetry.
+  ///
+  /// In zh, this message translates to:
+  /// **'仅重试清理'**
+  String get phoneGateCleanupRetry;
+
+  /// No description provided for @phoneGateCleanupDone.
+  ///
+  /// In zh, this message translates to:
+  /// **'清理已确认。请再次明确选择通道，重新检查。'**
+  String get phoneGateCleanupDone;
+
+  /// No description provided for @phoneGateRetest.
+  ///
+  /// In zh, this message translates to:
+  /// **'重新检查此通道'**
+  String get phoneGateRetest;
+
   /// No description provided for @phoneKeepTitle.
   ///
   /// In zh, this message translates to:
@@ -20035,6 +20389,216 @@ abstract class L10n {
   /// In zh, this message translates to:
   /// **'没连上；下次打开 App 或开始操控时再试'**
   String get phoneKeepFailed;
+
+  /// No description provided for @phoneResourceRecoveryTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'后台资源待核验'**
+  String get phoneResourceRecoveryTitle;
+
+  /// No description provided for @phoneResourceRecoveryRunning.
+  ///
+  /// In zh, this message translates to:
+  /// **'正在核对原资源记录，完成前不能开始新的手机任务。'**
+  String get phoneResourceRecoveryRunning;
+
+  /// No description provided for @phoneResourceRecoveryStorage.
+  ///
+  /// In zh, this message translates to:
+  /// **'无法读取或保存资源记录。可重试保存或读取；已确认的释放不会重复执行，也不会重放旧操作。'**
+  String get phoneResourceRecoveryStorage;
+
+  /// No description provided for @phoneResourceRecoveryPending.
+  ///
+  /// In zh, this message translates to:
+  /// **'旧后台资源尚未核验，新的手机任务暂被阻止。请选择原授权通道后重试；仍无法核验时，可重启设备后再次检查。旧操作结果可能已经发生。确认任务中断提示不会清除这些资源。'**
+  String get phoneResourceRecoveryPending;
+
+  /// No description provided for @phoneResourceRecoveryRetry.
+  ///
+  /// In zh, this message translates to:
+  /// **'重试资源核验'**
+  String get phoneResourceRecoveryRetry;
+
+  /// No description provided for @phoneSkillSectionTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'成功任务与技能'**
+  String get phoneSkillSectionTitle;
+
+  /// No description provided for @phoneSkillAskAfterSuccess.
+  ///
+  /// In zh, this message translates to:
+  /// **'任务成功后询问是否存成技能'**
+  String get phoneSkillAskAfterSuccess;
+
+  /// No description provided for @phoneSkillAskAfterSuccessHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'默认关闭。此页可见时，新完成的任务会询问一次；也可随时手动选择。'**
+  String get phoneSkillAskAfterSuccessHint;
+
+  /// No description provided for @phoneSkillTask.
+  ///
+  /// In zh, this message translates to:
+  /// **'任务 {taskId} · {steps} 步'**
+  String phoneSkillTask(int taskId, int steps);
+
+  /// No description provided for @phoneSkillCandidateHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'请先核对实际结果；工具返回成功不等于目标已经完成。'**
+  String get phoneSkillCandidateHint;
+
+  /// No description provided for @phoneSkillSaveAction.
+  ///
+  /// In zh, this message translates to:
+  /// **'存成技能'**
+  String get phoneSkillSaveAction;
+
+  /// No description provided for @phoneSkillConfirmGoal.
+  ///
+  /// In zh, this message translates to:
+  /// **'这次任务达到了目标吗？'**
+  String get phoneSkillConfirmGoal;
+
+  /// No description provided for @phoneSkillConfirmGoalBody.
+  ///
+  /// In zh, this message translates to:
+  /// **'请核对实际结果。确认后才会起草，保存前仍可查看和编辑。'**
+  String get phoneSkillConfirmGoalBody;
+
+  /// No description provided for @phoneSkillGoalDone.
+  ///
+  /// In zh, this message translates to:
+  /// **'目标已完成，查看草稿'**
+  String get phoneSkillGoalDone;
+
+  /// No description provided for @phoneSkillPrivacyHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'草稿只在本机处理。不要填写密码、密钥或验证码。本阶段自由文字会替换成参数，删除和重排步骤会保留；以最终预览为准。'**
+  String get phoneSkillPrivacyHint;
+
+  /// No description provided for @phoneSkillGoal.
+  ///
+  /// In zh, this message translates to:
+  /// **'目标'**
+  String get phoneSkillGoal;
+
+  /// No description provided for @phoneSkillPrerequisites.
+  ///
+  /// In zh, this message translates to:
+  /// **'前提（应用、版本、登录态）'**
+  String get phoneSkillPrerequisites;
+
+  /// No description provided for @phoneSkillStep.
+  ///
+  /// In zh, this message translates to:
+  /// **'原步骤 {number}'**
+  String phoneSkillStep(int number);
+
+  /// No description provided for @phoneSkillCheckpoint.
+  ///
+  /// In zh, this message translates to:
+  /// **'这一步之后应看到什么'**
+  String get phoneSkillCheckpoint;
+
+  /// No description provided for @phoneSkillMoveUp.
+  ///
+  /// In zh, this message translates to:
+  /// **'上移一步'**
+  String get phoneSkillMoveUp;
+
+  /// No description provided for @phoneSkillMoveDown.
+  ///
+  /// In zh, this message translates to:
+  /// **'下移一步'**
+  String get phoneSkillMoveDown;
+
+  /// No description provided for @phoneSkillUpdatePreview.
+  ///
+  /// In zh, this message translates to:
+  /// **'更新脱敏预览'**
+  String get phoneSkillUpdatePreview;
+
+  /// No description provided for @phoneSkillPreviewTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'将保存的完整内容'**
+  String get phoneSkillPreviewTitle;
+
+  /// No description provided for @phoneSkillParameterizedHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'自由文字已替换成参数；使用技能时需要补充并重新核对。'**
+  String get phoneSkillParameterizedHint;
+
+  /// No description provided for @phoneSkillFinalConfirmation.
+  ///
+  /// In zh, this message translates to:
+  /// **'我已核对当前完整预览，同意保存这一版本。'**
+  String get phoneSkillFinalConfirmation;
+
+  /// No description provided for @phoneSkillSavedBody.
+  ///
+  /// In zh, this message translates to:
+  /// **'文件已写入本机技能目录。尚未核实引擎技能列表是否已刷新；可在技能页检查。'**
+  String get phoneSkillSavedBody;
+
+  /// No description provided for @phoneSkillWriting.
+  ///
+  /// In zh, this message translates to:
+  /// **'正在写入技能'**
+  String get phoneSkillWriting;
+
+  /// No description provided for @phoneSkillCannotCancel.
+  ///
+  /// In zh, this message translates to:
+  /// **'写入可能已进入提交阶段，无法保证撤回。关闭只关闭此页；已经提交的文件仍会保存。'**
+  String get phoneSkillCannotCancel;
+
+  /// No description provided for @phoneSkillKeepWaiting.
+  ///
+  /// In zh, this message translates to:
+  /// **'继续查看'**
+  String get phoneSkillKeepWaiting;
+
+  /// No description provided for @phoneSkillCheckWrite.
+  ///
+  /// In zh, this message translates to:
+  /// **'检查写入结果'**
+  String get phoneSkillCheckWrite;
+
+  /// No description provided for @phoneSkillStale.
+  ///
+  /// In zh, this message translates to:
+  /// **'这份草稿已失效。请关闭后重新选择任务。'**
+  String get phoneSkillStale;
+
+  /// No description provided for @phoneSkillSensitive.
+  ///
+  /// In zh, this message translates to:
+  /// **'编辑中包含敏感内容，请移除后再更新预览。'**
+  String get phoneSkillSensitive;
+
+  /// No description provided for @phoneSkillInvalid.
+  ///
+  /// In zh, this message translates to:
+  /// **'编辑内容或步骤顺序不符合限制。请减少文字，至少保留一个步骤。'**
+  String get phoneSkillInvalid;
+
+  /// No description provided for @phoneSkillWriteFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'未能写入。请核对本机运行环境和存储；修改并更新预览后才能再次确认保存。'**
+  String get phoneSkillWriteFailed;
+
+  /// No description provided for @phoneSkillUnavailable.
+  ///
+  /// In zh, this message translates to:
+  /// **'当前无法处理技能草稿。请检查本机引擎状态后重试。'**
+  String get phoneSkillUnavailable;
 
   /// No description provided for @phoneModeTitle.
   ///
