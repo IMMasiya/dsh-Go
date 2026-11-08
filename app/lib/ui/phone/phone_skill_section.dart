@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../l10n/l10n.dart';
 import '../../state/phone_state.dart';
 import '../common/list_page_row.dart';
+import '../theme/app_icons.dart';
 
 /// Only offers local, completed native candidates; opening and saving are separate decisions.
 class PhoneSkillSection extends ConsumerStatefulWidget {
@@ -83,7 +84,7 @@ class _PhoneSkillSectionState extends ConsumerState<PhoneSkillSection> {
     title: context.l10n.phoneSkillSectionTitle,
     children: [
       ListPageRow(
-        icon: Icons.bookmark_outline,
+        icon: AppIcons.bookmark,
         title: context.l10n.phoneSkillAskAfterSuccess,
         subtitle: context.l10n.phoneSkillAskAfterSuccessHint,
         trailing: Switch(value: widget.status.askAfterSuccess, onChanged: _setting ? null : _setPrompt),
@@ -91,7 +92,7 @@ class _PhoneSkillSectionState extends ConsumerState<PhoneSkillSection> {
       ),
       for (final candidate in widget.status.candidates)
         ListPageRow(
-          icon: Icons.check_circle_outline,
+          icon: AppIcons.completed,
           title: context.l10n.phoneSkillTask(candidate.taskId, candidate.steps),
           subtitle: context.l10n.phoneSkillCandidateHint,
           trailing: TextButton(
@@ -275,15 +276,15 @@ class _PhoneSkillEditorState extends State<PhoneSkillEditor> {
                 for (var position = 0; position < _order.length; position++) ...[
                   Row(children: [
                     Expanded(child: Text(l10n.phoneSkillStep(_order[position] + 1))),
-                    IconButton(tooltip: l10n.phoneSkillMoveUp, icon: const Icon(Icons.arrow_upward),
+                    IconButton(tooltip: l10n.phoneSkillMoveUp, icon: const Icon(AppIcons.collapse),
                       onPressed: editable && position > 0 ? () => setState(() {
                         final index = _order.removeAt(position); _order.insert(position - 1, index); _dirty = true; _confirmed = false;
                       }) : null),
-                    IconButton(tooltip: l10n.phoneSkillMoveDown, icon: const Icon(Icons.arrow_downward),
+                    IconButton(tooltip: l10n.phoneSkillMoveDown, icon: const Icon(AppIcons.expand),
                       onPressed: editable && position + 1 < _order.length ? () => setState(() {
                         final index = _order.removeAt(position); _order.insert(position + 1, index); _dirty = true; _confirmed = false;
                       }) : null),
-                    IconButton(tooltip: l10n.commonDelete, icon: const Icon(Icons.delete_outline),
+                    IconButton(tooltip: l10n.commonDelete, icon: const Icon(AppIcons.delete),
                       onPressed: editable && _order.length > 1 ? () => setState(() {
                         _order.removeAt(position); _dirty = true; _confirmed = false;
                       }) : null),
