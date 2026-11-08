@@ -27,10 +27,11 @@ internal class StatusOwnership {
     fun publish(ifCurrent: (() -> Unit) -> Boolean, capture: () -> TaskControls?): Boolean {
         var captured: TaskControls? = null
         if (!ifCurrent { captured = capture() }) return false
+        val shown = captured
         current = ifCurrent
-        controls = captured
+        controls = shown
         val editor = editingControls
-        if (editor != null && (captured == null || editor.taskId != captured.taskId || editor.lifecycle != captured.lifecycle)) {
+        if (editor != null && (shown == null || editor.taskId != shown.taskId || editor.lifecycle != shown.lifecycle)) {
             editingControls = null
         }
         return true
