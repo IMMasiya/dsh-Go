@@ -93,7 +93,7 @@ class PhoneVisualPermissionTest {
             f.read(); f.tap(); f.asks.clear(); f.decision = { Decision.ALLOW_ONCE }
             f.knownTarget = false; f.read(); f.tap()
             f.knownTarget = true; f.read(); f.tap("long")
-            f.policy = PhonePolicies(confirmMode = ConfirmMode.ALWAYS, confirmEveryWritePackages = setOf("example.app"))
+            f.policy = PhonePolicies(confirmMode = ConfirmMode.ALWAYS, confirmEveryWritePackages = listOf("example.app"))
             f.read(); f.tap()
             assertEquals(3, f.asks.size); assertTrue(f.asks.all { it.visualScope == null && !it.offerTaskWaiver })
         }
@@ -133,7 +133,7 @@ class PhoneVisualPermissionTest {
             f.decision = { Decision.ALLOW_ONCE }
             f.onAsk = {
                 if (f.asks.size == 1) f.policy = PhonePolicies(confirmMode = ConfirmMode.ALWAYS,
-                    confirmEveryWritePackages = setOf("example.app"))
+                    confirmEveryWritePackages = listOf("example.app"))
             }
             f.read(); assertFalse(f.tap().isError)
             assertEquals(2, f.asks.size)
