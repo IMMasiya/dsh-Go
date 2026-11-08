@@ -68,4 +68,19 @@ class ReadBackMismatchTest {
             assertTrue(message, message.contains("无法确认") || message.contains("未能确认"))
         }
     }
+
+    @Test fun freshSecretMetadataOverridesAnOrdinaryObservedTargetForOutput() {
+        val ordinary = field(hint = "昵称")
+        val value = "sample-value"
+        val message = MainScreenDriver.readBackMismatch(value, ordinary, currentSecret = true)
+        assertFalse(message, message.contains(value))
+        assertFalse(message, message.contains("框里现在是"))
+        assertTrue(message, message.contains("内容不回传"))
+        assertTrue(message, message.contains("已输入，但回读不一致"))
+        assertTrue(message, message.contains("没有重试，也没有提交"))
+        val unknown = MainScreenDriver.readBackMismatch(null, ordinary, currentSecret = true)
+        assertTrue(unknown, unknown.contains("未能确认"))
+        assertFalse(unknown, unknown.contains("空"))
+    }
+
 }

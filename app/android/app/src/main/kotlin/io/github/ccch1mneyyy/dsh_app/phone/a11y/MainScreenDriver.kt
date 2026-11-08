@@ -573,7 +573,8 @@ internal class MainScreenDriver(private val service: PhoneA11yService, private v
             // l10n:keep agent screen result
             val name = short(r.el.label.ifEmpty { "输入框" })
             if (!sameText(got, a.text)) {
-                return after(before, r.snap, gen, readBackMismatch(got, info(r.snap.id, r.el)), ok = false)
+                return after(before, r.snap, gen, readBackMismatch(got, info(r.snap.id, r.el),
+                    currentSecret = got != null && isSecretField(r.node)), ok = false)
             }
             // l10n:keep agent screen result
             var message = "已在「$name」输入，回读一致。"
@@ -583,12 +584,7 @@ internal class MainScreenDriver(private val service: PhoneA11yService, private v
                 val submitted = if (Build.VERSION.SDK_INT < 30 || !r.node.refresh()) false else {
                     val id = AccessibilityNodeInfo.AccessibilityAction.ACTION_IME_ENTER.id
                     if (r.node.actionList.none { it.id == id }) false else {
-                        val hint = ScreenFormat.clean(r.node.hintText?.toString())
-                            ?: if (r.node.isShowingHintText) ScreenFormat.clean(r.node.text?.toString()) else null
-                        val secret = r.node.isPassword || SensitiveWords.secretHit(
-                            hint, r.node.contentDescription?.toString(), r.node.viewIdResourceName,
-                        ) != null
-                        if (secret && !lifted.secretFields) {
+                        if (isSecretField(r.node) && !lifted.secretFields) {
                             // l10n:keep agent screen result
                             return after(before, r.snap, gen,
                                 "已输入并完成回读，但输入框现在属于密码或验证码等敏感字段，未发起键盘提交。请交给用户核对；不要重复输入。", ok = false)
@@ -896,6 +892,15 @@ internal class MainScreenDriver(private val service: PhoneA11yService, private v
         cap.hiddenWindowTitle == null &&
             (cap.windows.isEmpty() || (ScreenFormat.textCount(cap.windows) < ScreenFormat.POOR_TREE && previous?.screen?.poorTree != true))
 
+    /** Classifies metadata from the caller's successful refresh, without another platform read. */
+    private fun isSecretField(node: AccessibilityNodeInfo): Boolean {
+        val hint = ScreenFormat.clean(node.hintText?.toString())
+            ?: if (node.isShowingHintTextCompat()) ScreenFormat.clean(node.text?.toString()) else null
+        return node.isPassword || SensitiveWords.secretHit(
+            hint, node.contentDescription?.toString(), node.viewIdResourceName,
+        ) != null
+    }
+
     /** Polls refreshed content; null means refresh failed. The 1.5 s limit does not bound a platform call. */
     private fun readBack(node: AccessibilityNodeInfo, expected: String, gen: Long): String? {
         val deadline = SystemClock.uptimeMillis() + 1_500
@@ -1068,11 +1073,11 @@ internal class MainScreenDriver(private val service: PhoneA11yService, private v
          * holds now; a password or code field ([SafetyRules.isSecretTarget], as for the log's ••••)
          * never does: the tool result goes to the model.
          */
-        internal fun readBackMismatch(got: String?, target: TargetInfo): String {
+        internal fun readBackMismatch(got: String?, target: TargetInfo, currentSecret: Boolean = false): String {
             // l10n:keep agent screen result
             if (got == null) return "已输入，但未能确认当前输入框内容。没有重试，也没有提交；请看新屏幕决定下一步。"
             // l10n:keep agent screen result
-            val now = if (SafetyRules.isSecretTarget(target)) "这是密码 / 验证码框，框里的内容不回传"
+            val now = if (currentSecret || SafetyRules.isSecretTarget(target)) "这是密码 / 验证码框，框里的内容不回传"
             // l10n:keep agent screen result
             else "框里现在是" + ScreenMask.mask(got).let { if (it.isEmpty()) "空" else "「${ScreenFormat.clip(it, 40)}」" }
             // l10n:keep agent screen result
