@@ -1,5 +1,7 @@
 package io.github.ccch1mneyyy.dsh_app.phone.a11y
 
+import io.github.ccch1mneyyy.dsh_app.phone.SensitiveWords
+
 // A plain copy of the accessibility tree: what ScreenFormat needs and nothing
 // Android-typed, so the formatting rules run in a JVM test. TreeCapture
 // fills it from AccessibilityNodeInfo; tests build it by hand.
@@ -82,6 +84,20 @@ class UiWindow(
     val bounds: Box,
     val root: UiNode?,
 )
+
+/** Secret fields in the whole captured tree, including nodes omitted from the text listing. */
+internal fun secretFieldBounds(windows: List<UiWindow>): List<Box> {
+    val bounds = ArrayList<Box>()
+    fun visit(node: UiNode) {
+        val hint = node.hint?.takeIf { it.isNotBlank() } ?: node.text?.takeIf { node.showingHint }
+        if (node.password || (node.editable && SensitiveWords.secretHit(hint, node.desc, node.viewId) != null)) {
+            bounds += node.bounds
+        }
+        node.children.forEach(::visit)
+    }
+    windows.forEach { it.root?.let(::visit) }
+    return bounds
+}
 
 /**
  * collect's de-duplication: by text, in on-screen order. A row cut off at the list's edge

@@ -131,7 +131,7 @@ internal class MainScreenDriver(private val service: PhoneA11yService, private v
                     left < 900 -> text.append("\n提示：读屏用时过长，这次没有附截图。")
                     else -> {
                         val window = if (cap.windows.size == 1) cap.windows[0] else null
-                        val secrets = ScreenShooter.sensitiveBounds(cap.windows)
+                        val secrets = secretFieldBounds(cap.windows)
                         val shot = shooter.shoot(window, cap.screen, snap.screen.elements, secrets, minOf(left - 300, 3_000),
                             readLocalText = snap.screen.poorTree,
                             localTextPrivacyAllowed = Build.VERSION.SDK_INT >= 34 && cap.windows.size == 1 &&
@@ -451,7 +451,13 @@ internal class MainScreenDriver(private val service: PhoneA11yService, private v
                 // l10n:keep agent screen result
                 if (unavailable(cap)) return ActionResult(false, "这一屏读不到内容（可能受敏感视图策略限制），不盲滑。请 handoff。", toSnapshot(publish(cap, false)))
                 // l10n:keep agent screen result
-                if (!observation(cap).reusableCoordinates(snap.observation)) return ActionResult(false, "无法确认当前界面仍与上一屏一致，没有滚动。请先看新屏幕。", toSnapshot(publish(cap, false)))
+                val current = observation(cap)
+                if (!current.reusableCoordinates(snap.observation)) {
+                    val reason = if (current.hasSecretFields || snap.observation.hasSecretFields)
+                        "当前或上次观察含密码 / 验证码 / 支付框，不按坐标滑动。请 handoff 交给用户。" // l10n:keep agent safety result
+                    else "无法确认当前界面仍与上一屏一致，没有滚动。请先看新屏幕。" // l10n:keep agent screen result
+                    return ActionResult(false, reason, toSnapshot(publish(cap, false)))
+                }
                 val screen = cap.screen
                 val before = clock.count
                 val out = actuator.scroll(null, 0, a.direction == PhoneAction.Direction.LEFT || a.direction == PhoneAction.Direction.RIGHT,
@@ -525,7 +531,13 @@ internal class MainScreenDriver(private val service: PhoneA11yService, private v
             // l10n:keep agent screen result
             if (unavailable(cap)) return ActionResult(false, "这一屏读不到内容（可能受敏感视图策略限制），不盲点。请 handoff。", toSnapshot(publish(cap, false)))
             // l10n:keep agent screen result
-            if (!observation(cap).reusableCoordinates(snap.observation)) return ActionResult(false, "无法确认当前界面仍与截图一致，没有点击。请重新看屏幕。", toSnapshot(publish(cap, false)))
+            val current = observation(cap)
+            if (!current.reusableCoordinates(snap.observation)) {
+                val reason = if (current.hasSecretFields || snap.observation.hasSecretFields)
+                    "当前或上次观察含密码 / 验证码 / 支付框，不执行坐标手势。请 handoff 交给用户。" // l10n:keep agent safety result
+                else "无法确认当前界面仍与截图一致，没有点击。请重新看屏幕。" // l10n:keep agent screen result
+                return ActionResult(false, reason, toSnapshot(publish(cap, false)))
+            }
             val currentImage = captureImageObservation(cap)
             if (cancelled(gen)) throw InterruptedException()
             // l10n:keep agent screen result

@@ -15,7 +15,6 @@ import android.graphics.Typeface
 import android.os.Build
 import android.os.SystemClock
 import android.view.Display
-import io.github.ccch1mneyyy.dsh_app.phone.SensitiveWords
 import java.io.ByteArrayOutputStream
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executor
@@ -60,7 +59,7 @@ internal class ScreenShooter(private val service: AccessibilityService, private 
     /**
      * Captures [window] (API 34+, overlay excluded by construction) or the whole display
      * (API 30–33, overlay hidden for the moment of capture), then greys out [secrets] (see
-     * [sensitiveBounds]) and draws [marks].
+     * [secretFieldBounds]) and draws [marks].
      */
     fun shoot(window: UiWindow?, screen: Box, marks: List<ScreenElement>, secrets: List<Box>, timeoutMs: Long, image: Boolean = true,
         readLocalText: Boolean = false, localTextPrivacyAllowed: Boolean = false,
@@ -240,22 +239,4 @@ internal class ScreenShooter(private val service: AccessibilityService, private 
         }
     }
 
-    companion object {
-        /**
-         * Password and verification-code fields anywhere in [windows], including ones the text
-         * listing left out for length: the screenshot must not show what the text hides.
-         */
-        fun sensitiveBounds(windows: List<UiWindow>): List<Box> {
-            val bounds = ArrayList<Box>()
-            fun visit(node: UiNode) {
-                val hint = node.hint?.takeIf { it.isNotBlank() } ?: node.text?.takeIf { node.showingHint }
-                if (node.password || (node.editable && SensitiveWords.secretHit(hint, node.desc, node.viewId) != null)) {
-                    bounds += node.bounds
-                }
-                node.children.forEach(::visit)
-            }
-            windows.forEach { it.root?.let(::visit) }
-            return bounds
-        }
-    }
 }
