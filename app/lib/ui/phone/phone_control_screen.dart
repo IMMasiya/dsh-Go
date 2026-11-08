@@ -393,6 +393,7 @@ class _PhoneControlScreenState extends ConsumerState<PhoneControlScreen> {
             children: [
               ListPageRow(
                 key: ValueKey('phone-waiting-${waiting.id}'),
+                trailing: FixButton(label: l10n.commonStop, onPressed: () => _stopTask(waiting.id)),
                 icon: AppIcons.phoneControl,
                 title: l10n.phoneTaskWaiting(waiting.id!),
                 subtitle: waiting.waitingForApp != null

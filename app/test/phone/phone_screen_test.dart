@@ -325,6 +325,45 @@ void main() {
     expect(h.native!.callsOf('stopTask').single.arguments, {'taskId': 12});
   });
 
+  testWidgets('each waiting row stops its own task without stopping the selected holder', (tester) async {
+    Map<String, Object?> selected(int id) => {
+      ...phoneStatus(a11y: true), 'taskProtocol': 1, 'selectedTaskId': id,
+      'tasks': [
+        {'id': 70, 'sessionId': 'holder', 'active': true, 'app': '美团'},
+        {'id': 71, 'sessionId': 'waiter-a', 'active': true, 'waitingForApp': {'kind': 'unknown'}},
+        {'id': 72, 'sessionId': 'waiter-b', 'active': true, 'waitingForScreen': 'background'},
+      ],
+    };
+    final h = await pumpPhone(tester, const PhoneControlScreen(), native: FakePhoneNative(status: selected(70)));
+    Finder stopFor(int id) => find.descendant(
+      of: find.byKey(ValueKey('phone-waiting-$id')),
+      matching: find.byType(FixButton),
+    );
+    expect(stopFor(71), findsOneWidget);
+    expect(stopFor(72), findsOneWidget);
+    final shownFor71 = tester.widget<FixButton>(stopFor(71)).onPressed!;
+    await tester.ensureVisible(stopFor(72));
+    await tester.tap(stopFor(72));
+    await tester.pump();
+    expect(h.native!.callsOf('stopTask').map((call) => call.arguments).toList(), [
+      {'taskId': 72},
+    ]);
+    expect(find.text('正在操作「美团」'), findsOneWidget);
+
+    // The already-displayed row keeps its identity even if selection changes.
+    h.native!.push(selected(72));
+    await settlePhone(tester);
+    shownFor71();
+    await tester.pump();
+    expect(h.native!.callsOf('stopTask').map((call) => call.arguments).toList(), [
+      {'taskId': 72},
+      {'taskId': 71},
+    ]);
+    expect(h.native!.callsOf('connectBackground'), isEmpty);
+    expect(h.native!.callsOf('startBackground'), isEmpty);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('resource wait rows consume native targets and elapsed snapshots without exposing holders', (tester) async {
     Map<String, Object?> status(List<Map<String, Object?>> tasks) => {
       ...phoneStatus(a11y: true), 'taskProtocol': 1, 'tasks': tasks,
