@@ -33,6 +33,7 @@ import 'dnd_mode_page.dart';
 import 'phone_disclosure_sheet.dart';
 import 'phone_background_guide.dart';
 import 'phone_unlock_page.dart';
+import 'phone_skill_section.dart';
 import 'phone_widgets.dart';
 import 'restricted_settings_guide.dart';
 import 'screen_text_sheet.dart';
@@ -328,6 +329,10 @@ class _PhoneControlScreenState extends ConsumerState<PhoneControlScreen> {
           if (status.enabled) ..._setup(status) else const _WhatItDoes(),
           gap,
           ..._rules(state),
+          if (status.skills.available) ...[
+            gap,
+            PhoneSkillSection(status: status.skills),
+          ],
           if (status.enabled) ...[
             gap,
             ListPageCard(

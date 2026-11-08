@@ -9,6 +9,9 @@ import 'dart:typed_data';
 import 'package:flutter/services.dart';
 
 import '../l10n/l10n.dart';
+import 'phone_skill.dart';
+
+export 'phone_skill.dart';
 
 // ── Wire helpers ─────────────────────────────────────────────────────────────
 
@@ -396,6 +399,7 @@ class PhoneStatus {
     this.background = const PhoneBackgroundStatus(),
     this.task = const PhoneTaskStatus(),
     this.device = const PhoneDevice(),
+    this.skills = const PhoneSkillStatus(),
   });
 
   /// The native module isn't there (or failed to answer): "未就绪".
@@ -410,7 +414,8 @@ class PhoneStatus {
       confirmationNotifications = null,
       background = const PhoneBackgroundStatus(),
       task = const PhoneTaskStatus(),
-      device = const PhoneDevice();
+      device = const PhoneDevice(),
+      skills = const PhoneSkillStatus();
 
   factory PhoneStatus.fromMap(Map<Object?, Object?> m) => PhoneStatus(
     enabled: _flag(m['enabled']),
@@ -423,6 +428,7 @@ class PhoneStatus {
     background: PhoneBackgroundStatus.fromMap(_map(m['background'])),
     task: PhoneTaskStatus.fromMap(_map(m['task'])),
     device: PhoneDevice.fromMap(_map(m['device'])),
+    skills: PhoneSkillStatus.parse(m['skills']),
   );
 
   /// The native side answered. False → everything else is a default.
@@ -447,6 +453,7 @@ class PhoneStatus {
   final PhoneBackgroundStatus background;
   final PhoneTaskStatus task;
   final PhoneDevice device;
+  final PhoneSkillStatus skills;
 
   PhoneStatus copyWith({bool? enabled}) => PhoneStatus(
     ready: ready,
@@ -461,6 +468,7 @@ class PhoneStatus {
     background: background,
     task: task,
     device: device,
+    skills: skills,
   );
 }
 
@@ -993,6 +1001,40 @@ class PhoneChannel {
   /// One App viewer at a time. Cancelling its subscription releases only that viewer.
   Stream<PhonePreviewFrame?> previewFrames(int taskId) =>
       _preview.receiveBroadcastStream({'taskId': taskId}).map(PhonePreviewFrame.parse);
+
+  Future<bool> setSkillSavePrompt(bool enabled) => _bool('setSkillSavePrompt', {'enabled': enabled});
+
+  Future<PhoneSkillReply> openSkillDraft(PhoneSkillCandidate candidate, {required bool confirmed}) =>
+      _skillReply('skillDraft', {'action': 'open', 'taskId': candidate.taskId,
+        'generation': candidate.generation, 'confirmed': confirmed});
+
+  Future<PhoneSkillReply> editSkillDraft(PhoneSkillDraftView draft, {required String goal,
+    required String prerequisites, required List<String> checkpoints, required List<int> stepOrder}) =>
+      _skillReply('skillDraft', {'action': 'edit', 'taskId': draft.taskId, 'draftId': draft.draftId,
+        'revision': draft.revision, 'goal': goal, 'prerequisites': prerequisites,
+        'checkpoints': checkpoints, 'stepOrder': stepOrder});
+
+  Future<PhoneSkillReply> viewSkillDraft(PhoneSkillDraftView draft) => _skillReply('skillDraft',
+      {'action': 'view', 'taskId': draft.taskId, 'draftId': draft.draftId});
+
+  Future<PhoneSkillReply> saveSkillDraft(PhoneSkillDraftView draft, {required bool confirmed}) =>
+      _skillReply('saveSkillDraft', {'taskId': draft.taskId, 'draftId': draft.draftId,
+        'revision': draft.revision, 'confirmed': confirmed});
+
+  Future<PhoneSkillReply> discardSkillDraft(PhoneSkillDraftView draft) =>
+      _skillReply('discardSkillDraft', {'taskId': draft.taskId, 'draftId': draft.draftId});
+
+  Future<PhoneSkillReply> _skillReply(String method, Map<String, Object?> arguments) async {
+    try {
+      return PhoneSkillReply.parse(await _methods.invokeMapMethod<Object?, Object?>(method, arguments));
+    } on MissingPluginException {
+      return const PhoneSkillReply.unavailable();
+    } on PlatformException {
+      // Draft contents and native exception details never enter an error message or a log.
+      return const PhoneSkillReply.unavailable();
+    }
+  }
+
 
   Future<bool> openAccessibilitySettings() => _bool('openAccessibilitySettings');
 

@@ -345,6 +345,8 @@ class PhoneController extends Notifier<PhoneState> {
     if (ref.mounted) unawaited(refreshStatus());
     return result;
   }
+
+  Future<bool> setSkillSavePrompt(bool enabled) => _thenRefresh(_channel.setSkillSavePrompt(enabled));
 }
 
 final phoneProvider = NotifierProvider<PhoneController, PhoneState>(PhoneController.new);
