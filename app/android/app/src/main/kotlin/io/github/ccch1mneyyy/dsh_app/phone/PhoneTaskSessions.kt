@@ -572,7 +572,8 @@ class PhoneTaskSessions(
     fun retryCleanup(taskId: Long): Boolean {
         val task = synchronized(lock) {
             (entries.values + retiring).firstOrNull {
-                (it.retired ?: it.tasks.snapshot()).id == taskId
+                (it.cleanupFailed || it.closing && !it.resourcesReleased) &&
+                    (it.retired ?: it.tasks.snapshot()).id == taskId
             }
         } ?: return false
         settle(task, explicitFinish = false, retryTaskId = taskId)
