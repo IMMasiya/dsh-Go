@@ -94,8 +94,8 @@ class PhonePlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandle
     }
 
     override fun onDetachedFromEngine(binding: FlutterPlugin.FlutterPluginBinding) {
-        attached = false
         control.selfCheck.stop(promptOwner)
+        control.background.changeGateIntent { attached = false }
         skillClient?.let { control.skillDrafts.retireClient(it) }
         skillClient = null
         (appContext as Application).unregisterActivityLifecycleCallbacks(previewLifecycle)
@@ -177,6 +177,7 @@ class PhonePlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandle
                 (call.argument<Any?>("batchToken") as? String)?.let(control::acknowledgeTaskInterruption) == true
             }
             "retryTaskInterruptionStorage" -> async(result) { control.retryTaskInterruptionStorage() }
+            "retryBackgroundRecovery" -> async(result) { control.retryBackgroundRecovery() }
             "startPhoneSelfCheck", "phoneSelfCheckStatus", "cancelPhoneSelfCheck",
             "retryPhoneSelfCheckCleanup" -> selfCheckCall(call, result)
             "setBackgroundViewport" -> async(result, shortControl = true) {
@@ -193,6 +194,7 @@ class PhonePlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandle
             "setBackgroundKeep" -> {
                 val selected = call.argument<String>("mode").orEmpty()
                 val enabled = call.argument<Boolean>("enabled") == true
+                control.selfCheck.stop()
                 val (ticket, failure) = control.background.changeKeep(selected, enabled)
                 if (ticket == null) result.success(control.background.keepFailure(failure!!))
                 else async(result, shortControl = true) { control.background.saveKeep(ticket) }
@@ -211,7 +213,8 @@ class PhonePlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandle
             "setEnabled" -> {
                 val enabled = call.argument<Boolean>("enabled") == true
                 if (!enabled) {
-                    privilegedActions.select()
+                    control.selfCheck.stop()
+                        control.background.changeGateIntent { privilegedActions.select() }
                     val cleared = control.background.clearKeep()
                     controlIo.execute { control.background.saveKeep(cleared) }
                     control.background.cancelRootSelection()
@@ -226,7 +229,8 @@ class PhonePlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandle
             "testScreen" -> async(result) { control.testScreen() }
             "setBackgroundMode" -> {
                 val mode = call.argument<String>("mode") ?: "off"
-                val live = stillWanted(privilegedActions.select())
+                control.selfCheck.stop()
+                val live = stillWanted(control.background.changeGateIntent { privilegedActions.select() })
                 // A mode intent revokes keep before it waits behind any older long operation.
                 control.background.clearKeepForMode(mode)?.let { cleared ->
                     controlIo.execute { control.background.saveKeep(cleared) }
@@ -247,7 +251,7 @@ class PhonePlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandle
                 async(result) { live() && control.background.requestShizukuPermission(provider) }
             }
             "prepareRoot" -> {
-                val live = stillWanted(privilegedActions.select())
+                val live = stillWanted(control.background.changeGateIntent { privilegedActions.select() })
                 control.background.cancelUnwantedPending()
                 async(result) { if (live()) control.background.prepareRoot(live) else cancelledSelection() }
             }

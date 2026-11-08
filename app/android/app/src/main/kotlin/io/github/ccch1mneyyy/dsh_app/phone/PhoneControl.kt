@@ -168,6 +168,7 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
             if (Looper.myLooper() == Looper.getMainLooper()) cleanupIo.execute(action) else action()
         },
         journal = taskJournal,
+        recoveryAdmission = { background.resourceAdmission() },
         startSkillScope = skillLifecycle::startManaged,
         completeSkillScope = skillLifecycle::completeDrained,
         cancelScope = { record, state ->
@@ -555,6 +556,7 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
         val receiver = object : BroadcastReceiver() {
             override fun onReceive(context: Context, intent: Intent) {
                 if (intent.action != Intent.ACTION_SCREEN_OFF) return
+                selfCheck.stop()
                 preview.refresh()
                 background.requestInterrupt()
                 onStopAllRequested("熄屏") // l10n:keep agent stop reason
@@ -629,6 +631,23 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
         taskJournal.acknowledge(batchToken).also { emitStatus() }
 
     fun retryTaskInterruptionStorage(): Boolean = sessions.retryJournalStorage().also { emitStatus() }
+
+    /** This is a resource recovery request, never the logical interruption acknowledgement. */
+    fun retryBackgroundRecovery(): Map<String, Any?> {
+        try {
+            background.pendingStoredTaskId()?.let { taskId ->
+                // The original driver already has a physical completion proof. Persist its clear
+                // and return that exact slot; no repeated RELEASE or lookup by a journal payload.
+                if (!background.endTask(taskId)) return mapOf("ok" to false, "reason" to "storageUnavailable")
+                // Only an already eligible ended/retiring scope releases its registry leases.
+                // An active failed-handoff task intentionally keeps its task/App ownership.
+                sessions.retryCleanup(taskId)
+            }
+            if (!background.retryStoredGateCleanup() || !selfCheck.retryStoredCleanup())
+                return mapOf("ok" to false, "reason" to "busy")
+            return background.retryBackgroundRecovery()
+        } finally { emitStatus() }
+    }
 
     fun status(): Map<String, Any?> = linkedMapOf(
         "enabled" to isEnabled(),
@@ -803,7 +822,9 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
         }
         if (screen != PhoneScreen.BACKGROUND) return PhoneRegistry.mainDriver
         return runCatching {
-            background.driverForTask(owner) { task.isCurrent(owner) }
+            background.driverForTask(owner, { task.isCurrent(owner) }) { commit ->
+                task.runIfCurrent(owner, commit)
+            }
         }.getOrNull()
     }
 

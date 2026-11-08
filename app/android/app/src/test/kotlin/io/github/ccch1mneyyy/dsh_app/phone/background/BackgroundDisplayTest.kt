@@ -137,6 +137,9 @@ class BackgroundDisplayTest {
 
     private fun withLastElement(): BackgroundDisplay {
         val display = BackgroundDisplay(
+            journal = BackgroundResourceJournal({ null }, { true }).apply { load() },
+            mayUse = { true },
+            admitUse = { action -> action(); true },
             channelProvider = { error("response validation must not start a connection") },
         )
         BackgroundDisplay::class.java.getDeclaredField("targetReady").apply { isAccessible = true; setBoolean(display, true) }
@@ -153,6 +156,9 @@ class BackgroundDisplayTest {
 
     @Test fun onlyBackIsSentToTheBackgroundScreen() {
         val display = BackgroundDisplay(
+            journal = BackgroundResourceJournal({ null }, { true }).apply { load() },
+            mayUse = { true },
+            admitUse = { action -> action(); true },
             channelProvider = { error("a refused key must not reach the privileged channel") },
         )
         BackgroundDisplay::class.java.getDeclaredField("targetReady").apply { isAccessible = true; setBoolean(display, true) }

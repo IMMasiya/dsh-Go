@@ -22,18 +22,25 @@ import io.github.ccch1mneyyy.dsh_app.phone.VisualTarget
  * until strict cleanup succeeds; UI selection never routes this driver's operations.
  * All calls are serialised by the bridge; this class never retries a dispatched action.
  */
-class BackgroundDisplay(
+class BackgroundDisplay internal constructor(
     private val channelProvider: () -> PrivilegedChannel?,
+    journal: BackgroundResourceJournal,
+    private val mayUse: () -> Boolean,
+    private val admitUse: ((() -> Unit) -> Boolean),
     private val viewport: BackgroundPolicy.Viewport = BackgroundPolicy.Viewport.PORTRAIT,
     private val onResourceReady: (PrivilegedChannel) -> Unit = {},
 ) : PhoneDriver {
 
     private val resourceIo = BackgroundDisplayIo<PrivilegedChannel>()
+    private val resourceScope = BackgroundResourceScope(resourceIo, journal, "task", viewport.preset)
     internal val ownerToken: String get() = resourceIo.owner
+    internal val physicalComplete: Boolean get() = resourceScope.physicalComplete
     internal fun seal() { coordinateImage.invalidateScope(); resourceIo.seal() }
-    internal fun previewAvailable(peer: PrivilegedChannel): Boolean = resourceIo.previewAvailable(peer)
+    internal fun previewAvailable(peer: PrivilegedChannel): Boolean =
+        resourceScope.allocationReady && resourceIo.previewAvailable(peer)
     internal fun previewClosed(): Boolean = resourceIo.previewClosed()
     internal fun tryPreview(request: Bundle): Bundle? = resourceIo.tryPreview { peer ->
+        if (!resourceScope.allocationReady) return@tryPreview null
         if (request.get(Proto.OP) == Proto.OP_PROBE) peer.tryExecute(request)
         else peer.tryExecute(OwnerScopeProtocol.request(request))?.let { OwnerScopeProtocol.response(ownerToken, it) }
     }
@@ -68,7 +75,8 @@ class BackgroundDisplay(
         resourceIo.call {
             clearSnapshot()
             targetReady = false
-            currentTarget = target // Retain the attempted identity, never old elements after unknown launch.
+            currentTarget = target
+            check(mayUse()) { Reasons.of("deviceUnavailable") }
             val active = channel()
             if (resourceIo.peer() == null) {
                 val probe = active.execute(Bundle().apply { putString(Proto.OP, Proto.OP_PROBE) })
@@ -82,10 +90,22 @@ class BackgroundDisplay(
                 check(BackgroundPolicy.supportsViewport(viewport, probe.get(Proto.VIEWPORT_VERSION))) {
                     Reasons.of("viewportUnsupported")
                 }
-                coordinateSupported = probe.get(Proto.BACKGROUND_COORDINATES) is Int && probe.getInt(Proto.BACKGROUND_COORDINATES) == 1
-                // A stop during probe seals this short admission check before CREATE can be sent.
-                // The first exact request pins in OwnerScopeProtocol.first immediately before exchange.
+                val birth = BackgroundRecoveryProtocol.birth(probe::get)
+                    ?: error("所选后台服务不支持资源恢复，请更新并重新连接该通道。") // l10n:keep agent resource result
+                coordinateSupported = probe.get(Proto.BACKGROUND_COORDINATES) is Int &&
+                    probe.getInt(Proto.BACKGROUND_COORDINATES) == 1
+                check(mayUse() && !resourceIo.previewClosed()) { Reasons.of("deviceUnavailable") }
+                check(resourceScope.begin(birth)) { BackgroundResourceJournal.REFUSAL }
+                val allocated = OwnerScopeProtocol.first(resourceIo, active,
+                    BackgroundRecoveryProtocol.allocate(ownerToken, "task", viewport.preset), admitUse)
+                val actualId = BackgroundRecoveryProtocol.allocationId(allocated::get)
+                    ?: error("后台屏分配未确认，本次启动未执行；请先清理原后台资源。") // l10n:keep agent resource result
+                check(resourceScope.allocated(actualId) { mayUse() && !resourceIo.previewClosed() }) {
+                    "后台屏分配记录尚未确认，本次启动未执行；请先清理原后台资源。" // l10n:keep agent resource result
+                }
             }
+            // A pin after a failed/late ID commit can never skip the durable barrier.
+            check(resourceScope.allocationReady) { BackgroundResourceJournal.REFUSAL }
             val request = Bundle().apply {
                 putString(Proto.OP, Proto.OP_LAUNCH)
                 putInt(Proto.RELEASE_RECEIPT, 1)
@@ -96,10 +116,14 @@ class BackgroundDisplay(
                 putBoolean(Proto.LOCAL_VISUAL, true)
                 putInt(Proto.WANT_IMAGE, 0)
             }
-            val response = if (resourceIo.peer() == null) OwnerScopeProtocol.first(resourceIo, active, request)
-                else OwnerScopeProtocol.execute(active, ownerToken, request)
-            // Publish only after the first resource request has actually returned on its pinned peer.
-            if (!resourceIo.wasNotAdmitted()) onResourceReady(active)
+            val response = OwnerScopeProtocol.execute(active, ownerToken, request) {
+                check(admitUse {
+                    check(resourceScope.allocationReady)
+                    resourceIo.checkDispatch()
+                }) { Reasons.of("deviceUnavailable") }
+            }
+            // Empty allocation never publishes the preview or lends MAIN back.
+            onResourceReady(active)
             val result = toResult(response, "已在后台屏打开") // l10n:keep agent screen protocol
             targetReady = result.ok
             result.copy(backgroundOpenConfirmed = result.ok && TargetIdentity.backgroundOpenConfirmed(target,
@@ -109,7 +133,7 @@ class BackgroundDisplay(
     } catch (error: Throwable) {
         clearSnapshot()
         targetReady = false
-        if (resourceIo.peer() == null) resourceIo.seal() // Failed preflight must not leave an idle I/O worker.
+        if (resourceIo.peer() == null) resourceIo.seal()
         throw error
     }
 
@@ -322,7 +346,7 @@ class BackgroundDisplay(
 
     fun release(): Boolean {
         val acknowledged = try {
-            resourceIo.release { pinned ->
+            resourceScope.cleanup { pinned ->
                 val response = OwnerScopeProtocol.execute(pinned, ownerToken, Bundle().apply {
                     putString(Proto.OP, Proto.OP_RELEASE); putString(Proto.OWNER, ownerToken)
                     putInt(Proto.RELEASE_RECEIPT, 1)

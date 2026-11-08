@@ -41,6 +41,13 @@ internal class BackgroundDisplayIo<C : Any> {
         return reply
     }
 
+    /** Actual channel beforeSend for a later business request, never for original cleanup. */
+    fun checkDispatch() = synchronized(lock) {
+        check(!releaseStarted && activeCalls > 0 && pinned != null && !notAdmitted) {
+            "Background resource admission was stopped"
+        }
+    }
+
     fun peer(): C? = synchronized(lock) { pinned }
 
     fun previewAvailable(peer: C): Boolean = synchronized(lock) { !releaseStarted && pinned === peer }

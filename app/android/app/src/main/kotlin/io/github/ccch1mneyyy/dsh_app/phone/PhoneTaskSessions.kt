@@ -24,6 +24,7 @@ class PhoneTaskSessions(
         if (state.stopped) task.activeWorker?.interruptCurrent(task.tasks)
     },
     private val journal: PhoneTaskJournal? = null,
+    private val recoveryAdmission: () -> String? = { null },
     private val createBackgroundWorker: () -> SerialWorker = { SerialWorker("dsh-phone-background") },
 ) {
     internal class SkillScope(val owner: PhoneTasks.Owner, val draftEpoch: Long, val launchEpoch: Long) {
@@ -153,6 +154,7 @@ class PhoneTaskSessions(
         var executionWorker: SerialWorker? = null
         task.tasks.callStarted()
         try {
+            recoveryAdmission()?.let { return ToolOutput(it, isError = true) }
             journal?.refusal()?.let { return ToolOutput(it, isError = true) }
             task.core.rejection(name)?.let { return it }
             synchronized(lock) {

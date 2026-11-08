@@ -7,8 +7,10 @@ internal class BackgroundGateCall<C : Any>(
     val peer: C,
     // Probe's mayApply captures the original UI/selection generation; retry ignores its liveness.
     val probe: BackgroundGateState.Probe,
+    journal: BackgroundResourceJournal,
 ) {
     val io = BackgroundDisplayIo<C>()
+    val resource = BackgroundResourceScope(io, journal, "probe")
     val handle: String = UUID.randomUUID().toString()
     private val lock = Any()
     private var probing = true
@@ -16,7 +18,7 @@ internal class BackgroundGateCall<C : Any>(
 
     fun status(peerAlive: Boolean): Map<String, Any?> = synchronized(lock) {
         mapOf("v" to 1, "state" to phase, "handle" to if (phase == "idle") null else handle,
-            "canRetry" to (!probing && phase == "unknown" && peerAlive))
+            "canRetry" to (!probing && phase == "unknown" && (peerAlive || resource.physicalComplete)))
     }
 
     /** Called only after the original call has drained, including a lost/throwing reply. */
@@ -40,7 +42,7 @@ internal class BackgroundGateCall<C : Any>(
 
     private fun releaseClaimed(release: (C, String) -> Boolean): Boolean {
         io.seal()
-        val released = try { io.release { release(it, io.owner) } } catch (_: Exception) { false }
+        val released = try { resource.cleanup { release(it, io.owner) } } catch (_: Exception) { false }
         synchronized(lock) { phase = if (released) "idle" else "unknown" }
         return released
     }

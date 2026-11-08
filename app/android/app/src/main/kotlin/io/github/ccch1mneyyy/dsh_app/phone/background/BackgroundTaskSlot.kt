@@ -29,6 +29,8 @@ internal class BackgroundTaskSlot<D : Any>(private val lock: Any) {
         resource === expected && !expected.sealed
     }
 
+    fun cleanupCandidate(): TaskResource<D>? = synchronized(lock) { resource?.takeIf { it.sealed } }
+
     /** Cleanup does not require an active Owner; cancellation is why cleanup is often needed. */
     fun seal(taskId: Long? = null): TaskResource<D>? = synchronized(lock) {
         resource?.takeIf { taskId == null || it.owner.taskId == taskId }?.also { it.sealed = true }

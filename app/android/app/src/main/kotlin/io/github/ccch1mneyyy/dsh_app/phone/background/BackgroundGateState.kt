@@ -75,7 +75,21 @@ internal class BackgroundGateState {
         if (probe?.mayApply?.invoke() == false) probe = null
     }
 
+    /** The real UI/keep intent change shares begin/admit's memory-only linearization point. */
+    @Synchronized fun <T> changeIntent(change: () -> T): T {
+        val result = change()
+        if (probe?.mayApply?.invoke() == false) probe = null
+        return result
+    }
+
     @Synchronized fun current(owner: Probe): Boolean = probe === owner && owner.mayApply()
+
+    /** Pure-memory gate claim and the original IO commit. No transport or storage here. */
+    @Synchronized fun admit(owner: Probe, commit: () -> Unit): Boolean {
+        if (!current(owner)) return false
+        commit()
+        return true
+    }
 
     @Synchronized fun failed(owner: Probe, reason: Int, channel: Any? = null): Boolean {
         if (!current(owner)) return false

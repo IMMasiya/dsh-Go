@@ -11,7 +11,8 @@ import org.junit.Test
 class BackgroundGateCallTest {
     private fun call(peer: Any = Any()): BackgroundGateCall<Any> {
         val gate = BackgroundGateState()
-        return BackgroundGateCall(peer, gate.begin { true }!!)
+        return BackgroundGateCall(peer, gate.begin { true }!!,
+            BackgroundResourceJournal({ null }, { true }).apply { load() })
     }
 
     @Test fun lostBeginReplyAndFailedReleaseRetainOriginalPeerWithoutRepeatingBegin() {

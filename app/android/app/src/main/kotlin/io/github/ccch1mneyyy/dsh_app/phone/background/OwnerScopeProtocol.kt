@@ -14,16 +14,19 @@ internal object OwnerScopeProtocol {
         return Bundle(source).apply { remove(Proto.OWNER_SCOPE_VERSION); remove(Proto.SCOPE_ACCEPTED) }
     }
 
-    fun first(io: BackgroundDisplayIo<PrivilegedChannel>, peer: PrivilegedChannel, request: Bundle): Bundle {
+    fun first(io: BackgroundDisplayIo<PrivilegedChannel>, peer: PrivilegedChannel, request: Bundle,
+              admit: ((() -> Unit) -> Boolean) = { action -> action(); true }): Bundle {
         fun accepted(reply: Bundle): Boolean? = OwnerScopeReply.first(io.owner,
             reply.get(Proto.OWNER_SCOPE_VERSION), reply.get(Proto.OWNER), reply.get(Proto.SCOPE_ACCEPTED), reply.get(Proto.OK))
-        val raw = io.startResource(peer, { beforeSend -> peer.execute(OwnerScopeProtocol.request(request), beforeSend) }, ::accepted)
+        val raw = io.startResource(peer, { beforeSend ->
+            peer.execute(OwnerScopeProtocol.request(request)) { check(admit(beforeSend)) { Reasons.of("deviceUnavailable") } }
+        }, ::accepted)
         check(accepted(raw) != null) { Reasons.of("scopeIdentityUnavailable") }
         return response(io.owner, raw)
     }
 
-    fun execute(peer: PrivilegedChannel, owner: String, source: Bundle): Bundle =
-        response(owner, peer.execute(request(source)))
+    fun execute(peer: PrivilegedChannel, owner: String, source: Bundle, beforeSend: () -> Unit = {}): Bundle =
+        response(owner, peer.execute(request(source), beforeSend))
 
     private fun matches(owner: String, source: Bundle): Boolean = OwnerScopeReply.matches(owner, source.get(Proto.OWNER_SCOPE_VERSION), source.get(Proto.OWNER))
 }
