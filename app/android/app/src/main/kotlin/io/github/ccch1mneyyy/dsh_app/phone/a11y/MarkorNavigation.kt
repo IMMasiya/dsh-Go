@@ -17,7 +17,7 @@ internal object MarkorNavigation {
     class Before(val app: App, val observation: Observation)
 
     @Suppress("DEPRECATION")
-    private fun installed(context: Context): Pair<App, Map<String, String>>? {
+    internal fun installed(context: Context): Pair<App, Map<String, String>>? {
         return try {
         val pm = context.packageManager
         val info = pm.getPackageInfo(PACKAGE, PackageManager.GET_SIGNATURES)
