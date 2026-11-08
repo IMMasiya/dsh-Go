@@ -950,30 +950,44 @@ class RemoteAccount {
   /// account's) and pins the Host key from the code the person confirmed.
   Future<RemoteUser> _commitPairing(RemotePairing pairing, _Identity identity, PairingCredentials credentials) async {
     await _restore();
-    if (!identical(_identity, identity)) {
-      throw const PairingException('PAIRING_IDENTITY_MISMATCH', 'This phone signed out or changed identity.');
-    }
-    final existing = _credentials;
-    final current =
-        existing != null &&
-        existing.deviceId == identity.deviceId &&
-        existing.refreshTokenExpiresAt.isAfter(DateTime.now().add(const Duration(seconds: 30)));
-    if (current && existing.account != credentials.account) {
-      throw const PairingException(
-        'PAIRING_ACCOUNT_CONFLICT',
-        'This phone is signed in to another account; its credentials are kept.',
+    const identityChanged = PairingException('PAIRING_IDENTITY_MISMATCH', 'This phone signed out or changed identity.');
+    late String? provider;
+    // Decide at the serialized commit point, from what is stored now: another
+    // sign-in (here, or in another RemoteAccount on the same store) may have
+    // committed since this pairing started.
+    final write = _storageState.credentialWrites.then((_) async {
+      final storedIdentity = asMap(tryDecodeJson(await _secrets.read(_identityKey) ?? ''));
+      if (!identical(_identity, identity) || storedIdentity?['deviceId'] != identity.deviceId) throw identityChanged;
+      _Credentials? stored;
+      try {
+        final raw = asMap(tryDecodeJson(await _secrets.read(_credentialsKey) ?? ''));
+        stored = raw == null ? null : _Credentials.fromJson(raw);
+      } on Object {
+        stored = null;
+      }
+      final current =
+          stored != null &&
+          stored.deviceId == identity.deviceId &&
+          stored.refreshTokenExpiresAt.isAfter(DateTime.now().add(const Duration(seconds: 30)));
+      if (current && stored.account != credentials.account) {
+        throw const PairingException(
+          'PAIRING_ACCOUNT_CONFLICT',
+          'This phone is signed in to another account; its credentials are kept.',
+        );
+      }
+      provider = current ? stored.provider : 'pairing';
+      final saved = _Credentials.fromTokens(
+        identity.deviceId,
+        credentials.account,
+        credentials.tokens,
+        provider: provider,
       );
-    }
-    final provider = current ? existing.provider : 'pairing';
-    await _saveCredentials(
-      _Credentials.fromTokens(identity.deviceId, credentials.account, credentials.tokens, provider: provider),
-      beforeWrite: () {
-        if (!identical(_identity, identity)) {
-          throw const PairingException('PAIRING_IDENTITY_MISMATCH', 'This phone signed out or changed identity.');
-        }
-      },
-      signIn: true,
-    );
+      await _secrets.write(_credentialsKey, jsonEncode(saved.toJson()));
+      _credentials = saved;
+      _storageState.signInEpoch++;
+    });
+    _storageState.credentialWrites = write.catchError((Object _) {});
+    await write;
     final host = pairing.offer.host;
     final pins = await _loadPins();
     pins[host.deviceId] = _Pin(host.identityKey, host.name, DateTime.now());

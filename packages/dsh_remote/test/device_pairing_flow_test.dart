@@ -285,6 +285,34 @@ void main() {
     );
   });
 
+  test('a sign-in that commits while the code is shown is never overwritten', () async {
+    final pairing = await account.claimPairing(await account.resolvePairing(scan()));
+    // Another RemoteAccount on the same store signs this identity in to
+    // another account; this instance's cache never saw it.
+    final identity = jsonDecode(secrets.values.entries.firstWhere((e) => e.key.endsWith('.identity')).value) as Map;
+    final key = secrets.values.keys
+        .firstWhere((k) => k.endsWith('.identity'))
+        .replaceFirst('.identity', '.credentials');
+    final later = DateTime.now().add(const Duration(days: 30)).millisecondsSinceEpoch;
+    final theirs = jsonEncode({
+      'v': 1,
+      'deviceId': identity['deviceId'],
+      'account': 'someone@example.com',
+      'accessToken': 'theirs-${'a' * 24}',
+      'accessTokenExpiresAt': later,
+      'refreshToken': 'theirs-${'r' * 24}',
+      'refreshTokenExpiresAt': later,
+      'provider': 'github',
+    });
+    secrets.values[key] = theirs;
+    server.state = 'completed';
+    await expectLater(
+      pairing.result,
+      throwsA(isA<PairingException>().having((e) => e.code, 'code', 'PAIRING_ACCOUNT_CONFLICT')),
+    );
+    expect(secrets.values[key], theirs);
+  });
+
   test('an account signed in elsewhere keeps its credentials', () async {
     // Sign this identity in to another account first (as if by OAuth).
     final offer = await account.resolvePairing(scan());
