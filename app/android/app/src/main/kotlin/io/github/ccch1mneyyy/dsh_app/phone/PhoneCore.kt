@@ -909,9 +909,17 @@ class PhoneCore(
         if (!tasks.setAppIfCurrent(owner, appLabel ?: pkg)) return stoppedOut(summary)
         say(owner, ui.get("phone_acting", "DSH 正在操作 · %1\$s", statusLine(kind, target, if (secret) SafetyRules.MASK else typed))) // l10n:keep test default
         if (!current(owner)) return stoppedOut(summary)
+        fun scrollSourcesAllowed(sources: Set<String>): Boolean {
+            if (policyFailure.get() != null) return false
+            val packages = buildSet { pkg?.let(::add); addAll(sources) }
+            val refusal = safety.checkReadSources(env.policies(), packages)
+            if (refusal != null) policyFailure.compareAndSet(null,
+                SafetyGate.Result.No(refusal.message, "refused:${refusal.rule}"))
+            return policyFailure.get() == null
+        }
         val ticket = skillTrace.beginAction(owner, action, target)
         val res = traceResult(ticket) {
-            val result = driver.perform(action, ::policyAllowed)
+            val result = driver.perform(action, ::policyAllowed, null, ::scrollSourcesAllowed)
             policyFailure.get()?.let {
                 // A later gate (e.g. submit after text entry) can refuse after a prior side effect.
                 result.copy(ok = false, staleSnapshot = false,

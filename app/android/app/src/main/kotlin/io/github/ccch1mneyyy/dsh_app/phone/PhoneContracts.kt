@@ -182,6 +182,12 @@ interface PhoneDriver {
     fun perform(action: PhoneAction, allowed: () -> Boolean,
                 coordinateAdmission: ((() -> Boolean) -> Boolean)?): ActionResult = perform(action, allowed)
 
+    /** Actual scroll sources from the same capture; legacy drivers retain their old behavior. */
+    fun perform(action: PhoneAction, allowed: () -> Boolean,
+                coordinateAdmission: ((() -> Boolean) -> Boolean)?,
+                scrollSourcesAllowed: (Set<String>) -> Boolean): ActionResult =
+        perform(action, allowed, coordinateAdmission)
+
     /** Launches the native-resolved [target] on this screen (BACKGROUND moves the task to the virtual display). */
     fun open(target: PhoneAppIdentity): ActionResult
 

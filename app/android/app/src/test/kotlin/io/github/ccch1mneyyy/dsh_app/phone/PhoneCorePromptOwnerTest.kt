@@ -100,6 +100,10 @@ class PhoneCorePromptOwnerTest {
     private class Driver(override val screen: PhoneScreen) : PhoneDriver {
         var reads = 0
         var writes = 0
+        var scrollSources: Set<String> = emptySet()
+        var beforeScrollSources: () -> Unit = {}
+        var afterScrollSources: () -> Unit = {}
+        var scrollSourceCalls = 0
         var opens = 0
         val openedTargets = mutableListOf<PhoneAppIdentity>()
         var observing: () -> Unit = {}
@@ -135,6 +139,18 @@ class PhoneCorePromptOwnerTest {
         override fun target(screenId: String, elementId: Int) = TargetInfo(screenId, elementId,
             "按钮", "发送", "example.app", "Example", false, false, false)
         override fun perform(action: PhoneAction): ActionResult { actions += action; writes++; return ActionResult(true, "done") }
+        override fun perform(action: PhoneAction, allowed: () -> Boolean,
+                             coordinateAdmission: ((() -> Boolean) -> Boolean)?,
+                             scrollSourcesAllowed: (Set<String>) -> Boolean): ActionResult {
+            if (!allowed()) return ActionResult(false, PhoneTasks.STOPPED_MESSAGE)
+            if (action is PhoneAction.Scroll) {
+                beforeScrollSources()
+                scrollSourceCalls++
+                val accepted = try { scrollSourcesAllowed(scrollSources) } finally { afterScrollSources() }
+                if (!accepted) return ActionResult(false, "source refused")
+            }
+            return perform(action)
+        }
         override fun open(target: PhoneAppIdentity): ActionResult { openedTargets += target; opens++; return ActionResult(true, "opened") }
     }
 
@@ -1104,5 +1120,73 @@ class PhoneCorePromptOwnerTest {
             assertFalse(tasks.isStopped())
             assertEquals(1, driver.collects)
         }
+    }
+
+    @Test fun actualScrollSourcesDenyLateWithoutStoppingTheOriginalOwner() {
+        for (sources in listOf(setOf("other.app"), linkedSetOf("example.app", "other.app"))) {
+            policies = PhonePolicies()
+            main.scrollSources = sources
+            var original: PhoneTasks.Owner? = null
+            main.beforeScrollSources = {
+                original = checkNotNull(tasks.activeOwner())
+                policies = PhonePolicies(denyPackages = listOf("other.app"))
+            }
+            val beforeWrites = main.writes
+            val beforeChecks = main.scrollSourceCalls
+            val result = core.call(PhoneToolCatalog.SCROLL, mapOf("screen" to "s1", "direction" to "down"))
+            assertTrue(result.isError)
+            assertEquals(beforeWrites, main.writes)
+            assertEquals(beforeChecks + 1, main.scrollSourceCalls)
+            assertEquals("refused:deny-list", core.log.last()!!.decision)
+            assertFalse(tasks.isStopped())
+            assertTrue(tasks.isCurrent(checkNotNull(original)))
+        }
+    }
+
+    @Test fun unrelatedScrollSourceDenyKeepsOnePhysicalInputAndTheCurrentOwner() {
+        for (sources in listOf(setOf("other.app"), linkedSetOf("example.app", "other.app"))) {
+            policies = PhonePolicies()
+            main.scrollSources = sources
+            var original: PhoneTasks.Owner? = null
+            beforeStatus = { original = checkNotNull(tasks.activeOwner()) }
+            main.beforeScrollSources = {
+                policies = PhonePolicies(denyPackages = listOf("unrelated.app"))
+            }
+            val beforeWrites = main.writes
+            val result = core.call(PhoneToolCatalog.SCROLL, mapOf("screen" to "s1", "direction" to "down"))
+            assertFalse(result.text, result.isError)
+            assertEquals(beforeWrites + 1, main.writes)
+            assertTrue(tasks.isCurrent(checkNotNull(original)))
+            assertFalse(tasks.isStopped())
+        }
+    }
+
+    @Test fun scrollSourcesUseOnePolicySnapshotIncludingTheOriginalPackage() {
+        main.scrollSources = linkedSetOf("other.app")
+        var reads = 0
+        var readsAtGate = -1
+        main.beforeScrollSources = {
+            policyRead = {
+                reads++
+                PhonePolicies(denyPackages = listOf(if (reads == 1) "other.app" else "example.app"))
+            }
+        }
+        main.afterScrollSources = { readsAtGate = reads; policyRead = null }
+        val result = core.call(PhoneToolCatalog.SCROLL, mapOf("screen" to "s1", "direction" to "down"))
+        assertTrue(result.isError)
+        assertEquals(0, main.writes)
+        assertEquals("refused:deny-list", core.log.last()!!.decision)
+        assertEquals(1, readsAtGate)
+        assertFalse(tasks.isStopped())
+    }
+
+    @Test fun originalScrollPackageCannotBeOmittedFromTheActualSourceBatch() {
+        main.scrollSources = setOf("other.app")
+        main.beforeScrollSources = { policies = PhonePolicies(denyPackages = listOf("example.app")) }
+        val result = core.call(PhoneToolCatalog.SCROLL, mapOf("screen" to "s1", "direction" to "down"))
+        assertTrue(result.isError)
+        assertEquals(0, main.writes)
+        assertEquals("refused:deny-list", core.log.last()!!.decision)
+        assertFalse(tasks.isStopped())
     }
 }

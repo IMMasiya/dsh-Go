@@ -270,7 +270,12 @@ internal class MainScreenDriver(private val service: PhoneA11yService, private v
     override fun perform(action: PhoneAction, allowed: () -> Boolean): ActionResult = perform(action, allowed, null)
 
     override fun perform(action: PhoneAction, allowed: () -> Boolean,
-                         coordinateAdmission: ((() -> Boolean) -> Boolean)?): ActionResult {
+                         coordinateAdmission: ((() -> Boolean) -> Boolean)?): ActionResult =
+        perform(action, allowed, coordinateAdmission) { true }
+
+    override fun perform(action: PhoneAction, allowed: () -> Boolean,
+                         coordinateAdmission: ((() -> Boolean) -> Boolean)?,
+                         scrollSourcesAllowed: (Set<String>) -> Boolean): ActionResult {
         // l10n:keep agent screen result
         if (Looper.myLooper() == Looper.getMainLooper()) return ActionResult(false, "内部错误：手机动作不能在主线程执行。")
         val gen = abortGen
@@ -304,7 +309,7 @@ internal class MainScreenDriver(private val service: PhoneA11yService, private v
                 is PhoneAction.Key -> key(action, gen)
                 is PhoneAction.Tap -> tap(action, gen, allowed)
                 is PhoneAction.Type -> type(action, gen, allowed)
-                is PhoneAction.Scroll -> scroll(action, gen, allowed)
+                is PhoneAction.Scroll -> scroll(action, gen, allowed, scrollSourcesAllowed)
                 is PhoneAction.TapXY -> tapXY(action, gen, allowed, coordinateAdmission)
             }
         }
@@ -558,7 +563,8 @@ internal class MainScreenDriver(private val service: PhoneA11yService, private v
         } finally { r.cap.recycle() }
     }
 
-    private fun scroll(a: PhoneAction.Scroll, gen: Long, allowed: () -> Boolean): ActionResult {
+    private fun scroll(a: PhoneAction.Scroll, gen: Long, allowed: () -> Boolean,
+                       scrollSourcesAllowed: (Set<String>) -> Boolean): ActionResult {
         val snap = latest
         val dirWord = when (a.direction) {
             // l10n:keep agent screen result
@@ -591,7 +597,8 @@ internal class MainScreenDriver(private val service: PhoneA11yService, private v
                     else "无法确认当前界面仍与上一屏一致，没有滚动。请先看新屏幕。" // l10n:keep agent screen result
                     return ActionResult(false, reason, toSnapshot(publish(cap, false)))
                 }
-                refuseHalted(allowed)?.let { return it }
+                refuseHalted { allowed() && scrollSourcesAllowed(cap.windows.mapNotNull { it.packageName }.toSet()) }
+                    ?.let { return it }
                 val screen = cap.screen
                 val before = clock.count
                 val out = actuator.scroll(null, 0, a.direction == PhoneAction.Direction.LEFT || a.direction == PhoneAction.Direction.RIGHT,
@@ -608,7 +615,9 @@ internal class MainScreenDriver(private val service: PhoneA11yService, private v
         try {
             // l10n:keep agent screen result
             if ((r.el.packageName == ownPackage || r.snap.ownApp) && !lifted.ownApp) return ActionResult(false, "这是 DSH 自己的界面，不操作。")
-            refuseHalted(allowed)?.let { return it }
+            // A failed node scroll falls back to a screen gesture within these bounds.
+            refuseHalted { allowed() && scrollSourcesAllowed(r.cap.windows.mapNotNull { it.packageName }.toSet()) }
+                ?.let { return it }
             val before = clock.count
             val out = actuator.scroll(r.node, r.el.scroll, r.el.horizontal, r.el.bounds, r.cap.screen, a.direction)
             // l10n:keep agent screen result

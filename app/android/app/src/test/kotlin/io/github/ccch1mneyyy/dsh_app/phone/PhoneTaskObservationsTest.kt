@@ -8,6 +8,8 @@ class PhoneTaskObservationsTest {
     private class Driver : PhoneDriver {
         override val screen = PhoneScreen.MAIN
         var actions = 0
+        var scrollSourceGate: ((Set<String>) -> Boolean)? = null
+        var duringScroll: () -> Unit = {}
         var capturedAdmission: ((() -> Boolean) -> Boolean)? = null
         var capturedAllowed: (() -> Boolean)? = null
         var scope: VisualScope? = null
@@ -29,6 +31,13 @@ class PhoneTaskObservationsTest {
             capturedAdmission = coordinateAdmission
             capturedAllowed = allowed
             return if (allowed()) perform(action) else ActionResult(false, "stopped")
+        }
+        override fun perform(action: PhoneAction, allowed: () -> Boolean,
+                             coordinateAdmission: ((() -> Boolean) -> Boolean)?,
+                             scrollSourcesAllowed: (Set<String>) -> Boolean): ActionResult {
+            scrollSourceGate = scrollSourcesAllowed
+            if (action is PhoneAction.Scroll) duringScroll()
+            return perform(action, allowed, coordinateAdmission)
         }
         override fun open(target: PhoneAppIdentity): ActionResult {
             opens += target
@@ -273,5 +282,45 @@ class PhoneTaskObservationsTest {
             bound.collect("s1", 1, 3, null, { true }) { true }
         }
         assertEquals(1, entered)
+    }
+
+    @Test fun fourArgumentScrollSourcesKeepTheActualOwnerGateAndCoordinateClaim() {
+        val tasks = PhoneTasks(); val physical = Driver()
+        val bound = PhoneTaskObservations(tasks).bind(physical, owner(tasks))
+        bound.observe(false, false)
+        val checked = mutableListOf<Set<String>>()
+        var denied = false
+        physical.duringScroll = {
+            val source = checkNotNull(physical.scrollSourceGate)
+            assertTrue(source(setOf("other.app")))
+            denied = true
+            assertFalse(source(setOf("other.app")))
+            assertTrue(source(setOf("app")))
+        }
+        val result = bound.perform(PhoneAction.Scroll("s1", null, PhoneAction.Direction.DOWN), { true }, null) { sources ->
+            checked += sources
+            !denied || "other.app" !in sources
+        }
+        assertTrue(result.ok)
+        assertEquals(listOf(setOf("other.app"), setOf("other.app"), setOf("app")), checked)
+        val source = checkNotNull(physical.scrollSourceGate)
+        val claim = checkNotNull(physical.capturedAdmission)
+        var claims = 0
+        assertTrue(claim { claims++; true })
+        val calls = checked.size
+        tasks.setPaused(true)
+        assertFalse(source(setOf("app")))
+        assertFalse(claim { claims++; true })
+        assertEquals(calls, checked.size)
+        tasks.setPaused(false); tasks.stop("replacement"); tasks.clearStop(); tasks.begin()
+        assertFalse(source(setOf("app")))
+        assertFalse(claim { claims++; true })
+        assertEquals(calls, checked.size)
+        assertEquals(1, claims)
+        val actions = physical.actions
+        assertThrows(InterruptedException::class.java) {
+            bound.perform(PhoneAction.Scroll("s1", null, PhoneAction.Direction.DOWN), { true }, null) { true }
+        }
+        assertEquals(actions, physical.actions)
     }
 }
