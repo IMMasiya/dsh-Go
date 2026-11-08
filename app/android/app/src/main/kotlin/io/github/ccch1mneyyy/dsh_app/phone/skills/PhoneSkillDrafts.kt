@@ -1,6 +1,7 @@
 package io.github.ccch1mneyyy.dsh_app.phone.skills
 
 import io.github.ccch1mneyyy.dsh_app.runtime.PhoneSkillInstallResult
+import io.github.ccch1mneyyy.dsh_app.runtime.PhoneSkillBundleInstaller
 import io.github.ccch1mneyyy.dsh_app.runtime.PhoneSkillWrite
 import java.lang.ref.WeakReference
 import java.text.Normalizer
@@ -18,12 +19,17 @@ internal class PhoneSkillDrafts(private val newId: () -> String = { UUID.randomU
     data class Edit(val goal: String, val prerequisites: String, val checkpoints: List<String>, val stepOrder: List<Int>)
     data class View(val draftId: String, val owner: PhoneTaskTrace.OwnerKey, val revision: Long,
         val skillName: String, val markdown: String, val stepOrder: List<Int>, val parameterizedFields: List<String>,
-        val phase: PhoneSkillWrite.Phase?)
+        val phase: PhoneSkillWrite.Phase?, val bundleRevision: String? = null)
     sealed interface Reply
     sealed interface SaveReply
     data class Shown(val view: View) : Reply
     data class Rejected(val code: Code) : Reply, SaveReply
-    data class Saved(val name: String, val relativePath: String) : Reply, SaveReply
+    sealed interface Terminal : Reply, SaveReply
+    data class Saved(val name: String, val relativePath: String,
+        val bundle: PhoneSkillBundleInstaller.Identity? = null) : Terminal
+    data class Unverified(val bundle: PhoneSkillBundleInstaller.Identity,
+        val publication: PhoneSkillBundleInstaller.Publication,
+        val code: PhoneSkillBundleInstaller.Verification) : Terminal
     data object Discarded : Reply
     data class Started(val write: PhoneSkillWrite) : SaveReply
     /** Already queued: the caller must not invoke Runtime a second time. */
@@ -32,10 +38,11 @@ internal class PhoneSkillDrafts(private val newId: () -> String = { UUID.randomU
         var document: PhoneSkillDraft.Ready, var order: List<Int>) {
         var revision = 1L
         var parameters = emptyList<String>()
+        var bundle: PhoneSkillBundleInstaller.Document? = null
         var write: PhoneSkillWrite? = null
         var retired = false
     }
-    private data class Receipt(val owner: PhoneTaskTrace.OwnerKey, val value: Saved, val client: Client,
+    private data class Receipt(val owner: PhoneTaskTrace.OwnerKey, val value: Terminal, val client: Client,
         val write: WeakReference<PhoneSkillWrite>)
     private val candidates = LinkedHashMap<PhoneTaskTrace.OwnerKey, PhoneTaskTrace.Snapshot>()
     private val receipts = LinkedHashMap<String, Receipt>()
@@ -70,6 +77,22 @@ internal class PhoneSkillDrafts(private val newId: () -> String = { UUID.randomU
         return Editor(id, client, source, document, source.steps.indices.toList()).also { editor = it }.let(::shown)
     }
 
+    /** Native witness producer only; no bridge action accepts a route or descriptor from Flutter.
+     * Binding changes what is saved, so it MUST invalidate an already displayed confirmation. */
+    @Synchronized fun bindBundle(expectedEpoch: Long, owner: PhoneTaskTrace.OwnerKey, draftId: String,
+        expectedRevision: Long, bundle: PhoneSkillBundleInstaller.Document): Reply {
+        val e = editor ?: return Rejected(Code.STALE)
+        if (epoch != expectedEpoch || e.retired || !attached(e.client) || e.source.owner != owner ||
+            e.id != draftId || e.revision != expectedRevision) return Rejected(Code.STALE)
+        if (e.write != null) return Rejected(Code.BUSY)
+        if (e.revision == Long.MAX_VALUE || bundle.identity.name != e.document.skillName ||
+            bundle.identity.draftRevision != e.revision + 1 ||
+            !bundle.bytes()[0].contentEquals(e.document.markdown.toByteArray(Charsets.UTF_8))) return Rejected(Code.INVALID)
+        e.bundle = bundle
+        e.revision++
+        return shown(e)
+    }
+
     /** Raw editing strings live only in this call, never in a field, permit, error or rendered document. */
     @Synchronized fun edit(client: Client, draftId: String, taskId: Long, revision: Long, edit: Edit): Reply {
         val e = matching(client, draftId, taskId) ?: return Rejected(Code.STALE)
@@ -95,6 +118,7 @@ internal class PhoneSkillDrafts(private val newId: () -> String = { UUID.randomU
         val document = PhoneSkillDraft.render(ordered, e.document.skillName, true, userEdited = true) as? PhoneSkillDraft.Ready
             ?: return Rejected(Code.TOO_LARGE)
         e.document = document
+        e.bundle = null
         e.order = edit.stepOrder.toList()
         e.parameters = clean.filter { it.second.isNotEmpty() }.map { it.first }
         e.revision++ // Even identical sanitized text revokes the prior confirmation.
@@ -122,11 +146,11 @@ internal class PhoneSkillDrafts(private val newId: () -> String = { UUID.randomU
         val write = e.write
         if (write != null) {
             val result = write.result()
-            if (result is PhoneSkillInstallResult.Saved) return settle()!!
+            if (result != null && result !is PhoneSkillInstallResult.Refused) return settle()!!
             if (result is PhoneSkillInstallResult.Refused) return Rejected(code(result))
             return Existing(write)
         }
-        return PhoneSkillWrite(e.document).also { e.write = it }.let(::Started)
+        return PhoneSkillWrite(e.document, e.bundle).also { e.write = it }.let(::Started)
     }
 
     /** Runtime already called write.finish; UI cannot provide or forge an install result. */
@@ -136,9 +160,9 @@ internal class PhoneSkillDrafts(private val newId: () -> String = { UUID.randomU
             return receipts[draftId]?.takeIf { it.owner == write.document.owner && it.write.get() === write }?.value ?: Rejected(Code.STALE)
         }
         val result = write.result() ?: return Rejected(Code.BUSY)
-        if (result is PhoneSkillInstallResult.Saved) return settle()!!
+        if (result !is PhoneSkillInstallResult.Refused) return settle()!!
         if (e.retired) editor = null
-        return Rejected(code(result as PhoneSkillInstallResult.Refused))
+        return Rejected(code(result))
     }
 
     @Synchronized fun discard(client: Client, draftId: String, taskId: Long): Reply {
@@ -181,14 +205,19 @@ internal class PhoneSkillDrafts(private val newId: () -> String = { UUID.randomU
         return when (write.phase()) {
             PhoneSkillWrite.Phase.STAGING -> write.cancel()
             PhoneSkillWrite.Phase.COMMITTING -> false
-            PhoneSkillWrite.Phase.FINISHED -> write.result() !is PhoneSkillInstallResult.Saved
+            PhoneSkillWrite.Phase.FINISHED -> write.result() is PhoneSkillInstallResult.Refused
             PhoneSkillWrite.Phase.CANCELLED -> true
         }
     }
-    private fun settle(): Saved? {
+    private fun settle(): Terminal? {
         val e = editor ?: return null
-        val result = e.write?.result() as? PhoneSkillInstallResult.Saved ?: return null
-        val saved = Saved(result.name, result.relativePath)
+        val saved = when (val result = e.write?.result()) {
+            is PhoneSkillInstallResult.Saved -> Saved(result.name, result.relativePath)
+            is PhoneSkillInstallResult.BundleSaved -> Saved(result.identity.name,
+                "skills/${result.identity.name}/SKILL.md", result.identity)
+            is PhoneSkillInstallResult.BundleUnverified -> Unverified(result.identity, result.publication, result.code)
+            is PhoneSkillInstallResult.Refused, null -> return null
+        }
         receipts[e.id] = Receipt(e.source.owner, saved, e.client, WeakReference(e.write!!))
         while (receipts.size > MAX_CANDIDATES) receipts.remove(receipts.keys.first())
         candidates.remove(e.source.owner)
@@ -197,7 +226,7 @@ internal class PhoneSkillDrafts(private val newId: () -> String = { UUID.randomU
     }
     private fun shown(e: Editor): Shown = shown(e, e.write?.phase())
     private fun shown(e: Editor, phase: PhoneSkillWrite.Phase?): Shown = Shown(View(e.id, e.source.owner, e.revision, e.document.skillName,
-        e.document.markdown, e.order.toList(), e.parameters.toList(), phase))
+        e.document.markdown, e.order.toList(), e.parameters.toList(), phase, e.bundle?.identity?.revision))
     private fun uniqueId(): String? {
         val id = newId()
         return id.takeIf { HEX.matches(it) && it != editor?.id && it !in receipts }

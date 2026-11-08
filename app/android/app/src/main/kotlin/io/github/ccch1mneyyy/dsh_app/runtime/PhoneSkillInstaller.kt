@@ -12,7 +12,8 @@ import java.nio.file.StandardOpenOption.CREATE_NEW
 import java.nio.file.StandardOpenOption.WRITE
 
 /** One explicit save of a rendered, immutable local draft. Never accepts Markdown from Flutter. */
-internal class PhoneSkillWrite(val document: PhoneSkillDraft.Ready) {
+internal class PhoneSkillWrite(val document: PhoneSkillDraft.Ready,
+    val bundle: PhoneSkillBundleInstaller.Document? = null) {
     enum class Phase { STAGING, COMMITTING, FINISHED, CANCELLED }
     private var phase = Phase.STAGING
     private var outcome: PhoneSkillInstallResult? = null
@@ -47,6 +48,9 @@ internal sealed interface PhoneSkillInstallResult {
     data class Saved(val name: String) : PhoneSkillInstallResult {
         val relativePath: String get() = "skills/$name/SKILL.md"
     }
+    data class BundleSaved(val identity: PhoneSkillBundleInstaller.Identity) : PhoneSkillInstallResult
+    data class BundleUnverified(val identity: PhoneSkillBundleInstaller.Identity,
+        val publication: PhoneSkillBundleInstaller.Publication, val code: PhoneSkillBundleInstaller.Verification) : PhoneSkillInstallResult
     enum class Refused : PhoneSkillInstallResult { STALE, NO_HOME, CONFLICT, IO }
 }
 

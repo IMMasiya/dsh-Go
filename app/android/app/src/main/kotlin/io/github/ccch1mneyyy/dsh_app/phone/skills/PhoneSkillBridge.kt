@@ -57,7 +57,7 @@ internal class PhoneSkillBridge(
                     }
                     is PhoneSkillDrafts.Existing -> writeState(id, begun.write)
                     is PhoneSkillDrafts.Rejected -> rejected(begun.code.name.lowercase(Locale.ROOT))
-                    is PhoneSkillDrafts.Saved -> saved(begun)
+                    is PhoneSkillDrafts.Terminal -> terminal(begun)
                 }
             }
             "discardSkillDraft" -> {
@@ -73,8 +73,8 @@ internal class PhoneSkillBridge(
         // A real callback/result may already have won, including synchronous Runtime refusal.
         if (write.result() != null) return reply(drafts.saved(id, write))
         return when (write.phase()) {
-            PhoneSkillWrite.Phase.STAGING -> mapOf("kind" to "saving", "phase" to "staging")
-            PhoneSkillWrite.Phase.COMMITTING -> mapOf("kind" to "saving", "phase" to "committing")
+            PhoneSkillWrite.Phase.STAGING -> saving(write, "staging")
+            PhoneSkillWrite.Phase.COMMITTING -> saving(write, "committing")
             PhoneSkillWrite.Phase.CANCELLED -> rejected("stale")
             PhoneSkillWrite.Phase.FINISHED -> reply(drafts.saved(id, write))
         }
@@ -85,13 +85,24 @@ internal class PhoneSkillBridge(
             "draftId" to v.draftId, "taskId" to v.owner.taskId, "generation" to v.owner.lifecycle,
             "revision" to v.revision, "skillName" to v.skillName, "markdown" to v.markdown,
             "stepOrder" to v.stepOrder, "parameterizedFields" to v.parameterizedFields,
-            "phase" to v.phase?.name?.lowercase(Locale.ROOT))) }
-        is PhoneSkillDrafts.Saved -> saved(value)
+            "phase" to v.phase?.name?.lowercase(Locale.ROOT)).also {
+                if (v.bundleRevision != null) it["bundleRevision"] = v.bundleRevision
+            }) }
+        is PhoneSkillDrafts.Terminal -> terminal(value)
         is PhoneSkillDrafts.Rejected -> rejected(value.code.name.lowercase(Locale.ROOT))
         PhoneSkillDrafts.Discarded -> mapOf("kind" to "discarded")
     }
-    private fun saved(value: PhoneSkillDrafts.Saved): Map<String, Any?> =
-        mapOf("kind" to "saved", "name" to value.name, "relativePath" to value.relativePath)
+    private fun saving(write: PhoneSkillWrite, phase: String): Map<String, Any?> =
+        linkedMapOf<String, Any?>("kind" to "saving", "phase" to phase).also { out ->
+            write.bundle?.identity?.let { out["name"] = it.name; out["bundleRevision"] = it.revision }
+        }
+    private fun terminal(value: PhoneSkillDrafts.Terminal): Map<String, Any?> = when (value) {
+        is PhoneSkillDrafts.Saved -> linkedMapOf<String, Any?>("kind" to "saved", "name" to value.name,
+            "relativePath" to value.relativePath).also { out -> value.bundle?.let { out["bundleRevision"] = it.revision } }
+        is PhoneSkillDrafts.Unverified -> mapOf("kind" to "unverified", "name" to value.bundle.name,
+            "relativePath" to "skills/${value.bundle.name}/SKILL.md", "bundleRevision" to value.bundle.revision,
+            "publication" to value.publication.name.lowercase(Locale.ROOT), "code" to value.code.name.lowercase(Locale.ROOT))
+    }
     private fun id(a: Map<*, *>): String? = (a["draftId"] as? String)?.takeIf { ID.matches(it) }
     private fun keys(a: Map<*, *>, vararg allowed: String): Boolean = a.keys.all { it in allowed }
     private fun positive(value: Any?): Long? = integer(value)?.takeIf { it > 0 }

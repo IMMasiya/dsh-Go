@@ -314,10 +314,22 @@ class RuntimeController private constructor(private val app: Context) : DshProce
         worker.execute {
             fun current(): Boolean = phase == Phase.RUNNING && !runSafe && !resetting &&
                 runGen == generation && stopGen < generation && phoneSkillStoppedGeneration < generation
-            val result = PhoneSkillInstaller.install(installer.rootfs, write.document,
+            val bundle = write.bundle
+            val result = if (bundle == null) PhoneSkillInstaller.install(installer.rootfs, write.document,
                 canStage = { synchronized(this) { current() && write.canStage() } },
                 beginCommit = { synchronized(this) { current() && write.beginCommit() } },
-            )
+            ) else when (val saved = PhoneSkillBundleInstaller.install(installer.rootfs, bundle,
+                canStage = { synchronized(this) { current() && write.canStage() } },
+                beginCommit = { synchronized(this) { current() && write.beginCommit() } },
+            )) {
+                is PhoneSkillBundleInstaller.Result.Saved -> PhoneSkillInstallResult.BundleSaved(saved.identity)
+                is PhoneSkillBundleInstaller.Result.Unverified -> PhoneSkillInstallResult.BundleUnverified(
+                    saved.identity, saved.publication, saved.code)
+                PhoneSkillBundleInstaller.Result.Refused.STALE -> PhoneSkillInstallResult.Refused.STALE
+                PhoneSkillBundleInstaller.Result.Refused.NO_HOME -> PhoneSkillInstallResult.Refused.NO_HOME
+                PhoneSkillBundleInstaller.Result.Refused.CONFLICT -> PhoneSkillInstallResult.Refused.CONFLICT
+                PhoneSkillBundleInstaller.Result.Refused.IO, PhoneSkillBundleInstaller.Result.Refused.INVALID -> PhoneSkillInstallResult.Refused.IO
+            }
             // Report what the filesystem did even if the UI retired after commit permission.
             write.finish(result)
             main.post { onDone(result) }
