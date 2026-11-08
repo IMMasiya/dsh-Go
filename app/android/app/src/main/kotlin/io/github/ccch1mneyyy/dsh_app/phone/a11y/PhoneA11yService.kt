@@ -29,6 +29,23 @@ import io.github.ccch1mneyyy.dsh_app.phone.PhoneRegistry
  */
 class PhoneA11yService : AccessibilityService() {
     internal val clock = EventClock()
+    internal val focusInputObservation = FocusInputObservation()
+    private var focusInputMethod: FocusInputMethod33? = null
+    private var focusInputRetired = false
+
+    @android.annotation.TargetApi(33)
+    override fun onCreateInputMethod(): android.accessibilityservice.InputMethod =
+        FocusInputMethod33(this, focusInputObservation).also {
+            focusInputMethod = it
+            if (destroyed || focusInputRetired) focusInputObservation.retire()
+        }
+
+    @android.annotation.TargetApi(33)
+    internal fun captureFocusInput(): FocusCapturedInput33? {
+        check(android.os.Looper.myLooper() == android.os.Looper.getMainLooper())
+        if (destroyed || instance !== this || PhoneRegistry.mainDriver !== driver || driver == null) return null
+        return focusInputMethod?.capture()
+    }
     private var overlay: ControlOverlay? = null
     private var driver: MainScreenDriver? = null
     private var probe: A11yProbe? = null
@@ -66,6 +83,10 @@ class PhoneA11yService : AccessibilityService() {
         // the new one; coordinate starts are on this same main queue and check exact publication.
         instance?.takeIf { it !== this }?.teardown("无障碍连接已更换") // l10n:keep agent stop reason
         if (driver != null) teardown("无障碍连接已更换") // l10n:keep agent stop reason
+        if (focusInputRetired) {
+            if (Build.VERSION.SDK_INT >= 33) focusInputMethod?.reconnect()
+            focusInputRetired = false
+        }
         invalidateOverlayWindowContext()
         val o = ControlOverlay(this)
         val d = MainScreenDriver(this, o)
@@ -128,6 +149,8 @@ class PhoneA11yService : AccessibilityService() {
     }
 
     private fun teardown(reason: String) {
+        focusInputObservation.retire()
+        focusInputRetired = true
         if (instance !== this && driver == null) return
         val d = driver
         val o = overlay
