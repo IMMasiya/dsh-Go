@@ -123,6 +123,7 @@ class PhoneTaskSessions(
     fun run(admission: Admission, name: String, args: Map<String, Any?>): ToolOutput {
         val task = admission.task ?: return ToolOutput(checkNotNull(admission.refusal), isError = true)
         var owner: PhoneTasks.Owner? = null
+        var prepared: PhoneCore.PreparedCall? = null
         var running = false
         task.tasks.callStarted()
         try {
@@ -170,16 +171,17 @@ class PhoneTaskSessions(
                 is PhoneTasks.Begin.Refused -> return ToolOutput(b.message, isError = true)
             }
             if (task.tasks.isPaused && !task.tasks.awaitResume(PhoneCore.PAUSE_WAIT_MS)) return stopped()
-            val prepared = when (val result = task.core.prepareCall(name, args, owner)) {
+            val call = when (val result = task.core.prepareCall(name, args, owner)) {
                 is Either.Left -> return result.value
                 is Either.Right -> result.value
             }
-            val failure = awaitResources(admission, prepared)
+            prepared = call
+            val failure = awaitResources(admission, call)
             if (failure != null) return ToolOutput(failure, isError = true)
             synchronized(lock) {
                 if (!live(admission) || blocked(task) || !task.tasks.isCurrent(owner)) return stopped()
             }
-            return task.core.call(prepared)
+            return task.core.call(call)
         } catch (_: InterruptedException) {
             Thread.currentThread().interrupt()
             return stopped()
@@ -189,8 +191,19 @@ class PhoneTaskSessions(
             if (running) {
                 // A timed-out Future can return before its device body. Keep the task's
                 // execution slot and screen leases until that exact owner physically drains.
+                val completedCall = prepared
                 task.core.worker.afterDrained(task.tasks) {
-                    synchronized(lock) { task.running = false; clearWaiting(task); lock.notifyAll() }
+                    synchronized(lock) {
+                        if (completedCall != null && completedCall.borrowedMainForBackgroundOpen &&
+                            completedCall.backgroundOpenConfirmed && live(admission) && !blocked(task) &&
+                            !task.closing && screens[PhoneScreen.MAIN] === task) {
+                            task.tasks.runIfCurrent(completedCall.owner) { screens.remove(PhoneScreen.MAIN) }
+                        }
+                        // Keep this execution slot until the exact original MAIN decision is committed.
+                        task.running = false
+                        clearWaiting(task)
+                        lock.notifyAll()
+                    }
                     settled(task)
                 }
             } else settled(task)
@@ -235,6 +248,8 @@ class PhoneTaskSessions(
         val task = checkNotNull(a.task)
         fun current() = live(a) && !blocked(task) && task.tasks.isCurrent(call.owner)
         fun acquire() {
+            call.borrowedMainForBackgroundOpen = call.name == PhoneToolCatalog.OPEN &&
+                call.args.bool("background") == true && PhoneScreen.MAIN in needed && screens[PhoneScreen.MAIN] == null
             needed.forEach { screens[it] = task }
             if (known != null) task.heldApps += known
             if (unknown) task.holdsUnknownApp = true

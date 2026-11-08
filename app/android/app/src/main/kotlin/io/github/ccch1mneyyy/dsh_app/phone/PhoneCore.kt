@@ -88,6 +88,9 @@ class PhoneCore(
         val screens: List<PhoneScreen>, val launch: SystemLaunch? = null,
         val shareSubject: AppEntry? = null,
     ) {
+        // Only Sessions reads/writes acquisition under its registry lock; never a Core-wide grant.
+        internal var borrowedMainForBackgroundOpen = false
+        @Volatile internal var backgroundOpenConfirmed = false
         val knownApp: PhoneAppIdentity? get() = (launch?.target as? SystemTarget.Known)?.app?.identity
         // A MAIN observation has no trustworthy window UID. BG open only queries the
         // selected package on MAIN before moving it; its actual target is checked by T1a.
@@ -399,6 +402,7 @@ class PhoneCore(
         if (!current(owner)) return stoppedOut("open")
         val ticket = skillTrace.beginOpen(owner, PhoneScreen.BACKGROUND)
         val res = traceResult(ticket) { driver.open(app.identity) }
+        call.backgroundOpenConfirmed = res.backgroundOpenConfirmed
         if (!current(owner) || !tasks.setAppIfCurrent(owner, app.label)) return stoppedOut("open")
         if (!current(owner)) return stoppedOut("open")
         return Out(res.message, error = !res.ok, screen = res.screen?.let { safety.filterScreen(it) }, app = app.label,

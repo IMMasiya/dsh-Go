@@ -102,7 +102,9 @@ class BackgroundDisplay(
             if (!resourceIo.wasNotAdmitted()) onResourceReady(active)
             val result = toResult(response, "已在后台屏打开") // l10n:keep agent screen protocol
             targetReady = result.ok
-            result
+            result.copy(backgroundOpenConfirmed = result.ok && TargetIdentity.backgroundOpenConfirmed(target,
+                response.get(Proto.OK), response.get(Proto.BACKGROUND_OPEN_EVIDENCE), response.get(Proto.DISPLAY_ID),
+                response.get(Proto.TARGET_IDENTITY_VERSION), response.get(Proto.PKG), response.get(Proto.TARGET_UID)))
         }
     } catch (error: Throwable) {
         clearSnapshot()

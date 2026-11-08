@@ -24,6 +24,7 @@ object Proto {
     const val CALL = "call"
     const val PKG = "pkg"
     const val TARGET_IDENTITY_VERSION = "targetIdentityVersion"
+    const val BACKGROUND_OPEN_EVIDENCE = "backgroundOpenEvidenceVersion"
     const val TARGET_UID = "targetUid"
     const val VIEWPORT_VERSION = "viewportVersion"
     const val VIEWPORT_PRESET = "viewportPreset"

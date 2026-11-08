@@ -80,4 +80,16 @@ class TargetIdentityTest {
         assertFalse(TargetIdentity.receipt(a, 1, otherUser.packageName, otherUser.uid))
         assertFalse(TargetIdentity.receipt(a, null, null, null))
     }
+    @Test fun backgroundOpenConfirmationRequiresEveryTypedFactFromThisReply() {
+        fun accepts(ok: Any? = true, evidence: Any? = 1, display: Any? = 7,
+                    version: Any? = 1, pkg: Any? = a.packageName, uid: Any? = a.uid) =
+            TargetIdentity.backgroundOpenConfirmed(a, ok, evidence, display, version, pkg, uid)
+        assertTrue(accepts())
+        for (bad in listOf(null, false, 1, "true")) assertFalse(accepts(ok = bad))
+        for (bad in listOf(null, 0, 2, 1L, "1", true)) assertFalse(accepts(evidence = bad))
+        for (bad in listOf(null, 0, -1, 7L, "7", true)) assertFalse(accepts(display = bad))
+        for (bad in listOf(null, 0, 2, 1L, "1")) assertFalse(accepts(version = bad))
+        for (bad in listOf(null, "other.app", 1)) assertFalse(accepts(pkg = bad))
+        for (bad in listOf(null, otherUser.uid, a.uid.toLong(), "10123")) assertFalse(accepts(uid = bad))
+    }
 }

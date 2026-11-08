@@ -45,5 +45,11 @@ internal class TargetIdentity {
 
         fun receipt(expected: PhoneAppIdentity, version: Any?, pkg: Any?, uid: Any?): Boolean =
             supported(version) && pkg is String && uid is Int && matches(expected, pkg, uid)
+
+        /** Used only after the real open's OwnerScope envelope has matched its pinned resource. */
+        fun backgroundOpenConfirmed(expected: PhoneAppIdentity, ok: Any?, evidence: Any?, displayId: Any?,
+                                    targetVersion: Any?, pkg: Any?, uid: Any?): Boolean =
+            ok is Boolean && ok && evidence is Int && evidence == 1 && displayId is Int && displayId > 0 &&
+                receipt(expected, targetVersion, pkg, uid)
     }
 }

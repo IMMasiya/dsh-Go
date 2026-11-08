@@ -107,6 +107,8 @@ data class ActionResult(
     val screen: ScreenSnapshot? = null,
     /** Explicit fingerprint rejection before input. Refresh once; never replay the action. */
     val staleSnapshot: Boolean = false,
+    /** Internal, this BG open only: the original peer confirmed its valid VD and full target identity. */
+    val backgroundOpenConfirmed: Boolean = false,
 )
 
 data class CollectResult(

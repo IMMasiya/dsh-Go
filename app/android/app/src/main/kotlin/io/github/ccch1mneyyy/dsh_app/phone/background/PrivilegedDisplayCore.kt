@@ -371,7 +371,16 @@ class PrivilegedDisplayCore internal constructor(
         if (expected == null && response.containsKey(Proto.COORDINATE_SCOPE_VERSION))
             response.putBoolean(Proto.COORDINATE_SCOPE_KNOWN, false)
         if (expected != null) {
-            val actual = requireActualTarget(expected)
+            val actual = if (op == Proto.OP_LAUNCH) {
+                val actualDisplay = display?.display ?: throw Fault("displayMissing")
+                val actualId = actualDisplay.displayId
+                if (actualId <= Display.DEFAULT_DISPLAY) throw Fault("displayTargetChanged")
+                val target = requireActualTarget(expected, actualId)
+                if (!actualDisplay.isValid || actualDisplay.displayId != actualId) throw Fault("displayTargetChanged")
+                response.putInt(Proto.DISPLAY_ID, actualId)
+                response.putInt(Proto.BACKGROUND_OPEN_EVIDENCE, 1)
+                target
+            } else requireActualTarget(expected)
             response.putInt(Proto.TARGET_IDENTITY_VERSION, 1)
             response.putInt(Proto.TARGET_UID, actual.uid)
             response.putString(Proto.PKG, actual.packageName)
@@ -822,9 +831,9 @@ class PrivilegedDisplayCore internal constructor(
             throw TargetIdentity.Failure("targetIdentityChanged")
     }
 
-    private fun requireActualTarget(expected: PhoneAppIdentity): PhoneAppIdentity {
+    private fun requireActualTarget(expected: PhoneAppIdentity, onDisplayId: Int? = display?.display?.displayId): PhoneAppIdentity {
         requirePackageIdentity(expected)
-        val task = foregroundTask() ?: throw TargetIdentity.Failure("targetIdentityUnavailable")
+        val task = foregroundTask(onDisplayId) ?: throw TargetIdentity.Failure("targetIdentityUnavailable")
         val info = try { task.javaClass.getField("topActivityInfo").get(task) as? android.content.pm.ActivityInfo }
             catch (_: Exception) { null } ?: throw TargetIdentity.Failure("targetIdentityUnavailable")
         val user = try { task.javaClass.getField("userId").getInt(task) }
@@ -875,8 +884,8 @@ class PrivilegedDisplayCore internal constructor(
         } else if (foregroundPackage() != pkg) throw Fault("displayTargetChanged")
     }
 
-    private fun foregroundTask(): ActivityManager.RunningTaskInfo? {
-        val id = display?.display?.displayId ?: return null
+    private fun foregroundTask(onDisplayId: Int? = display?.display?.displayId): ActivityManager.RunningTaskInfo? {
+        val id = onDisplayId ?: return null
         val field = taskDisplayIdField ?: return null
         @Suppress("DEPRECATION")
         return activities.getRunningTasks(50).firstOrNull { runCatching { field.getInt(it) }.getOrDefault(-1) == id }
