@@ -9,7 +9,7 @@ class PhoneTaskObservations(private val tasks: PhoneTasks) {
         private fun current() {
             if (!tasks.isCurrent(owner) || Thread.currentThread().isInterrupted) throw InterruptedException()
         }
-        private fun allowed(): Boolean {
+        private fun taskAllowed(): Boolean {
             var accepted = false
             tasks.runIfCurrent(owner) { accepted = !tasks.isPaused }
             return accepted
@@ -83,16 +83,17 @@ class PhoneTaskObservations(private val tasks: PhoneTasks) {
             current()
             return try { if (owns(screenId)) driver.target(screenId, elementId) else null } finally { syncCurrentScope() }
         }
-        override fun perform(action: PhoneAction): ActionResult {
+        override fun perform(action: PhoneAction): ActionResult = perform(action) { true }
+        override fun perform(action: PhoneAction, allowed: () -> Boolean): ActionResult {
             current()
             if (action !is PhoneAction.Key && !owns(action.screenId)) {
                 // l10n:keep agent observation ownership result
                 return ActionResult(false, "这个屏幕编号不属于本任务的当前观察。请本任务重新 screen，不要使用另一对话的编号。")
             }
             return try {
-                result(driver.perform(action, ::allowed) { claim ->
+                result(driver.perform(action, { taskAllowed() && allowed() }) { claim ->
                     var committed = false
-                    tasks.runIfCurrent(owner) { if (!tasks.isPaused) committed = claim() }
+                    tasks.runIfCurrent(owner) { if (!tasks.isPaused && allowed()) committed = claim() }
                     committed
                 })
             } finally { syncCurrentScope() }
@@ -101,7 +102,7 @@ class PhoneTaskObservations(private val tasks: PhoneTasks) {
             current()
             if (!owns(screenId)) return CollectResult(emptyList(), 0, "屏幕编号不属于本任务，请重新 screen", null) // l10n:keep agent observation ownership result
             return try {
-                val result = driver.collect(screenId, listElementId, maxPages, until, ::allowed)
+                val result = driver.collect(screenId, listElementId, maxPages, until, ::taskAllowed)
                 current()
                 result.screen?.let(::remember)
                 result

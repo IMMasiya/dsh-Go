@@ -181,4 +181,24 @@ class PhoneTaskObservationsTest {
         assertFalse(tasks.hasVisualGrant(owner, a))
     }
 
+    @Test fun additionalPolicyGateCannotBypassTheOriginalObservationOwner() {
+        val physical = Driver(); val firstTasks = PhoneTasks(); val otherTasks = PhoneTasks()
+        val first = PhoneTaskObservations(firstTasks).bind(physical, owner(firstTasks))
+        val other = PhoneTaskObservations(otherTasks).bind(physical, owner(otherTasks))
+        first.observe(false, false)
+        assertFalse(other.perform(PhoneAction.Tap("s1", 1)) { true }.ok)
+        assertEquals(0, physical.actions)
+        var permitted = true
+        assertTrue(first.perform(PhoneAction.Tap("s1", 1)) { permitted }.ok)
+        val allowed = checkNotNull(physical.capturedAllowed)
+        val claim = checkNotNull(physical.capturedAdmission)
+        permitted = false
+        assertFalse(allowed())
+        var claimed = 0
+        assertFalse(claim { claimed++; true }); assertEquals(0, claimed)
+        permitted = true; firstTasks.setPaused(true)
+        assertFalse(allowed()); assertFalse(claim { claimed++; true })
+        assertEquals(1, physical.actions)
+    }
+
 }

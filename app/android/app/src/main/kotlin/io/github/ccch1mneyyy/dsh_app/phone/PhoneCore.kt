@@ -408,6 +408,11 @@ class PhoneCore(
         lastScreen = PhoneScreen.BACKGROUND
         say(owner, ui.get("phone_opening_background", "DSH 正在后台屏打开「%1\$s」", app.label)) // l10n:keep test default
         if (!current(owner)) return stoppedOut("open")
+        // The user may tighten the app list while the original move confirmation is waiting.
+        safety.checkOpen(app.packageName, app.label)?.let {
+            return Out(it.message, error = true, app = app.label,
+                summary = ui.get("phone_log_open_background", "后台屏打开 %1\$s", app.packageName), decision = "refused:${it.rule}") // l10n:keep test default
+        }
         val ticket = skillTrace.beginOpen(owner, PhoneScreen.BACKGROUND)
         val res = traceResult(ticket) { driver.open(app.identity) }
         call.backgroundOpenConfirmed = res.backgroundOpenConfirmed
@@ -791,24 +796,59 @@ class PhoneCore(
         val pkg = target?.packageName ?: driver.foregroundPackage()
         val appLabel = target?.appLabel
         val app = appLabel ?: pkg
-        val verdict = safety.checkWrite(kind, target, pkg, appLabel, typed, submit, point, action as? PhoneAction.TapXY, which, visual)
+        fun writeVerdict() = safety.checkWrite(kind, target, pkg, appLabel, typed, submit, point, action as? PhoneAction.TapXY, which, visual)
+        val verdict = writeVerdict()
+        var ordinaryConfirmed = verdict is SafetyGate.Verdict.Confirm
         var decision = when (val r = safety.resolve(verdict, scope, owner)) {
             is SafetyGate.Result.No -> return Out(r.message, error = true, app = app, summary = summary, decision = r.decision)
             is SafetyGate.Result.Go -> r.decision
         }
         if (action is PhoneAction.TapXY && visual != null &&
             !(verdict is SafetyGate.Verdict.Confirm && verdict.reason == "tap_xy")) {
-            when (val r = safety.resolve(safety.checkVisual(action, visual, owner), scope, owner)) {
+            val visualVerdict = safety.checkVisual(action, visual, owner)
+            when (val r = safety.resolve(visualVerdict, scope, owner)) {
                 is SafetyGate.Result.No -> return Out(r.message, error = true, app = app, summary = summary, decision = r.decision)
-                is SafetyGate.Result.Go -> if (r.decision != "allowed") decision = r.decision
+                is SafetyGate.Result.Go -> {
+                    if (r.decision != "allowed") decision = r.decision
+                    // checkVisual can require an ordinary once for a newly ineligible coordinate.
+                    if (visualVerdict is SafetyGate.Verdict.Confirm && visualVerdict.request.visualScope == null)
+                        ordinaryConfirmed = true
+                }
             }
+        }
+        // Re-read at the existing physical admission gates too: waiting for confirmation, target
+        // resolution or channel capacity must not preserve an obsolete allow/waiver. This is a
+        // memory-only check; no policy/Tasks lock is held across platform IO. An already admitted
+        // physical step cannot be recalled by a later policy publication.
+        val policyFailure = AtomicReference<SafetyGate.Result.No?>(null)
+        fun policyAllowed(): Boolean {
+            if (policyFailure.get() != null) return false
+            val refusal = when (val latest = writeVerdict()) {
+                is SafetyGate.Verdict.Refuse -> SafetyGate.Result.No(latest.message, "refused:${latest.rule}")
+                is SafetyGate.Verdict.Confirm -> if (ordinaryConfirmed) null else SafetyGate.Result.No(
+                    "手机操作策略已变化，本次原授权不足。请重新观察并征得用户确认，不要自动重试。", "refused:policy-changed") // l10n:keep agent safety result
+                SafetyGate.Verdict.Allow -> null
+            }
+            if (refusal != null) policyFailure.compareAndSet(null, refusal)
+            return policyFailure.get() == null
+        }
+        if (!policyAllowed()) {
+            val refusal = checkNotNull(policyFailure.get())
+            return Out(refusal.message, error = true, app = app, summary = summary, decision = refusal.decision)
         }
         if (!tasks.isCurrent(owner) || Thread.currentThread().isInterrupted) return stoppedOut(summary)
         if (!tasks.setAppIfCurrent(owner, appLabel ?: pkg)) return stoppedOut(summary)
         say(owner, ui.get("phone_acting", "DSH 正在操作 · %1\$s", statusLine(kind, target, if (secret) SafetyRules.MASK else typed))) // l10n:keep test default
         if (!current(owner)) return stoppedOut(summary)
         val ticket = skillTrace.beginAction(owner, action, target)
-        val res = traceResult(ticket) { driver.perform(action) }
+        val res = traceResult(ticket) {
+            val result = driver.perform(action, ::policyAllowed)
+            policyFailure.get()?.let {
+                // A later gate (e.g. submit after text entry) can refuse after a prior side effect.
+                result.copy(ok = false, staleSnapshot = false,
+                    message = "手机操作策略已变化，已停止继续操作；已开始的步骤可能已有部分效果，请先核对，不要自动重试。\n${it.message}") // l10n:keep agent safety result
+            } ?: result
+        }
         if (!res.ok && res.staleSnapshot) return stale(driver, sid, summary, owner, res.message)
         return Out(
             res.message,
@@ -816,7 +856,7 @@ class PhoneCore(
             screen = res.screen?.let { safety.filterScreen(it) },
             app = app,
             summary = summary,
-            decision = if (res.ok) decision else "failed",
+            decision = if (res.ok) decision else policyFailure.get()?.decision ?: "failed",
         )
     }
 
