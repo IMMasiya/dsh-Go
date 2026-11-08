@@ -198,11 +198,8 @@ class BackgroundControl private constructor(context: Context) {
     private fun resourceRecoveryStatus(): Map<String, Any?> {
         val saved = resourceJournal.status()
         val running = resourceMaintenance != null
-        val state = if (running) "recovering" else if (retiredResourcePeer != null && saved.state == "clear") "pending" else saved.state
-        val canRetry = !running && (saved.storageRetry || retiredResourcePeer != null ||
-            state == "pending" && mode in PrivilegedKeepState.MODES && (channel?.alive() == true || keep.enabled))
-        return mapOf("v" to 1, "state" to state, "count" to saved.count, "canRetry" to canRetry,
-            "reason" to (saved.reason ?: if (retiredResourcePeer != null) "reconnectRequired" else null))
+        return resourceRecoveryStatus(saved, running, retiredResourcePeer != null, lostTaskId() != null,
+            mode in PrivilegedKeepState.MODES && (channel?.alive() == true || keep.enabled))
     }
 
     /** This ID comes from the still-retained original driver, never from a journal string. */
@@ -1255,6 +1252,16 @@ class BackgroundControl private constructor(context: Context) {
     }
 
     companion object {
+        /** Pure publication of journal state plus the controller's actual retained resource facts. */
+        internal fun resourceRecoveryStatus(saved: BackgroundResourceJournal.Snapshot, running: Boolean,
+            retiredPeer: Boolean, lostTask: Boolean, connectionReady: Boolean): Map<String, Any?> {
+            val needsRecovery = retiredPeer || lostTask
+            val state = if (running) "recovering" else if (needsRecovery && saved.state == "clear") "pending" else saved.state
+            val canRetry = !running && (saved.storageRetry || needsRecovery || state == "pending" && connectionReady)
+            return mapOf("v" to 1, "state" to state, "count" to saved.count, "canRetry" to canRetry,
+                "reason" to (saved.reason ?: if (needsRecovery) "reconnectRequired" else null))
+        }
+
         /** UserHandle.PER_USER_RANGE: a uid's user is uid / this. */
         private const val PER_USER_RANGE = 100_000
 
