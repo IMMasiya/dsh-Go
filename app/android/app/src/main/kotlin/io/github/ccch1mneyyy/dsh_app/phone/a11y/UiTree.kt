@@ -71,6 +71,9 @@ class UiNode(
     val rangeCurrent: Float? = null,
     val rangeMax: Float? = null,
     val children: List<UiNode> = emptyList(),
+    /** Raw native facts for ordinary visual targets; missing facts never imply a leaf/click action. */
+    val rawChildCount: Int = -1,
+    val actionClick: Boolean = false,
 )
 
 enum class WindowKind { APP, SYSTEM }

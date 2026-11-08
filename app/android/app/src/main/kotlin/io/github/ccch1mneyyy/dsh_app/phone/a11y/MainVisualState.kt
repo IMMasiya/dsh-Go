@@ -1,0 +1,39 @@
+package io.github.ccch1mneyyy.dsh_app.phone.a11y
+
+import io.github.ccch1mneyyy.dsh_app.phone.VisualScope
+
+/** Short memory only: neither this monitor nor its callers invoke Driver/Tasks/UI under it. */
+internal class MainVisualState(private val driverEpoch: Any) {
+    private var current: VisualScope.Main? = null
+    private var published: Pair<String, VisualScope.Main?>? = null
+    private var imageId: String? = null
+    private var accepted = false
+
+    @Synchronized fun observed(windowId: Int?, packageName: String?): VisualScope.Main? {
+        if (windowId == null || windowId < 0 || packageName.isNullOrBlank()) current = null
+        else if (current?.windowId != windowId || current?.packageName != packageName)
+            current = VisualScope.Main(driverEpoch, Any(), windowId, packageName)
+        return current
+    }
+    @Synchronized fun publish(id: String) {
+        published = id to current
+        imageId = null
+        accepted = false
+    }
+    @Synchronized fun scope(id: String): VisualScope.Main? =
+        published?.takeIf { it.first == id && it.second === current }?.second
+    @Synchronized fun isCurrent(scope: VisualScope.Main?): Boolean = current === scope
+    @Synchronized fun candidate(id: String) {
+        if (published?.first == id) { imageId = id; accepted = false }
+    }
+    @Synchronized fun accept(id: String) { if (imageId == id && published?.first == id) accepted = true }
+    @Synchronized fun imageAccepted(id: String): Boolean = accepted && imageId == id && published?.first == id
+    @Synchronized fun consume(id: String): Boolean {
+        if (!imageAccepted(id)) return false
+        imageId = null; accepted = false
+        return true
+    }
+    @Synchronized fun invalidate() {
+        current = null; published = null; imageId = null; accepted = false
+    }
+}

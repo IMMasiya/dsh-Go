@@ -13,6 +13,7 @@ import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.HandlerThread
+import android.os.Looper
 import android.os.SystemClock
 import android.view.ViewConfiguration
 import android.view.accessibility.AccessibilityNodeInfo
@@ -34,6 +35,7 @@ internal object InjectGuard {
 internal class Actuator(private val service: AccessibilityService, private val overlay: ControlOverlay) {
     private val gestureThread = HandlerThread("dsh-a11y-gesture").apply { start() }
     private val gestureHandler = Handler(gestureThread.looper)
+    private val main = Handler(Looper.getMainLooper())
 
     enum class Via { NODE, ANCESTOR, GESTURE }
 
@@ -73,15 +75,15 @@ internal class Actuator(private val service: AccessibilityService, private val o
         return clipped.centerX to clipped.centerY
     }
 
-    fun tap(x: Int, y: Int, long: Boolean = false): Boolean {
+    fun tap(x: Int, y: Int, long: Boolean = false, start: ((() -> Boolean) -> Boolean)? = null): Boolean {
         val path = Path().apply { moveTo(x.toFloat(), y.toFloat()) }
         val duration = if (long) ViewConfiguration.getLongPressTimeout().toLong() + 300 else 60L
-        return gesture(GestureDescription.Builder().addStroke(GestureDescription.StrokeDescription(path, 0, duration)).build(), duration)
+        return gesture(GestureDescription.Builder().addStroke(GestureDescription.StrokeDescription(path, 0, duration)).build(), duration, start)
     }
 
-    fun swipe(x1: Int, y1: Int, x2: Int, y2: Int, durationMs: Long = 350): Boolean {
+    fun swipe(x1: Int, y1: Int, x2: Int, y2: Int, durationMs: Long = 350, start: ((() -> Boolean) -> Boolean)? = null): Boolean {
         val path = Path().apply { moveTo(x1.toFloat(), y1.toFloat()); lineTo(x2.toFloat(), y2.toFloat()) }
-        return gesture(GestureDescription.Builder().addStroke(GestureDescription.StrokeDescription(path, 0, durationMs)).build(), durationMs)
+        return gesture(GestureDescription.Builder().addStroke(GestureDescription.StrokeDescription(path, 0, durationMs)).build(), durationMs, start)
     }
 
     /**
@@ -89,23 +91,37 @@ internal class Actuator(private val service: AccessibilityService, private val o
      * stroke reaches the app underneath, never the overlay; InjectGuard covers the
      * time it is in flight.
      */
-    fun gesture(description: GestureDescription, durationMs: Long): Boolean {
+    fun gesture(description: GestureDescription, durationMs: Long, start: ((() -> Boolean) -> Boolean)? = null): Boolean {
         overlay.setPassThrough(true)
         try {
             InjectGuard.mark(durationMs)
             val latch = CountDownLatch(1)
             var completed = false
-            val sent = service.dispatchGesture(description, object : AccessibilityService.GestureResultCallback() {
+            val send = { service.dispatchGesture(description, object : AccessibilityService.GestureResultCallback() {
                 override fun onCompleted(gestureDescription: GestureDescription?) { completed = true; latch.countDown() }
                 override fun onCancelled(gestureDescription: GestureDescription?) { latch.countDown() }
-            }, gestureHandler)
+            }, gestureHandler) }
+            val sent = if (start == null) send() else start(send)
             if (!sent) return false
-            latch.await(durationMs + 2_000, TimeUnit.MILLISECONDS)
+            try { latch.await(durationMs + 2_000, TimeUnit.MILLISECONDS) }
+            catch (e: InterruptedException) {
+                if (start == null) throw e
+                // The main start may already have sent the gesture. Preserve unknown effect,
+                // never replay it or turn a cancelled callback wait into "not submitted".
+                Thread.currentThread().interrupt()
+                return false
+            }
             return completed
         } finally {
             InjectGuard.mark(0)
             overlay.setPassThrough(false)
         }
+    }
+
+    fun coordinateStart(current: () -> Boolean, admission: ((() -> Boolean) -> Boolean), send: () -> Boolean): Boolean {
+        val ticket = CoordinateDispatch(Thread.currentThread(), current, admission, send)
+        if (!main.post(ticket)) ticket.cancelQueued()
+        return ticket.awaitStart(2_000)
     }
 
     fun setText(node: AccessibilityNodeInfo, text: String): Boolean {

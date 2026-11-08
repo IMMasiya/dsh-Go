@@ -60,6 +60,10 @@ class PhoneA11yService : AccessibilityService() {
 
     override fun onServiceConnected() {
         super.onServiceConnected()
+        // Re-init can reuse this service object. Retire the old driver/handler before publishing
+        // the new one; coordinate starts are on this same main queue and check exact publication.
+        instance?.takeIf { it !== this }?.teardown("无障碍连接已更换") // l10n:keep agent stop reason
+        if (driver != null) teardown("无障碍连接已更换") // l10n:keep agent stop reason
         invalidateOverlayWindowContext()
         val o = ControlOverlay(this)
         val d = MainScreenDriver(this, o)
