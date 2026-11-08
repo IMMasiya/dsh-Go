@@ -3,6 +3,13 @@ export const name = 'dsh-go-companion-full-context';
 export const inject = ['systemPrompt'];
 
 export function apply(ctx) {
+  // Optional on an older Host: ordinary full-mode context remains available
+  // when the pinned recall engine is unsupported. Registration itself grants
+  // no recall; bind still proves this exact scope, service owner and mount.
+  const recall = ctx.get?.('dshGoCompanionRecall');
+  if (typeof recall?.registerContext === 'function') {
+    ctx.effect(() => recall.registerContext(ctx), 'companion-recall.context');
+  }
   ctx.systemPrompt.section({
     name: 'app:web-surface',
     order: ctx.systemPrompt.getSectionOrder('WEB_SURFACE'),

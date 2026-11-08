@@ -8,7 +8,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 /// Both clocks, moved by the test together with the fake timers.
 class _Clock {
-  int wall = 1793899800000;
+  int wall = DateTime.utc(2026, 11, 5, 10, 30).millisecondsSinceEpoch;
   int mono = 0;
 
   CompanionInitiativeClock call() => CompanionInitiativeClock(wallMs: wall, monoMs: mono);
@@ -160,7 +160,11 @@ void main() {
     await _pass(tester, clock, const Duration(seconds: 50));
     expect(room.invites, hasLength(1));
     expect(room.shown, isEmpty);
-    expect(await _ledger(tester), isNull);
+    final unspent = await _ledger(tester);
+    expect(unspent?['inviteAtMs'], isEmpty);
+    expect(unspent?['signalAtMs'], isEmpty);
+    expect(unspent?['lastGreetingAtMs'], isNull);
+    expect(unspent?['night'], isNotNull); // First observed offset is durable.
     owner.dispose();
   });
 

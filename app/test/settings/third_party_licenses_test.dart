@@ -12,6 +12,7 @@ import 'package:flutter_test/flutter_test.dart';
 /// Package name → a line its entry must carry, also found in THIRD_PARTY_NOTICES.md.
 const _expected = <String, String>{
   'PiPilot': 'Copyright (c) 2026 CikeSeven',
+  'Unicode Character Database (15.0.0)': 'Copyright © 1991-2026 Unicode, Inc.',
   'DeepSeek Harness': 'Copyright (c) 2026 DeepSeek',
   'Phase': 'Copyright (c) 2026 CikeSeven',
   'DS Bot': 'Copyright 2026 Fei2411 and the DS Bot contributors',
@@ -118,5 +119,6 @@ void main() {
     expect(textOf('WebRTC'), allOf(contains('Neither the name of Google'), contains('Additional IP Rights Grant')));
     expect(textOf('XZ for Java'), contains('Permission to use, copy, modify, and/or distribute'));
     expect(textOf('JetBrains Mono'), contains('SIL OPEN FONT LICENSE Version 1.1'));
+    expect(textOf('Unicode Character Database (15.0.0)'), File('tool/unicode-15.0-LICENSE.txt').readAsStringSync());
   });
 }

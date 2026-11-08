@@ -24,6 +24,10 @@ import { get as httpsGet } from "node:https";
 import { createPluginConfig, pluginConfigUnavailable } from "./plugin-config.js";
 import { createSessionDeletion, sessionDeletionUnavailable } from "./session-deletion.js";
 import { createCompanionRoutes } from "./companion/routes.js";
+import { createCompanionStore } from "./companion/store.js";
+import { createRecallCoordinator } from "./companion/recall.js";
+import { createRecallContexts } from "./companion/recall-context.js";
+import { createCompanionSignals } from "./companion/signals.js";
 import { NativeCore } from "./native/core.js";
 import { effectiveLimits } from "./native/limits.js";
 import { STREAM_PATH, createNativeRoutes } from "./native/routes.js";
@@ -267,6 +271,27 @@ export function apply(ctx, config) {
   const native = new NativeCore(ctx, effectiveLimits(options.native), VERSION);
   ctx.effect(() => () => native.dispose(), "dsh-go-bridge: native core");
   ctx.provide("dshGo", native.service);
+  const companionSignals = createCompanionSignals(ctx);
+  ctx.effect(() => () => companionSignals.dispose(), "dsh-go-bridge: companion signals");
+  // HTTP writes and engine admission share exactly one store/coordinator per
+  // bridge generation. Missing or incompatible engine modules keep recall off.
+  const companionStore = createCompanionStore();
+  const companionContexts = createRecallContexts();
+  let recallDisposed = false;
+  const recallAdapter = import("./companion/recall-engine.js")
+    .then((module) => recallDisposed ? undefined : module.createRecallEngineAdapter(ctx, { contexts: companionContexts }))
+    .then((adapter) => {
+      if (!recallDisposed && adapter) ctx.provide("dshGoCompanionRecallEngine", adapter);
+      return recallDisposed ? undefined : adapter;
+    }).catch(() => undefined);
+  const companionRecall = createRecallCoordinator({ store: companionStore, adapter: recallAdapter });
+  companionRecall.registerContext = companionContexts.registerContext;
+  ctx.provide("dshGoCompanionRecall", companionRecall);
+  ctx.effect(() => () => {
+    recallDisposed = true;
+    companionRecall.dispose();
+    companionContexts.dispose();
+  }, "dsh-go-bridge: companion recall");
   ctx.on("internal/plugin", () => native.markDirty());
   let pluginConfig;
   ctx.on("internal/status", (fiber) => { native.markDirty(); pluginConfig?.statusChanged(fiber); });
@@ -342,7 +367,7 @@ export function apply(ctx, config) {
     const nativeRoutes = createNativeRoutes(native);
     pluginConfig = createPluginConfig(webCtx, { readBody, send });
     const sessionDeletion = createSessionDeletion(webCtx, { readBody, send });
-    const companionRoutes = createCompanionRoutes({ send });
+    const companionRoutes = createCompanionRoutes({ send, store: companionStore, recall: companionRecall, signals: companionSignals });
     webCtx.effect(() => () => nativeRoutes.dispose(), "dsh-go-bridge: native routes");
     webCtx.effect(() => webCtx.webServer.registerUpgrade({
       path: STREAM_PATH,
