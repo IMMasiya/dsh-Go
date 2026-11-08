@@ -11,6 +11,14 @@ import { createFixture } from './companion-recall-engine.mjs';
 import { createCompanionSignals } from '../../bridge/dsh-go-bridge/lib/companion/signals.js';
 
 export async function createSignalsFixture(options = {}) {
+  // Under `node --test` this process carries NODE_TEST_CONTEXT, and a nested
+  // `node --test` that inherits it reports to a parent instead of exiting
+  // non-zero on failure: the fixture's failing test would read as a success.
+  // Not every spawn path the bash tool takes goes through the hook below, so
+  // it goes from this process's environment too. Deleted here, inside a
+  // running test, and not at module load: by now this process's own
+  // reporting mode is fixed.
+  delete process.env.NODE_TEST_CONTEXT;
   const f = await createFixture({ prefix: process.env.DSH_PREFIX, withRecall: false });
   try {
     if (options.sandbox) {
