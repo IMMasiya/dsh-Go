@@ -61,9 +61,10 @@ class BackgroundDisplay internal constructor(
     override val screen: PhoneScreen = PhoneScreen.BACKGROUND
 
     @Volatile private var currentTarget: PhoneAppIdentity? = null
-    private var targetReady = false
+    @Volatile private var targetReady = false
     private var coordinateSupported = false
     private var afterVisualSupported = false
+    private var navigationSupported = false
     private val coordinateImage = BackgroundCoordinateImage()
     private var coordinateOcrEpoch: Long? = null
     private var counter = 0
@@ -92,8 +93,10 @@ class BackgroundDisplay internal constructor(
         resourceIo.call {
             if (!allowed()) throw NotAdmitted()
             clearSnapshot()
-            targetReady = false
-            currentTarget = target
+            resourceIo.commitObservation {
+                targetReady = false
+                currentTarget = target
+            }
             check(mayUse()) { Reasons.of("deviceUnavailable") }
             val active = channel()
             if (resourceIo.peer() == null) {
@@ -113,6 +116,7 @@ class BackgroundDisplay internal constructor(
                 coordinateSupported = probe.get(Proto.BACKGROUND_COORDINATES) is Int &&
                     probe.getInt(Proto.BACKGROUND_COORDINATES) == 1
                 afterVisualSupported = BackgroundAfterVisual.supported(probe.get(Proto.AFTER_LOCAL_VISUAL))
+                navigationSupported = BackgroundNavigationProtocol.supported(probe.get(Proto.REPLAY_NAVIGATION))
                 check(mayUse() && !resourceIo.previewClosed()) { Reasons.of("deviceUnavailable") }
                 check(resourceScope.begin(birth)) { BackgroundResourceJournal.REFUSAL }
                 val allocated = OwnerScopeProtocol.first(resourceIo, active,
@@ -348,6 +352,117 @@ class BackgroundDisplay internal constructor(
             isEditable = e.isEditable,
             viewId = e.viewId,
         )
+    }
+
+    internal fun existingReplayTarget(app: PhoneAppIdentity): Boolean = mayUse() && resourceScope.allocationReady &&
+        resourceIo.existingResource { currentTarget == app && targetReady }
+
+    override fun prepareSkillReplayStep(step: io.github.ccch1mneyyy.dsh_app.phone.SkillReplayStep):
+        io.github.ccch1mneyyy.dsh_app.phone.Either<String, io.github.ccch1mneyyy.dsh_app.phone.SkillReplayPlan> {
+        val relation = io.github.ccch1mneyyy.dsh_app.phone.skills.PhoneSkillRoute.Step(
+            io.github.ccch1mneyyy.dsh_app.phone.skills.PhoneSkillRoute.Op.SELECT_OPTION, "app1", PhoneScreen.BACKGROUND,
+            "navigation", "bottom-tabs", io.github.ccch1mneyyy.dsh_app.phone.skills.PhoneSkillRoute.Value.OptionLiteral("more"),
+            io.github.ccch1mneyyy.dsh_app.phone.skills.PhoneSkillRoute.Post.OptionSelected)
+        val target = currentTarget
+        val peer = resourceIo.peer()
+        if (step.relation != relation || target == null || peer == null || !navigationSupported ||
+            target.packageName != step.app.packageName || target.uid != step.app.uid || !existingReplayTarget(target))
+            return io.github.ccch1mneyyy.dsh_app.phone.Either.Left("原后台屏或公共导航能力不可用，未执行；不会另开应用或切到主屏。") // l10n:keep
+        val request = navigationRequest(step, null)
+        val parsed = checkNotNull(BackgroundNavigationProtocol.request(request.keySet(), request::get))
+        val response = dispatch({ navigationCurrent(target, peer) }) {
+            OwnerScopeProtocol.execute(peer, ownerToken, request, it)
+        } ?: return io.github.ccch1mneyyy.dsh_app.phone.Either.Left(PhoneTasks.STOPPED_MESSAGE)
+        val facts = navigationFacts(response, target, parsed)
+            ?: return io.github.ccch1mneyyy.dsh_app.phone.Either.Left("后台公共导航前读未获完整核验，未执行。") // l10n:keep
+        return resourceIo.commitObservation {
+            check(currentTarget == target && targetReady && resourceIo.peer() === peer) { Reasons.of("targetIdentityChanged") }
+            io.github.ccch1mneyyy.dsh_app.phone.Either.Right(BackgroundNavigationPlan(step, target, peer, facts))
+        }
+    }
+
+    private fun navigationCurrent(target: PhoneAppIdentity, peer: PrivilegedChannel): Boolean =
+        mayUse() && resourceScope.allocationReady && resourceIo.existingResource {
+            it === peer && currentTarget == target && targetReady
+        }
+
+    private fun navigationRequest(step: io.github.ccch1mneyyy.dsh_app.phone.SkillReplayStep,
+                                  before: BackgroundNavigationProtocol.Facts?): Bundle = Bundle().apply {
+        putString(Proto.OP, Proto.OP_REPLAY_NAVIGATION); putString(Proto.OWNER, ownerToken)
+        putTarget(this, PhoneAppIdentity(step.app.packageName, step.app.uid))
+        putInt(Proto.REPLAY_NAVIGATION, 1); putString("mode", if (before == null) "inspect" else "execute")
+        putString("descriptorId", BackgroundNavigationProtocol.DESCRIPTOR); putString("option", "more")
+        putLong("appVersion", step.app.version); putLong("appUpdated", step.app.updated); putString("appSigningDigest", step.app.signers)
+        if (before != null) {
+            putInt("expectedWindowId", before.window); putString("expectedSelected", before.selected)
+            putString("expectedTargetLabel", before.label); putBoolean("readOnly", before.selected == "nav_more")
+        }
+    }
+
+    private fun navigationFacts(response: Bundle, target: PhoneAppIdentity,
+                                request: BackgroundNavigationProtocol.Request): BackgroundNavigationProtocol.Facts? {
+        if (response.get(Proto.OK) != true || !TargetIdentity.receipt(target,
+                response.get(Proto.TARGET_IDENTITY_VERSION), response.get(Proto.PKG), response.get(Proto.TARGET_UID))) return null
+        val facts = response.get(Proto.NAVIGATION) as? Bundle ?: return null
+        return BackgroundNavigationProtocol.facts(facts.keySet(), facts::get, request)
+    }
+
+    /** Private evidence only: no lastElements/sid/coordinate/focus publication or model ledger. */
+    private fun navigationScreen(facts: BackgroundNavigationProtocol.Facts, target: PhoneAppIdentity): ScreenSnapshot =
+        ScreenSnapshot("private-bg-${java.util.UUID.randomUUID()}", "后台公共导航：${facts.selected}", // l10n:keep
+            null, target.packageName, readPackages = setOf(target.packageName))
+
+    private inner class BackgroundNavigationPlan(private val step: io.github.ccch1mneyyy.dsh_app.phone.SkillReplayStep,
+        private val originalTarget: PhoneAppIdentity, private val peer: PrivilegedChannel,
+        private val inspected: BackgroundNavigationProtocol.Facts) : io.github.ccch1mneyyy.dsh_app.phone.SkillReplayPlan {
+        private var used = false
+        private var closed = false
+        override val before = navigationScreen(inspected, originalTarget)
+        override val alreadySatisfied = inspected.selected == "nav_more"
+        override val target = if (alreadySatisfied) null else TargetInfo(before.id, 1, "按钮", inspected.label, // l10n:keep
+            originalTarget.packageName, null, false, false, false, "${originalTarget.packageName}:id/nav_more")
+        @Volatile override var attempted = false
+            private set
+        @Volatile override var dispatchUncertain = false
+            private set
+        @Volatile override var post = io.github.ccch1mneyyy.dsh_app.phone.SkillReplayPost.UNKNOWN
+            private set
+        override fun close() { synchronized(this) { closed = true } }
+        override fun perform(allowed: () -> Boolean): ActionResult {
+            synchronized(this) {
+                if (used || closed) return ActionResult(false, "原后台路线步骤已使用或失效，没有再次操作。") // l10n:keep
+                used = true
+            }
+            val request = navigationRequest(step, inspected)
+            val parsed = checkNotNull(BackgroundNavigationProtocol.request(request.keySet(), request::get))
+            val response = dispatch({ allowed() && navigationCurrent(originalTarget, peer) }) { beforeSend ->
+                OwnerScopeProtocol.execute(peer, ownerToken, request) {
+                    beforeSend()
+                    // Exact original transport admission. A read-only revalidation cannot click.
+                    synchronized(this) {
+                        check(!closed) { "Original navigation plan was closed" }
+                        if (!alreadySatisfied) dispatchUncertain = true
+                    }
+                }
+            } ?: return ActionResult(false, PhoneTasks.STOPPED_MESSAGE)
+            val facts = navigationFacts(response, originalTarget, parsed)
+                ?: return ActionResult(false, "后台路线回执不完整，结果未知；不要重复动作。") // l10n:keep
+            attempted = facts.attempted
+            dispatchUncertain = false // Only the complete matching typed receipt settles this fact.
+            if (!allowed()) return ActionResult(false, PhoneTasks.STOPPED_MESSAGE)
+            return resourceIo.commitObservation {
+                check(currentTarget == originalTarget && targetReady && resourceIo.peer() === peer) { Reasons.of("targetIdentityChanged") }
+                synchronized(this) {
+                    check(!closed) { "Original navigation plan was closed" }
+                    post = if (facts.post == "satisfied") io.github.ccch1mneyyy.dsh_app.phone.SkillReplayPost.SATISFIED
+                    else io.github.ccch1mneyyy.dsh_app.phone.SkillReplayPost.DIFFERENT
+                ActionResult(true, "后台公共导航取得同请求后置核验；不证明应用外部业务成功。", // l10n:keep
+                    navigationScreen(facts, originalTarget), navigationWitness =
+                    io.github.ccch1mneyyy.dsh_app.phone.skills.PhoneSkillNavigationWitness(
+                        step.app.uid, step.app.version, step.app.updated, step.app.signers))
+                }
+            }
+        }
     }
 
     override fun perform(action: PhoneAction): ActionResult = perform(action) { true }
