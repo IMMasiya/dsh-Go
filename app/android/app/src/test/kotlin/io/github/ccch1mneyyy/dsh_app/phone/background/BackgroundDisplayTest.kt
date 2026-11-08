@@ -137,7 +137,6 @@ class BackgroundDisplayTest {
     private fun withLastElement(): BackgroundDisplay {
         val display = BackgroundDisplay(
             channelProvider = { error("response validation must not start a connection") },
-            releaseChannelProvider = { error("response validation must not release the display") },
         )
         BackgroundDisplay::class.java.getDeclaredField("lastScreenId").apply {
             isAccessible = true
@@ -153,7 +152,6 @@ class BackgroundDisplayTest {
     @Test fun onlyBackIsSentToTheBackgroundScreen() {
         val display = BackgroundDisplay(
             channelProvider = { error("a refused key must not reach the privileged channel") },
-            releaseChannelProvider = { error("a refused key must not release the background screen") },
         )
         // An app is open on the background screen (set directly: opening one needs the channel).
         BackgroundDisplay::class.java.getDeclaredField("currentPackage").apply {

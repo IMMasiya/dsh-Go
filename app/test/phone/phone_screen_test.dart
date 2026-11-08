@@ -295,6 +295,93 @@ void main() {
     expect(find.text('正在操作「美团」'), findsNothing);
   });
 
+  testWidgets('inactive modern sessions have an explicit exact resume action', (tester) async {
+    final status = {
+      ...phoneStatus(a11y: true),
+      'taskProtocol': 1,
+      'selectedTaskId': 12,
+      'tasks': [
+        {'id': 10, 'sessionId': 'A', 'runId': 'old', 'active': false, 'stopped': true},
+        {'id': 11, 'sessionId': 'A', 'runId': 'new', 'active': false, 'stopped': true},
+        {'id': 12, 'sessionId': 'B', 'runId': 'run', 'active': false, 'stopped': true},
+      ],
+    };
+    final h = await pumpPhone(tester, const PhoneControlScreen(), native: FakePhoneNative(status: status));
+    expect(find.byKey(const ValueKey('phone-resume-10')), findsNothing);
+    final resumeA = find.byKey(const ValueKey('phone-resume-11'));
+    await tester.ensureVisible(resumeA);
+    await tester.tap(resumeA);
+    await tester.pump();
+    final call = h.native!.callsOf('resumeTask').single;
+    expect(call.arguments, {'taskId': 11});
+    expect(h.native!.callsOf('stopTask'), isEmpty);
+    expect(find.byKey(const ValueKey('phone-resume-12')), findsOneWidget);
+  });
+
+  testWidgets('retiring or draining tasks cannot be resumed before physical cleanup', (tester) async {
+    final h = await pumpPhone(tester, const PhoneControlScreen(), native: FakePhoneNative(status: {
+      ...phoneStatus(a11y: true),
+      'taskProtocol': 1,
+      'tasks': [
+        {'id': 11, 'sessionId': 'A', 'runId': 'run', 'stopped': true, 'draining': true},
+        {'id': 12, 'sessionId': 'B', 'runId': 'run', 'stopped': true, 'retiring': true},
+      ],
+    }));
+    for (final id in [11, 12]) {
+      final button = find.descendant(of: find.byKey(ValueKey('phone-resume-$id')), matching: find.byType(FilledButton));
+      expect(tester.widget<FilledButton>(button).onPressed, isNull);
+    }
+    expect(h.native!.callsOf('resumeTask'), isEmpty);
+  });
+
+  testWidgets('cleanup retry is a separate exact action and never implicitly resumes', (tester) async {
+    Map<String, Object?> status(bool failed) => {
+      ...phoneStatus(a11y: true),
+      'taskProtocol': 1,
+      'tasks': [
+        {'id': 11, 'sessionId': 'A', 'runId': 'run', 'stopped': true, 'cleanupFailed': failed, 'finishing': failed},
+      ],
+    };
+    final h = await pumpPhone(tester, const PhoneControlScreen(), native: FakePhoneNative(status: status(true)));
+    final action = find.byKey(const ValueKey('phone-resume-11'));
+    await tester.ensureVisible(action);
+    await tester.tap(action); await tester.pump();
+    expect(h.native!.callsOf('retryTaskCleanup').single.arguments, {'taskId': 11});
+    expect(h.native!.callsOf('resumeTask'), isEmpty);
+    h.native!.push(status(false)); await settlePhone(tester);
+    await tester.tap(action); await tester.pump();
+    expect(h.native!.callsOf('resumeTask').single.arguments, {'taskId': 11});
+  });
+
+  testWidgets('a newer stopped run cannot hide an older cleanup failure in its session', (tester) async {
+    final h = await pumpPhone(tester, const PhoneControlScreen(), native: FakePhoneNative(status: {
+      ...phoneStatus(a11y: true), 'taskProtocol': 1,
+      'tasks': [
+        {'id': 11, 'sessionId': 'A', 'runId': 'old', 'cleanupFailed': true, 'finishing': true},
+        {'id': 12, 'sessionId': 'A', 'runId': 'new', 'stopped': true},
+      ],
+    }));
+    expect(find.byKey(const ValueKey('phone-resume-12')), findsNothing);
+    final retry = find.byKey(const ValueKey('phone-resume-11'));
+    await tester.ensureVisible(retry); await tester.tap(retry); await tester.pump();
+    expect(h.native!.callsOf('retryTaskCleanup').single.arguments, {'taskId': 11});
+    expect(h.native!.callsOf('resumeTask'), isEmpty);
+  });
+
+  testWidgets('legacy cleanup failure is recoverable without adding modern sticky resume', (tester) async {
+    final h = await pumpPhone(tester, const PhoneControlScreen(), native: FakePhoneNative(status: {
+      ...phoneStatus(a11y: true), 'taskProtocol': 1,
+      'tasks': [ {'id': 9, 'stopped': true, 'cleanupFailed': true, 'finishing': true} ],
+    }));
+    final retry = find.byKey(const ValueKey('phone-resume-9'));
+    await tester.ensureVisible(retry); await tester.tap(retry); await tester.pump();
+    expect(h.native!.callsOf('retryTaskCleanup').single.arguments, {'taskId': 9});
+    h.native!.push({...phoneStatus(a11y: true), 'taskProtocol': 1, 'tasks': [ {'id': 9, 'stopped': true} ]});
+    await settlePhone(tester);
+    expect(find.byKey(const ValueKey('phone-resume-9')), findsNothing);
+    expect(h.native!.callsOf('resumeTask'), isEmpty);
+  });
+
   testWidgets('status events update the page live', (tester) async {
     final h = await pumpPhone(tester, const PhoneControlScreen());
     expect(inTile('无障碍服务', find.byType(DoneMark)), findsNothing);

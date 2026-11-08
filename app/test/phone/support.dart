@@ -248,7 +248,7 @@ class FakePhoneNative {
       case 'setEnabled':
         if (accept) status = {...status, 'enabled': args['enabled']};
         return accept;
-      case 'openAccessibilitySettings' || 'openAppDetails' || 'stopTask':
+      case 'openAccessibilitySettings' || 'openAppDetails' || 'stopTask' || 'resumeTask' || 'retryTaskCleanup':
         return true;
       case 'testScreen':
         return screen;

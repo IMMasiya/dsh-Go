@@ -11,6 +11,25 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   final channel = PhoneChannel();
 
+  test('task protocol parses selected identity and keeps legacy isolated', () async {
+    FakePhoneNative(status: {
+      ...phoneStatus(taskId: 9, taskActive: true),
+      'taskProtocol': 1, 'parallelLimit': 1, 'selectedTaskId': 12,
+      'tasks': [
+        {'id': 9, 'active': true, 'identity': 'legacy'},
+        {'id': 12, 'sessionId': 'A', 'runId': 'epoch:1', 'generation': 4,
+          'endedRunId': 'epoch:1', 'endedGeneration': 4, 'completion': 'other', 'pendingCalls': 0},
+      ],
+    }).install();
+    final value = await channel.status();
+    expect(value.taskProtocol, 1); expect(value.parallelLimit, 1);
+    expect(value.task.id, 12); expect(value.task.sessionId, 'A');
+    expect(value.task.endedRunId, 'epoch:1'); expect(value.task.endedGeneration, 4);
+    expect(value.task.completion, 'other'); expect(value.tasks.first.sessionId, isNull);
+    expect(PhoneTaskStatus.fromMap({'completion': 'success'}).completion, 'unknown');
+    expect(PhoneTaskStatus.fromMap({}).completion, 'unknown');
+  });
+
   test('status parses every field of the contract', () async {
     final native = FakePhoneNative(
       status: phoneStatus(
