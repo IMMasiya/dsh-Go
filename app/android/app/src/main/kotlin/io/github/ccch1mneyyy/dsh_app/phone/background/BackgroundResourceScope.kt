@@ -51,4 +51,10 @@ internal class BackgroundResourceScope<C : Any>(
         val original = record ?: return true
         return journal.closed(original)
     }
+
+    /** The original pin died before strict release. On this same drained lane, only an independent
+     * receipt for the exact journal snapshot replaces RELEASE; nothing is sent to the dead pin.
+     */
+    fun recover(dead: (C) -> Boolean, verify: (BackgroundResourceJournal.Record) -> Boolean): Boolean =
+        cleanup { pinned -> dead(pinned) && record?.let(journal::current)?.let(verify) == true }
 }

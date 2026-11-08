@@ -430,7 +430,11 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
         val record = sessions.task(selected.owner.taskId)?.takeIf { it.tasks === selected.task } ?: return false
         return sessions.stop(record, selected.owner, reason)
     }
-    fun retryTaskCleanup(taskId: Long): Boolean = sessions.retryCleanup(taskId)
+    fun retryTaskCleanup(taskId: Long): Boolean {
+        // A lost original peer cannot answer RELEASE; only the verified recovery receipt completes that driver.
+        if (background.lostTaskId() == taskId) background.retryBackgroundRecovery()
+        return sessions.retryCleanup(taskId)
+    }
     fun resumeTask(taskId: Long): Boolean {
         val record = sessions.task(taskId) ?: return false
         val expected = record.tasks.snapshot()
@@ -635,18 +639,24 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
     /** This is a resource recovery request, never the logical interruption acknowledgement. */
     fun retryBackgroundRecovery(): Map<String, Any?> {
         try {
-            background.pendingStoredTaskId()?.let { taskId ->
-                // The original driver already has a physical completion proof. Persist its clear
-                // and return that exact slot; no repeated RELEASE or lookup by a journal payload.
-                if (!background.endTask(taskId)) return mapOf("ok" to false, "reason" to "storageUnavailable")
-                // Only an already eligible ended/retiring scope releases its registry leases.
-                // An active failed-handoff task intentionally keeps its task/App ownership.
-                sessions.retryCleanup(taskId)
-            }
+            settleStoredTask()?.let { return it }
             if (!background.retryStoredGateCleanup() || !selfCheck.retryStoredCleanup())
                 return mapOf("ok" to false, "reason" to "busy")
-            return background.retryBackgroundRecovery()
+            // A lost original peer's verified receipt completes only its driver; return that slot here too.
+            val recovered = background.retryBackgroundRecovery()
+            return settleStoredTask() ?: recovered
         } finally { emitStatus() }
+    }
+
+    private fun settleStoredTask(): Map<String, Any?>? {
+        val taskId = background.pendingStoredTaskId() ?: return null
+        // The original driver already has a physical completion proof. Persist its clear
+        // and return that exact slot; no repeated RELEASE or lookup by a journal payload.
+        if (!background.endTask(taskId)) return mapOf("ok" to false, "reason" to "storageUnavailable")
+        // Only an already eligible ended/retiring scope releases its registry leases.
+        // An active failed-handoff task intentionally keeps its task/App ownership.
+        sessions.retryCleanup(taskId)
+        return null
     }
 
     fun status(): Map<String, Any?> = linkedMapOf(

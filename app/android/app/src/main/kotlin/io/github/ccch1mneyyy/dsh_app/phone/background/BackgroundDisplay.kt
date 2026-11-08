@@ -35,6 +35,10 @@ class BackgroundDisplay internal constructor(
     private val resourceScope = BackgroundResourceScope(resourceIo, journal, "task", viewport.preset)
     internal val ownerToken: String get() = resourceIo.owner
     internal val physicalComplete: Boolean get() = resourceScope.physicalComplete
+    internal val originalPeerLost: Boolean get() = resourceIo.peer()?.alive() == false
+    /** Never a RELEASE on another peer: only that peer's exact absence receipt completes this drained scope. */
+    internal fun recoverLostPeer(verify: (BackgroundResourceJournal.Record) -> Boolean): Boolean =
+        try { resourceScope.recover({ !it.alive() }, verify) } catch (_: Exception) { false }
     internal fun seal() { coordinateImage.invalidateScope(); resourceIo.seal() }
     internal fun previewAvailable(peer: PrivilegedChannel): Boolean =
         resourceScope.allocationReady && resourceIo.previewAvailable(peer)

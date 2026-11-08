@@ -86,6 +86,12 @@ internal class BackgroundResourceJournal(
         persist(records.filterNot { it.owner in completed }, retainOnFailure = false)
     }
 
+    /** The exact current-process snapshot, including an actual ID whose write failed, that a receipt must match. */
+    fun current(record: Record): Record? = synchronized(lock) {
+        if (!loaded || record.process != processInstance || record.owner in completed) null
+        else records.singleOrNull { it.owner == record.owner }?.takeIf { sameScope(it, record) }
+    }
+
     /** The caller first validates an independent recovery receipt against this exact snapshot. */
     fun recovered(record: Record): Boolean = synchronized(lock) {
         if (!loaded || record.process == processInstance) return false

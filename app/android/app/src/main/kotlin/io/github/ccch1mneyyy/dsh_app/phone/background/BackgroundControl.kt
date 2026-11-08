@@ -209,6 +209,11 @@ class BackgroundControl private constructor(context: Context) {
     internal fun pendingStoredTaskId(): Long? = taskResource.cleanupCandidate()
         ?.takeIf { it.driver.physicalComplete }?.owner?.taskId
 
+    /** The sealed original whose pinned peer died before strict release. Liveness is read outside the monitor. */
+    private fun lostTaskResource(): BackgroundTaskSlot.TaskResource<BackgroundDisplay>? = taskResource.cleanupCandidate()
+        ?.takeIf { !it.driver.physicalComplete && it.driver.originalPeerLost }
+    internal fun lostTaskId(): Long? = lostTaskResource()?.owner?.taskId
+
     /** Only a pure memory intent change belongs here; transport, callbacks and disk stay outside. */
     internal fun <T> changeGateIntent(change: () -> T): T {
         val original = gateCall
@@ -244,7 +249,8 @@ class BackgroundControl private constructor(context: Context) {
 
     private fun retryResourceRecoveryNow(): String? {
         val records = resourceJournal.oldRecords() ?: return "storageUnavailable"
-        if (records.isEmpty() && retiredResourcePeer == null) return null // Storage retry only; never retires a live current peer.
+        val lost = lostTaskResource()?.driver
+        if (records.isEmpty() && retiredResourcePeer == null && lost == null) return null // Storage retry only; never retires a live current peer.
         if (!beginTransportUse(recoveryUse = true)) return "busy"
         try {
             val selection = synchronized(keepGuard) { keep.selectionTicket() }
@@ -253,12 +259,33 @@ class BackgroundControl private constructor(context: Context) {
             // A retained completed peer can be disconnected without reviving the old user's consent.
             val peer = pending?.peer ?: activeChannel(allowed, explicit = true, transportReserved = true)
                 ?: return "connectionRequired"
+            // Its occupied slot makes old-record recovery busy, so the lost original goes first.
+            if (lost != null && pending == null) return recoverLostTask(lost, peer, allowed)
             return recoverResourceRecords(peer, selection, allowed, settingsUse = false)
         } finally {
             endTransportUse()
             if (keep.enabled) restoreKeptChannel()
         }
     }
+
+    /** The sealed slot stays the fence. Only a different peer's exact absence receipt completes the
+     * drained original scope; endTask then returns the slot and registry leases by the normal path.
+     */
+    private fun recoverLostTask(lost: BackgroundDisplay, peer: PrivilegedChannel, mayStart: () -> Boolean): String? = try {
+        val cap = peer.execute(Bundle().apply { putString(Proto.OP, Proto.OP_PROBE) }) {
+            check(mayStart()) { "selectionChanged" }
+        }
+        val birth = if ((cap.get(Proto.OK) as? Boolean) == true) BackgroundRecoveryProtocol.birth(cap::get) else null
+        val verified = birth != null && lost.recoverLostPeer { saved ->
+            if (saved.birth.peer == birth.peer || !mayStart()) false
+            else {
+                val reply = peer.execute(BackgroundRecoveryProtocol.check(saved)) { check(mayStart()) { "selectionChanged" } }
+                BackgroundRecoveryProtocol.recovered(saved, reply::get, reply::containsKey)
+            }
+        }
+        // A completed physical proof whose durable clear failed is retried by endTask.
+        if (birth == null) "connectionRequired" else if (verified || lost.physicalComplete) null else "recoveryUnknown"
+    } catch (_: Exception) { "recoveryUnknown" }
 
     private fun recoverResourceRecords(peer: PrivilegedChannel, selection: PrivilegedKeepState.Ticket,
                                        mayStart: () -> Boolean, settingsUse: Boolean): String? {

@@ -183,6 +183,73 @@ class BackgroundResourceJournalTest {
         assertEquals(0, journal.status().count)
     }
 
+    @Test fun lostOriginalPeerIsDischargedOnlyByAnExactAbsenceReceiptAfterItsWorkDrains() {
+        val store = Store()
+        val journal = journal(store)
+        assertTrue(journal.load())
+        val asked = mutableListOf<BackgroundResourceJournal.Record>()
+        val releases = AtomicInteger()
+        fun receipt(id: Int): (BackgroundResourceJournal.Record) -> Boolean = { saved ->
+            asked.add(saved)
+            val reply = mapOf<String, Any?>(Proto.OK to true, Proto.RESOURCE_RECOVERY_VERSION to 1,
+                Proto.RECOVERY_PEER to saved.birth.peer, Proto.OWNER to saved.owner,
+                Proto.RECOVERY_KIND to "deadPeerEmpty", Proto.DISPLAY_ID to id)
+            BackgroundRecoveryProtocol.recovered(saved, reply::get, reply::containsKey)
+        }
+        fun pinnedScope(pin: AtomicBoolean, id: Int): Pair<BackgroundDisplayIo<AtomicBoolean>, BackgroundResourceScope<AtomicBoolean>> {
+            val io = BackgroundDisplayIo<AtomicBoolean>()
+            val scope = BackgroundResourceScope(io, journal, "task", "portrait")
+            io.call {
+                assertTrue(scope.begin(birth))
+                io.startResource(pin, { beforeSend -> beforeSend(); true }, { it })
+                assertTrue(scope.allocated(id) { true })
+            }
+            return io to scope
+        }
+        // A live original pin is never bypassed: strict RELEASE stays its only path.
+        val (_, live) = pinnedScope(AtomicBoolean(true), 30)
+        assertFalse(live.recover({ !it.get() }, receipt(30)))
+        assertTrue(asked.isEmpty())
+        assertTrue(live.cleanup { releases.incrementAndGet(); true })
+
+        val pin = AtomicBoolean(true)
+        val (io, scope) = pinnedScope(pin, 31)
+        val entered = CountDownLatch(1)
+        val finish = CountDownLatch(1)
+        val caller = Executors.newSingleThreadExecutor()
+        try {
+            val body = caller.submit<Unit> { io.call { entered.countDown(); check(finish.await(5, TimeUnit.SECONDS)) } }
+            assertTrue(entered.await(5, TimeUnit.SECONDS))
+            pin.set(false)
+            // The original body has not drained: no receipt is even requested.
+            assertFalse(scope.recover({ !it.get() }, receipt(31)))
+            assertTrue(asked.isEmpty())
+            finish.countDown()
+            body.get(5, TimeUnit.SECONDS)
+            // RELEASE cannot reach the dead pin, and old-record recovery never sees this process's record.
+            assertFalse(scope.cleanup { false })
+            assertEquals(emptyList<BackgroundResourceJournal.Record>(), journal.oldRecords())
+            assertTrue(journal.hasCurrentResources())
+            // A receipt for another display is not absence of this one.
+            assertFalse(scope.recover({ !it.get() }, receipt(32)))
+            assertEquals(31, asked.single().displayId)
+            assertEquals(io.owner, asked.single().owner)
+            assertFalse(scope.physicalComplete)
+            assertEquals(1, journal.status().count)
+
+            assertTrue(scope.recover({ !it.get() }, receipt(31)))
+            assertTrue(scope.physicalComplete)
+            assertFalse(journal.hasCurrentResources())
+            assertEquals("clear", journal.status().state)
+            // The later endTask cleanup reuses the cached completion and never sends RELEASE again.
+            assertTrue(scope.cleanup { releases.incrementAndGet(); false })
+            assertEquals(1, releases.get())
+        } finally {
+            finish.countDown()
+            caller.shutdownNow()
+        }
+    }
+
     @Test fun cancellationDuringActualIdCommitWaitsForBodyAndNeverEnablesBusiness() {
         val raw = AtomicReference<String?>(null)
         val writes = AtomicInteger()
