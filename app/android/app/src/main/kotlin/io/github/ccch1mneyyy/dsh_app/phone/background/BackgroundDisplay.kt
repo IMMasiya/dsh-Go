@@ -250,7 +250,11 @@ class BackgroundDisplay(
         val poor = response.getBoolean(Proto.POOR)
         val portrait = response.getBoolean(Proto.PORTRAIT, true)
         val keyboardUp = response.getBoolean(Proto.KEYBOARD_UP, false)
-        var text = BackgroundTree.render(id, appLabel, portrait, keyboardUp, elements, background = true, poorTree = poor)
+        val detailed = response.containsKey(Proto.A_BOUNDS)
+        var text = BackgroundTree.render(id, appLabel, portrait, keyboardUp, elements, background = true, poorTree = poor,
+            overflow = if (detailed) response.getInt(Proto.ELEMENT_OVERFLOW, 0) else 0,
+            detailed = detailed,
+            treeComplete = if (response.containsKey(Proto.TREE_COMPLETE)) response.getBoolean(Proto.TREE_COMPLETE) else null)
         if (response.getBoolean(Proto.IMAGE_OMITTED)) {
             // l10n:keep agent screen protocol
             text += "\n（本页含敏感输入或控件树未完整读取，已省略截图；可继续使用已脱敏的文字信息）"
@@ -270,6 +274,7 @@ class BackgroundDisplay(
         val flags = response.getIntArray(Proto.A_FLAGS) ?: IntArray(n)
         val region = response.getIntArray(Proto.A_REGION) ?: IntArray(n)
         val indent = response.getIntArray(Proto.A_INDENT) ?: IntArray(n)
+        val bounds = response.getIntArray(Proto.A_BOUNDS)?.takeIf { it.size == n * 4 }
         val out = ArrayList<Element>(n)
         for (i in 0 until n) {
             val lbl = label[i].orEmpty()
@@ -289,6 +294,7 @@ class BackgroundDisplay(
                     isEditable = f and Proto.FLAG_EDITABLE != 0,
                     viewId = viewIds?.getOrNull(i),
                     isScrollable = f and Proto.FLAG_SCROLLABLE != 0,
+                    bounds = bounds?.let { ElementBounds(it[i * 4], it[i * 4 + 1], it[i * 4 + 2], it[i * 4 + 3]) },
                 ),
             )
         }

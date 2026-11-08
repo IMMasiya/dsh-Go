@@ -181,7 +181,7 @@ class PrivilegedDisplayCore(private val context: Context) {
             }
             Proto.OP_OBSERVE -> {
                 requireDisplay(); requireForeground(pkg)
-                observe(pkg, request.getBoolean(Proto.WANT_IMAGE), response, requireTree = true)
+                observe(pkg, request.getBoolean(Proto.WANT_IMAGE), response, requireTree = true, detail = request.getBoolean(Proto.DETAIL))
             }
             Proto.OP_TAP -> {
                 requireDisplay(); requireForeground(pkg)
@@ -323,7 +323,7 @@ class PrivilegedDisplayCore(private val context: Context) {
 
     // ---- observation (tree + optional screenshot) --------------------------
 
-    private fun observe(pkg: String, wantImage: Boolean, response: Bundle, requireTree: Boolean = false) {
+    private fun observe(pkg: String, wantImage: Boolean, response: Bundle, requireTree: Boolean = false, detail: Boolean = false) {
         val id = displayId()
         response.putInt(Proto.DISPLAY_ID, id)
         response.putString(Proto.FG_PKG, pkg)
@@ -335,7 +335,7 @@ class PrivilegedDisplayCore(private val context: Context) {
         // Other capture faults retain the existing tree-only observation path.
         val shot = captureResult.getOrNull()
         val label = runCatching { appLabel(pkg) }.getOrNull()
-        label?.let { response.putString(Proto.APP_LABEL, it) }
+        label?.let { response.putString(Proto.APP_LABEL, if (detail) BackgroundTree.cap(it) else it) }
         val treeResult = runCatching { readTree(id, pkg, scanOtherWindows = wantImage && shot != null) }
         val failure = treeResult.exceptionOrNull()
         if (failure is InterruptedException || failure is Fault && failure.code == "cancelled") throw failure
@@ -360,8 +360,8 @@ class PrivilegedDisplayCore(private val context: Context) {
             response.putInt(Proto.COUNT, 0)
             return
         }
-        // The screenshot contains the whole viewport, including nodes beyond the 120-line
-        // text limit. Never attach it when secrets were found or the scan was incomplete.
+        // The screenshot contains the whole viewport, including nodes beyond the emitted
+        // text prefix. Never attach it when secrets were found or the scan was incomplete.
         // The typing unlock changes permission to write, never permission to reveal a secret.
         if (wantImage && shot != null) {
             if (tree != null && tree.complete && !tree.hasSecrets) {
@@ -371,11 +371,39 @@ class PrivilegedDisplayCore(private val context: Context) {
                 response.putBoolean(Proto.IMAGE_OMITTED, true)
             }
         }
-        emitElements(tree?.elements.orEmpty(), response)
+        val elements = tree?.elements.orEmpty()
+        if (detail) {
+            val models = elements.mapIndexed { index, e ->
+                Element(index + 1, e.role, e.label, Region.MIDDLE, indent = e.indent,
+                    states = e.states, sensitive = e.flags and Proto.FLAG_SENSITIVE != 0,
+                    viewId = e.viewId, bounds = ElementBounds(e.bounds.left, e.bounds.top, e.bounds.right, e.bounds.bottom))
+            }
+            fun payloadFor(count: Int) = Bundle().apply {
+                emitElements(elements, this, count, detail = true)
+                putInt(Proto.ELEMENT_OVERFLOW, elements.size - count)
+                putBoolean(Proto.TREE_COMPLETE, tree?.complete == true)
+            }
+            var count = BackgroundTree.detailPrefixCount(models)
+            var payload = payloadFor(count)
+            // Measure the real Parcel, not UTF-8 estimates (Parcel strings are UTF-16).
+            // Bounded binary search is only needed if platform encoding exceeds the reserve.
+            if (Bundles.marshal(payload).size > BackgroundTree.DETAIL_PARCEL_BYTES) {
+                var low = 0
+                var high = count
+                while (low < high) {
+                    val mid = (low + high + 1) / 2
+                    val candidate = payloadFor(mid)
+                    if (Bundles.marshal(candidate).size <= BackgroundTree.DETAIL_PARCEL_BYTES) low = mid else high = mid - 1
+                }
+                count = low
+                payload = payloadFor(count)
+            }
+            response.putAll(payload)
+        } else emitElements(elements, response)
     }
 
-    private fun emitElements(elements: List<BgNode>, response: Bundle) {
-        val capped = elements.take(120)
+    private fun emitElements(elements: List<BgNode>, response: Bundle, count: Int = 120, detail: Boolean = false) {
+        val capped = elements.take(count)
         val n = capped.size
         response.putInt(Proto.COUNT, n)
         response.putBoolean(Proto.POOR, elements.count { it.label.isNotEmpty() } < 5)
@@ -383,11 +411,16 @@ class PrivilegedDisplayCore(private val context: Context) {
         val viewIds = arrayOfNulls<String>(n)
         val states = arrayOfNulls<String>(n); val flags = IntArray(n)
         val region = IntArray(n); val indent = IntArray(n)
+        val bounds = if (detail) IntArray(n * 4) else null
         for (i in 0 until n) {
             val e = capped[i]
             role[i] = e.role; label[i] = e.label; states[i] = e.states.joinToString("\u0001")
             viewIds[i] = e.viewId
             flags[i] = e.flags; region[i] = e.region; indent[i] = e.indent
+            if (bounds != null) {
+                bounds[i * 4] = e.bounds.left; bounds[i * 4 + 1] = e.bounds.top
+                bounds[i * 4 + 2] = e.bounds.right; bounds[i * 4 + 3] = e.bounds.bottom
+            }
         }
         response.putStringArray(Proto.A_ROLE, role)
         response.putStringArray(Proto.A_LABEL, label)
@@ -396,6 +429,7 @@ class PrivilegedDisplayCore(private val context: Context) {
         response.putIntArray(Proto.A_FLAGS, flags)
         response.putIntArray(Proto.A_REGION, region)
         response.putIntArray(Proto.A_INDENT, indent)
+        if (bounds != null) response.putIntArray(Proto.A_BOUNDS, bounds)
     }
 
     private fun appLabel(pkg: String): String? {

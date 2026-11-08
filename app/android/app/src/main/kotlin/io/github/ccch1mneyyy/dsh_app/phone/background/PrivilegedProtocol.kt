@@ -102,6 +102,10 @@ object Proto {
     //                                     4 longClickable, 5 scrollable, 6 sensitiveWord, 7 focused
     const val A_REGION = "region"       // 0 top, 1 middle, 2 bottom
     const val A_INDENT = "indent"
+    /** Optional detailed-observation fields. Absence on older peers means unknown. */
+    const val A_BOUNDS = "bounds" // flattened left, top, right, bottom for each emitted element
+    const val ELEMENT_OVERFLOW = "elementOverflow" // read primary elements minus emitted prefix
+    const val TREE_COMPLETE = "treeComplete" // bounded accessibility/privacy scan only
 
     const val FLAG_PASSWORD = 1
     const val FLAG_SECRET = 1 shl 1
