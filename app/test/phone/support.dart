@@ -192,6 +192,9 @@ class FakePhoneNative {
   /// Private engine-approval UI; production PhoneChannel still encodes/parses.
   Future<Map<String, Object?>> Function(Map<String, Object?>)? onPresentPrompt;
 
+  /// Gate cleanup's asynchronous native response, without rerunning a probe.
+  Future<Map<String, Object?>> Function(Map<String, Object?>)? onRetryGateCleanup;
+
   /// The 悬浮条 settings as the native side keeps them.
   Map<String, Object?> overlay = {'idleOpacity': 0.7, 'autoCollapse': false};
 
@@ -258,6 +261,8 @@ class FakePhoneNative {
           status = {...status, 'background': {..._background, 'viewport': {'v': 1, 'preset': args['preset']}}};
         }
         return viewportResult;
+      case 'retryBackgroundGateCleanup':
+        return onRetryGateCleanup?.call(args) ?? results[call.method] ?? {'ok': false};
       case 'setBackgroundMode':
         final r = results[call.method] ?? {'ok': true};
         if (r['ok'] == true) {
