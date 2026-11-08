@@ -395,6 +395,9 @@ class SafetyGate(
             sourceRefusal != null -> sourceRefusal.message
             // l10n:keep agent safety result
             s.secure -> "安全窗口（禁止截屏 / 读取）。要操作请 handoff。"
+            s.image != null && s.imageReadPackages.any { checkRead(p, it, null) != null } ->
+                // l10n:keep agent safety result
+                return s.copy(text = s.text + "\n提示：截图范围包含当前不允许读取的应用，这次没有附截图。", image = null, imageMime = null)
             // l10n:keep agent safety result
             s.image != null && ("«银行卡" in s.text || "«身份证" in s.text) ->
                 // l10n:keep agent safety result

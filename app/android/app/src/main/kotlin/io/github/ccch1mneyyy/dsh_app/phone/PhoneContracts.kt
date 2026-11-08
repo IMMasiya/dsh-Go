@@ -49,6 +49,8 @@ data class ScreenSnapshot(
     internal val readPackages: Set<String> = emptySet(),
     /** Internal candidate for an INPUT retained in text; whole-screen refusals clear it. */
     internal val focus: FocusObservation? = null,
+    /** Known packages in the image capture scope; independent of text and not pixel attestation. */
+    internal val imageReadPackages: Set<String> = emptySet(),
 )
 
 /** What an element looks like to the safety rules, resolved from a snapshot id + element id. */
