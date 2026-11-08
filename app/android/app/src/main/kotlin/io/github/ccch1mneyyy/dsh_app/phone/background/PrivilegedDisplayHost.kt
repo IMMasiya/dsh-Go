@@ -32,6 +32,7 @@ internal data class HostedRelease(val owner: String, val neverCreated: Boolean, 
 
 /** Actual Binder/framed-server router; resource Core instances have independent fixed owners. */
 internal class PrivilegedDisplayHost(private val context: Context) {
+    val peerInstance: String = java.util.UUID.randomUUID().toString()
     private val trees = PrivilegedTreeAccess(context)
     private val legacy = PrivilegedDisplayCore(context, trees)
     private val scopes = OwnerScopes<PrivilegedDisplayCore, HostedRelease>()

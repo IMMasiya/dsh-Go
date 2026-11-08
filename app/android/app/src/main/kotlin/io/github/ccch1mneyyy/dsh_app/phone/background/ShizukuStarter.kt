@@ -165,9 +165,12 @@ class ShizukuStarter(
             val remote = IPrivilegedDisplay.Stub.asInterface(binder) ?: return null
             val probe = remote.execute(android.os.Bundle().apply { putString(Proto.OP, Proto.OP_PROBE) })
             if (!probe.getBoolean(Proto.OK) || probe.getString("revision") != Proto.REVISION) return null
+            val peer = MuxProtocol.peer(probe)
+            peer?.let { MuxProtocol.acknowledge(remote.execute(MuxProtocol.optIn(it)), it) }
+            val candidate = ShizukuChannel(remote, peer)
             return synchronized(guard) {
-                if (!owner.valid || !owner.mayStart()) return null
-                ShizukuChannel(remote).also { channel = it }
+                if (!owner.valid || !owner.mayStart()) { candidate.close(); return null }
+                candidate.also { channel = it }
             }
         } catch (e: Exception) {
             if (e is InterruptedException) Thread.currentThread().interrupt()
@@ -204,6 +207,7 @@ class ShizukuStarter(
     // Caller holds guard. A pending Binder operation must finish before its tag may be reused.
     private fun retire(owner: Binding) {
         owner.valid = false
+        channel?.close() // Memory-only admission retirement; physical unbind remains below.
         channel = null
         owner.latch.countDown()
         owner.worker?.interrupt()

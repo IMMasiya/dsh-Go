@@ -23,17 +23,20 @@ internal class BackgroundDisplayIo<C : Any> {
     fun wasNotAdmitted(): Boolean = synchronized(lock) { notAdmitted }
 
     /** Called inside the admitted IO body. Only its own complete reply can prove no admission. */
-    fun <R> startResource(peer: C, exchange: () -> R, admission: (R) -> Boolean?): R {
-        synchronized(lock) {
-            check(!releaseStarted && activeCalls > 0 && !firstRequest && pinned == null)
-            pinned = peer
-            firstRequest = true // Before sending: a lost reply can never be called unused.
+    fun <R> startResource(peer: C, exchange: (beforeSend: () -> Unit) -> R, admission: (R) -> Boolean?): R {
+        val reply = exchange {
+            synchronized(lock) {
+                check(!releaseStarted && activeCalls > 0 && !firstRequest && pinned == null)
+                pinned = peer
+                firstRequest = true // Only after actual channel admission, before any transport write.
+            }
         }
-        val reply = exchange()
         val accepted = admission(reply)
         synchronized(lock) {
-            check(pinned === peer && firstRequest)
-            if (accepted == false) notAdmitted = true
+            if (firstRequest) {
+                check(pinned === peer)
+                if (accepted == false) notAdmitted = true
+            }
         }
         return reply
     }

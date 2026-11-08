@@ -17,7 +17,7 @@ internal object OwnerScopeProtocol {
     fun first(io: BackgroundDisplayIo<PrivilegedChannel>, peer: PrivilegedChannel, request: Bundle): Bundle {
         fun accepted(reply: Bundle): Boolean? = OwnerScopeReply.first(io.owner,
             reply.get(Proto.OWNER_SCOPE_VERSION), reply.get(Proto.OWNER), reply.get(Proto.SCOPE_ACCEPTED), reply.get(Proto.OK))
-        val raw = io.startResource(peer, { peer.execute(OwnerScopeProtocol.request(request)) }, ::accepted)
+        val raw = io.startResource(peer, { beforeSend -> peer.execute(OwnerScopeProtocol.request(request), beforeSend) }, ::accepted)
         check(accepted(raw) != null) { Reasons.of("scopeIdentityUnavailable") }
         return response(io.owner, raw)
     }
