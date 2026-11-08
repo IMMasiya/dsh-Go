@@ -14,6 +14,8 @@ import android.net.NetworkCapabilities
 import android.net.NetworkRequest
 import android.provider.Settings
 import io.github.ccch1mneyyy.dsh_app.phone.PhoneControl
+import io.github.ccch1mneyyy.dsh_app.phone.PhoneAppIdentity
+import io.github.ccch1mneyyy.dsh_app.phone.a11y.MlKitLocalOcr
 import java.util.concurrent.Executors
 import java.util.concurrent.Future
 import java.util.concurrent.FutureTask
@@ -140,6 +142,7 @@ class BackgroundControl private constructor(context: Context) {
     private val previewGuard = Any()
     @Volatile private var previewTarget: BackgroundPreviewTarget? = null
     @Volatile var onPreviewChanged: () -> Unit = {}
+    @Volatile internal var localOcrAllowed: (PhoneAppIdentity) -> Boolean = { false }
 
     fun previewTarget(): BackgroundPreviewTarget? = previewTarget
 
@@ -811,6 +814,7 @@ class BackgroundControl private constructor(context: Context) {
             } catch (_: Exception) { return null }
         }
         if (!allowed() || activeChannel(mayStart = ::allowed) == null) return null
+        val ocr = MlKitLocalOcr.get(app) // First preference read stays outside resource monitors.
         val acquired = synchronized(this) {
             if (resourceMaintenance != null || retiredResourcePeer != null || selfCheckBorrow != null || gateCall != null || gate.needsRetest || selectingResource || interruptRequested || mode == "off") return null
             lateinit var record: BackgroundTaskSlot.TaskResource<BackgroundDisplay>
@@ -826,6 +830,8 @@ class BackgroundControl private constructor(context: Context) {
                         action()
                     } },
                     viewport = viewport,
+                    localOcr = ocr,
+                    localOcrAllowed = { target -> localOcrAllowed(target) },
                     onResourceReady = { publishPreviewTarget(record, it) },
                 )
             } ?: return null

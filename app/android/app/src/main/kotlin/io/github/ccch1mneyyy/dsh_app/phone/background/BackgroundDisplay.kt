@@ -2,6 +2,7 @@ package io.github.ccch1mneyyy.dsh_app.phone.background
 
 import android.os.Build
 import android.os.Bundle
+import android.os.SystemClock
 import io.github.ccch1mneyyy.dsh_app.phone.ActionResult
 import io.github.ccch1mneyyy.dsh_app.phone.Availability
 import io.github.ccch1mneyyy.dsh_app.phone.CollectResult
@@ -14,6 +15,12 @@ import io.github.ccch1mneyyy.dsh_app.phone.PhoneTasks
 import io.github.ccch1mneyyy.dsh_app.phone.ScreenSnapshot
 import io.github.ccch1mneyyy.dsh_app.phone.TargetInfo
 import io.github.ccch1mneyyy.dsh_app.phone.VisualScope
+import io.github.ccch1mneyyy.dsh_app.phone.VisualBounds
+import io.github.ccch1mneyyy.dsh_app.phone.a11y.ImageGeometry
+import io.github.ccch1mneyyy.dsh_app.phone.a11y.LocalOcrBoundary
+import io.github.ccch1mneyyy.dsh_app.phone.a11y.LocalOcrResult
+import io.github.ccch1mneyyy.dsh_app.phone.a11y.LocalOcrVisual
+import io.github.ccch1mneyyy.dsh_app.phone.a11y.MlKitLocalOcr
 import io.github.ccch1mneyyy.dsh_app.phone.VisualTarget
 
 /**
@@ -29,6 +36,8 @@ class BackgroundDisplay internal constructor(
     private val admitUse: ((() -> Unit) -> Boolean),
     private val viewport: BackgroundPolicy.Viewport = BackgroundPolicy.Viewport.PORTRAIT,
     private val onResourceReady: (PrivilegedChannel) -> Unit = {},
+    private val localOcr: MlKitLocalOcr? = null,
+    private val localOcrAllowed: (PhoneAppIdentity) -> Boolean = { false },
 ) : PhoneDriver {
 
     private val resourceIo = BackgroundDisplayIo<PrivilegedChannel>()
@@ -55,6 +64,7 @@ class BackgroundDisplay internal constructor(
     private var targetReady = false
     private var coordinateSupported = false
     private val coordinateImage = BackgroundCoordinateImage()
+    private var coordinateOcrEpoch: Long? = null
     private var counter = 0
     private var lastScreenId: String? = null
     private var lastElements: List<Element> = emptyList()
@@ -141,17 +151,22 @@ class BackgroundDisplay internal constructor(
         throw error
     }
 
-    override fun observe(detail: Boolean, image: Boolean): ScreenSnapshot {
+    override fun observe(detail: Boolean, image: Boolean): ScreenSnapshot = observeFrame(detail, image, true)
+
+    private fun observeFrame(detail: Boolean, image: Boolean, requestLocalText: Boolean): ScreenSnapshot {
         coordinateImage.clear()
+        val started = SystemClock.uptimeMillis()
+        val ocrEpoch = if (requestLocalText) localOcr?.enabledEpoch() else null
         val target = currentTarget ?: return idleSnapshot()
+        val pixels = image || (ocrEpoch != null && coordinateSupported && localReadAllowed(target))
         check(targetReady) { Reasons.of("targetIdentityUnavailable") }
         val request = Bundle().apply {
             putString(Proto.OP, Proto.OP_OBSERVE)
             putString(Proto.OWNER, ownerToken)
             putTarget(this, target)
             putBoolean(Proto.DETAIL, detail)
-            putBoolean(Proto.WANT_IMAGE, image)
-            if (image && coordinateSupported) putInt(Proto.BACKGROUND_COORDINATES, 1)
+            putBoolean(Proto.WANT_IMAGE, pixels)
+            if (pixels && coordinateSupported) putInt(Proto.BACKGROUND_COORDINATES, 1)
             putBoolean(Proto.LOCAL_VISUAL, true)
         }
         val response = try {
@@ -162,13 +177,76 @@ class BackgroundDisplay internal constructor(
         }
         requireObservation(response.getBoolean(Proto.OK), response.getString(Proto.ERROR), response.getString(Proto.ERROR_DETAIL))
         requireIdentity(response)
-        return snapshot(response, markNew = false)
+        var local = if (requestLocalText) readLocalText(response, target, ocrEpoch, started) else null
+        val epochCurrent = ocrEpoch == null || localOcr?.enabledEpoch() == ocrEpoch
+        if (!epochCurrent && local != null) local = LocalOcrVisual.Output(
+            LocalOcrBoundary.message(LocalOcrResult.Unavailable(
+                if (localOcr?.enabled == false) LocalOcrResult.Reason.DISABLED else LocalOcrResult.Reason.CANCELLED)),
+            local.sensitiveText, false)
+        val snap = snapshot(response, markNew = false, publishImage = image && local?.sensitiveText != true,
+            localText = local, coordinatesAllowed = local?.sensitiveText != true && (image || (epochCurrent && local?.hasPoints == true)))
+        // Public-image credentials retain their original meaning; only OCR-only credentials
+        // depend on the recognition setting epoch, including the final Core acceptance boundary.
+        if (!image && epochCurrent && local?.hasPoints == true && !local.sensitiveText) coordinateOcrEpoch = ocrEpoch
+        return snap
     }
 
-    override fun acceptVisualObservation(screenId: String) = coordinateImage.accept(screenId)
+    private fun localReadAllowed(target: PhoneAppIdentity): Boolean = !Thread.currentThread().isInterrupted &&
+        targetReady && currentTarget == target && mayUse() && !resourceIo.previewClosed() && localOcrAllowed(target)
+
+    /** The receipt is input evidence, never a claim that every pixel has no sensitive content. */
+    private fun readLocalText(response: Bundle, target: PhoneAppIdentity, expectedEpoch: Long?,
+                              started: Long): LocalOcrVisual.Output? {
+        if (response.get(Proto.POOR) != true) return null
+        fun diagnostic(reason: LocalOcrResult.Reason) = LocalOcrVisual.Output(
+            LocalOcrBoundary.message(LocalOcrResult.Unavailable(reason)), false, false)
+        if (!localReadAllowed(target)) return diagnostic(LocalOcrResult.Reason.PRIVACY_UNVERIFIED)
+        val host = localOcr ?: return diagnostic(LocalOcrResult.Reason.NOT_INSTALLED)
+        if (expectedEpoch == null || host.enabledEpoch() != expectedEpoch)
+            return diagnostic(if (!host.enabled) LocalOcrResult.Reason.DISABLED else LocalOcrResult.Reason.CANCELLED)
+        val receipt = if (coordinateSupported && response.get(Proto.OK) == true &&
+            response.get(Proto.SECURE) == false && response.get(Proto.FRAME_NOT_READY) != true &&
+            response.get(Proto.IMAGE_OMITTED) != true && response.get(Proto.COORDINATE_SCOPE_VERSION) is Int &&
+            response.getInt(Proto.COORDINATE_SCOPE_VERSION) == 1 && response.get(Proto.COORDINATE_SCOPE_KNOWN) == true &&
+            (response.get(Proto.DISPLAY_ID) as? Int)?.let { it >= 0 } == true &&
+            TargetIdentity.receipt(target, response.get(Proto.TARGET_IDENTITY_VERSION), response.get(Proto.PKG), response.get(Proto.TARGET_UID))) {
+            BackgroundCoordinateImage.Receipt.parse(response.get(Proto.BACKGROUND_COORDINATES),
+                response.get(Proto.COORDINATE_OBSERVATION), response.get(Proto.COORDINATE_WIDTH), response.get(Proto.COORDINATE_HEIGHT))
+        } else null
+        val jpeg = response.getByteArray("imageBytes")
+        if (receipt == null || jpeg == null || jpeg.isEmpty() || response.getString("imageMime") != "image/jpeg")
+            return diagnostic(LocalOcrResult.Reason.PRIVACY_UNVERIFIED)
+        val deadline = minOf(started + 4_800L, SystemClock.uptimeMillis() + 2_500L)
+        val cancelled = { !localReadAllowed(target) || host.enabledEpoch() != expectedEpoch }
+        val result = try { BackgroundLocalOcr.read(jpeg, receipt, host, deadline, cancelled) }
+        catch (_: InterruptedException) {
+            Thread.currentThread().interrupt()
+            return diagnostic(LocalOcrResult.Reason.CANCELLED)
+        } catch (_: Exception) { LocalOcrResult.Failed(LocalOcrResult.Failure.ENGINE) }
+        // An already returned result can contain a same-frame privacy fact. Preserve that
+        // fact even if OFF/deadline now suppresses its text and points; no further SDK work.
+        val output = LocalOcrVisual.format(result, receipt.width, receipt.height,
+            VisualBounds(0, 0, receipt.width, receipt.height), ImageGeometry(0, 0, 1f, 1f, receipt.width, receipt.height))
+        if (cancelled()) return diagnostic(if (!host.enabled) LocalOcrResult.Reason.DISABLED else LocalOcrResult.Reason.CANCELLED)
+            .copy(sensitiveText = output.sensitiveText)
+        if (SystemClock.uptimeMillis() >= deadline) return diagnostic(LocalOcrResult.Reason.DEADLINE)
+            .copy(sensitiveText = output.sensitiveText)
+        return output
+    }
+
+    private fun coordinateEpochCurrent(): Boolean {
+        val token = coordinateOcrEpoch ?: return true
+        if (localOcr?.enabledEpoch() == token) return true
+        coordinateImage.clear()
+        return false
+    }
+
+    override fun acceptVisualObservation(screenId: String) {
+        if (coordinateEpochCurrent()) coordinateImage.accept(screenId)
+    }
     override fun visualScope(screenId: String): VisualScope? = coordinateImage.scope(screenId)
     override fun coordinateTarget(action: PhoneAction.TapXY): VisualTarget? {
-        if (action.gesture != PhoneAction.CoordinateGesture.TAP) return null
+        if (!coordinateEpochCurrent() || action.gesture != PhoneAction.CoordinateGesture.TAP) return null
         val index = coordinateImage.targetAt(action.screenId, action.x, action.y) ?: return null
         val scope = coordinateImage.scope(action.screenId) ?: return null
         val target = target(action.screenId, index) ?: return null
@@ -205,7 +283,7 @@ class BackgroundDisplay internal constructor(
         var last: ScreenSnapshot? = null
         while (pages < maxPages.coerceIn(1, 30)) {
             if (!allowed()) { stop = PhoneTasks.STOPPED_MESSAGE; break }
-            val snap = observe(detail = false, image = false)
+            val snap = observeFrame(detail = false, image = false, requestLocalText = false)
             last = snap
             val before = seen.size
             for (e in lastElements) if (e.label.isNotEmpty()) seen.add(e.label)
@@ -315,6 +393,7 @@ class BackgroundDisplay internal constructor(
         // l10n:keep agent coordinate protocol
         if (!coordinateSupported) return ActionResult(false, "当前后台通道不支持截图坐标，请更新并重新连接；未执行，也不会转到主屏。")
         if (!allowed()) return ActionResult(false, PhoneTasks.STOPPED_MESSAGE)
+        if (!coordinateEpochCurrent()) return ActionResult(false, Reasons.of("staleSnapshot"), staleSnapshot = true)
         val image = coordinateImage.take(action.screenId)
             // l10n:keep agent coordinate protocol
             ?: return ActionResult(false, "没有本任务最近一次已返回图片的后台坐标凭据。请显式 screen(image:true, background:true) 后核对；仍无凭据请用元素操作或交给用户，不要盲点。")
@@ -336,7 +415,7 @@ class BackgroundDisplay internal constructor(
             }
         }
         val response = try {
-            dispatch(allowed) { OwnerScopeProtocol.execute(channel(), ownerToken, request, it) }
+            dispatch({ allowed() && coordinateEpochCurrent() }) { OwnerScopeProtocol.execute(channel(), ownerToken, request, it) }
         } catch (_: Exception) {
             clearSnapshot()
             // The original lane never replays a request after a missing/throwing reply.
@@ -408,6 +487,7 @@ class BackgroundDisplay internal constructor(
     }
 
     private fun clearSnapshot() {
+        coordinateOcrEpoch = null
         coordinateImage.invalidateScope()
         coordinateImage.clear()
         lastScreenId = null
@@ -447,7 +527,9 @@ class BackgroundDisplay internal constructor(
         return ActionResult(ok, message, snap)
     }
 
-    private fun snapshot(response: Bundle, markNew: Boolean): ScreenSnapshot {
+    private fun snapshot(response: Bundle, markNew: Boolean, publishImage: Boolean = true,
+                         localText: LocalOcrVisual.Output? = null, coordinatesAllowed: Boolean = true): ScreenSnapshot {
+        coordinateOcrEpoch = null
         coordinateImage.clear()
         val id = "b${++counter}"
         val target = currentTarget
@@ -487,7 +569,7 @@ class BackgroundDisplay internal constructor(
         }
         previousLabels = elements.map { it.label }.filter { it.isNotEmpty() }.toSet()
         val image = if (response.getBoolean(Proto.IMAGE_OMITTED)) null else response.getByteArray("imageBytes")
-        val coordinate = if (image != null && coordinateSupported) BackgroundCoordinateImage.Receipt.parse(
+        val coordinate = if (coordinatesAllowed && image != null && coordinateSupported) BackgroundCoordinateImage.Receipt.parse(
             response.get(Proto.BACKGROUND_COORDINATES), response.get(Proto.COORDINATE_OBSERVATION),
             response.get(Proto.COORDINATE_WIDTH), response.get(Proto.COORDINATE_HEIGHT)) else null
         val eligible = if (coordinate == null) emptyMap() else BackgroundCoordinateImage.targets(
@@ -496,13 +578,15 @@ class BackgroundDisplay internal constructor(
         coordinateImage.candidate(id, coordinate, eligible)
         if (coordinate != null) {
             // l10n:keep agent coordinate protocol
-            text += "\n截图坐标范围：${coordinate.width}×${coordinate.height}像素；30秒内可单次使用；只有明确普通目标可使用独立的本任务视觉许可，未知目标及长按/滑动仍逐次确认。本机文字识别未安装，未证明画布敏感内容或目标像素未变。"
+            text += "\n截图坐标范围：${coordinate.width}×${coordinate.height}像素；30秒内可单次使用；只有明确普通目标可使用独立的本任务视觉许可，未知目标及长按/滑动仍逐次确认。未证明画布没有敏感内容或目标像素未变。"
         } else if (image != null && coordinateSupported) {
             // l10n:keep agent coordinate protocol
             text += "\n本次截图没有可用坐标凭据（窗口、隐私、几何或帧条件未满足）。请用元素操作或交给用户。"
         }
+        if (localText != null) text += "\n" + localText.text
+        val shownImage = image.takeIf { publishImage }
         return ScreenSnapshot(id, text, appLabel, pkg, secure = false, poorTree = poor,
-            image = image, imageMime = if (image == null) null else response.getString("imageMime"))
+            image = shownImage, imageMime = if (shownImage == null) null else response.getString("imageMime"))
     }
 
     private fun buildElements(response: Bundle, markNew: Boolean): List<Element> {
