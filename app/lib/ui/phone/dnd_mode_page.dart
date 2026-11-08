@@ -234,6 +234,30 @@ class _PhoneDndPageState extends ConsumerState<PhoneDndPage> {
           if (!bg.effectiveReady && !waiting)
             PhoneNote(tone: NoteTone.warn, text: bg.effectiveReason ?? l10n.phoneNotReadyYet),
         ],
+        if (bg.viewport case final viewport? when bg.androidOk)
+          ListPageCard(
+            margin: _groupMargin,
+            title: l10n.phoneViewportTitle,
+            children: [
+              ListPageRow(
+                leading: const SizedBox(),
+                title: l10n.phoneViewportDescription,
+                titleMaxLines: 10,
+              ),
+              for (final preset in PhoneBackgroundViewport.values)
+                Semantics(
+                  selected: viewport == preset,
+                  inMutuallyExclusiveGroup: true,
+                  child: ListPageRow(
+                    key: ValueKey('phone-viewport-${preset.name}'),
+                    leading: Icon(viewport == preset ? AppIcons.radioOn : AppIcons.radioOff),
+                    title: preset == PhoneBackgroundViewport.portrait ? l10n.phoneViewportPortrait : l10n.phoneViewportLandscape,
+                    onTap: _busy || viewport == preset ? null : () =>
+                      unawaited(_run(() => _phone.setBackgroundViewport(preset))),
+                  ),
+                ),
+            ],
+          ),
         ListPageCard(
           margin: _groupMargin,
           title: l10n.phoneDndChannels,

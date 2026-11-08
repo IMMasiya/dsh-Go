@@ -670,5 +670,9 @@
   "phonePreviewOpen": "查看后台屏",
   "phonePreviewOff": "任务已结束或预览已关闭",
   "phonePreviewUnavailable": "画面暂不可预览，或受到保护",
-  "phonePreviewWaiting": "等待后台屏的新画面"
+  "phonePreviewWaiting": "等待后台屏的新画面",
+  "phoneViewportTitle": "后台视口",
+  "phoneViewportDescription": "下次新建后台屏时生效；当前后台屏不变，交还后重建会采用新设置。视口方向不会强制应用旋转。",
+  "phoneViewportPortrait": "竖屏",
+  "phoneViewportLandscape": "横屏"
 }

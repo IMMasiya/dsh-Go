@@ -35,6 +35,9 @@ class BackgroundControl private constructor(context: Context) {
 
     private val keepGuard = Any()
     private val preferenceGuard = Any()
+    private val viewportPrefs = app.getSharedPreferences("phone-background-viewport", Context.MODE_PRIVATE)
+    @Volatile private var viewport = BackgroundPolicy.Viewport.parse(
+        runCatching { viewportPrefs.getString("preset", "portrait") }.getOrNull()) ?: BackgroundPolicy.Viewport.PORTRAIT
     @Volatile private var selectionChange: Any? = null
     private val keepPrefs = app.getSharedPreferences("phone-privileged-keep", Context.MODE_PRIVATE)
     private val keep = PrivilegedKeepState(keepPrefs.getString("keptMode", "off") ?: "off",
@@ -115,6 +118,7 @@ class BackgroundControl private constructor(context: Context) {
                 mode, reason, AppStrings.get(app, R.string.background_root_legacy_client),
             ),
             "androidOk" to androidOk(),
+            "viewport" to mapOf("v" to 1, "preset" to viewport.preset),
             "trustedDisplay" to cached.trustedDisplayOk,
             "inject" to cached.injectOk,
             "shizuku" to shizukuStatus.map(),
@@ -196,6 +200,19 @@ class BackgroundControl private constructor(context: Context) {
     }
 
     // ---- actions -----------------------------------------------------------
+
+    /** Preference only. Existing drivers keep their captured viewport until released. */
+    fun setBackgroundViewport(value: Any?): Map<String, Any?> {
+        val selected = BackgroundPolicy.Viewport.parse(value)
+            ?: return mapOf("ok" to false, "reason" to AppStrings.get(app, R.string.background_viewport_invalid))
+        val saved = synchronized(preferenceGuard) {
+            if (!viewportPrefs.edit().putString("preset", selected.preset).commit()) false
+            else { viewport = selected; true }
+        }
+        if (saved) notifyChanged()
+        return if (saved) mapOf("ok" to true)
+            else mapOf("ok" to false, "reason" to AppStrings.get(app, R.string.background_viewport_save_failed))
+    }
 
     fun setBackgroundMode(newMode: String, mayStart: () -> Boolean = { true }): Map<String, Any?> {
         val provider = shizuku.status().provider
@@ -424,6 +441,7 @@ class BackgroundControl private constructor(context: Context) {
             val d = BackgroundDisplay(
                 channelProvider = { activeChannel()?.also { publishPreviewTarget(taskId, it) } },
                 releaseChannelProvider = { channel?.takeIf { it.alive() } },
+                viewport = viewport,
             )
             // Publish the pending owner before checking cancellation: a stop
             // either records the ended ID first, or sees this owner and releases

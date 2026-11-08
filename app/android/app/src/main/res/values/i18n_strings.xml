@@ -322,4 +322,6 @@
     <string name="background_selection_cancelled">The channel selection was cancelled</string>
     <string name="background_keep_phone_disabled">Turn on phone control before keeping this connection.</string>
     <string name="background_keep_save_failed">Could not save the connection preference. Check it before restarting the app.</string>
+    <string name="background_viewport_invalid">Unknown background viewport preset</string>
+    <string name="background_viewport_save_failed">Could not save the background viewport preference.</string>
 </resources>

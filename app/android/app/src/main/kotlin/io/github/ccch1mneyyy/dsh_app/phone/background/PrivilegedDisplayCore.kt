@@ -102,6 +102,7 @@ class PrivilegedDisplayCore(private val context: Context) {
                 response.putInt(Proto.UID, Process.myUid())
                 response.putString("revision", Proto.REVISION)
                 response.putInt(Proto.PREVIEW_VERSION, 1)
+                response.putInt(Proto.VIEWPORT_VERSION, 1)
                 return response
             }
             if (op == Proto.OP_COLLECT_SYSTEM_IME) {
@@ -189,6 +190,9 @@ class PrivilegedDisplayCore(private val context: Context) {
             Proto.OP_CREATE, Proto.OP_LAUNCH -> {
                 owner = ownerId
                 if (display == null) createDisplay(request)
+                else requestedViewport(request)?.let {
+                    if (width != it.width || height != it.height) throw Fault("viewportConflict")
+                }
                 response.putInt(Proto.DISPLAY_ID, displayId())
                 launchPackage(pkg)
                 sleepChecked(300)
@@ -266,11 +270,21 @@ class PrivilegedDisplayCore(private val context: Context) {
     private fun displayId(): Int = display?.display?.displayId ?: throw Fault("displayMissing")
     private fun requireDisplay() { if (display == null) throw Fault("displayMissing") }
 
+    private fun requestedViewport(request: Bundle): BackgroundPolicy.Viewport? {
+        if (!request.containsKey(Proto.VIEWPORT_PRESET)) return null
+        val preset = BackgroundPolicy.Viewport.parse(request.get(Proto.VIEWPORT_PRESET)) ?: throw Fault("invalidArguments")
+        if (request.containsKey(Proto.ASPECT_W) || request.containsKey(Proto.ASPECT_H) ||
+            request.containsKey(Proto.SHORT_SIDE) && request.get(Proto.SHORT_SIDE) != 720) throw Fault("invalidArguments")
+        return preset
+    }
+
     private fun createDisplay(request: Bundle, probe: Boolean = false) {
         val shortSide = request.getInt(Proto.SHORT_SIDE, 720).coerceIn(360, 1080)
         val aspectW = request.getInt(Proto.ASPECT_W, 9).coerceAtLeast(1)
         val aspectH = request.getInt(Proto.ASPECT_H, 20).coerceAtLeast(1)
-        val size = BackgroundPolicy.displaySize(shortSide, aspectW, aspectH)
+        val preset = requestedViewport(request)
+        val size = if (preset == null) BackgroundPolicy.displaySize(shortSide, aspectW, aspectH)
+            else intArrayOf(preset.width, preset.height)
         val w = size[0]; val h = size[1]
         val ir = ImageReader.newInstance(w, h, PixelFormat.RGBA_8888, 2)
         try {

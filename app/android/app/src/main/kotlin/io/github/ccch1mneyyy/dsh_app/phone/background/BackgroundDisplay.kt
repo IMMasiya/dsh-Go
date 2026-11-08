@@ -21,6 +21,7 @@ import io.github.ccch1mneyyy.dsh_app.phone.TargetInfo
 class BackgroundDisplay(
     private val channelProvider: () -> PrivilegedChannel?,
     private val releaseChannelProvider: () -> PrivilegedChannel?,
+    private val viewport: BackgroundPolicy.Viewport = BackgroundPolicy.Viewport.PORTRAIT,
 ) : PhoneDriver {
 
     override val screen: PhoneScreen = PhoneScreen.BACKGROUND
@@ -47,16 +48,25 @@ class BackgroundDisplay(
         channelProvider() ?: throw IllegalStateException("背景屏通道未就绪")
 
     override fun open(packageName: String): ActionResult {
+        val active = channel()
+        if (viewport == BackgroundPolicy.Viewport.LANDSCAPE) {
+            val probe = active.execute(Bundle().apply { putString(Proto.OP, Proto.OP_PROBE) })
+            if (!probe.getBoolean(Proto.OK) || !BackgroundPolicy.supportsViewport(viewport, probe.get(Proto.VIEWPORT_VERSION))) {
+                return ActionResult(false, Reasons.of("viewportUnsupported"))
+            }
+        }
+        if (Thread.currentThread().isInterrupted) throw InterruptedException()
         val request = Bundle().apply {
             putString(Proto.OP, Proto.OP_LAUNCH)
             putString(Proto.OWNER, "task")
             putString(Proto.PKG, packageName)
             putInt(Proto.SHORT_SIDE, 720)
+            putString(Proto.VIEWPORT_PRESET, viewport.preset)
             putInt(Proto.WANT_IMAGE, 0)
             putBoolean(Proto.LOCAL_VISUAL, true)
         }
         currentPackage = packageName
-        val response = channel().execute(request)
+        val response = active.execute(request)
         // l10n:keep agent screen protocol
         return toResult(response, "已在后台屏打开")
     }

@@ -172,6 +172,10 @@ class PhonePlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandle
     override fun onMethodCall(call: MethodCall, result: MethodChannel.Result) {
         when (call.method) {
             "status" -> async(result, shortControl = true) { control.status() }
+            "setBackgroundViewport" -> async(result, shortControl = true) {
+                val args = call.arguments as? Map<*, *>
+                control.background.setBackgroundViewport(if (args != null && args.keys == setOf("preset")) args["preset"] else null)
+            }
             "setSkillSavePrompt" -> {
                 val enabled = (call.arguments as? Map<*, *>)?.get("enabled") as? Boolean
                 if (enabled == null) result.success(false)

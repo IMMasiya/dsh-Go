@@ -205,6 +205,9 @@ class PhoneController extends Notifier<PhoneState> {
 
   Future<PhoneResult> setBackgroundMode(PhoneBackgroundMode mode) => _thenRefresh(_channel.setBackgroundMode(mode));
 
+  Future<PhoneResult> setBackgroundViewport(PhoneBackgroundViewport preset) =>
+      _thenRefresh(_channel.setBackgroundViewport(preset));
+
   Future<bool> setBackgroundPreview(bool enabled) => _thenRefresh(_channel.setBackgroundPreview(enabled));
 
   /// Refused before any channel call when the native side doesn't offer [mode].

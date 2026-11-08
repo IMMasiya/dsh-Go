@@ -315,4 +315,6 @@
     <string name="background_selection_cancelled">通道选择已取消</string>
     <string name="background_keep_phone_disabled">请先开启手机操控，再保持此通道。</string>
     <string name="background_keep_save_failed">未能保存通道保持设置，请在重启 App 前确认。</string>
+    <string name="background_viewport_invalid">未知的后台视口预设</string>
+    <string name="background_viewport_save_failed">无法保存后台视口设置。</string>
 </resources>

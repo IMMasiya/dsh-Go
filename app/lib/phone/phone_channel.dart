@@ -224,6 +224,20 @@ class AdbStatus {
   final bool connected;
 }
 
+enum PhoneBackgroundViewport {
+  portrait, landscape;
+
+  /// Native preference capability, not proof that the privileged peer can create landscape.
+  static PhoneBackgroundViewport? fromMap(Map<Object?, Object?> m) {
+    if (m['v'] is! int || m['v'] != 1) return null;
+    return switch (m['preset']) {
+      'portrait' => portrait,
+      'landscape' => landscape,
+      _ => null,
+    };
+  }
+}
+
 class PhoneBackgroundStatus {
   const PhoneBackgroundStatus({
     this.mode = PhoneBackgroundMode.off,
@@ -234,6 +248,7 @@ class PhoneBackgroundStatus {
     this.adb = const AdbStatus(),
     this.root = const PhoneRootStatus(),
     this.privileged,
+    this.viewport,
     this.previewVersion,
     this.previewEnabled = false,
   });
@@ -247,6 +262,7 @@ class PhoneBackgroundStatus {
     adb: AdbStatus.fromMap(_map(m['adb'])),
     root: PhoneRootStatus.fromMap(_map(m['root'])),
     privileged: PhonePrivilegedStatus.parse(m['privileged']),
+    viewport: PhoneBackgroundViewport.fromMap(_map(m['viewport'])),
     previewVersion: _int(_map(m['preview'])['v']),
     previewEnabled: _flag(_map(m['preview'])['enabled']),
   );
@@ -265,6 +281,7 @@ class PhoneBackgroundStatus {
   final AdbStatus adb;
   final PhoneRootStatus root;
   final PhonePrivilegedStatus? privileged;
+  final PhoneBackgroundViewport? viewport;
   final int? previewVersion;
   final bool previewEnabled;
 
@@ -995,6 +1012,10 @@ class PhoneChannel {
   }
 
   Future<bool> setEnabled(bool enabled) => _bool('setEnabled', {'enabled': enabled});
+
+  /// Explicit preference only; native snapshots it when a new background driver is created.
+  Future<PhoneResult> setBackgroundViewport(PhoneBackgroundViewport preset) =>
+      _result('setBackgroundViewport', {'preset': preset.name});
 
   Future<bool> setBackgroundPreview(bool enabled) => _bool('setBackgroundPreview', {'enabled': enabled});
 

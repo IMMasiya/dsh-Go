@@ -20,6 +20,8 @@ object Proto {
     const val OWNER = "owner"
     const val CALL = "call"
     const val PKG = "pkg"
+    const val VIEWPORT_VERSION = "viewportVersion"
+    const val VIEWPORT_PRESET = "viewportPreset"
     const val SHORT_SIDE = "shortSide"
     const val ASPECT_W = "aspectW"
     const val ASPECT_H = "aspectH"
@@ -127,6 +129,10 @@ object Reasons {
     fun withDetail(reason: String, detail: String?): String = reason + detail?.let { "（$it）" }.orEmpty()
 
     fun of(code: String?): String = when (code) {
+        // l10n:keep agent background protocol
+        "viewportUnsupported" -> "当前特权端不支持横屏视口，请更新或重新连接后重试；未打开应用"
+        // l10n:keep agent background protocol
+        "viewportConflict" -> "当前后台屏的视口与新设置不同，请先结束或交还后台屏，再新建；未改变当前视口"
         null -> ""
         // l10n:keep privileged protocol
         "identityChanged" -> "特权通道身份已改变，请重新开始任务"

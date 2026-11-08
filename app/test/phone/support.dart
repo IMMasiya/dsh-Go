@@ -252,6 +252,12 @@ class FakePhoneNative {
         return true;
       case 'testScreen':
         return screen;
+      case 'setBackgroundViewport':
+        final viewportResult = results[call.method] ?? {'ok': true};
+        if (viewportResult['ok'] == true) {
+          status = {...status, 'background': {..._background, 'viewport': {'v': 1, 'preset': args['preset']}}};
+        }
+        return viewportResult;
       case 'setBackgroundMode':
         final r = results[call.method] ?? {'ok': true};
         if (r['ok'] == true) {

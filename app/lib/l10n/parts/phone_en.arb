@@ -455,5 +455,9 @@
   "phonePreviewOpen": "View background screen",
   "phonePreviewOff": "The task ended or preview is off",
   "phonePreviewUnavailable": "Preview is unavailable or the screen is protected",
-  "phonePreviewWaiting": "Waiting for a new background frame"
+  "phonePreviewWaiting": "Waiting for a new background frame",
+  "phoneViewportTitle": "Background viewport",
+  "phoneViewportDescription": "Applies when the next background screen is created. The current screen stays unchanged; recreating it after handoff uses the new setting. This does not force apps to rotate.",
+  "phoneViewportPortrait": "Portrait",
+  "phoneViewportLandscape": "Landscape"
 }
