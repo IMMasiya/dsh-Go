@@ -36,7 +36,7 @@ interface PhoneEnv {
 
 /**
  * Runs the fixed tool set: argument checks, screen-id routing (`s` main / `b` background,
- * never falling back across screens), the safety rules, one serial worker with per-call budgets,
+ * never falling back across screens), the safety rules, the selected serial worker with per-call budgets,
  * the post-action screen, and the action log. [call] is what the MCP server invokes.
  */
 class PhoneCore(
@@ -109,8 +109,8 @@ class PhoneCore(
         }
     }
 
-    internal fun call(prepared: PreparedCall): ToolOutput =
-        runCall(prepared.name, prepared.args, AtomicReference<PhoneTasks.Owner?>(prepared.owner), prepared)
+    internal fun call(prepared: PreparedCall, executionWorker: SerialWorker): ToolOutput =
+        runCall(prepared.name, prepared.args, AtomicReference<PhoneTasks.Owner?>(prepared.owner), prepared, executionWorker)
 
     fun call(name: String, args: Map<String, Any?>, admittedOwner: PhoneTasks.Owner? = null): ToolOutput {
         // In flight from here until the result goes back: no turn ends while a call runs (PhoneTasks.finish).
@@ -136,9 +136,10 @@ class PhoneCore(
         return null
     }
 
-    private fun runCall(name: String, args: Args, callOwner: AtomicReference<PhoneTasks.Owner?>, prepared: PreparedCall? = null): ToolOutput {
+    private fun runCall(name: String, args: Args, callOwner: AtomicReference<PhoneTasks.Owner?>, prepared: PreparedCall? = null,
+                        executionWorker: SerialWorker = worker): ToolOutput {
         rejection(name)?.let { return it }
-        val outcome = worker.run(budgetMs(name), MAX_TOTAL_MS, owner = tasks) { scope -> execute(name, args, scope, callOwner, prepared) }
+        val outcome = executionWorker.run(budgetMs(name), MAX_TOTAL_MS, owner = tasks) { scope -> execute(name, args, scope, callOwner, prepared) }
         val owner = callOwner.get()
         if (owner != null && name in TRACE_ACTIONS && outcome !is SerialWorker.Outcome.Done) {
             skillTrace.markIncomplete(owner, PhoneTaskTrace.Gap.UNCERTAIN_RESULT)

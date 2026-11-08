@@ -10,13 +10,14 @@ import org.junit.After
 import org.junit.Assert.*
 import org.junit.Test
 
-/** Real registry -> real Core -> shared worker. Only device services are synthetic. */
+/** Real registry -> real Core -> selected worker. Only device services are synthetic. */
 class PhoneTaskSessionsTest {
     private val ids = AtomicLong()
     private val time = AtomicLong(1_000)
     @Volatile private var beforeTaskClock: () -> Unit = {}
     private fun taskClock(): Long { beforeTaskClock(); return time.get() }
     private val worker = SerialWorker("session-test", time::get) { false }
+    private val backgroundWorkers = java.util.Collections.synchronizedList(mutableListOf<SerialWorker>())
     private val pool = Executors.newCachedThreadPool()
     @Volatile private var confirm: (ConfirmRequest) -> Decision = { Decision.UNAVAILABLE }
     private val actions = AtomicLong()
@@ -32,7 +33,7 @@ class PhoneTaskSessionsTest {
     @Volatile private var cleanup: (Long) -> Unit = {}
     @Volatile private var cleanupDispatch: (() -> Unit) -> Unit = { it() }
     @Volatile private var cancelScope: (PhoneTaskSessions.Task, PhoneTasks.Snapshot) -> Unit = { task, state ->
-        if (state.stopped) task.core.worker.interruptCurrent(task.tasks)
+        if (state.stopped) task.activeWorker?.interruptCurrent(task.tasks)
     }
     private val env = object : PhoneEnv {
         override fun enabled() = true
@@ -72,13 +73,14 @@ class PhoneTaskSessionsTest {
     private val legacy = PhoneTasks(clock = ::taskClock, idSource = ids::incrementAndGet)
     private val legacyCore = PhoneCore(env, legacy, ActionLog(), worker)
     private val sessions = PhoneTaskSessions(::taskClock, ids::incrementAndGet,
-        { tasks, _ -> PhoneCore(env, tasks, ActionLog(), worker) }, legacy, legacyCore, { changed() }, settleResources = { cleanup(it) }, dispatchCleanup = { cleanupDispatch(it) }, cancelScope = { task, state -> cancelScope(task, state) })
+        { tasks, _ -> PhoneCore(env, tasks, ActionLog(), worker) }, legacy, legacyCore, { changed() }, settleResources = { cleanup(it) }, dispatchCleanup = { cleanupDispatch(it) }, cancelScope = { task, state -> cancelScope(task, state) },
+        createBackgroundWorker = { SerialWorker("session-background", time::get) { false }.also { backgroundWorkers += it } })
     private fun admit(session: String?, run: String = "1") = sessions.admit(session?.let { PhoneCaller(it, run, "call", runLifecycle = 1) })
     private fun invoke(session: String?, run: String = "1", tool: String = PhoneToolCatalog.APPS) =
         sessions.run(admit(session, run), tool, emptyMap())
     private fun task(session: String, run: String = "1") = sessions.all().single { it.sessionId == session && it.runId == run }
     private fun end(session: String, run: String = "1") { sessions.admitEnd(session, run)?.let(sessions::settleEnd) }
-    @After fun close() { pool.shutdownNow(); worker.shutdown() }
+    @After fun close() { pool.shutdownNow(); worker.shutdown(); backgroundWorkers.toList().forEach { it.shutdown() } }
 
     @Test fun selfCheckReservationBlocksEvenMetadataWithoutCreatingATask() {
         val before = sessions.all().toList()

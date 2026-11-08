@@ -14,6 +14,7 @@ class PhoneMainLoanTest {
         val time = AtomicLong(1_000)
         private val ids = AtomicLong()
         val worker = SerialWorker("main-loan", time::get) { false }
+        private val backgroundWorkers = java.util.Collections.synchronizedList(mutableListOf<SerialWorker>())
         val pool = Executors.newCachedThreadPool()
         val a = PhoneAppIdentity("sample.a", 10123)
         val b = PhoneAppIdentity("sample.b", 10124)
@@ -61,7 +62,8 @@ class PhoneMainLoanTest {
         }
         private val legacy = PhoneTasks(clock = time::get, idSource = ids::incrementAndGet)
         val sessions = PhoneTaskSessions(time::get, ids::incrementAndGet,
-            { tasks, _ -> core(tasks) }, legacy, core(legacy), { changed() }, settleResources = { cleanup(it) })
+            { tasks, _ -> core(tasks) }, legacy, core(legacy), { changed() }, settleResources = { cleanup(it) },
+            createBackgroundWorker = { SerialWorker("loan-background", time::get) { false }.also { backgroundWorkers += it } })
         fun task(session: String) = sessions.all().single { it.sessionId == session }
         fun open(session: String, target: PhoneAppIdentity = a): ToolOutput = sessions.run(
             sessions.admit(PhoneCaller(session, "run", "call", runLifecycle = 1)), PhoneToolCatalog.OPEN,
@@ -74,7 +76,7 @@ class PhoneMainLoanTest {
             return latch
         }
         fun end(session: String) { sessions.admitEnd(session, "run")?.let(sessions::settleEnd) }
-        override fun close() { pool.shutdownNow(); worker.shutdown() }
+        override fun close() { pool.shutdownNow(); worker.shutdown(); backgroundWorkers.toList().forEach { it.shutdown() } }
     }
 
     private fun awaitUninterruptibly(latch: CountDownLatch) {
@@ -138,6 +140,8 @@ class PhoneMainLoanTest {
             val a = f.pool.submit<ToolOutput> { f.open("A") }
             try {
                 assertTrue(recorded.await(5, TimeUnit.SECONDS))
+                assertSame(f.task("A").backgroundWorker, f.task("A").activeWorker)
+                assertNotSame(f.worker, f.task("A").activeWorker)
                 val waiting = f.waitFor("B", "main")
                 val b = f.pool.submit<ToolOutput> { f.open("B", f.b) }
                 assertTrue(waiting.await(5, TimeUnit.SECONDS))
@@ -167,7 +171,7 @@ class PhoneMainLoanTest {
                 assertTrue(a.get(5, TimeUnit.SECONDS).isError)
                 val original = f.task("A")
                 assertTrue(original.running)
-                f.worker.afterDrained(original.tasks) { drained.countDown() }
+                checkNotNull(original.activeWorker).afterDrained(original.tasks) { drained.countDown() }
                 val waiting = f.waitFor("B", "main")
                 val b = f.pool.submit<ToolOutput> { f.open("B", f.b) }
                 assertTrue(waiting.await(5, TimeUnit.SECONDS))

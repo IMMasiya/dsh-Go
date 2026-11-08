@@ -166,7 +166,7 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
         cancelScope = { record, state ->
             // Registry admission stays sealed until these lock-free side effects finish.
             background.sealTask(state.id)
-            if (state.stopped) core.worker.interruptCurrent(record.tasks)
+            if (state.stopped) record.activeWorker?.interruptCurrent(record.tasks)
             prompts.stopTask(record.tasks)
         })
     private val server = McpServer(PhoneToolCatalog.listJson(), { name, args, _ -> sessions.run(sessions.admit(null), name, args) }, SERVER_VERSION)

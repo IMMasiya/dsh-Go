@@ -3,7 +3,7 @@ package io.github.ccch1mneyyy.dsh_app.phone
 /**
  * Per-launch session admission. The registry lock protects attribution, pending calls and screen/App
  * leases only. It is never held across driver work, UI waits, listeners or a worker join.
- * Lease waits happen before PhoneCore's capacity-one worker, so a holder can continue and release.
+ * Lease waits happen before the selected screen worker, so a holder can continue and release.
  */
 class PhoneTaskSessions(
     private val clock: () -> Long,
@@ -21,8 +21,9 @@ class PhoneTaskSessions(
     private val completeSkillScope: (PhoneTasks.Owner, Long, String) -> Boolean = { _, _, _ -> false },
     // Runs outside registry/Tasks locks while this record cannot start or resume another scope.
     private val cancelScope: (Task, PhoneTasks.Snapshot) -> Unit = { task, state ->
-        if (state.stopped) task.core.worker.interruptCurrent(task.tasks)
+        if (state.stopped) task.activeWorker?.interruptCurrent(task.tasks)
     },
+    private val createBackgroundWorker: () -> SerialWorker = { SerialWorker("dsh-phone-background") },
 ) {
     internal class SkillScope(val owner: PhoneTasks.Owner, val draftEpoch: Long, val launchEpoch: Long) {
         var endOwner: PhoneTasks.Owner? = null
@@ -32,6 +33,8 @@ class PhoneTaskSessions(
     class Task internal constructor(val sessionId: String?, val runId: String?, val tasks: PhoneTasks, val core: PhoneCore) {
         internal var pending = 0
         internal var running = false
+        @Volatile internal var activeWorker: SerialWorker? = null
+        internal var backgroundWorker: SerialWorker? = null
         internal var closing = false
         internal var stopped = false
         internal var cancelling = false
@@ -58,6 +61,7 @@ class PhoneTaskSessions(
             internal set
     }
     class Admission internal constructor(internal val task: Task?, internal val epoch: Long, internal val refusal: String? = null, internal val scopeEpoch: Long? = task?.tasks?.admissionEpoch())
+    private val mainWorker = legacyCore.worker
     private val lock = Object()
     private var epoch = 0L
     private var resetting = false
@@ -141,6 +145,7 @@ class PhoneTaskSessions(
         var owner: PhoneTasks.Owner? = null
         var prepared: PhoneCore.PreparedCall? = null
         var running = false
+        var executionWorker: SerialWorker? = null
         task.tasks.callStarted()
         try {
             task.core.rejection(name)?.let { return it }
@@ -194,10 +199,17 @@ class PhoneTaskSessions(
             prepared = call
             val failure = awaitResources(admission, call)
             if (failure != null) return ToolOutput(failure, isError = true)
-            synchronized(lock) {
+            val selected = synchronized(lock) {
                 if (!live(admission) || blocked(task) || !task.tasks.isCurrent(owner)) return stopped()
+                val lane = if (PhoneScreen.BACKGROUND in call.screens) {
+                    check(screens[PhoneScreen.BACKGROUND] === task)
+                    task.backgroundWorker ?: createBackgroundWorker().also { task.backgroundWorker = it }
+                } else mainWorker
+                task.activeWorker = lane
+                executionWorker = lane
+                lane
             }
-            return task.core.call(call)
+            return task.core.call(call, selected)
         } catch (_: InterruptedException) {
             Thread.currentThread().interrupt()
             return stopped()
@@ -208,7 +220,7 @@ class PhoneTaskSessions(
                 // A timed-out Future can return before its device body. Keep the task's
                 // execution slot and screen leases until that exact owner physically drains.
                 val completedCall = prepared
-                task.core.worker.afterDrained(task.tasks) {
+                val drained = {
                     synchronized(lock) {
                         if (completedCall != null && completedCall.borrowedMainForBackgroundOpen &&
                             completedCall.backgroundOpenConfirmed && live(admission) && !blocked(task) &&
@@ -216,12 +228,15 @@ class PhoneTaskSessions(
                             task.tasks.runIfCurrent(completedCall.owner) { screens.remove(PhoneScreen.MAIN) }
                         }
                         // Keep this execution slot until the exact original MAIN decision is committed.
+                        task.activeWorker = null
                         task.running = false
                         clearWaiting(task)
                         lock.notifyAll()
                     }
                     settled(task)
                 }
+                val original = executionWorker
+                if (original == null) drained() else original.afterDrained(task.tasks, drained)
             } else settled(task)
             changed()
         }
@@ -320,6 +335,7 @@ class PhoneTaskSessions(
     private fun settle(task: Task, explicitFinish: Boolean, retry: Boolean = false, expected: PhoneTasks.Snapshot? = null): PhoneTasks.Owner? {
         val state: PhoneTasks.Snapshot
         val shouldFinish: Boolean
+        val drainWorker: SerialWorker
         synchronized(lock) {
             if (task.pending > 0 || task.running || task.closing || task.cancelling || task.ending || task.cleanupFailed && !retry) return null
             // Capture only after excluding a new registry run, in registry -> Tasks lock order.
@@ -331,10 +347,11 @@ class PhoneTaskSessions(
             if (!shouldFinish && task.resourcesReleased && task.skillScope?.settled != false) { retiring.remove(task); return null }
             task.closing = true
             task.cleanupFailed = false
+            drainWorker = task.activeWorker ?: task.backgroundWorker ?: mainWorker
         }
         changed()
         var result: PhoneTasks.Owner? = null
-        task.core.worker.afterDrained(task.tasks) {
+        drainWorker.afterDrained(task.tasks) {
             dispatchCleanup {
                 try {
                     // finishScope fires listeners. closing prevents their reentrant cleanup/admission.
@@ -395,14 +412,19 @@ class PhoneTaskSessions(
 
     private fun releasePhysical(task: Task, taskId: Long) {
         settleResources(taskId) // Can block in platform IPC; neither registry nor worker lock is held.
-        synchronized(lock) {
+        val retiredWorker = synchronized(lock) {
             task.resourcesReleased = true
             screens.entries.removeAll { it.value === task }
             appHolders.remove(task)
             task.heldApps.clear()
             task.holdsUnknownApp = false
+            val lane = task.backgroundWorker
+            task.backgroundWorker = null
             lock.notifyAll()
+            lane
         }
+        // Both normal settlement and legacy scope rollover reach this successful cleanup.
+        retiredWorker?.shutdown()
     }
 
     fun snapshot(): List<Map<String, Any?>> = synchronized(lock) { (entries.values + retiring).distinct() }.map { task ->
@@ -537,7 +559,8 @@ class PhoneTaskSessions(
 
     fun settleEnd(task: Task) {
         task.tasks.cancelPending()
-        task.core.worker.interruptCurrent(task.tasks)
+        val original = synchronized(lock) { task.activeWorker }
+        original?.interruptCurrent(task.tasks)
         synchronized(lock) { task.ending = false }
         completeEnd(task)
         changed()
@@ -565,10 +588,12 @@ class PhoneTaskSessions(
         all().forEach { stop(it, reason) }
     }
     fun retire() {
+        val workers: List<SerialWorker>
         val old = synchronized(lock) {
             resetting = true
             selfCheck?.sealed = true
             epoch++
+            workers = ((entries.values + retiring).mapNotNull { it.backgroundWorker } + mainWorker).distinct()
             entries.values.toList().also { records ->
                 for (task in records) {
                     task.skillScope?.cancelled = true
@@ -585,7 +610,7 @@ class PhoneTaskSessions(
         }
         // Never reset the shared legacy lifecycle after exposing its next launch's admission.
         old.forEach { it.tasks.invalidateOwners(); it.tasks.endTask() }
-        legacy.core.worker.retire()
+        workers.forEach { it.retire() }
         synchronized(lock) {
             legacy = Task(null, null, legacy.tasks, legacy.core)
             entries[Key(null, null)] = legacy
