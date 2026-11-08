@@ -92,8 +92,16 @@ class PhoneCallerTest {
             val call = server.dispatch(request(2, caller("A") + ("runLifecycle" to version))) as McpServer.Dispatch.Call
             assertEquals(version, call.caller!!.runLifecycle)
         }
-        for (invalid in listOf(null, false, true, "1", 1.0, 2, -1)) {
-            val reply = server.dispatch(request(3, caller("A") + ("runLifecycle" to invalid))) as McpServer.Dispatch.Reply
+        // Preserve wire token types: Json.write normalizes the Double 1.0 to the valid integer 1.
+        for (invalid in listOf("null", "false", "true", "\"1\"", "1.0", "2", "-1")) {
+            val wire = """
+                {"jsonrpc":"2.0","id":3,"method":"tools/call","params":{
+                  "name":"screen","arguments":{},"_meta":{
+                    "${PhoneCaller.META_KEY}":{"v":1,"sessionId":"A","runId":"run-A","callId":"call-A","runLifecycle":$invalid}
+                  }
+                }}
+            """.trimIndent()
+            val reply = server.dispatch(wire) as McpServer.Dispatch.Reply
             assertEquals(McpServer.INVALID_PARAMS.toLong(), ((Json.parse(reply.line) as Map<*, *>)["error"] as Map<*, *>)["code"])
         }
     }
