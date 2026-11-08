@@ -506,6 +506,38 @@ class A11yKeeperStatus {
 }
 
 /// Snapshot of the native phone-control module (`status` / status events).
+/// Logical interruption only; never an active task or a physical cleanup receipt.
+class PhoneTaskInterruption {
+  const PhoneTaskInterruption({this.state = 'ready', this.count = 0, this.batchToken, this.error});
+  final String state;
+  final int count;
+  final String? batchToken;
+  final String? error;
+  bool get visible => state != 'ready' || count > 0;
+  bool get canAcknowledge => state == 'ready' && count > 0 && batchToken != null;
+
+  static PhoneTaskInterruption parse(Object? raw) {
+    if (raw == null) return const PhoneTaskInterruption(); // Older native modules.
+    const invalid = PhoneTaskInterruption(state: 'error', error: 'loadFailed');
+    if (raw is! Map || raw['version'] is! int || raw['version'] != 1) return invalid;
+    final state = raw['state'];
+    final count = raw['count'];
+    final token = raw['batchToken'];
+    final error = raw['error'];
+    if (state is! String || !const ['loading', 'ready', 'error'].contains(state) ||
+        count is! int || count < 0 || count > 256) return invalid;
+    if (state == 'ready') {
+      if (error != null || (count == 0 && token != null)) return invalid;
+      if (count > 0 && (token is! String ||
+          !RegExp(r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$').hasMatch(token))) return invalid;
+    } else if (token != null || (state == 'loading' && (error != null || count != 0)) ||
+        (state == 'error' && error != 'loadFailed' && error != 'writeFailed')) {
+      return invalid;
+    }
+    return PhoneTaskInterruption(state: state, count: count, batchToken: token as String?, error: error as String?);
+  }
+}
+
 class PhoneStatus {
   const PhoneStatus({
     this.ready = true,
@@ -524,6 +556,7 @@ class PhoneStatus {
     this.parallelLimit = 1,
     this.device = const PhoneDevice(),
     this.skills = const PhoneSkillStatus(),
+    this.taskInterruption = const PhoneTaskInterruption(),
   });
 
   /// The native module isn't there (or failed to answer): "未就绪".
@@ -542,7 +575,8 @@ class PhoneStatus {
       tasks = const [],
       parallelLimit = 1,
       device = const PhoneDevice(),
-      skills = const PhoneSkillStatus();
+      skills = const PhoneSkillStatus(),
+      taskInterruption = const PhoneTaskInterruption();
 
   factory PhoneStatus.fromMap(Map<Object?, Object?> m) => PhoneStatus(
     enabled: _flag(m['enabled']),
@@ -559,6 +593,7 @@ class PhoneStatus {
     parallelLimit: _int(m['parallelLimit']) ?? 1,
     device: PhoneDevice.fromMap(_map(m['device'])),
     skills: PhoneSkillStatus.parse(m['skills']),
+    taskInterruption: PhoneTaskInterruption.parse(m['taskInterruption']),
   );
 
   /// The native side answered. False → everything else is a default.
@@ -587,6 +622,7 @@ class PhoneStatus {
   final int parallelLimit;
   final PhoneDevice device;
   final PhoneSkillStatus skills;
+  final PhoneTaskInterruption taskInterruption;
 
   PhoneStatus copyWith({bool? enabled}) => PhoneStatus(
     ready: ready,
@@ -605,6 +641,7 @@ class PhoneStatus {
     parallelLimit: parallelLimit,
     device: device,
     skills: skills,
+    taskInterruption: taskInterruption,
   );
 }
 
@@ -1258,6 +1295,11 @@ class PhoneChannel {
   Future<bool> stopTask({int? taskId}) => _bool('stopTask', taskId == null ? null : {'taskId': taskId});
 
   Future<bool> retryTaskCleanup(int taskId) => _bool('retryTaskCleanup', {'taskId': taskId});
+
+  Future<bool> acknowledgeTaskInterruption(String batchToken) =>
+      _bool('acknowledgeTaskInterruption', {'batchToken': batchToken});
+
+  Future<bool> retryTaskInterruptionStorage() => _bool('retryTaskInterruptionStorage');
 
   Future<bool> resumeTask(int taskId) => _bool('resumeTask', {'taskId': taskId});
 

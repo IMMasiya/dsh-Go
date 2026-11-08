@@ -84,6 +84,7 @@ class _PhoneControlScreenState extends ConsumerState<PhoneControlScreen> {
   /// Came back from there still off: point at the restricted-settings guide.
   bool _a11yAttemptFailed = false;
   bool _testing = false;
+  bool _interruptionBusy = false;
   bool _backgroundGuideShown = false;
 
   PhoneController get _phone => ref.read(phoneProvider.notifier);
@@ -266,6 +267,19 @@ class _PhoneControlScreenState extends ConsumerState<PhoneControlScreen> {
     if (!ok && mounted) _toast(context.l10n.phoneCleanupRetryFailed);
   }
 
+  Future<void> _taskInterruptionAction(String? batchToken) async {
+    if (_interruptionBusy) return;
+    setState(() => _interruptionBusy = true);
+    try {
+      final ok = batchToken == null
+          ? await _phone.retryTaskInterruptionStorage()
+          : await _phone.acknowledgeTaskInterruption(batchToken);
+      if (!ok && mounted) _toast(context.l10n.phoneInterruptionActionFailed);
+    } finally {
+      if (mounted) setState(() => _interruptionBusy = false);
+    }
+  }
+
   Future<void> _resumeTask(int taskId) async {
     final ok = await _phone.resumeTask(taskId);
     if (!ok && mounted) _toast(context.l10n.phoneResumeTaskFailed);
@@ -326,6 +340,32 @@ class _PhoneControlScreenState extends ConsumerState<PhoneControlScreen> {
               child: UnlockedTag(onTap: () => _push(const PhoneUnlockPage())),
             ),
           ),
+        if (status.taskInterruption.visible) ...[
+          const SizedBox(height: 12),
+          ListPageCard(
+            children: [
+              ListPageRow(
+                key: const ValueKey('phone-task-interruption'),
+                icon: AppIcons.paused,
+                title: l10n.phoneInterruptionTitle,
+                subtitle: status.taskInterruption.state == 'loading'
+                    ? l10n.phoneInterruptionLoading
+                    : status.taskInterruption.state == 'error'
+                    ? l10n.phoneInterruptionStorageError
+                    : l10n.phoneInterruptionHint(status.taskInterruption.count),
+                trailing: status.taskInterruption.state == 'loading'
+                    ? null
+                    : FixButton(
+                        key: const ValueKey('phone-task-interruption-action'),
+                        label: status.taskInterruption.canAcknowledge
+                            ? l10n.phoneInterruptionAcknowledge
+                            : l10n.phoneInterruptionRetry,
+                        onPressed: _interruptionBusy ? null : () => _taskInterruptionAction(status.taskInterruption.batchToken),
+                      ),
+              ),
+            ],
+          ),
+        ],
         if (task.active) ...[
           const SizedBox(height: 12),
           ListPageCard(

@@ -56,6 +56,12 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
     private val taskIds = java.util.concurrent.atomic.AtomicLong()
     private val cleanupIo = Executors.newSingleThreadExecutor { r -> Thread(r, "dsh-phone-cleanup").apply { isDaemon = true } }
 
+    private val taskJournal = PhoneTaskJournal(
+        read = { app.getSharedPreferences("phone_task_journal", Context.MODE_PRIVATE).getString("records", null) },
+        commit = { value -> app.getSharedPreferences("phone_task_journal", Context.MODE_PRIVATE)
+            .edit().putString("records", value).commit() },
+    )
+
     val tasks = PhoneTasks(clock = SystemClock::elapsedRealtime, idSource = taskIds::incrementAndGet)
     val log = ActionLog()
     val system = SystemActions(app)
@@ -161,6 +167,7 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
         dispatchCleanup = { action ->
             if (Looper.myLooper() == Looper.getMainLooper()) cleanupIo.execute(action) else action()
         },
+        journal = taskJournal,
         startSkillScope = skillLifecycle::startManaged,
         completeSkillScope = skillLifecycle::completeDrained,
         cancelScope = { record, state ->
@@ -248,6 +255,7 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
         tasks.addListener { onTask(it) }
         ticker.scheduleWithFixedDelay({ tick() }, 2, 2, TimeUnit.SECONDS)
         // The app's start: a force stop took the accessibility service out of the settings.
+        cleanupIo.execute { taskJournal.load(); emitStatus() }
         ticker.execute(::keep)
     }
 
@@ -617,6 +625,11 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
             "taskId" to it.owner.taskId, "generation" to it.owner.lifecycle, "steps" to it.steps) },
     )
 
+    fun acknowledgeTaskInterruption(batchToken: String): Boolean =
+        taskJournal.acknowledge(batchToken).also { emitStatus() }
+
+    fun retryTaskInterruptionStorage(): Boolean = sessions.retryJournalStorage().also { emitStatus() }
+
     fun status(): Map<String, Any?> = linkedMapOf(
         "enabled" to isEnabled(),
         "skills" to skillsStatus(),
@@ -628,6 +641,7 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
         "background" to backgroundStatus(),
         "a11yKeeper" to keeperStatus(),
         "task" to tasks.snapshot().toMap(),
+        "taskInterruption" to taskJournal.status(),
         "taskProtocol" to 1,
         "tasks" to sessions.snapshot(),
         "selectedTaskId" to (displaySelection.ticket()?.owner?.taskId ?: 0L),

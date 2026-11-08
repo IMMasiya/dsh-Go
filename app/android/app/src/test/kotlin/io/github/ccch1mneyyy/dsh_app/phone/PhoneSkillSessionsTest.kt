@@ -15,7 +15,7 @@ import org.junit.Test
 
 /** Actual registry/Core/worker/trace/draft lifecycle; only device calls and cleanup are fake. */
 class PhoneSkillSessionsTest {
-    private class Fixture : AutoCloseable {
+    private class Fixture(withJournal: Boolean = false) : AutoCloseable {
         val time = AtomicLong(1_000)
         val ids = AtomicLong()
         val trace = PhoneTaskTrace()
@@ -65,11 +65,13 @@ class PhoneSkillSessionsTest {
                 override fun clipboardGet() = error("unexpected clipboard")
             }
         }
+        var journalBytes: String? = null
+        val journal = if (withJournal) PhoneTaskJournal({ journalBytes }, { journalBytes = it; true }) else null
         val legacy = PhoneTasks(clock = time::get, idSource = ids::incrementAndGet)
         val legacyCore = PhoneCore(env, legacy, ActionLog(), worker, skillTrace = trace)
         val sessions = PhoneTaskSessions(time::get, ids::incrementAndGet,
             { tasks, _ -> PhoneCore(env, tasks, ActionLog(), worker, skillTrace = trace) }, legacy, legacyCore,
-            settleResources = { cleanup(it) }, startSkillScope = { owner -> starts.incrementAndGet(); lifecycle.startManaged(owner) },
+            journal = journal, settleResources = { cleanup(it) }, startSkillScope = { owner -> starts.incrementAndGet(); lifecycle.startManaged(owner) },
             completeSkillScope = { owner, epoch, completion ->
                 completions += PhoneTaskTrace.key(owner) to completion
                 lifecycle.completeDrained(owner, epoch, completion).also { completed.countDown() }
@@ -82,6 +84,19 @@ class PhoneSkillSessionsTest {
         fun owner(session: String?) = checkNotNull(task(session).skillScope).owner
         fun end(session: String, completion: String = "completed") { sessions.admitEnd(session, "1", completion)?.let(sessions::settleEnd) }
         override fun close() { pool.shutdownNow(); worker.shutdown() }
+    }
+
+    @Test fun legacyJournalRolloverSettlesOnlyTheOriginalTraceAndKeepsTheNewTraceActive() {
+        Fixture(withJournal = true).use { f ->
+            assertFalse(f.call(null).isError); val previous = f.owner(null)
+            f.time.addAndGet(f.legacy.idleMs + 1)
+            assertFalse(f.call(null).isError); val next = f.owner(null)
+            assertNotEquals(previous.taskId, next.taskId)
+            assertTrue(f.trace.snapshot(previous)!!.ended)
+            assertFalse(f.trace.snapshot(next)!!.ended)
+            assertEquals(2, f.starts.get()); assertEquals(1, f.completions.size)
+            assertEquals(1, ((Json.parse(f.journalBytes!!) as Map<*, *>)["records"] as List<*>).size)
+        }
     }
 
     @Test fun independentManagedScopesUseSharedTraceAndOriginalOwnerForTheCandidate() {

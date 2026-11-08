@@ -571,5 +571,19 @@
         "type": "int"
       }
     }
+  },
+  "phoneInterruptionTitle": "Previous phone tasks did not confirm completion",
+  "phoneInterruptionLoading": "Reading interrupted task records…",
+  "phoneInterruptionStorageError": "Task completion records could not be saved or read. Retry; this does not mean background resources were released.",
+  "phoneInterruptionHint": "{count} tasks were interrupted or could not save completion. Actions may already have taken effect. Check first. Acknowledging only confirms you saw this notice; it does not resume actions or prove background resources were released.",
+  "phoneInterruptionAcknowledge": "I checked the interruption notice",
+  "phoneInterruptionRetry": "Retry saving or reading",
+  "phoneInterruptionActionFailed": "Task records are not confirmed yet. Please retry.",
+  "@phoneInterruptionHint": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
   }
 }

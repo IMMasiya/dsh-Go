@@ -211,6 +211,18 @@ class PhoneController extends Notifier<PhoneState> {
     return ok;
   }
 
+  Future<bool> acknowledgeTaskInterruption(String batchToken) async {
+    final ok = await _channel.acknowledgeTaskInterruption(batchToken);
+    await refreshStatus();
+    return ok;
+  }
+
+  Future<bool> retryTaskInterruptionStorage() async {
+    final ok = await _channel.retryTaskInterruptionStorage();
+    await refreshStatus();
+    return ok;
+  }
+
   Future<bool> resumeTask(int taskId) async {
     final ok = await _channel.resumeTask(taskId);
     unawaited(refreshStatus());

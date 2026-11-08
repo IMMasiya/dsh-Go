@@ -23,6 +23,7 @@ class PhoneTaskSessions(
     private val cancelScope: (Task, PhoneTasks.Snapshot) -> Unit = { task, state ->
         if (state.stopped) task.activeWorker?.interruptCurrent(task.tasks)
     },
+    private val journal: PhoneTaskJournal? = null,
     private val createBackgroundWorker: () -> SerialWorker = { SerialWorker("dsh-phone-background") },
 ) {
     internal class SkillScope(val owner: PhoneTasks.Owner, val draftEpoch: Long, val launchEpoch: Long) {
@@ -57,6 +58,10 @@ class PhoneTaskSessions(
         internal var pendingFinish: PhoneTasks.Owner? = null
         internal var returnClaimed = false
         internal var skillScope: SkillScope? = null
+        internal var journalRecord: PhoneTaskJournal.Record? = null
+        internal var journalMarked = false
+        internal var journalEnded = false
+        internal var journalFailed = false
         var completion: String = "unknown"
             internal set
     }
@@ -148,6 +153,7 @@ class PhoneTaskSessions(
         var executionWorker: SerialWorker? = null
         task.tasks.callStarted()
         try {
+            journal?.refusal()?.let { return ToolOutput(it, isError = true) }
             task.core.rejection(name)?.let { return it }
             synchronized(lock) {
                 while (task.running && live(admission) && !blocked(task) && !task.closing) lock.wait(1_000)
@@ -190,6 +196,32 @@ class PhoneTaskSessions(
                     b.owner
                 }
                 is PhoneTasks.Begin.Refused -> return ToolOutput(b.message, isError = true)
+            }
+            if (journal != null) {
+                val previous = synchronized(lock) { task.journalRecord }
+                if (previous != null && (previous.taskId != owner.taskId || previous.lifecycle != owner.lifecycle)) {
+                    // A real owner replacement (including clearStop) cannot overwrite an old token.
+                    try { if (!task.resourcesReleased) releasePhysical(task, task.resourceTaskId) }
+                    catch (_: Exception) { synchronized(lock) { task.cleanupFailed = true }; return stopped() }
+                    synchronized(lock) {
+                        task.skillScope?.takeIf { it.owner.taskId == previous.taskId && it.owner.lifecycle == previous.lifecycle }
+                            ?.let { settleSkill(task, null) }
+                        task.journalEnded = true
+                    }
+                    if (!clearJournal(task)) return ToolOutput(PhoneTaskJournal.STORAGE_MESSAGE, isError = true)
+                }
+                val record = synchronized(lock) { task.journalRecord } ?: journal.record(owner)
+                synchronized(lock) {
+                    if (!live(admission) || blocked(task) || !task.tasks.isCurrent(owner)) return stopped()
+                    task.journalRecord = record
+                }
+                if (!task.journalMarked) {
+                    if (!journal.mark(record)) return ToolOutput(PhoneTaskJournal.STORAGE_MESSAGE, isError = true)
+                    synchronized(lock) { task.journalMarked = true }
+                }
+                synchronized(lock) {
+                    if (!live(admission) || blocked(task) || !task.tasks.isCurrent(owner)) return stopped()
+                }
             }
             if (task.tasks.isPaused && !task.tasks.awaitResume(PhoneCore.PAUSE_WAIT_MS)) return stopped()
             val call = when (val result = task.core.prepareCall(name, args, owner)) {
@@ -249,7 +281,7 @@ class PhoneTaskSessions(
     }
 
     private fun live(a: Admission) = a.epoch == epoch && a.task?.let { entries[Key(it.sessionId, it.runId)] === it } == true
-    private fun blocked(task: Task) = task.cancelling || task.retired != null || task.cleanupFailed || task.endRequested || task.sessionId != null && (task.stopped || task.sessionId in stoppedSessions)
+    private fun blocked(task: Task) = task.journalFailed || task.cancelling || task.retired != null || task.cleanupFailed || task.endRequested || task.sessionId != null && (task.stopped || task.sessionId in stoppedSessions)
     private fun stopped() = ToolOutput(PhoneTasks.STOPPED_MESSAGE + "。", isError = true)
 
     private fun appBlockers(task: Task, known: PhoneAppIdentity?, unknown: Boolean): List<Task> =
@@ -337,14 +369,14 @@ class PhoneTaskSessions(
         val shouldFinish: Boolean
         val drainWorker: SerialWorker
         synchronized(lock) {
-            if (task.pending > 0 || task.running || task.closing || task.cancelling || task.ending || task.cleanupFailed && !retry) return null
+            if (task.pending > 0 || task.running || task.closing || task.cancelling || task.ending || task.cleanupFailed && !retry || task.journalFailed) return null
             // Capture only after excluding a new registry run, in registry -> Tasks lock order.
             state = task.retired ?: task.tasks.snapshot()
             if (expected != null && (!registered(task) || state.id != expected.id || state.lifecycle != expected.lifecycle)) return null
             if (retry && !task.cleanupFailed) return null
             shouldFinish = task.retired == null && (explicitFinish || task.endRequested && !task.endSettled)
             if (!shouldFinish && task.retired == null && state.active) return null
-            if (!shouldFinish && task.resourcesReleased && task.skillScope?.settled != false) { retiring.remove(task); return null }
+            if (!shouldFinish && task.resourcesReleased && task.skillScope?.settled != false && task.journalRecord == null) { retiring.remove(task); return null }
             task.closing = true
             task.cleanupFailed = false
             drainWorker = task.activeWorker ?: task.backgroundWorker ?: mainWorker
@@ -358,6 +390,8 @@ class PhoneTaskSessions(
                     val ended = if (shouldFinish && task.retired == null) task.pendingFinish ?: task.tasks.finishScope(state.id) else null
                     synchronized(lock) { task.pendingFinish = ended }
                     if (!task.resourcesReleased) releasePhysical(task, task.resourceTaskId)
+                    synchronized(lock) { task.journalEnded = true }
+                    if (!clearJournal(task)) return@dispatchCleanup
                     synchronized(lock) {
                         task.resourcesReleased = true
                         if (task.endRequested) task.endSettled = true
@@ -384,6 +418,36 @@ class PhoneTaskSessions(
         }
         return result
     }
+    private fun clearJournal(task: Task): Boolean {
+        val record = synchronized(lock) { task.journalRecord } ?: return true
+        val ok = checkNotNull(journal).clear(record) // Never called under registry/Tasks locks.
+        synchronized(lock) {
+            if (ok) { task.journalRecord = null; task.journalMarked = false; task.journalEnded = false }
+            task.journalFailed = !ok
+        }
+        return ok
+    }
+
+    /** Plugin I/O consumer: only exact tokens whose body/physical cleanup already finished. */
+    fun retryJournalStorage(): Boolean {
+        val store = journal ?: return true
+        if (!store.retryStorage()) { changed(); return false }
+        val failed = synchronized(lock) { (entries.values + retiring).distinct().filter { it.journalFailed } }
+        var ok = true
+        for (task in failed) {
+            val claimed = synchronized(lock) {
+                if (!task.journalEnded || task.running || task.pending > 0 || task.closing || task.cancelling) false
+                else { task.closing = true; true }
+            }
+            if (!claimed) { ok = false; continue }
+            try { if (!clearJournal(task)) ok = false }
+            finally { synchronized(lock) { task.closing = false; lock.notifyAll() } }
+            settleInactive(task)
+        }
+        changed()
+        return ok
+    }
+
     /** Registry lock held; invoked only after the old body AND its resource cleanup completed. */
     private fun settleSkill(task: Task, finished: PhoneTasks.Owner?) {
         val skill = task.skillScope?.takeUnless { it.settled } ?: return
@@ -510,7 +574,7 @@ class PhoneTaskSessions(
             val current = task.tasks.snapshot()
             if (current.id != expected.id || current.lifecycle != expected.lifecycle) return false
             val records = entries.values.filter { it.sessionId == task.sessionId }
-            if (records.any { it.pending > 0 || it.running || it.closing || it.cancelling || it.cleanupFailed || !it.resourcesReleased || it.skillScope?.settled == false }) return false
+            if (records.any { it.pending > 0 || it.running || it.closing || it.cancelling || it.cleanupFailed || !it.resourcesReleased || it.skillScope?.settled == false || it.journalRecord != null && !it.tasks.isActive }) return false
             // Commit clearStop/unpause while admission is still fenced. Publication is lock-free.
             val committed = records.map { record ->
                 val expected = record.tasks.snapshot()
@@ -598,7 +662,7 @@ class PhoneTaskSessions(
                 for (task in records) {
                     task.skillScope?.cancelled = true
                     task.retired = task.tasks.snapshot()
-                    if (!task.resourcesReleased || task.pending > 0 || task.running || task.closing || task.cancelling) retiring += task
+                    if (!task.resourcesReleased || task.pending > 0 || task.running || task.closing || task.cancelling || task.journalRecord != null) retiring += task
                 }
                 entries.clear()
                 endedRuns.clear()

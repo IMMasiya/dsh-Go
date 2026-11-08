@@ -72,8 +72,12 @@ class PhoneTaskSessionsTest {
     }
     private val legacy = PhoneTasks(clock = ::taskClock, idSource = ids::incrementAndGet)
     private val legacyCore = PhoneCore(env, legacy, ActionLog(), worker)
+    private var journalBytes: String? = null
+    @Volatile private var journalCommit: (String) -> Boolean = { journalBytes = it; true }
+    private val journal = PhoneTaskJournal({ journalBytes }, { journalCommit(it) })
     private val sessions = PhoneTaskSessions(::taskClock, ids::incrementAndGet,
         { tasks, _ -> PhoneCore(env, tasks, ActionLog(), worker) }, legacy, legacyCore, { changed() }, settleResources = { cleanup(it) }, dispatchCleanup = { cleanupDispatch(it) }, cancelScope = { task, state -> cancelScope(task, state) },
+        journal = journal,
         createBackgroundWorker = { SerialWorker("session-background", time::get) { false }.also { backgroundWorkers += it } })
     private fun admit(session: String?, run: String = "1") = sessions.admit(session?.let { PhoneCaller(it, run, "call", runLifecycle = 1) })
     private fun invoke(session: String?, run: String = "1", tool: String = PhoneToolCatalog.APPS) =
@@ -81,6 +85,93 @@ class PhoneTaskSessionsTest {
     private fun task(session: String, run: String = "1") = sessions.all().single { it.sessionId == session && it.runId == run }
     private fun end(session: String, run: String = "1") { sessions.admitEnd(session, run)?.let(sessions::settleEnd) }
     @After fun close() { pool.shutdownNow(); worker.shutdown(); backgroundWorkers.toList().forEach { it.shutdown() } }
+
+    private fun journalCount(): Int = journalBytes?.let { ((Json.parse(it) as Map<*, *>)["records"] as List<*>).size } ?: 0
+
+    @Test fun durableMarkMustFinishBeforeAnyPreparationAndStopDuringItCannotAct() {
+        val entered = CountDownLatch(1); val release = CountDownLatch(1); val lookups = AtomicLong()
+        lookup = { lookups.incrementAndGet() }
+        journalCommit = { bytes -> entered.countDown(); check(release.await(5, TimeUnit.SECONDS)); journalBytes = bytes; true }
+        val result = pool.submit<ToolOutput> { sessions.run(admit("A"), PhoneToolCatalog.OPEN, mapOf("app" to "example.app")) }
+        try {
+            assertTrue(entered.await(5, TimeUnit.SECONDS)); assertEquals(0, lookups.get())
+            sessions.stopAll("stop")
+            release.countDown(); assertTrue(result.get(5, TimeUnit.SECONDS).isError)
+            assertEquals(0, lookups.get()); assertEquals(0, actions.get()); assertEquals(0, journalCount())
+        } finally { release.countDown() }
+    }
+
+    @Test fun launchRetirementDuringDurableMarkCannotExecuteOnTheNextLaunch() {
+        val entered = CountDownLatch(1); val release = CountDownLatch(1); val lookups = AtomicLong()
+        lookup = { lookups.incrementAndGet() }
+        journalCommit = { bytes -> entered.countDown(); check(release.await(5, TimeUnit.SECONDS)); journalBytes = bytes; true }
+        val result = pool.submit<ToolOutput> { sessions.run(admit("A"), PhoneToolCatalog.OPEN, mapOf("app" to "example.app")) }
+        try {
+            assertTrue(entered.await(5, TimeUnit.SECONDS)); sessions.retire()
+            release.countDown(); assertTrue(result.get(5, TimeUnit.SECONDS).isError)
+            assertEquals(0, lookups.get()); assertEquals(0, journalCount())
+            assertFalse(invoke("B").isError); assertEquals(1, journalCount())
+        } finally { release.countDown() }
+    }
+
+    @Test fun interruptedProcessBlocksBeforeBeginUntilTheExactVisibleBatchIsAcknowledged() {
+        val old = PhoneTaskJournal({ journalBytes }, { journalBytes = it; true }, "00000000-0000-4000-8000-000000000001")
+        assertTrue(old.mark(old.record((PhoneTasks().begin() as PhoneTasks.Begin.Go).owner)))
+        val lookups = AtomicLong(); lookup = { lookups.incrementAndGet() }
+        val output = invoke(null)
+        assertTrue(output.isError); assertEquals(PhoneTaskJournal.INTERRUPTION_MESSAGE, output.text)
+        assertEquals(0L, legacy.snapshot().id); assertEquals(0, lookups.get())
+        assertTrue(journal.acknowledge(journal.status()["batchToken"] as String))
+        assertFalse(invoke(null).isError); assertEquals(1, lookups.get())
+    }
+
+    @Test fun failedMarkPreventsPreparationAndRealStorageRetryAllowsTheSameScope() {
+        val lookups = AtomicLong(); lookup = { lookups.incrementAndGet() }
+        journalCommit = { false }
+        assertTrue(sessions.run(admit("A"), PhoneToolCatalog.OPEN, mapOf("app" to "example.app")).isError); assertEquals(0, lookups.get()); assertEquals(0, actions.get())
+        journalCommit = { journalBytes = it; true }
+        assertTrue(sessions.retryJournalStorage())
+        assertFalse(invoke("A").isError); assertEquals(1, journalCount())
+        end("A"); assertEquals(0, journalCount())
+    }
+
+    @Test fun activeThinkingAndPurePauseKeepOneTokenUntilActualEnd() {
+        assertFalse(invoke("A").isError); val original = journalBytes
+        val task = task("A"); val owner = task.tasks.activeOwner()!!
+        task.tasks.setPausedIfCurrent(owner, true); sessions.settleInactive(task)
+        assertEquals(original, journalBytes)
+        task.tasks.setPausedIfCurrent(owner, false)
+        assertFalse(invoke("A").isError); assertEquals(original, journalBytes)
+        end("A"); assertEquals(0, journalCount())
+    }
+
+    @Test fun physicalSuccessAndJournalClearFailureRetryNeverRepeatsRelease() {
+        val releases = AtomicLong(); cleanup = { releases.incrementAndGet() }
+        assertFalse(sessions.run(admit("A"), PhoneToolCatalog.SCREEN, emptyMap()).isError)
+        journalCommit = { false }; end("A")
+        assertEquals(1, releases.get()); assertFalse(task("A").cleanupFailed)
+        assertTrue(task("A").journalFailed); assertEquals(1, journalCount())
+        journalCommit = { journalBytes = it; true }
+        assertTrue(sessions.retryJournalStorage()); assertEquals(1, releases.get())
+        assertEquals(0, journalCount()); assertFalse(task("A").journalFailed)
+    }
+
+    @Test fun strictCleanupFailureRetainsJournalUntilTheOriginalResourceRetry() {
+        assertFalse(sessions.run(admit("A"), PhoneToolCatalog.SCREEN, emptyMap()).isError)
+        cleanup = { error("unconfirmed") }; end("A")
+        assertEquals(1, journalCount()); assertTrue(task("A").cleanupFailed)
+        assertTrue(sessions.retryJournalStorage()); assertEquals(1, journalCount())
+        cleanup = {}; assertTrue(sessions.retryCleanup(task("A").tasks.snapshot().id))
+        assertEquals(0, journalCount())
+    }
+
+    @Test fun appsOnlyLegacyRolloverAndLaunchRetirementClearOriginalRecords() {
+        assertFalse(invoke(null).isError); assertEquals(1, journalCount()); val old = journalBytes
+        time.addAndGet(legacy.idleMs + 1)
+        assertFalse(invoke(null).isError); assertEquals(1, journalCount()); assertNotEquals(old, journalBytes)
+        sessions.retire(); assertEquals(0, journalCount())
+        assertFalse(invoke("A").isError); sessions.retire(); assertEquals(0, journalCount())
+    }
 
     @Test fun selfCheckReservationBlocksEvenMetadataWithoutCreatingATask() {
         val before = sessions.all().toList()
@@ -696,12 +787,14 @@ class PhoneTaskSessionsTest {
             assertEquals(0, a.pending)
             assertTrue(a.running)
             end("A")
+            assertEquals(1, journalCount())
             assertNull(a.finished)
             assertTrue(sessions.isBusy(a))
             val wire = sessions.snapshot().single { it["sessionId"] == "A" }
             assertEquals(true, wire["draining"]); assertEquals(true, wire["finishing"])
         } finally { release.countDown() }
         assertTrue(finished.await(5, TimeUnit.SECONDS))
+        assertEquals(0, journalCount())
         assertFalse(sessions.isBusy(a)); assertFalse(a.tasks.isActive)
         lookup = {}
         assertFalse(invoke("B").isError) // shared successor worker remains usable

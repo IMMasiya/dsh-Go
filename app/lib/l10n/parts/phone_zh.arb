@@ -800,5 +800,19 @@
         "type": "int"
       }
     }
+  },
+  "phoneInterruptionTitle": "上次手机任务未确认结束",
+  "phoneInterruptionLoading": "正在读取任务中断记录…",
+  "phoneInterruptionStorageError": "无法保存或读取任务结束记录。请重试；这不表示后台资源已清理。",
+  "phoneInterruptionHint": "有 {count} 个任务中断或未能保存结束状态，操作结果可能已发生。请先核对；确认仅表示看过提示，不会恢复操作或证明后台资源已清理。",
+  "phoneInterruptionAcknowledge": "已核对中断提示",
+  "phoneInterruptionRetry": "重试保存或读取",
+  "phoneInterruptionActionFailed": "任务记录尚未确认，请重试",
+  "@phoneInterruptionHint": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
   }
 }

@@ -173,6 +173,10 @@ class PhonePlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandle
     override fun onMethodCall(call: MethodCall, result: MethodChannel.Result) {
         when (call.method) {
             "status" -> async(result, shortControl = true) { control.status() }
+            "acknowledgeTaskInterruption" -> async(result) {
+                (call.argument<Any?>("batchToken") as? String)?.let(control::acknowledgeTaskInterruption) == true
+            }
+            "retryTaskInterruptionStorage" -> async(result) { control.retryTaskInterruptionStorage() }
             "startPhoneSelfCheck", "phoneSelfCheckStatus", "cancelPhoneSelfCheck",
             "retryPhoneSelfCheckCleanup" -> selfCheckCall(call, result)
             "setBackgroundViewport" -> async(result, shortControl = true) {

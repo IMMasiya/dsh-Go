@@ -195,6 +195,9 @@ class FakePhoneNative {
   /// Gate cleanup's asynchronous native response, without rerunning a probe.
   Future<Map<String, Object?>> Function(Map<String, Object?>)? onRetryGateCleanup;
 
+  Future<bool> Function(String)? onAcknowledgeInterruption;
+  Future<bool> Function()? onRetryInterruption;
+
   /// The 悬浮条 settings as the native side keeps them.
   Map<String, Object?> overlay = {'idleOpacity': 0.7, 'autoCollapse': false};
 
@@ -253,6 +256,10 @@ class FakePhoneNative {
         return accept;
       case 'openAccessibilitySettings' || 'openAppDetails' || 'stopTask' || 'resumeTask' || 'retryTaskCleanup':
         return true;
+      case 'acknowledgeTaskInterruption':
+        return onAcknowledgeInterruption?.call(args['batchToken'] as String) ?? false;
+      case 'retryTaskInterruptionStorage':
+        return onRetryInterruption?.call() ?? false;
       case 'testScreen':
         return screen;
       case 'setBackgroundViewport':
