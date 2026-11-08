@@ -159,6 +159,12 @@ interface PhoneDriver {
                 allowed: () -> Boolean, canRead: (String?) -> Boolean): CollectResult =
         collect(screenId, listElementId, maxPages, until, allowed)
 
+    /** Same-capture sources for a physical collect scroll, separate from the page's read source. */
+    fun collect(screenId: String, listElementId: Int, maxPages: Int, until: String?,
+                allowed: () -> Boolean, canRead: (String?) -> Boolean,
+                scrollSourcesAllowed: (Set<String>) -> Boolean): CollectResult =
+        collect(screenId, listElementId, maxPages, until, allowed, canRead)
+
     /**
      * Resolves an element of a recent snapshot for the safety rules. Null when the
      * snapshot is stale or the element no longer matches its fingerprint

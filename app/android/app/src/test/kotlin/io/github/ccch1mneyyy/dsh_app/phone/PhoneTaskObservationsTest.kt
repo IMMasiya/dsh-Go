@@ -17,6 +17,7 @@ class PhoneTaskObservationsTest {
         override fun acceptVisualObservation(screenId: String) { imageCommits += screenId }
         val opens = mutableListOf<PhoneAppIdentity>()
         var duringOpen: () -> Unit = {}
+        var collectBatchGate: ((Set<String>) -> Boolean)? = null
         var collectGate: (() -> Boolean)? = null
         var collectSourceGate: ((String?) -> Boolean)? = null
         var duringCollect: () -> Unit = {}
@@ -54,6 +55,12 @@ class PhoneTaskObservationsTest {
                              allowed: () -> Boolean, canRead: (String?) -> Boolean): CollectResult {
             collectSourceGate = canRead
             return collect(screenId, listElementId, maxPages, until, allowed)
+        }
+        override fun collect(screenId: String, listElementId: Int, maxPages: Int, until: String?,
+                             allowed: () -> Boolean, canRead: (String?) -> Boolean,
+                             scrollSourcesAllowed: (Set<String>) -> Boolean): CollectResult {
+            collectBatchGate = scrollSourcesAllowed
+            return collect(screenId, listElementId, maxPages, until, allowed, canRead)
         }
         override fun foregroundPackage() = "app"
     }
@@ -322,5 +329,43 @@ class PhoneTaskObservationsTest {
             bound.perform(PhoneAction.Scroll("s1", null, PhoneAction.Direction.DOWN), { true }, null) { true }
         }
         assertEquals(actions, physical.actions)
+    }
+
+    @Test fun sevenArgumentCollectBatchKeepsOwnerPauseAndObservationPublication() {
+        val tasks = PhoneTasks(); val physical = Driver()
+        val bound = PhoneTaskObservations(tasks).bind(physical, owner(tasks))
+        bound.observe(false, false)
+        val checked = mutableListOf<Set<String>>()
+        var denied = false
+        var entered = 0
+        physical.collected = CollectResult(listOf("public"), 1, "partial",
+            ScreenSnapshot("sBatch", "public screen", "App", "app"))
+        physical.duringCollect = {
+            entered++
+            assertTrue(checkNotNull(physical.collectGate)())
+            assertTrue(checkNotNull(physical.collectSourceGate)("other.app"))
+            val batch = checkNotNull(physical.collectBatchGate)
+            assertTrue(batch(linkedSetOf("other.app", "cover.app")))
+            denied = true
+            assertFalse(batch(linkedSetOf("other.app", "cover.app")))
+        }
+        val result = bound.collect("s1", 1, 3, null, { true }, { true }) { sources ->
+            checked += sources
+            !denied
+        }
+        assertEquals(1, entered)
+        assertEquals(listOf(setOf("other.app", "cover.app"), setOf("other.app", "cover.app")), checked)
+        assertSame(physical.collected, result)
+        assertNotNull(bound.target("sBatch", 1))
+        val batch = checkNotNull(physical.collectBatchGate)
+        val calls = checked.size
+        tasks.setPaused(true)
+        assertFalse(batch(setOf("app"))); assertEquals(calls, checked.size)
+        tasks.setPaused(false); tasks.stop("replacement"); tasks.clearStop(); tasks.begin()
+        assertFalse(batch(setOf("app"))); assertEquals(calls, checked.size)
+        assertThrows(InterruptedException::class.java) {
+            bound.collect("sBatch", 1, 3, null, { true }, { true }) { true }
+        }
+        assertEquals(1, entered)
     }
 }

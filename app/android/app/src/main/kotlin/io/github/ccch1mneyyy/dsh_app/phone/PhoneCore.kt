@@ -734,7 +734,13 @@ class PhoneCore(
             return readRefusal.get() == null
         }
         fun readAllowed(): Boolean = canRead(pkg)
-        val r = driver.collect(sid!!, list, pages, a.str("until"), ::readAllowed, ::canRead)
+        fun scrollSourcesAllowed(sources: Set<String>): Boolean {
+            if (readRefusal.get() != null) return false
+            val packages = buildSet { pkg?.let(::add); addAll(sources) }
+            safety.checkReadSources(env.policies(), packages)?.let { readRefusal.compareAndSet(null, it) }
+            return readRefusal.get() == null
+        }
+        val r = driver.collect(sid!!, list, pages, a.str("until"), ::readAllowed, ::canRead, ::scrollSourcesAllowed)
         if (!current(owner)) return stoppedOut(summary)
         val collectedScreen = r.screen
         val sources = buildSet<String?> {

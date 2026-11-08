@@ -363,7 +363,12 @@ internal class MainScreenDriver(private val service: PhoneA11yService, private v
         collect(screenId, listElementId, maxPages, until, allowed) { true }
 
     override fun collect(screenId: String, listElementId: Int, maxPages: Int, until: String?,
-                         allowed: () -> Boolean, canRead: (String?) -> Boolean): CollectResult {
+                         allowed: () -> Boolean, canRead: (String?) -> Boolean): CollectResult =
+        collect(screenId, listElementId, maxPages, until, allowed, canRead) { true }
+
+    override fun collect(screenId: String, listElementId: Int, maxPages: Int, until: String?,
+                         allowed: () -> Boolean, canRead: (String?) -> Boolean,
+                         scrollSourcesAllowed: (Set<String>) -> Boolean): CollectResult {
         // l10n:keep agent screen result
         if (Looper.myLooper() == Looper.getMainLooper()) return CollectResult(emptyList(), 0, "内部错误：不能在主线程执行", null)
         synchronized(lock) {
@@ -446,6 +451,12 @@ internal class MainScreenDriver(private val service: PhoneA11yService, private v
                     if (SystemClock.uptimeMillis() > deadline) { stop = "超时"; break }
                     // l10n:keep agent screen result
                     val node = cap.native(list.ref) ?: run { stop = "列表不见了（界面变了）"; null } ?: break
+                    // Node failure can fall back to a gesture across another known window.
+                    if (!scrollSourcesAllowed(cap.windows.mapNotNull { it.packageName }.toSet())) {
+                        sourceDenied = true
+                        stop = "当前页面来源不允许滚动" // l10n:keep agent screen result
+                        break
+                    }
                     val before = clock.count
                     val out = actuator.scroll(node, el.scroll, el.horizontal, list.bounds, cap.screen, direction)
                     // l10n:keep agent screen result

@@ -111,6 +111,12 @@ class PhoneCorePromptOwnerTest {
         var observedPackage: String? = "example.app"
         var observedImage: ByteArray? = null
         var collects = 0
+        var simulateCollectScroll = false
+        var collectScrollInputs = 0
+        var collectBatchCalls = 0
+        var collectBatchSources: Set<String> = linkedSetOf("other.app", "cover.app")
+        var beforeCollectBatch: () -> Unit = {}
+        var afterCollectBatch: () -> Unit = {}
         var collecting: () -> Unit = {}
         var collectScreen = true
         var collectReadPackages: Set<String> = emptySet()
@@ -134,6 +140,29 @@ class PhoneCorePromptOwnerTest {
         }
         override fun collect(screenId: String, listElementId: Int, maxPages: Int, until: String?, allowed: () -> Boolean): CollectResult {
             collectAllowed = allowed
+            return collect(screenId, listElementId, maxPages, until)
+        }
+        override fun collect(screenId: String, listElementId: Int, maxPages: Int, until: String?,
+                             allowed: () -> Boolean, canRead: (String?) -> Boolean): CollectResult {
+            if (!simulateCollectScroll) return collect(screenId, listElementId, maxPages, until, allowed)
+            collectAllowed = allowed
+            check(allowed() && canRead("other.app"))
+            beforeCollectBatch()
+            collectScrollInputs++ // Old device path: no batch gate, but a real simulated input.
+            afterCollectBatch()
+            return collect(screenId, listElementId, maxPages, until)
+        }
+        override fun collect(screenId: String, listElementId: Int, maxPages: Int, until: String?,
+                             allowed: () -> Boolean, canRead: (String?) -> Boolean,
+                             scrollSourcesAllowed: (Set<String>) -> Boolean): CollectResult {
+            if (!simulateCollectScroll) return collect(screenId, listElementId, maxPages, until, allowed, canRead)
+            collectAllowed = allowed
+            check(allowed() && canRead("other.app"))
+            beforeCollectBatch()
+            collectBatchCalls++
+            val admitted = try { scrollSourcesAllowed(collectBatchSources) } finally { afterCollectBatch() }
+            if (admitted) collectScrollInputs++
+            // Return prior content even on refusal: the real Core must suppress it.
             return collect(screenId, listElementId, maxPages, until)
         }
         override fun target(screenId: String, elementId: Int) = TargetInfo(screenId, elementId,
@@ -1188,5 +1217,86 @@ class PhoneCorePromptOwnerTest {
         assertEquals(0, main.writes)
         assertEquals("refused:deny-list", core.log.last()!!.decision)
         assertFalse(tasks.isStopped())
+    }
+
+    @Test fun lateCollectScrollCoverDenialSuppressesPriorContentWithoutStoppingOwner() {
+        for (restore in listOf(false, true)) for (withScreen in listOf(false, true)) {
+            policies = PhonePolicies()
+            main.simulateCollectScroll = true
+            main.collectScreen = withScreen
+            var original: PhoneTasks.Owner? = null
+            beforeStatus = { original = checkNotNull(tasks.activeOwner()) }
+            main.beforeCollectBatch = { policies = PhonePolicies(denyPackages = listOf("cover.app")) }
+            main.afterCollectBatch = { if (restore) policies = PhonePolicies() }
+            val inputs = main.collectScrollInputs
+            val batches = main.collectBatchCalls
+            val result = collectCall("s1")
+            assertTrue(result.isError)
+            assertEquals(inputs, main.collectScrollInputs)
+            assertEquals(batches + 1, main.collectBatchCalls)
+            assertFalse(result.text.contains("late collected item"))
+            assertFalse(result.text.contains("late collected screen"))
+            assertNull(result.image)
+            assertEquals("refused:deny-list", core.log.last()!!.decision)
+            assertTrue(tasks.isCurrent(checkNotNull(original)))
+            assertFalse(tasks.isStopped())
+        }
+    }
+
+    @Test fun collectScrollBatchCannotOmitTheOriginalForegroundPackage() {
+        main.simulateCollectScroll = true
+        main.beforeCollectBatch = { policies = PhonePolicies(denyPackages = listOf("example.app")) }
+        main.afterCollectBatch = { policies = PhonePolicies() }
+        val result = collectCall("s1")
+        assertTrue(result.isError)
+        assertEquals(0, main.collectScrollInputs)
+        assertFalse(result.text.contains("late collected item"))
+        assertNull(result.image)
+        assertEquals("refused:deny-list", core.log.last()!!.decision)
+        assertFalse(tasks.isStopped())
+    }
+
+    @Test fun collectScrollBatchUsesOnePolicyForOriginalAndAllActualSources() {
+        main.simulateCollectScroll = true
+        var reads = 0
+        var readsAtBatch = -1
+        main.beforeCollectBatch = {
+            policyRead = {
+                reads++
+                PhonePolicies(denyPackages = listOf(if (reads == 1) "cover.app" else "example.app"))
+            }
+        }
+        main.afterCollectBatch = { readsAtBatch = reads; policyRead = null }
+        val result = collectCall("s1")
+        assertTrue(result.isError)
+        assertEquals(0, main.collectScrollInputs)
+        assertFalse(result.text.contains("late collected item"))
+        assertFalse(result.text.contains("late collected screen"))
+        assertNull(result.image)
+        assertEquals("refused:deny-list", core.log.last()!!.decision)
+        assertEquals(1, readsAtBatch)
+        assertFalse(tasks.isStopped())
+    }
+
+    @Test fun unrelatedCollectScrollDenialKeepsOneInputAndOriginalPartialOutput() {
+        for (withScreen in listOf(false, true)) {
+            policies = PhonePolicies()
+            main.simulateCollectScroll = true
+            main.collectScreen = withScreen
+            main.collectReadPackages = setOf("other.app", "cover.app")
+            main.beforeCollectBatch = { policies = PhonePolicies(denyPackages = listOf("unrelated.app")) }
+            var original: PhoneTasks.Owner? = null
+            beforeStatus = { original = checkNotNull(tasks.activeOwner()) }
+            val inputs = main.collectScrollInputs
+            val result = collectCall("s1")
+            assertFalse(result.text, result.isError)
+            assertEquals(inputs + 1, main.collectScrollInputs)
+            assertTrue(result.text.contains("late collected item"))
+            assertEquals(withScreen, result.text.contains("late collected screen"))
+            if (withScreen) assertArrayEquals(byteArrayOf(1, 2, 3), result.image) else assertNull(result.image)
+            assertEquals("ok", core.log.last()!!.decision)
+            assertTrue(tasks.isCurrent(checkNotNull(original)))
+            assertFalse(tasks.isStopped())
+        }
     }
 }
