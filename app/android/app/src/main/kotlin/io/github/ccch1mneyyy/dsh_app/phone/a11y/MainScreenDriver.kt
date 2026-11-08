@@ -54,7 +54,10 @@ internal class MainScreenDriver(private val service: PhoneA11yService, private v
     private val lifted: PhoneUnlocks get() = PhoneRegistry.unlocks()
     private val clock get() = service.clock
     private val actuator = Actuator(service, overlay)
-    private val shooter = ScreenShooter(service, overlay)
+    private val localOcr = MlKitLocalOcr.get(service.applicationContext)
+    private val shooter = ScreenShooter(service, overlay, localOcr)
+    private var actionDeadline = 0L
+    private var actionBeforeImage: ImageObservation? = null
     private val power = service.getSystemService(PowerManager::class.java)
     private val keyguard = service.getSystemService(KeyguardManager::class.java)
     private val displays = service.getSystemService(DisplayManager::class.java)
@@ -86,6 +89,8 @@ internal class MainScreenDriver(private val service: PhoneA11yService, private v
         val visualEvidence: MainVisualEvidence?,
     ) {
         @Volatile var image: ImageObservation? = null
+        // Null denotes an actual public image; only OCR-only coordinates depend on the ON epoch.
+        @Volatile var ocrOnlyEpoch: Long? = null
     }
 
     fun close() {
@@ -124,12 +129,18 @@ internal class MainScreenDriver(private val service: PhoneA11yService, private v
 
     override fun visualScope(screenId: String): VisualScope? = if (published()) visual.scope(screenId) else null
 
-    override fun acceptVisualObservation(screenId: String) { if (published()) visual.accept(screenId) }
+    private fun coordinateEpochCurrent(snap: Snapshot): Boolean =
+        mainOcrEpochCurrent(snap.ocrOnlyEpoch, localOcr.enabledEpoch())
+
+    override fun acceptVisualObservation(screenId: String) {
+        val snap = latest
+        if (published() && snap?.id == screenId && coordinateEpochCurrent(snap)) visual.accept(screenId)
+    }
 
     override fun coordinateTarget(action: PhoneAction.TapXY): VisualTarget? = synchronized(lock) {
         val snap = latest ?: return null
         if (snap.id != action.screenId || action.gesture != PhoneAction.CoordinateGesture.TAP ||
-            !visual.imageAccepted(snap.id) || !availability().ok) return null
+            !visual.imageAccepted(snap.id) || !coordinateEpochCurrent(snap) || !availability().ok) return null
         val image = snap.image ?: return null
         if (!image.isFresh(SystemClock.uptimeMillis())) return null
         val scope = visual.scope(snap.id) ?: return null
@@ -152,7 +163,13 @@ internal class MainScreenDriver(private val service: PhoneA11yService, private v
             var mime: String? = null
             var secure = false
             var localText = shooter.localTextWithoutFrame()
-            if (image) {
+            var formatted: LocalOcrVisual.Output? = null
+            val epoch = localOcr.enabledEpoch()
+            val readLocal = snap.screen.poorTree && epoch != null && ocrAllowed(cap, snap, generation)
+            if (snap.screen.poorTree && epoch != null && !readLocal) {
+                localText = LocalOcrResult.Unavailable(LocalOcrResult.Reason.PRIVACY_UNVERIFIED)
+            }
+            if (image || readLocal) {
                 val left = OBSERVE_MS - (SystemClock.uptimeMillis() - start)
                 when {
                     // l10n:keep agent screen result
@@ -168,20 +185,27 @@ internal class MainScreenDriver(private val service: PhoneA11yService, private v
                         val secrets = secretFieldBounds(cap.windows)
                         val capturedTransitions = visual.transitions()
                         val shot = shooter.shoot(window, cap.screen, snap.screen.elements, secrets, minOf(left - 300, 3_000),
-                            readLocalText = snap.screen.poorTree,
-                            localTextPrivacyAllowed = Build.VERSION.SDK_INT >= 34 && cap.windows.size == 1 &&
-                                cap.keyboardShown == false && !snap.ownApp && !snap.protectedPage && !snap.hidden &&
-                                !cap.truncated && !cap.partial && !unavailable(cap) && secrets.isEmpty() &&
-                                PhoneControl.peek()?.policies()?.denyPackages?.let { denied ->
-                                    snap.packageName != null && snap.packageName !in denied
-                                } == true,
-                            localTextCancelled = { generation != abortGen })
-                        localText = shot.localText
+                            image = image,
+                            readLocalText = readLocal,
+                            localTextPrivacyAllowed = ocrAllowed(cap, snap, generation),
+                            localTextCancelled = { !ocrAllowed(cap, snap, generation) || localOcr.enabledEpoch() != epoch })
+                        localText = when {
+                            snap.screen.poorTree && epoch == null -> shooter.localTextWithoutFrame()
+                            snap.screen.poorTree && !readLocal -> LocalOcrResult.Unavailable(LocalOcrResult.Reason.PRIVACY_UNVERIFIED)
+                            else -> shot.localText
+                        }
+                        val current = snap.screen.poorTree && epoch != null && epoch == localOcr.enabledEpoch() &&
+                            verifyOcrContext(cap, snap, generation, start + OBSERVE_MS)
+                        val decoded = if (snap.screen.poorTree) shot.visualText() else null
+                        if (current && SystemClock.uptimeMillis() < start + OBSERVE_MS &&
+                            epoch == localOcr.enabledEpoch() && ocrAllowed(cap, snap, generation)) formatted = decoded
+                        val privateText = decoded?.sensitiveText == true
                         secure = shot.secure
                         if (secure) visual.observed(null, null)
-                        if (shot.bytes != null) {
+                        if (shot.bytes != null && !privateText) {
                             bytes = shot.bytes
                             mime = shot.mime
+                            snap.ocrOnlyEpoch = null
                             snap.image = shot.observation
                             if (shot.observation != null) visual.candidate(snap.id, capturedTransitions)
                             // l10n:keep agent screen result
@@ -189,13 +213,34 @@ internal class MainScreenDriver(private val service: PhoneA11yService, private v
                             // l10n:keep agent screen result
                             shot.takenAtMillis?.let { text.append("\n截图时间：${shotClock.format(Date(it))}（系统截图时间戳，设备时钟）。") }
                         // l10n:keep agent screen result
-                        } else text.append("\n提示：${shot.error ?: "截图失败"}。")
+                        } else if (formatted?.hasPoints == true && !privateText && shot.observation != null) {
+                            snap.image = shot.observation
+                            snap.ocrOnlyEpoch = epoch
+                            visual.candidate(snap.id, capturedTransitions)
+                        } else if (image && !privateText) text.append("\n提示：${shot.error ?: "截图失败"}。")
                     }
                 }
             }
-            if (snap.screen.poorTree) text.append("\n").append(LocalOcrBoundary.message(localText))
+            if (snap.screen.poorTree) text.append("\n").append(formatted?.text ?: LocalOcrBoundary.message(localText))
             ScreenSnapshot(snap.id, text.toString(), snap.appLabel, snap.packageName, secure || snap.hidden, snap.screen.poorTree, bytes, mime)
         } finally { cap.recycle() }
+    }
+
+    private fun ocrAllowed(cap: Capture, snap: Snapshot, gen: Long): Boolean =
+        !cancelled(gen) && availability().ok && latest === snap && visual.scope(snap.id) != null &&
+            Build.VERSION.SDK_INT >= 34 && cap.windows.size == 1 && cap.visualComplete &&
+            cap.keyboardShown == false && !snap.ownApp && !snap.protectedPage && !snap.hidden &&
+            !cap.truncated && !cap.partial && !unavailable(cap) && secretFieldBounds(cap.windows).isEmpty() &&
+            PhoneControl.peek()?.policies()?.denyPackages?.let { snap.packageName != null && snap.packageName !in it } == true
+
+    private fun verifyOcrContext(cap: Capture, snap: Snapshot, gen: Long, deadline: Long): Boolean {
+        if (!ocrAllowed(cap, snap, gen)) return false
+        val left = deadline - SystemClock.uptimeMillis()
+        if (left <= 0) return false
+        val check = capture(minOf(CAPTURE_MS, left))
+        return try { SystemClock.uptimeMillis() < deadline && ocrAllowed(check, snap, gen) &&
+            observation(check).reusableCoordinates(snap.observation) }
+        finally { check.recycle() }
     }
 
     override fun target(screenId: String, elementId: Int): TargetInfo? = synchronized(lock) {
@@ -225,6 +270,7 @@ internal class MainScreenDriver(private val service: PhoneA11yService, private v
         if (Looper.myLooper() == Looper.getMainLooper()) return ActionResult(false, "内部错误：手机动作不能在主线程执行。")
         val gen = abortGen
         synchronized(lock) {
+            actionDeadline = SystemClock.uptimeMillis() + 30_000L // PhoneCore default action budget; worker interruption remains authoritative.
             availability().let { if (!it.ok) return ActionResult(false, it.reason!!) }
             // l10n:keep agent screen result
             if (!allowed()) return ActionResult(false, "用户在悬浮条上按了暂停。等用户点「继续」后再操作，不要换别的方式绕过。")
@@ -232,6 +278,22 @@ internal class MainScreenDriver(private val service: PhoneA11yService, private v
             if (!awaitInputIdle()) return ActionResult(false, "用户正在悬浮条上输入插话，稍等再操作。")
             if (cancelled(gen)) throw InterruptedException()
             // Editing may have held this invocation for seconds after its first admission check.
+            refuseHalted(allowed)?.let { return it }
+            actionBeforeImage = null
+            val previous = latest
+            if (action !is PhoneAction.TapXY && previous?.screen?.poorTree == true) {
+                val remaining = actionDeadline - SystemClock.uptimeMillis()
+                if (remaining > 0) {
+                    val beforeCap = capture(minOf(CAPTURE_MS, remaining))
+                    try {
+                        if (ocrAllowed(beforeCap, previous, gen) && observation(beforeCap).sameContext(previous.observation)) {
+                            actionBeforeImage = captureImageObservation(beforeCap)
+                        }
+                    } finally { beforeCap.recycle() }
+                }
+            }
+            // Recheck after this extra read; element handlers still resolve and gate just before input.
+            if (cancelled(gen)) throw InterruptedException()
             refuseHalted(allowed)?.let { return it }
             return when (action) {
                 is PhoneAction.Key -> key(action, gen)
@@ -554,7 +616,7 @@ internal class MainScreenDriver(private val service: PhoneA11yService, private v
             return ActionResult(false, "屏幕编号 ${a.screenId} 已过期，坐标对不上了。请重新 screen 加 image 再点。", now)
         }
         // l10n:keep agent screen result
-        val image = snap.image?.takeIf { visual.imageAccepted(snap.id) }
+        val image = snap.image?.takeIf { visual.imageAccepted(snap.id) && coordinateEpochCurrent(snap) }
             ?: return ActionResult(false, "屏幕 ${a.screenId} 没有已通过本次过滤的截图。坐标操作要先用 screen 加 image 拿一张实际保留的截图。")
         val geometry = image.geometry
         // l10n:keep agent screen result
@@ -605,13 +667,13 @@ internal class MainScreenDriver(private val service: PhoneA11yService, private v
         } finally { cap.recycle() }
         if (cancelled(gen)) throw InterruptedException()
         // A dispatched gesture consumes the coordinates even if its callback or verification fails.
-        if (!visual.consume(snap.id)) return ActionResult(false, "本次截图已失效，没有执行。请重新读屏。") // l10n:keep agent result
+        if (!coordinateEpochCurrent(snap) || !visual.consume(snap.id)) return ActionResult(false, "本次截图已失效，没有执行。请重新读屏。") // l10n:keep agent result
         snap.image = null
         val before = clock.count
         val dispatchScope = visual.scope(snap.id)
         val admission = coordinateAdmission ?: { claim: () -> Boolean -> allowed() && claim() }
         val start: (() -> Boolean) -> Boolean = { send ->
-            actuator.coordinateStart({ published() && abortGen == gen && visual.isCurrent(dispatchScope, transitions) }, admission, send)
+            actuator.coordinateStart({ published() && abortGen == gen && coordinateEpochCurrent(snap) && visual.isCurrent(dispatchScope, transitions) }, admission, send)
         }
         // l10n:keep agent screen result
         val accepted = when (a.gesture) {
@@ -626,7 +688,7 @@ internal class MainScreenDriver(private val service: PhoneA11yService, private v
     }
 
     /** Waits for the UI to settle, reads the new screen (`+` marks) and says whether anything changed. */
-    private fun after(before: Long, previous: Snapshot?, gen: Long, message: String, scrolled: Boolean = false, previousImage: ImageObservation? = null): ActionResult {
+    private fun after(before: Long, previous: Snapshot?, gen: Long, message: String, scrolled: Boolean = false, previousImage: ImageObservation? = actionBeforeImage): ActionResult {
         clock.settle(before, 1_500, 300, 3_000) { cancelled(gen) }
         val cap = try { if (previousImage == null) settledCapture(previous, gen) else capture() } catch (e: InterruptedException) { throw e } catch (e: Exception) {
             Log.w(TAG, "observation after an accepted action failed", e)
@@ -644,10 +706,46 @@ internal class MainScreenDriver(private val service: PhoneA11yService, private v
             val note = ScreenVerdict.note(comparable = comparable, changed = changed, keyboard = keyboard, scrolled = scrolled)
             val canReuse = comparable && observation.sameContext(old) && observation.keyboardShown == old.keyboardShown
             val text = ScreenDigest.text(previous?.id, previous?.screen, snap.id, snap.screen, canReuse = canReuse, observationChanged = changed)
+            var ocrText = ""
+            var nextImage: ImageObservation? = null
+            val epoch = localOcr.enabledEpoch()
+            val remaining = actionDeadline - SystemClock.uptimeMillis()
+            val readLocal = snap.screen.poorTree && epoch != null && ocrAllowed(cap, snap, gen)
+            val compareFrame = previousImage != null && !unavailable(cap) && !snap.ownApp &&
+                !snap.protectedPage && old != null && observation.sameContext(old)
+            try {
+                if ((compareFrame || readLocal) && remaining > 300) {
+                    val capturedTransitions = visual.transitions()
+                    val shot = shooter.shoot(cap.windows.singleOrNull(), cap.screen, emptyList(), emptyList(),
+                        minOf(2_500, remaining - 300), image = false,
+                        readLocalText = readLocal,
+                        localTextPrivacyAllowed = readLocal,
+                        localTextCancelled = { !ocrAllowed(cap, snap, gen) || localOcr.enabledEpoch() != epoch })
+                    if (shot.secure) visual.observed(null, null)
+                    if (compareFrame && !shot.secure && !cancelled(gen) && availability().ok) {
+                        nextImage = shot.observation
+                    }
+                    val stillCurrent = readLocal && verifyOcrContext(cap, snap, gen, actionDeadline)
+                    if (stillCurrent && epoch != null && epoch == localOcr.enabledEpoch() &&
+                        snap.screen.poorTree && shot.geometry != null && shot.viewport != null) {
+                        val result = shot.visualText()!!
+                        if (SystemClock.uptimeMillis() < actionDeadline && epoch == localOcr.enabledEpoch() &&
+                            ocrAllowed(cap, snap, gen)) {
+                            ocrText = "\n" + result.text
+                            if (!result.sensitiveText && result.hasPoints && shot.observation != null) {
+                                snap.image = shot.observation
+                                snap.ocrOnlyEpoch = epoch
+                                visual.candidate(snap.id, capturedTransitions)
+                            }
+                        }
+                    }
+                }
+            } catch (e: InterruptedException) { throw e } catch (_: Exception) {
+                // The action is already dispatched. Missing verification never changes it to a retryable failure.
+                ocrText = ""
+                nextImage = null
+            }
             val visualNote = if (previousImage == null) "" else {
-                val nextImage = if (!unavailable(cap) && !snap.ownApp && !snap.protectedPage && old != null && observation.sameContext(old)) {
-                    try { captureImageObservation(cap) } catch (e: InterruptedException) { throw e } catch (_: Exception) { null }
-                } else null
                 val change = nextImage?.changeFrom(previousImage) ?: VisualFrame.Change.UNAVAILABLE
                 when (change) {
                     // l10n:keep agent screen result
@@ -658,14 +756,17 @@ internal class MainScreenDriver(private val service: PhoneA11yService, private v
                     VisualFrame.Change.UNAVAILABLE -> "（动作已提交，但截图无法比较，不能验证结果；不要自动重复点击。）"
                 }
             }
-            return ActionResult(true, message + note + visualNote, toSnapshot(snap, text))
+            return ActionResult(true, message + note + visualNote, toSnapshot(snap, text + ocrText))
         } finally { cap.recycle() }
     }
 
     /** Verification frames stay local: no JPEG, no element numbering and no published observation. */
     private fun captureImageObservation(cap: Capture): ImageObservation? {
         val window = cap.windows.singleOrNull()
-        val shot = shooter.shoot(window, cap.screen, emptyList(), emptyList(), 2_500, image = false)
+        val remaining = actionDeadline - SystemClock.uptimeMillis()
+        if (remaining <= 0) return null
+        val shot = shooter.shoot(window, cap.screen, emptyList(), emptyList(), minOf(2_500, remaining), image = false,
+            localTextCancelled = { !published() || Thread.currentThread().isInterrupted })
         if (shot.secure) visual.observed(null, null)
         return shot.observation
     }
@@ -727,11 +828,11 @@ internal class MainScreenDriver(private val service: PhoneA11yService, private v
 
     // ---- snapshots --------------------------------------------------------------------------------
 
-    private fun capture(): Capture {
+    private fun capture(timeoutMs: Long = CAPTURE_MS): Capture {
         // Cache invalidation is a qualification input, not an assertion of an atomic WMS snapshot.
         val fresh = Build.VERSION.SDK_INT in 34..37 && runCatching { service.clearCache() }.getOrDefault(false)
         try {
-            return TreeCapture.capture(service, screenBox(), ownPackage, CAPTURE_MS).also { cap ->
+            return TreeCapture.capture(service, screenBox(), ownPackage, timeoutMs).also { cap ->
                 val window = cap.windows.singleOrNull()
                 val titles = cap.windows.mapNotNull { it.title } + ProtectedPages.titleTexts(window?.root, cap.screen.height)
                 val known = fresh && published() && cap.visualComplete && window?.kind == WindowKind.APP &&
@@ -892,3 +993,7 @@ internal class MainScreenDriver(private val service: PhoneA11yService, private v
         private const val COLLECT_CHARS = 60_000
     }
 }
+
+/** Null belongs to a published image; OCR-only evidence must retain exactly its original ON epoch. */
+internal fun mainOcrEpochCurrent(observationEpoch: Long?, enabledEpoch: Long?): Boolean =
+    observationEpoch == null || observationEpoch == enabledEpoch
