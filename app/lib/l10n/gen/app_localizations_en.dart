@@ -11910,6 +11910,52 @@ class L10nEn extends L10n {
       'This connection supports one background slot. Your preference remains saved.';
 
   @override
+  String get phoneSkillBundlePublishedUnverified =>
+      'The files were published, but full verification has not succeeded. Do not save again.';
+
+  @override
+  String get phoneSkillBundleUnknown =>
+      'The save result is not confirmed. Files may already have been written. Do not save again.';
+
+  @override
+  String phoneSkillBundleRevision(String revision) {
+    return 'Route revision: $revision';
+  }
+
+  @override
+  String get phoneSkillReplayReview => 'Review phone route';
+
+  @override
+  String get phoneSkillReplaySourceChanged =>
+      'The local session or connection changed. Select the route again from the current local conversation.';
+
+  @override
+  String get phoneSkillReplayUnavailable =>
+      'This route is not available for controlled execution on this phone. The ordinary skill template remains available.';
+
+  @override
+  String get phoneSkillReplayConfirm => 'I have reviewed this route and the app selected for this use.';
+
+  @override
+  String get phoneSkillReplayToComposer => 'Insert into this conversation';
+
+  @override
+  String phoneSkillReplayStartText(String request) {
+    return 'A phone route has been selected and reviewed locally. Call only mcp__phone__replay with $request. If unavailable or refused, hand back to the user/model; do not replay it as ordinary actions.';
+  }
+
+  @override
+  String get phoneSkillReplayQueue => 'Send route (queue)';
+
+  @override
+  String get phoneSkillReplayQueued =>
+      'The route message was accepted or queued. This does not mean the route has executed successfully.';
+
+  @override
+  String get phoneSkillReplaySendUncertain =>
+      'Delivery of the route message was not confirmed. It has not been prepared or replayed again. Check the original conversation.';
+
+  @override
   String get phoneTaskResultReady => 'Task complete · View result';
 
   @override

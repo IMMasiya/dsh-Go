@@ -20786,6 +20786,78 @@ abstract class L10n {
   /// **'此连接支持一个后台槽位，设置偏好仍会保留。'**
   String get phoneBackgroundParallelSerial;
 
+  /// No description provided for @phoneSkillBundlePublishedUnverified.
+  ///
+  /// In zh, this message translates to:
+  /// **'文件已发布，但尚未通过完整核验。不要重复保存。'**
+  String get phoneSkillBundlePublishedUnverified;
+
+  /// No description provided for @phoneSkillBundleUnknown.
+  ///
+  /// In zh, this message translates to:
+  /// **'保存结果尚未确认，文件可能已经写入。不要重复保存。'**
+  String get phoneSkillBundleUnknown;
+
+  /// No description provided for @phoneSkillBundleRevision.
+  ///
+  /// In zh, this message translates to:
+  /// **'路线版本：{revision}'**
+  String phoneSkillBundleRevision(String revision);
+
+  /// No description provided for @phoneSkillReplayReview.
+  ///
+  /// In zh, this message translates to:
+  /// **'核对手机路线'**
+  String get phoneSkillReplayReview;
+
+  /// No description provided for @phoneSkillReplaySourceChanged.
+  ///
+  /// In zh, this message translates to:
+  /// **'本机会话或连接已改变，请返回当前本机会话重新选择。'**
+  String get phoneSkillReplaySourceChanged;
+
+  /// No description provided for @phoneSkillReplayUnavailable.
+  ///
+  /// In zh, this message translates to:
+  /// **'此路线尚不能在当前本机安全执行。仍可按普通技能模板使用。'**
+  String get phoneSkillReplayUnavailable;
+
+  /// No description provided for @phoneSkillReplayConfirm.
+  ///
+  /// In zh, this message translates to:
+  /// **'我已核对这条路线与本次选择的 App。'**
+  String get phoneSkillReplayConfirm;
+
+  /// No description provided for @phoneSkillReplayToComposer.
+  ///
+  /// In zh, this message translates to:
+  /// **'放入当前对话'**
+  String get phoneSkillReplayToComposer;
+
+  /// No description provided for @phoneSkillReplayStartText.
+  ///
+  /// In zh, this message translates to:
+  /// **'本机已选择并核对手机路线。请仅调用 mcp__phone__replay，参数 {request}。若不可用或被拒绝，交回用户/模型，不要改为普通动作重放。'**
+  String phoneSkillReplayStartText(String request);
+
+  /// No description provided for @phoneSkillReplayQueue.
+  ///
+  /// In zh, this message translates to:
+  /// **'发送路线（排队）'**
+  String get phoneSkillReplayQueue;
+
+  /// No description provided for @phoneSkillReplayQueued.
+  ///
+  /// In zh, this message translates to:
+  /// **'路线消息已被接收或排队，尚不代表路线执行成功。'**
+  String get phoneSkillReplayQueued;
+
+  /// No description provided for @phoneSkillReplaySendUncertain.
+  ///
+  /// In zh, this message translates to:
+  /// **'路线消息未确认发送成功；没有自动重新准备或重放。请核对原对话结果。'**
+  String get phoneSkillReplaySendUncertain;
+
   /// No description provided for @phoneTaskResultReady.
   ///
   /// In zh, this message translates to:

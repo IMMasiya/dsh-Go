@@ -11326,6 +11326,46 @@ class L10nZh extends L10n {
   String get phoneBackgroundParallelSerial => '此连接支持一个后台槽位，设置偏好仍会保留。';
 
   @override
+  String get phoneSkillBundlePublishedUnverified => '文件已发布，但尚未通过完整核验。不要重复保存。';
+
+  @override
+  String get phoneSkillBundleUnknown => '保存结果尚未确认，文件可能已经写入。不要重复保存。';
+
+  @override
+  String phoneSkillBundleRevision(String revision) {
+    return '路线版本：$revision';
+  }
+
+  @override
+  String get phoneSkillReplayReview => '核对手机路线';
+
+  @override
+  String get phoneSkillReplaySourceChanged => '本机会话或连接已改变，请返回当前本机会话重新选择。';
+
+  @override
+  String get phoneSkillReplayUnavailable => '此路线尚不能在当前本机安全执行。仍可按普通技能模板使用。';
+
+  @override
+  String get phoneSkillReplayConfirm => '我已核对这条路线与本次选择的 App。';
+
+  @override
+  String get phoneSkillReplayToComposer => '放入当前对话';
+
+  @override
+  String phoneSkillReplayStartText(String request) {
+    return '本机已选择并核对手机路线。请仅调用 mcp__phone__replay，参数 $request。若不可用或被拒绝，交回用户/模型，不要改为普通动作重放。';
+  }
+
+  @override
+  String get phoneSkillReplayQueue => '发送路线（排队）';
+
+  @override
+  String get phoneSkillReplayQueued => '路线消息已被接收或排队，尚不代表路线执行成功。';
+
+  @override
+  String get phoneSkillReplaySendUncertain => '路线消息未确认发送成功；没有自动重新准备或重放。请核对原对话结果。';
+
+  @override
   String get phoneTaskResultReady => '任务完成 · 查看结果';
 
   @override
