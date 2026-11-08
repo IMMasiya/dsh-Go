@@ -1427,8 +1427,8 @@ class PhoneChannel {
         'sessionId': sessionId,
         'host': host,
         'reopen': reopen,
-        if (runId != null) 'runId': runId,
-        if (generation != null) 'generation': generation,
+        'runId': ?runId,
+        'generation': ?generation,
         if (appOnly) 'appOnly': true,
       });
       return map == null ? const PhoneFinish() : PhoneFinish.fromMap(map);

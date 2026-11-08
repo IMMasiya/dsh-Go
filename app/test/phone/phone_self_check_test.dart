@@ -16,16 +16,16 @@ const _phone = MethodChannel('dsh/phone');
 const _files = MethodChannel('dsh/files');
 Map<String, Object?> _reply(String state, {String? handle, String? reason, String? profile, List<Object?>? steps}) => {
   'v': 1, 'accepted': true, 'coverage': 'partial', 'state': state,
-  if (handle != null) 'runHandle': handle,
-  if (reason != null) 'reason': reason,
-  if (profile != null) 'profile': profile,
+  'runHandle': ?handle,
+  'reason': ?reason,
+  'profile': ?profile,
   'steps': steps ?? [for (final stage in phoneSelfCheckStages)
     {'stage': stage, 'state': 'not_run', 'observed': false}],
 };
 Map<String, Object?> _step(String stage, String state, Object observed, {Object? reason, Object? duration}) => {
   'stage': stage, 'state': state, 'observed': observed,
-  if (reason != null) 'reason': reason,
-  if (duration != null) 'durationMs': duration,
+  'reason': ?reason,
+  'durationMs': ?duration,
 };
 
 class _RecordingReport extends PhoneSelfCheckReport {
@@ -547,7 +547,9 @@ void main() {
       'mainSamplesUnchanged': 'main_unchanged', 'mainSamplesIncomplete': 'main_incomplete',
       'notInstalled': 'not_installed',
     };
-    for (final reason in reasons.entries) expect(phoneSelfCheckReasonGroup(reason.key), reason.value);
+    for (final reason in reasons.entries) {
+      expect(phoneSelfCheckReasonGroup(reason.key), reason.value);
+    }
     final raw = _reply('done', profile: 'target_c2', handle: 'private-handle', steps: [
       _step('text_zh', 'pass', true), _step('capture', 'unknown', true, reason: 'targetFrameMismatch'),
       _step('main', 'unknown', true, reason: 'mainSamplesUnchanged'),

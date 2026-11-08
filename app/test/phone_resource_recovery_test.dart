@@ -1,6 +1,6 @@
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
-import '../lib/phone/phone_channel.dart';
+import 'package:dsh_app/phone/phone_channel.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
