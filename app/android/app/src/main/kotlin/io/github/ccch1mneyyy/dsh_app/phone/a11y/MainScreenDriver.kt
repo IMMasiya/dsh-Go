@@ -11,6 +11,8 @@ import io.github.ccch1mneyyy.dsh_app.i18n.AppStrings
 import io.github.ccch1mneyyy.dsh_app.R
 import android.app.KeyguardManager
 import android.content.Intent
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.graphics.Point
 import android.hardware.display.DisplayManager
 import android.os.Build
@@ -45,6 +47,7 @@ import java.util.Locale
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.FutureTask
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicInteger
 
 /**
  * The main screen, read and driven through [PhoneA11yService]. Calls block (bridge worker
@@ -284,7 +287,7 @@ internal class MainScreenDriver(private val service: PhoneA11yService, private v
     @Suppress("DEPRECATION")
     private fun replaceFocusCandidate(cap: Capture, snap: Snapshot) {
         clearFocusCandidate()
-        if (Build.VERSION.SDK_INT < 33 || snap.hidden || snap.unreadable || cap.partial || cap.truncated ||
+        if (snap.hidden || snap.unreadable || cap.partial || cap.truncated ||
             unavailable(cap) || !published()) return
         val revision = focusRevision
         val gen = abortGen
@@ -320,7 +323,7 @@ internal class MainScreenDriver(private val service: PhoneA11yService, private v
     }
 
     override fun prepareFocusInput(screenId: String): Either<String, FocusInput> {
-        if (Build.VERSION.SDK_INT < 33 || Looper.myLooper() == Looper.getMainLooper())
+        if (Looper.myLooper() == Looper.getMainLooper())
             return Either.Left(FOCUS_UNAVAILABLE)
         val candidate = synchronized(focusLock) {
             val current = focusCandidate
@@ -331,15 +334,27 @@ internal class MainScreenDriver(private val service: PhoneA11yService, private v
         try {
             synchronized(lock) {
                 if (!focusCurrent(candidate) || !availability().ok) return Either.Left(FOCUS_CHANGED)
-                val capture = FutureTask { service.captureFocusInput() }
-                if (!mainHandler.post(capture)) return Either.Left(FOCUS_UNAVAILABLE)
-                val input = try { capture.get(2_000, TimeUnit.MILLISECONDS) }
-                    finally { capture.cancel(false) } // Late getter result owns no disposable Android resource.
-                if (input == null || !input.currentBeforeDispatch() || !verifyFocus(candidate, input))
-                    return Either.Left(FOCUS_CHANGED)
-                val plan = MainFocusInput(candidate, input)
+                if (Build.VERSION.SDK_INT >= 33) {
+                    val capture = FutureTask { service.captureFocusInput() }
+                    if (!mainHandler.post(capture)) return Either.Left(FOCUS_UNAVAILABLE)
+                    val input = try { capture.get(2_000, TimeUnit.MILLISECONDS) }
+                        finally { capture.cancel(false) }
+                    if (input != null) {
+                        // A changed captured editor does not authorize switching input paths.
+                        if (!input.currentBeforeDispatch() || !verifyFocus(candidate, input))
+                            return Either.Left(FOCUS_CHANGED)
+                        transferred = true
+                        return Either.Right(MainFocusInput(candidate, input))
+                    }
+                }
+                // No IME commit was attempted. Never overwrite the clipboard to probe paste support.
+                val cap = capture()
+                try {
+                    val node = freshFocusNode(cap, candidate) ?: return Either.Left(FOCUS_CHANGED)
+                    if (!pasteAdvertised(node)) return Either.Left(FOCUS_UNAVAILABLE)
+                } finally { cap.recycle() }
                 transferred = true
-                return Either.Right(plan)
+                return Either.Right(MainClipboardInput(candidate))
             }
         } catch (e: InterruptedException) {
             Thread.currentThread().interrupt()
@@ -368,25 +383,136 @@ internal class MainScreenDriver(private val service: PhoneA11yService, private v
             .getResourceName(witness.editor.fieldId) } catch (_: Exception) { return false }
         if (resourceName != candidate.element.viewId) return false
         val cap = capture()
-        try {
-            val titles = cap.windows.mapNotNull { it.title } +
-                ProtectedPages.titleTexts(cap.windows.firstOrNull()?.root, cap.screen.height)
-            if ((cap.ownAppInFront || cap.packageName == ownPackage) && !lifted.ownApp ||
-                ProtectedPages.isProtected(cap.packageName, titles) && !lifted.systemPages) return false
-            val matching = ScreenFormat.index(cap.windows).filter { it.kind == ElementKind.INPUT &&
-                it.windowId == candidate.element.windowId && it.fingerprint == candidate.element.fingerprint }
-                .singleOrNull() ?: return false
-            val node = cap.native(matching.ref) ?: return false
-            if (node != candidate.node || !focusNodeMatches(cap, candidate.element, node) ||
-                node.inputType != candidate.inputType || node.textSelectionStart != candidate.selectionStart ||
-                node.textSelectionEnd != candidate.selectionEnd) return false
-            // Fresh classification, not just the retained copy's old flags.
-            val classified = ScreenFormat.format(ScreenInput("focus-check", candidate.snapshot.appLabel,
-                cap.packageName, cap.screen.width, cap.screen.height, cap.keyboardShown, cap.windows))
-                .elements.singleOrNull { it.ref == matching.ref } ?: return false
-            return !classified.password && !classified.secret && input.currentBeforeDispatch() &&
-                focusCurrent(candidate) && availability().ok
-        } finally { cap.recycle() }
+        try { return freshFocusNode(cap, candidate) != null && input.currentBeforeDispatch() }
+        finally { cap.recycle() }
+    }
+
+    /** Returned node is owned by this fresh capture, never the saved identity copy. */
+    private fun freshFocusNode(cap: Capture, candidate: FocusCandidate,
+                               sameSelection: Boolean = true): AccessibilityNodeInfo? {
+        if (!focusCurrent(candidate) || !availability().ok) return null
+        val titles = cap.windows.mapNotNull { it.title } +
+            ProtectedPages.titleTexts(cap.windows.firstOrNull()?.root, cap.screen.height)
+        if ((cap.ownAppInFront || cap.packageName == ownPackage) && !lifted.ownApp ||
+            ProtectedPages.isProtected(cap.packageName, titles) && !lifted.systemPages) return null
+        val matching = ScreenFormat.index(cap.windows).filter { it.kind == ElementKind.INPUT &&
+            it.windowId == candidate.element.windowId && it.fingerprint == candidate.element.fingerprint }
+            .singleOrNull() ?: return null
+        val node = cap.native(matching.ref) ?: return null
+        if (node != candidate.node || !focusNodeMatches(cap, candidate.element, node) ||
+            node.inputType != candidate.inputType || sameSelection &&
+            (node.textSelectionStart != candidate.selectionStart || node.textSelectionEnd != candidate.selectionEnd)) return null
+        val classified = ScreenFormat.format(ScreenInput("focus-check", candidate.snapshot.appLabel,
+            cap.packageName, cap.screen.width, cap.screen.height, cap.keyboardShown, cap.windows))
+            .elements.singleOrNull { it.ref == matching.ref } ?: return null
+        return node.takeIf { !classified.password && !classified.secret && focusCurrent(candidate) && availability().ok }
+    }
+
+    private fun pasteAdvertised(node: AccessibilityNodeInfo): Boolean =
+        node.actionList.any { it.id == AccessibilityNodeInfo.ACTION_PASTE }
+
+    private fun focusNodeSample(node: AccessibilityNodeInfo): FocusReadback.Sample? {
+        val text = if (node.isShowingHintText) "" else node.text?.toString().orEmpty()
+        if (text.length > 4096) return null
+        return FocusReadback.Sample(text, node.textSelectionStart, node.textSelectionEnd, 0)
+    }
+
+    private inner class MainClipboardInput(private val candidate: FocusCandidate) : FocusInput {
+        private val ownership = Any()
+        private var closed = false
+        private var used = false
+        override val method = FocusInput.Method.CLIPBOARD
+        override val target: TargetInfo = info(candidate.snapshot.id, candidate.element)
+        override fun close() = synchronized(ownership) {
+            if (!closed) { closed = true; releaseFocusNode(candidate.node) }
+        }
+
+        override fun perform(text: String, allowed: () -> Boolean): ActionResult = synchronized(ownership) {
+            if (closed || used) return ActionResult(false, FOCUS_CHANGED)
+            used = true
+            // 0 queued, 1 invocation claimed, 2 returned, 3 cancelled before invocation.
+            // No callback takes ownership/Main locks; a running timed-out write may still finish.
+            val clipboard = AtomicInteger(0)
+            var pasteAttempted = false
+            var write: FutureTask<Boolean>? = null
+            fun uncertain(): ActionResult {
+                // Seal the queued write before classifying the result: a race cannot turn
+                // a reported not-started result into a later clipboard invocation.
+                clipboard.compareAndSet(0, 3)
+                write?.cancel(false)
+                return ActionResult(false, when {
+                pasteAttempted -> "已尝试一次粘贴，效果未核实；不要重复输入或改用其他方式。" // l10n:keep agent focus result
+                clipboard.get() == 2 -> "系统剪贴板已被覆盖，未派发粘贴；请核对当前焦点，不要自动重试。" // l10n:keep agent focus result
+                clipboard.get() == 1 -> "系统剪贴板写入已开始，结果未知，未派发粘贴；不要自动重试。" // l10n:keep agent focus result
+                else -> FOCUS_CHANGED
+                })
+            }
+            try {
+                synchronized(lock) {
+                    actionDeadline = SystemClock.uptimeMillis() + 30_000L
+                    actionBeforeImage = null
+                    if (!allowed() || !focusCurrent(candidate) || !availability().ok || !awaitInputIdle())
+                        return uncertain()
+                    val beforeCap = capture()
+                    val before = try {
+                        val node = freshFocusNode(beforeCap, candidate) ?: return uncertain()
+                        if (!pasteAdvertised(node)) return uncertain()
+                        focusNodeSample(node) ?: return uncertain()
+                    } finally { beforeCap.recycle() }
+                    if (!focusSampleMatchesSelection(before, candidate.selectionStart, candidate.selectionEnd) ||
+                        !allowed() || !focusCurrent(candidate) || SystemClock.uptimeMillis() >= actionDeadline)
+                        return uncertain()
+                    val task = FutureTask {
+                        if (!allowed() || !focusCurrent(candidate) || !availability().ok ||
+                            SystemClock.uptimeMillis() >= actionDeadline || !clipboard.compareAndSet(0, 1)) false
+                        else {
+                            service.getSystemService(ClipboardManager::class.java)
+                                .setPrimaryClip(ClipData.newPlainText("DSH", text))
+                            clipboard.set(2)
+                            true
+                        }
+                    }
+                    write = task
+                    if (!mainHandler.post(task)) return uncertain()
+                    val remaining = minOf(3_000L, actionDeadline - SystemClock.uptimeMillis())
+                    if (remaining <= 0 || !task.get(remaining, TimeUnit.MILLISECONDS)) return uncertain()
+                    if (!allowed() || !focusCurrent(candidate) || SystemClock.uptimeMillis() >= actionDeadline)
+                        return uncertain()
+                    val pasteCap = capture()
+                    val events = clock.count
+                    try {
+                        val node = freshFocusNode(pasteCap, candidate) ?: return uncertain()
+                        if (!pasteAdvertised(node) || !allowed() || !focusCurrent(candidate) ||
+                            SystemClock.uptimeMillis() >= actionDeadline) return uncertain()
+                        pasteAttempted = true
+                        if (!node.performAction(AccessibilityNodeInfo.ACTION_PASTE)) return uncertain()
+                    } finally { pasteCap.recycle() }
+                    if (!allowed() || !focusCurrent(candidate) || SystemClock.uptimeMillis() >= actionDeadline)
+                        return uncertain()
+                    val afterCap = capture()
+                    val afterText = try { freshFocusNode(afterCap, candidate, sameSelection = false)?.let(::focusNodeSample) }
+                        finally { afterCap.recycle() }
+                    val result = FocusReadback.compare(before, afterText, text)
+                    if (!allowed() || !focusCurrent(candidate) || SystemClock.uptimeMillis() >= actionDeadline)
+                        return uncertain()
+                    val message = if (result.kind == FocusReadback.Kind.LOCAL_CONSISTENT)
+                        "剪贴板已覆盖并尝试一次粘贴；有限回读局部一致，不证明输入因果或业务成功。旧剪贴板未备份或恢复。" // l10n:keep agent focus result
+                    else "剪贴板已覆盖并尝试一次粘贴，有限回读未确认一致；不要重发或换输入方式。旧剪贴板未备份或恢复。" // l10n:keep agent focus result
+                    return after(events, candidate.snapshot, candidate.generation, message,
+                        previousImage = null, ok = result.kind == FocusReadback.Kind.LOCAL_CONSISTENT)
+                }
+            } catch (e: InterruptedException) {
+                Thread.currentThread().interrupt()
+                return uncertain()
+            } catch (_: Exception) {
+                return uncertain()
+            } finally {
+                // Losing this CAS forbids a queued task from beginning. State 1 remains unknown.
+                clipboard.compareAndSet(0, 3)
+                write?.cancel(false)
+                close()
+            }
+        }
     }
 
     @android.annotation.TargetApi(33)

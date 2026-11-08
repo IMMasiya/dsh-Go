@@ -19,6 +19,8 @@ class FocusObservation internal constructor(val elementId: Int) {
  * The caller closes this plan on every exit, including denied confirmation and retirement.
  */
 interface FocusInput : AutoCloseable {
+    enum class Method { INPUT_METHOD, CLIPBOARD }
+    val method: Method get() = Method.INPUT_METHOD
     val target: TargetInfo
 
     /** Inserts once at the captured selection; [allowed] is checked again before physical input. */
