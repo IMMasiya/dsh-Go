@@ -2607,7 +2607,7 @@ class L10nZh extends L10n {
 
   @override
   String botsPetImportBadSheet(String name) {
-    return '序列帧图不对：$name（要 PNG，每边不超过 4096 像素，每一帧都在图内）';
+    return '序列帧图不对：$name（要完整的 PNG，每边不超过 4096 像素，每一帧都在图内）';
   }
 
   @override
@@ -2623,6 +2623,11 @@ class L10nZh extends L10n {
 
   @override
   String get botsPetRemoveBody => '删除后可以再导入。';
+
+  @override
+  String botsPetRemoveFailed(String name) {
+    return '没能删除「$name」，再试一次';
+  }
 
   @override
   String get botsPetSize => '大小';
@@ -5237,7 +5242,17 @@ class L10nZh extends L10n {
   String get companionMenuAdapt => '适配这个模型';
 
   @override
-  String get companionAdaptHint => '用你配好的模型看一遍这个角色的参数，把转头、眨眼、表情和摸哪里对上。只发参数名单，不发模型文件。';
+  String get companionAdaptHint =>
+      '用你配好的模型（你的 Key，按次计费）看一遍这个角色，把转头、眨眼、表情和摸哪里对上。会发出去的：模型名、参数名单、表情动作和部件的名字、你下面写的话和现在的适配表；模型文件和贴图不发。';
+
+  @override
+  String get companionAdaptOffer => '这个模型要适配一下：用你配好的模型看一遍它的参数名单和表情动作的名字（不发模型文件），会用你的 Key 调用一次。以后的新模型就自动来，菜单里能关。';
+
+  @override
+  String get companionAdaptOfferYes => '适配';
+
+  @override
+  String get companionAdaptOfferNo => '不用了';
 
   @override
   String get companionAdaptNote => '哪里不对？（可以不填）';

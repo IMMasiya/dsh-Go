@@ -2761,7 +2761,7 @@ class L10nEn extends L10n {
 
   @override
   String botsPetImportBadSheet(String name) {
-    return 'A sheet isn\'t right: $name (PNG, at most 4096 pixels a side, every frame inside it)';
+    return 'A sheet isn\'t right: $name (a complete PNG, at most 4096 pixels a side, every frame inside it)';
   }
 
   @override
@@ -2777,6 +2777,11 @@ class L10nEn extends L10n {
 
   @override
   String get botsPetRemoveBody => 'You can import it again later.';
+
+  @override
+  String botsPetRemoveFailed(String name) {
+    return 'Couldn\'t delete $name. Try again';
+  }
 
   @override
   String get botsPetSize => 'Size';
@@ -5550,7 +5555,17 @@ class L10nEn extends L10n {
 
   @override
   String get companionAdaptHint =>
-      'Your own model reads this character\'s parameters and matches up her head, eyes, expressions and where she can be touched. Only the parameter list is sent, never the model files.';
+      'Your own model (your key, billed per request) reads this character and matches up her head, eyes, expressions and where she can be touched. Sent: the model\'s name, its parameter list, the names of its expressions, motions and parts, what you write below and the current fitting. Never the model files or textures.';
+
+  @override
+  String get companionAdaptOffer =>
+      'This model needs fitting: your own model reads its parameter list and the names of its expressions and motions (never the model files), using your key once. New models after this are fitted on their own; you can turn that off in the menu.';
+
+  @override
+  String get companionAdaptOfferYes => 'Fit it';
+
+  @override
+  String get companionAdaptOfferNo => 'Not now';
 
   @override
   String get companionAdaptNote => 'What\'s off? (optional)';

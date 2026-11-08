@@ -181,7 +181,14 @@ class _CompanionPageState extends ConsumerState<CompanionPage> implements Compan
   bool _adapting = false;
 
   /// Whose moves these are: their names and choices are kept per character.
-  String get _movesKey => _character.name ?? 'default';
+  /// Whose moves the saved labels and AI switches are: this very model (its
+  /// moc3), so another model that happens to share a name never inherits them.
+  String _movesKey = 'default';
+  int _movesEpoch = 0;
+
+  /// A fitting offered for this model, waiting for the person's yes (the first
+  /// time anything would be sent on its own).
+  CompanionProbe? _adaptOffer;
 
   // Her other work: conversations on the hosts that finish, fail or wait on
   // the person while they're here.
@@ -689,7 +696,10 @@ class _CompanionPageState extends ConsumerState<CompanionPage> implements Compan
   /// A model that still needs judgement gets fitted once, on its own, with
   /// the person's model; after that only when they ask (menu).
   void _onProbe(CompanionProbe probe) {
+    // An offer for the model she had before goes with it.
+    if (_adaptOffer != null && _adaptOffer!.moc != probe.moc) setState(() => _adaptOffer = null);
     _probe = probe;
+    if (probe.adapted) unawaited(_checkAdapter(probe));
     if (_adapting || companionAdaptWanted(probe).isEmpty) return;
     unawaited(_autoAdapt(probe));
   }
@@ -701,9 +711,41 @@ class _CompanionPageState extends ConsumerState<CompanionPage> implements Compan
     if (ref.read(settingsProvider).apiKey.trim().isEmpty) return;
     final fingerprint = await companionMocFingerprint(store.pack, probe) ?? probe.moc;
     if (await companionAdaptTried(fingerprint)) return;
+    // Nothing goes out on its own until the person has said yes once.
+    if (!await companionAdaptConsented()) {
+      if (mounted && _probe == probe) setState(() => _adaptOffer = probe);
+      return;
+    }
     await companionAdaptMarkTried(fingerprint);
     if (!mounted || _probe != probe) return;
     await _adapt();
+  }
+
+  /// The adapter she wears says which model it was written for (its moc3
+  /// fingerprint): one written for another model is taken off, and this one
+  /// is looked at afresh.
+  Future<void> _checkAdapter(CompanionProbe probe) async {
+    final store = _store;
+    if (store == null) return;
+    final adapter = await companionAdapterRead(store.pack);
+    final meant = adapter?['moc'];
+    if (meant is! String || meant.isEmpty) return;
+    final actual = await companionMocFingerprint(store.pack, probe);
+    if (actual == null || actual == meant || !mounted || _probe != probe) return;
+    await companionAdapterRemove(store.pack);
+    if (mounted) _stage.command('adapter');
+  }
+
+  Future<void> _answerAdaptOffer({required bool yes}) async {
+    final probe = _adaptOffer;
+    final store = _store;
+    if (probe == null || store == null) return;
+    _acted();
+    setState(() => _adaptOffer = null);
+    await companionAdaptMarkTried(await companionMocFingerprint(store.pack, probe) ?? probe.moc);
+    if (!yes) return;
+    await companionAdaptSetConsented(true);
+    if (mounted && _probe == probe) await _adapt();
   }
 
   /// Asks her own AI for an adapter, checks it, and she wears it at once.
@@ -758,6 +800,9 @@ class _CompanionPageState extends ConsumerState<CompanionPage> implements Compan
   Future<void> _undoAdapt() async {
     final store = _store;
     if (store == null) return;
+    if (_probe case final probe?) {
+      await companionAdaptMarkTried(await companionMocFingerprint(store.pack, probe) ?? probe.moc);
+    }
     await companionAdapterRemove(store.pack);
     if (!mounted) return;
     _stage.command('adapter');
@@ -773,6 +818,8 @@ class _CompanionPageState extends ConsumerState<CompanionPage> implements Compan
           adapted: _probe?.adapted ?? false,
           onRun: (note) {
             Navigator.of(sheet).pop();
+            setState(() => _adaptOffer = null);
+            unawaited(companionAdaptSetConsented(true));
             unawaited(_adapt(note: note));
           },
           onUndo: () {
@@ -785,10 +832,32 @@ class _CompanionPageState extends ConsumerState<CompanionPage> implements Compan
   }
 
   Future<void> _onModel(CompanionModelInfo info) async {
-    final key = _movesKey;
+    final epoch = ++_movesEpoch;
+    final store = _store;
+    final probe = _probe;
+    final fingerprint = store == null || probe == null ? null : await companionMocFingerprint(store.pack, probe);
+    final key = fingerprint == null ? (_character.name ?? 'default') : 'moc:$fingerprint';
     final saved = await companionMovesSaved(key);
-    if (!mounted || key != _movesKey) return;
-    setState(() => _moves = CompanionMoves.from(info, saved));
+    if (!mounted || epoch != _movesEpoch) return;
+    _movesKey = key;
+    setState(() {
+      _moves = CompanionMoves.from(info, saved);
+      _rebaseMarks();
+    });
+  }
+
+  /// Her own moves just became known: marks already in the reply on screen
+  /// that only now read as marks were said before, not news to play.
+  void _rebaseMarks() {
+    if (!_baselineSet) return;
+    final text = _light ? _lightText : _replyParts.map((part) => part.item.text).join('\n');
+    final reply = parseCompanionReply(
+      text,
+      streaming: _running,
+      emotions: _moves.emotionLabels,
+      actions: _moves.actionLabels,
+    );
+    _marksHandled = max(_marksHandled, reply.marks.length);
   }
 
   void _changeMove(CompanionMove next) {
@@ -839,8 +908,8 @@ class _CompanionPageState extends ConsumerState<CompanionPage> implements Compan
                     tooltip: l10n.companionMovesTry,
                     icon: const Icon(AppIcons.play, size: 20),
                     onPressed: () => move.kind == CompanionMoveKind.expression
-                        ? _stage.command('emotion', {'name': move.raw, 'hold': 2600})
-                        : _stage.command('action', {'name': move.raw}),
+                        ? _stage.command('emotion', {'name': move.raw, 'hold': 2600, 'native': true})
+                        : _stage.command('action', {'name': move.raw, 'native': true}),
                   ),
                   Switch(
                     value: move.ai,
@@ -1010,7 +1079,7 @@ class _CompanionPageState extends ConsumerState<CompanionPage> implements Compan
     audioBusy: _voice.active || (_settleTimer?.isActive ?? false) || _ttsPending.isNotEmpty,
     activityBusy: _home != 'idle' || _asleep || (_objectTimer?.isActive ?? false),
     approvalPending: _needsAttention,
-    externalPromptBusy: _bubble != null || _myLine != null || _agentPill != null || _logOpen,
+    externalPromptBusy: _bubble != null || _myLine != null || _agentPill != null || _logOpen || _adaptOffer != null,
     quietHoursBlocked: false,
     enabled: ref.read(companionInitiativeEnabledProvider) ?? false,
     accessible: _accessible,
@@ -1325,9 +1394,9 @@ class _CompanionPageState extends ConsumerState<CompanionPage> implements Compan
       _retireGreeting();
       switch (mark.kind) {
         case CompanionMarkKind.emotion:
-          _stage.command('emotion', {'name': mark.name});
+          _stage.command('emotion', {'name': mark.name, if (mark.native) 'native': true});
         case CompanionMarkKind.action:
-          _stage.command('action', {'name': mark.name});
+          _stage.command('action', {'name': mark.name, if (mark.native) 'native': true});
       }
     }
     _marksHandled = reply.marks.length;
@@ -1407,9 +1476,11 @@ class _CompanionPageState extends ConsumerState<CompanionPage> implements Compan
       final firstInline = binding.inlinePersona && ref.read(chatProvider(binding.sessionId)).items.isEmpty;
       final persona = ref.read(companionPersonaProvider);
       final movesRules = _moves.rules();
+      final before = await companionPersonaToldAs(binding.sessionId);
+      final hadMoves = before != null && before.split('|').last != CompanionMoves.noneFingerprint;
       final told = [
         ?companionPersonaUpdate(custom: persona.custom, callMe: persona.callMe),
-        if (movesRules != null) '（$movesRules）',
+        if (movesRules != null) '（$movesRules）' else if (hadMoves) '（这个角色自己的表情和动作现在都不用了，只用你原来的那些标记。）',
       ];
       final update = told.isEmpty ? null : told.join('\n');
       final fingerprint = '${persona.fingerprint}|${_moves.fingerprint}';
@@ -2225,6 +2296,15 @@ class _CompanionPageState extends ConsumerState<CompanionPage> implements Compan
                     error: _bubbleIsError,
                     thinking: _sending || (_running && _bubble == null),
                     onPullBack: _openLog,
+                  ),
+                  CompanionInvite(
+                    ticket: _adaptOffer == null || inviting ? null : 'adapt-${_adaptOffer!.moc}',
+                    mark: const Icon(AppIcons.configure, size: 20, color: Color(0xFFFFD27A)),
+                    text: l10n.companionAdaptOffer,
+                    accept: l10n.companionAdaptOfferYes,
+                    decline: l10n.companionAdaptOfferNo,
+                    onAccept: () => unawaited(_answerAdaptOffer(yes: true)),
+                    onDecline: () => unawaited(_answerAdaptOffer(yes: false)),
                   ),
                   CompanionInvite(
                     ticket: inviting ? invite.ticket.id : null,

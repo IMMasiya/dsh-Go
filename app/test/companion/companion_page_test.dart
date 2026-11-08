@@ -614,6 +614,8 @@ void main() {
         expect(find.text('哼。'), findsOneWidget);
         expect(commands.where((c) => c.$1 == 'emotion').map((c) => c.$2['name']), contains('03 脸黑'));
         expect(commands.where((c) => c.$1 == 'action').map((c) => c.$2['name']), contains('TapBody'));
+        // Sent as the model's own, so a feeling of hers with that name can't stand in.
+        expect(commands.firstWhere((c) => c.$2['name'] == 'TapBody').$2['native'], isTrue);
 
         await tester.pumpWidget(const SizedBox());
         await tester.pump(const Duration(seconds: 20));
@@ -712,11 +714,19 @@ void main() {
         commands.clear();
 
         events.onProbe!(bareProbe);
+        // The first time, nothing goes out before the person says yes.
+        for (var i = 0; i < 4; i++) {
+          await _settle(tester);
+        }
+        expect(adapting, isEmpty);
+        expect(find.textContaining('这个模型要适配一下'), findsOneWidget);
+        await tester.tap(find.text('适配'));
         final file = File('${root.path}/pack/character/adapter.json');
         for (var i = 0; i < 40 && !commands.any((c) => c.$1 == 'adapter'); i++) {
           await _settle(tester);
         }
         expect(adapting, hasLength(1));
+        expect(find.textContaining('这个模型要适配一下'), findsNothing);
         final asked = ((adapting.single['messages']! as List).single as Map)['content'] as String;
         expect(asked, contains('EyeOpenL 左眼 0..1 =1'));
         final written = jsonDecode(file.readAsStringSync()) as Map;
@@ -731,6 +741,34 @@ void main() {
           await _settle(tester);
         }
         expect(adapting, hasLength(1));
+
+        await tester.pumpWidget(const SizedBox());
+        await tester.pump(const Duration(seconds: 20));
+      });
+
+      testWidgets('the fitting offer turned down: nothing sent, and not offered again for that model', (tester) async {
+        final adapting = <Object>[];
+        final client = MockClient.streaming((request, body) async {
+          adapting.add(request);
+          return http.StreamedResponse(Stream.value(utf8.encode(_sse([adapterAnswer('')]))), 200);
+        });
+        late CompanionStageEvents events;
+        await openLight(tester, apiKey: 'sk-test', client: client, events: (up) => events = up);
+        events.onProbe!(bareProbe);
+        for (var i = 0; i < 4; i++) {
+          await _settle(tester);
+        }
+        await tester.tap(find.text('不用了'));
+        for (var i = 0; i < 4; i++) {
+          await _settle(tester);
+        }
+        expect(find.textContaining('这个模型要适配一下'), findsNothing);
+        events.onProbe!(bareProbe);
+        for (var i = 0; i < 4; i++) {
+          await _settle(tester);
+        }
+        expect(find.textContaining('这个模型要适配一下'), findsNothing);
+        expect(adapting, isEmpty);
 
         await tester.pumpWidget(const SizedBox());
         await tester.pump(const Duration(seconds: 20));

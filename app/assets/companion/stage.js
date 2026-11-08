@@ -294,7 +294,8 @@
         const ratio = (max - min) / (high - low);
         // Close enough is left alone (an eye that opens to 2 is still an eye at
         // 1, a body that turns 30 still turns at 10); only an order off is fitted.
-        const fit = ratio > 0 && (ratio < 0.2 || ratio > 5);
+        const apart = max < low || min > high;
+        const fit = ratio > 0 && (ratio < 0.2 || ratio > 5 || apart);
         if (!fit && ids.length === 1 && ids[0] === name) return;
         this.alias.set(name, { ids, scale: fit ? ratio : 1, offset: fit ? min - low * ratio : 0 });
       };
@@ -377,7 +378,7 @@
       for (let i = 0; i < raw.count; i++) core.setParameterValueByIndex(i, raw.defaultValues[i]);
       for (const pose of [config.pose, extra?.pose]) {
         for (const [id, value] of Object.entries(pose ?? {})) {
-          if (Number.isFinite(value)) this.set(id, value);
+          if (Number.isFinite(value) && this.has(id)) core.setParameterValueById(this.id(id), value);
         }
       }
       core.saveParameters();
@@ -612,6 +613,11 @@
     get moving() {
       return !this._motionManager.isFinished();
     }
+
+    /** Its own motions stopped where they are. */
+    stopMotions() {
+      this._motionManager.stopAllMotions();
+    }
   }
 
   const encodePath = (path) => path.split('/').map(encodeURIComponent).join('/');
@@ -652,7 +658,7 @@
   async function resolveModelFile(config) {
     if (typeof config.model === 'string') return config.model;
     const files = await packIndex();
-    const found = files.find((f) => f.endsWith('.model3.json'));
+    const found = files.find((f) => f.toLowerCase().endsWith('.model3.json'));
     if (!found) throw new Error('model3');
     return found;
   }
@@ -824,16 +830,19 @@
   let zones = DEFAULT_ZONES;
   let transientEpoch = 0;
 
-  function setEmotion(name, hold = EMOTION_HOLD) {
+  function setEmotion(name, hold = EMOTION_HOLD, native = false) {
+    const own = native && model?.expressions.has(name);
     // Not one she knows: one of the model's own expressions, by its name.
-    const def = emotions[name] ?? (model?.expressions.has(name) ? { expression: name } : null);
+    const def = own ? { expression: name } : (emotions[name] ?? (model?.expressions.has(name) ? { expression: name } : null));
     if (!def) return;
-    const changed = life.emotion !== name;
-    life.emotion = name;
-    life.emotionUntil = name === 'calm' ? 0 : performance.now() + hold;
+    // The model's own never borrows the face of a feeling of hers with the same name.
+    const key = own ? `model:${name}` : name;
+    const changed = life.emotion !== key;
+    life.emotion = key;
+    life.emotionUntil = key === 'calm' ? 0 : performance.now() + hold;
     life.gazeHold = def.gaze ?? null;
     model?.startExpression(def.expression ?? null);
-    if (changed && model) emotionMark(name);
+    if (changed && model && !own) emotionMark(name);
   }
 
   /** A few notes, one after another, while she hums. */
@@ -1648,8 +1657,12 @@
       touched();
       setMood(mood);
     },
-    emotion: ({ name, hold }) => setEmotion(name, hold),
-    action: ({ name }) => {
+    emotion: ({ name, hold, native }) => setEmotion(name, hold, native === true),
+    action: ({ name, native }) => {
+      if (native === true) {
+        if (!REDUCED) model?.playMotion(name);
+        return;
+      }
       if (name === 'hop') hop();
       else if (name === 'tail') life.tailKick = 1;
       else if (actions[name]) playAction(name);
@@ -1867,6 +1880,8 @@
     home.reach = 0;
     resetBall();
     scene.clear();
+    // One of the model's own motions doesn't carry on after she was out of sight.
+    model?.stopMotions();
   }
 
   function pause() {

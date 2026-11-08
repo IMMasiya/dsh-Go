@@ -133,9 +133,15 @@ class _PetPickerState extends ConsumerState<PetPicker> {
 
   Future<void> _remove(PetPack pack) async {
     final l10n = context.l10n;
+    final messenger = ScaffoldMessenger.maybeOf(context);
     final ok = await confirmDelete(context, title: l10n.botsPetRemoveTitle(pack.name), body: l10n.botsPetRemoveBody);
     if (!ok || !mounted) return;
-    await ref.read(userPetsProvider.notifier).remove(pack.id);
+    try {
+      // On failure the pet stays, chosen again if it was (UserPetsController.remove).
+      await ref.read(userPetsProvider.notifier).remove(pack.id);
+    } on Object {
+      messenger?.showSnackBar(SnackBar(content: Text(l10n.botsPetRemoveFailed(pack.name))));
+    }
   }
 
   @override

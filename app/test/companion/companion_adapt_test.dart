@@ -114,7 +114,7 @@ void main() {
       'emotions': {
         'happy': {
           'expression': '开心',
-          'face': {'ParamMouthForm': 3, 'EyeOpenL': 5, 'Nope': 1},
+          'face': {'ParamMouthForm': 3, 'EyeOpenL': 5, 'ParamAngleZ': 15, 'Nope': 1},
         },
         'shy': {'expression': '不存在'},
         'ecstatic': {'expression': '开心'},
@@ -128,7 +128,11 @@ void main() {
         {'id': 'head', 'from': 0, 'to': 0.2},
         {'id': 'face', 'from': 0.3, 'to': 0.2},
         {'id': 'wings', 'from': 0, 'to': 1},
+        // Nothing left once clamped, or left of itself: never touchable.
+        {'id': 'legs', 'from': 1.2, 'to': 1.6},
+        {'id': 'body', 'from': 0.3, 'to': 0.6, 'xFrom': 0.5, 'xTo': -0.5},
       ],
+      'framing': {'zoom': 9, 'y': 0.1},
       'tail': ['TailSwing', 'Nope'],
       'pose': {'Watermark': 7, 'Nope': 1},
       'notes': '  尾巴用摆动参数代替了  ',
@@ -141,7 +145,8 @@ void main() {
     expect(adapter['emotions'], {
       'happy': {
         'expression': '开心',
-        'face': {'ParamMouthForm': 1.0, 'EyeOpenL': 1.0},
+        // Added to where she already is: as far as the parameter can move.
+        'face': {'ParamMouthForm': 2.0, 'EyeOpenL': 1.0, 'ParamAngleZ': 15.0},
       },
     });
     expect(adapter['actions'], {
@@ -150,6 +155,7 @@ void main() {
     expect(adapter['zones'], [
       {'id': 'head', 'from': 0.0, 'to': 0.2},
     ]);
+    expect(adapter['framing'], {'zoom': 3.0, 'y': 0.1});
     expect(adapter['tail'], ['TailSwing']);
     expect(adapter['pose'], {'Watermark': 1.0});
     expect(adapter['notes'], '尾巴用摆动参数代替了');
@@ -170,6 +176,15 @@ void main() {
     );
     expect(companionAdapterEmpty(adapter), isFalse);
     expect(companionAdapterEmpty(companionAdapterCheck({'notes': 'x'}, probe()).adapter), isTrue);
+    // Only the framing was off: that is still a fix.
+    expect(
+      companionAdapterEmpty(
+        companionAdapterCheck({
+          'framing': {'zoom': 0.7},
+        }, probe()).adapter,
+      ),
+      isFalse,
+    );
   });
 
   group('asking her AI', () {

@@ -176,8 +176,9 @@ class _CompanionStageState extends State<CompanionStage> with WidgetsBindingObse
         widget.controller._ready = true;
         _appliedPause = null;
         _syncVisibility();
-        events.onModel?.call(CompanionModelInfo.fromMessage(message));
+        // What the model is first: its moves are kept by its fingerprint.
         if (CompanionProbe.fromJson(message['probe']) case final probe?) events.onProbe?.call(probe);
+        events.onModel?.call(CompanionModelInfo.fromMessage(message));
         events.onReady();
       case 'adapted':
         if (CompanionProbe.fromJson(message['probe']) case final probe?) events.onProbe?.call(probe);

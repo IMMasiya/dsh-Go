@@ -103,8 +103,9 @@ void main() {
     );
     expect(reply.words, '哼。');
     expect(reply.marks, const [
-      CompanionMark(CompanionMarkKind.emotion, '03 脸黑'),
-      CompanionMark(CompanionMarkKind.action, 'TapBody'),
+      // The model's own, marked as such so the stage plays exactly those.
+      CompanionMark(CompanionMarkKind.emotion, '03 脸黑', native: true),
+      CompanionMark(CompanionMarkKind.action, 'TapBody', native: true),
       // Hers, not the model's.
       CompanionMark(CompanionMarkKind.emotion, 'shy'),
     ]);
@@ -120,5 +121,35 @@ void main() {
     expect(persona.indexOf('你现在没有工具'), greaterThan(persona.indexOf('[动作:TapBody]')));
     expect(companionPersona(moves: rules, tools: true), isNot(contains('你现在没有工具')));
     expect(companionPersona(moves: '  '), companionPersonaCore);
+  });
+
+  test('two moves of a kind never answer to one label, renamed or not', () {
+    final moves = CompanionMoves.from(
+      const CompanionModelInfo(expressions: ['01 星星眼.exp3.json', '02 星星眼.exp3.json', '转圈圈']),
+      const {},
+    );
+    expect(moves.expressions.map((m) => m.label), ['星星眼', '星星眼 2', '转圈圈']);
+    expect(moves.emotionLabels, {'星星眼': '01 星星眼.exp3.json', '星星眼 2': '02 星星眼.exp3.json', '转圈圈': '转圈圈'});
+    final renamed = moves.replaced(moves.expressions.last.copyWith(label: '星星眼'));
+    expect(renamed.expressions.last.label, '星星眼 3');
+  });
+
+  test('the AI may write exactly what it was told: the first 24, labels a mark can carry', () {
+    final many = [for (var i = 0; i < 30; i++) '表情$i号'];
+    final moves = CompanionMoves.from(
+      CompanionModelInfo(expressions: [...many, '一个非常非常非常非常非常非常非常非常非常非常非常非常非常非常非常长的名字啊啊啊啊']),
+      const {},
+    );
+    expect(moves.emotionLabels.keys, hasLength(CompanionMoves.most));
+    expect(moves.emotionLabels.keys, isNot(contains('表情29号')));
+    expect(moves.rules(), isNot(contains('表情29号')));
+  });
+
+  test('her own marks parse whatever the case, and up to 40 characters', () {
+    final labels = {'TapBody': 'TapBody', '摇摇晃晃转一圈然后跳起来再落下来挥挥手': 'Long'};
+    expect(parseCompanionReply('[动作:tapbody]好。', actions: labels).marks.single.name, 'TapBody');
+    expect(parseCompanionReply('[动作:摇摇晃晃转一圈然后跳起来再落下来挥挥手]', actions: labels).marks.single.name, 'Long');
+    expect(companionMarkLabelFits('x' * 41), isFalse);
+    expect(companionMarkLabelFits('a]b'), isFalse);
   });
 }

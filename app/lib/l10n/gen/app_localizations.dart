@@ -4799,7 +4799,7 @@ abstract class L10n {
   /// No description provided for @botsPetImportBadSheet.
   ///
   /// In zh, this message translates to:
-  /// **'序列帧图不对：{name}（要 PNG，每边不超过 4096 像素，每一帧都在图内）'**
+  /// **'序列帧图不对：{name}（要完整的 PNG，每边不超过 4096 像素，每一帧都在图内）'**
   String botsPetImportBadSheet(String name);
 
   /// No description provided for @botsPetImportTooLarge.
@@ -4825,6 +4825,12 @@ abstract class L10n {
   /// In zh, this message translates to:
   /// **'删除后可以再导入。'**
   String get botsPetRemoveBody;
+
+  /// No description provided for @botsPetRemoveFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'没能删除「{name}」，再试一次'**
+  String botsPetRemoveFailed(String name);
 
   /// No description provided for @botsPetSize.
   ///
@@ -9683,8 +9689,26 @@ abstract class L10n {
   /// No description provided for @companionAdaptHint.
   ///
   /// In zh, this message translates to:
-  /// **'用你配好的模型看一遍这个角色的参数，把转头、眨眼、表情和摸哪里对上。只发参数名单，不发模型文件。'**
+  /// **'用你配好的模型（你的 Key，按次计费）看一遍这个角色，把转头、眨眼、表情和摸哪里对上。会发出去的：模型名、参数名单、表情动作和部件的名字、你下面写的话和现在的适配表；模型文件和贴图不发。'**
   String get companionAdaptHint;
+
+  /// No description provided for @companionAdaptOffer.
+  ///
+  /// In zh, this message translates to:
+  /// **'这个模型要适配一下：用你配好的模型看一遍它的参数名单和表情动作的名字（不发模型文件），会用你的 Key 调用一次。以后的新模型就自动来，菜单里能关。'**
+  String get companionAdaptOffer;
+
+  /// No description provided for @companionAdaptOfferYes.
+  ///
+  /// In zh, this message translates to:
+  /// **'适配'**
+  String get companionAdaptOfferYes;
+
+  /// No description provided for @companionAdaptOfferNo.
+  ///
+  /// In zh, this message translates to:
+  /// **'不用了'**
+  String get companionAdaptOfferNo;
 
   /// No description provided for @companionAdaptNote.
   ///

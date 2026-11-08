@@ -342,6 +342,15 @@ Future<bool> companionPersonaTold(String sessionId, String fingerprint) async {
   return map is Map && map[sessionId] == fingerprint;
 }
 
+/// What was last told in [sessionId] (its fingerprint), if anything.
+Future<String?> companionPersonaToldAs(String sessionId) async {
+  final prefs = await SharedPreferences.getInstance();
+  final raw = prefs.getString(_personaSentKey);
+  final map = raw == null ? const {} : jsonDecode(raw);
+  final told = map is Map ? map[sessionId] : null;
+  return told is String ? told : null;
+}
+
 Future<void> companionPersonaMarkTold(String sessionId, String fingerprint) async {
   final prefs = await SharedPreferences.getInstance();
   final raw = prefs.getString(_personaSentKey);

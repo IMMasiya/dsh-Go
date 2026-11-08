@@ -21,6 +21,7 @@ import '../state/notify_state.dart' show FlagController, appForegroundProvider, 
 import '../state/run_pulse.dart';
 import '../state/session_attention_state.dart';
 import '../ui/chat/run_info.dart';
+import 'overlay_channel.dart' show petOverlayChannelProvider;
 import 'pet_mood.dart';
 import 'pet_overlay_actions.dart';
 import 'pet_library.dart';
@@ -44,31 +45,72 @@ final petPackProvider = FutureProvider.family<PetPack, String>(
 
 /// The brought pets, oldest first, for the picker.
 class UserPetsController extends AsyncNotifier<List<PetPack>> {
+  /// Listings asked for, and the newest that has come back: one that comes
+  /// back late (the first, slow, after an import's) never overwrites a newer.
+  int _asked = 0;
+  int _landed = 0;
+  List<PetPack> _latest = const [];
+
   @override
-  Future<List<PetPack>> build() => ref.watch(petLibraryProvider).list();
+  Future<List<PetPack>> build() {
+    ref.watch(petLibraryProvider);
+    return _list();
+  }
+
+  Future<List<PetPack>> _list() async {
+    final ticket = ++_asked;
+    final found = await ref.read(petLibraryProvider).list();
+    if (ticket < _landed) return _latest;
+    _landed = ticket;
+    return _latest = found;
+  }
+
+  /// Lists again; when that fails, [fallback] says what changed.
+  Future<void> _relist(List<PetPack> Function(List<PetPack> was) fallback) async {
+    List<PetPack> next;
+    try {
+      next = await _list();
+    } on Object {
+      next = fallback(state.value ?? _latest);
+    }
+    if (ref.mounted) state = AsyncData(next);
+  }
+
+  /// A brought pet's files changed: nothing of the old ones may linger, here
+  /// or in the overlay.
+  void _changed(String id) {
+    PetSheets.instance.forget(id);
+    ref.invalidate(petPackProvider(id));
+    unawaited(ref.read(petOverlayChannelProvider).reloadPack(id));
+  }
 
   /// Checks and unpacks [zip] (pet_library.dart). Returns the pet and whether
   /// it replaced one of the same id; throws [PetImportException].
   Future<({PetPack pack, bool replaced})> import(File zip) async {
-    final library = ref.read(petLibraryProvider);
-    final (:id, :replaced) = await library.install(zip);
-    // A pet brought again: nothing of the old one may linger.
-    PetSheets.instance.forget(id);
-    ref.invalidate(petPackProvider(id));
+    final (:id, :replaced) = await ref.read(petLibraryProvider).install(zip);
+    _changed(id);
     final pack = await ref.read(petPackProvider(id).future);
-    state = AsyncData(await library.list());
+    await _relist((was) => [...was.where((p) => p.id != id), pack]);
     return (pack: pack, replaced: replaced);
   }
 
-  /// Removes a brought pet; when it was the chosen one, the default comes back.
+  /// Removes a brought pet; when it was the chosen one, the default comes
+  /// back. When it can't be removed it stays whole (pet_library.dart), is
+  /// chosen again if it was, and the error is rethrown for the picker to say.
   Future<void> remove(String id) async {
     if (!isUserPet(id)) return;
-    if (ref.read(petPrefsProvider).packId == id) await ref.read(petPrefsProvider.notifier).setPack(defaultPetId);
-    final library = ref.read(petLibraryProvider);
-    await library.remove(id);
-    PetSheets.instance.forget(id);
-    ref.invalidate(petPackProvider(id));
-    state = AsyncData(await library.list());
+    final prefs = ref.read(petPrefsProvider.notifier);
+    final chosen = ref.read(petPrefsProvider).packId == id;
+    if (chosen) await prefs.setPack(defaultPetId);
+    try {
+      await ref.read(petLibraryProvider).remove(id);
+    } on Object {
+      if (chosen && ref.mounted && ref.read(petPrefsProvider).packId == defaultPetId) await prefs.setPack(id);
+      await _relist((was) => was);
+      rethrow;
+    }
+    _changed(id);
+    await _relist((was) => [...was.where((p) => p.id != id)]);
   }
 }
 

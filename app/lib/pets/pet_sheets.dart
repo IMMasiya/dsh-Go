@@ -25,7 +25,7 @@ class PetSheets {
   static const capacity = 3;
 
   final LinkedHashMap<String, ui.Image> _images = LinkedHashMap();
-  final Map<String, Future<ui.Image>> _loading = {};
+  final Map<String, _Decode> _loading = {};
   final Set<String> _pinned = {};
 
   static String keyOf(PetPack pack, PetAnimation anim) => '${pack.id}/${anim.sheet}';
@@ -51,14 +51,18 @@ class PetSheets {
     final ready = peek(pack, anim);
     if (ready != null) return ready;
     final key = keyOf(pack, anim);
-    await (_loading[key] ??= _decode(key, () async {
-      // A brought pet's sheets are files; the built-in ones are assets.
-      if (pack.dir case final dir?) return File('$dir/${anim.sheet}').readAsBytes();
-      final data = await bundle.load('${PetPack.folder(pack.id)}/${anim.sheet}');
-      return data.buffer.asUint8List(data.offsetInBytes, data.lengthInBytes);
-    }));
-    // Evicted by another decode in between: decode it again.
-    final kept = _images[key];
+    final job =
+        _loading[key] ??
+        _start(key, () async {
+          // A brought pet's sheets are files; the built-in ones are assets.
+          if (pack.dir case final dir?) return File('$dir/${anim.sheet}').readAsBytes();
+          final data = await bundle.load('${PetPack.folder(pack.id)}/${anim.sheet}');
+          return data.buffer.asUint8List(data.offsetInBytes, data.lengthInBytes);
+        });
+    await job.done;
+    // Forgotten meanwhile (the pet brought again or removed): its files
+    // changed, so read them again. Evicted by another decode: decode it again.
+    final kept = job.stale ? null : _images[key];
     if (kept == null) return load(pack, anim, bundle);
     return kept.clone();
   }
@@ -66,17 +70,33 @@ class PetSheets {
   /// Keeps [anim]'s sheet decoded for good (idle's main animation).
   void pin(PetPack pack, PetAnimation anim) => _pinned.add(keyOf(pack, anim));
 
-  Future<ui.Image> _decode(String key, Future<Uint8List> Function() read) async {
+  _Decode _start(String key, Future<Uint8List> Function() read) {
+    final job = _Decode();
+    _loading[key] = job;
+    job.done = _decode(key, job, read);
+    return job;
+  }
+
+  Future<void> _decode(String key, _Decode job, Future<Uint8List> Function() read) async {
     try {
       final codec = await ui.instantiateImageCodec(await read());
       final frame = await codec.getNextFrame();
       codec.dispose();
+      // Forgotten while it decoded: the old file's picture never lands.
+      if (job.stale) {
+        frame.image.dispose();
+        return;
+      }
       _images.remove(key)?.dispose();
       _images[key] = frame.image;
       _evict();
-      return frame.image;
     } finally {
-      unawaited(Future<void>.microtask(() => _loading.remove(key)));
+      // Only its own slot: after a forget, a newer decode may hold the key.
+      unawaited(
+        Future<void>.microtask(() {
+          if (identical(_loading[key], job)) _loading.remove(key);
+        }),
+      );
     }
   }
 
@@ -90,13 +110,19 @@ class PetSheets {
     }
   }
 
-  /// Drops [packId]'s sheets: a brought pet replaced or removed.
+  /// Drops [packId]'s sheets: a brought pet replaced or removed. Its decodes
+  /// still running never land, and no new load waits on them.
   void forget(String packId) {
     final prefix = '$packId/';
     for (final key in [..._images.keys]) {
       if (key.startsWith(prefix)) _images.remove(key)?.dispose();
     }
     _pinned.removeWhere((key) => key.startsWith(prefix));
+    _loading.removeWhere((key, job) {
+      if (!key.startsWith(prefix)) return false;
+      job.stale = true;
+      return true;
+    });
   }
 
   /// Drops everything (tests).
@@ -106,6 +132,16 @@ class PetSheets {
     }
     _images.clear();
     _pinned.clear();
+    for (final job in _loading.values) {
+      job.stale = true;
+    }
     _loading.clear();
   }
+}
+
+/// One sheet decoding. [PetSheets.forget] marks it [stale]: its picture is
+/// dropped when it comes, and whoever waited on it loads again.
+class _Decode {
+  bool stale = false;
+  late final Future<void> done;
 }

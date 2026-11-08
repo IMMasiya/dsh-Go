@@ -6,8 +6,9 @@ import 'package:archive/archive.dart';
 import 'package:dsh_app/pets/pet_library.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-/// A real (transparent) PNG of [w] × [h].
-Uint8List png(int w, int h) {
+/// A real (transparent) PNG of [w] × [h]; [data] replaces its image data
+/// (filter bytes included), [interlace] sets IHDR's interlace method.
+Uint8List png(int w, int h, {List<int>? data, int interlace = 0}) {
   List<int> chunk(String type, List<int> data) {
     final body = [...ascii.encode(type), ...data];
     final length = ByteData(4)..setUint32(0, data.length);
@@ -19,14 +20,15 @@ Uint8List png(int w, int h) {
     ..setUint32(0, w)
     ..setUint32(4, h)
     ..setUint8(8, 8) // bit depth
-    ..setUint8(9, 6); // RGBA
+    ..setUint8(9, 6) // RGBA
+    ..setUint8(12, interlace);
   final rows = <int>[
     for (var y = 0; y < h; y++) ...[0, ...List.filled(w * 4, 0)],
   ];
   return Uint8List.fromList([
     0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, //
     ...chunk('IHDR', header.buffer.asUint8List()),
-    ...chunk('IDAT', ZLibCodec().encode(rows)),
+    ...chunk('IDAT', ZLibCodec().encode(data ?? rows)),
     ...chunk('IEND', const []),
   ]);
 }
@@ -83,12 +85,19 @@ void main() {
       if (e.uri.pathSegments.lastWhere((s) => s.isNotEmpty).startsWith('.')) e.path,
   ];
 
-  test('an id for a folder, after the prefix', () {
+  test('an id for a folder, after the prefix, and two pets never share one', () {
+    // Already a folder name (or exported from here): kept.
     expect(userPetIdFor('cat'), 'user-cat');
-    expect(userPetIdFor('My Cat!'), 'user-my-cat');
     expect(userPetIdFor('user-cat'), 'user-cat');
-    expect(userPetIdFor('小猫'), 'user-pet');
-    expect(userPetIdFor('a' * 60), 'user-${'a' * 40}');
+    expect(userPetIdFor('my-cat'), 'user-my-cat');
+    // Anything else: made safe, told apart by a hash of the whole id.
+    expect(userPetIdFor('My Cat!'), matches(RegExp(r'^user-my-cat-[0-9a-f]{8}$')));
+    expect(userPetIdFor('小猫'), matches(RegExp(r'^user-pet-[0-9a-f]{8}$')));
+    expect(userPetIdFor('a' * 60), matches(RegExp('^user-${'a' * 32}-[0-9a-f]{8}\$')));
+    final ids = ['小猫', '小狗', 'my cat', 'My Cat', 'my-cat', 'my_cat', 'cat', 'Cat', 'a' * 60, 'a' * 61];
+    expect({for (final id in ids) userPetIdFor(id)}, hasLength(ids.length));
+    // The same pet again: the same id.
+    expect(userPetIdFor('小猫'), userPetIdFor('小猫'));
     expect(isUserPet('user-cat'), isTrue);
     expect(isUserPet('deepy-whale'), isFalse);
   });
@@ -96,6 +105,85 @@ void main() {
   test("a PNG's size from its header", () {
     expect(pngSize(png(32, 16)), (32, 16));
     expect(pngSize(Uint8List.fromList(utf8.encode('not a png at all, really not'))), isNull);
+  });
+
+  test('a whole PNG reads through; a cut-off or short one does not', () {
+    final whole = png(32, 16);
+    expect(pngIntact(whole), isTrue);
+    // Cut off: the header still reads, the rest doesn't.
+    expect(pngSize(Uint8List.sublistView(whole, 0, whole.length - 20)), (32, 16));
+    expect(pngIntact(Uint8List.sublistView(whole, 0, whole.length - 20)), isFalse);
+    expect(pngIntact(Uint8List.sublistView(whole, 0, whole.length - 12)), isFalse, reason: 'no IEND');
+    // Every chunk whole, but fewer rows than the header says, or more.
+    final row = [0, ...List.filled(32 * 4, 0)];
+    expect(pngIntact(png(32, 16, data: [for (var y = 0; y < 8; y++) ...row])), isFalse);
+    expect(pngIntact(png(32, 16, data: [for (var y = 0; y < 17; y++) ...row])), isFalse);
+    // A row with a filter there isn't.
+    expect(pngIntact(png(32, 16, data: [9, ...row.skip(1), for (var y = 1; y < 16; y++) ...row])), isFalse);
+    // A flipped byte: its CRC no longer matches.
+    expect(pngIntact(Uint8List.fromList(whole)..[40] ^= 0xff), isFalse);
+    // Interlaced 2 × 2: Adam7 passes 1, 6 and 7 hold a row each (1, 1 and 2 pixels).
+    expect(pngIntact(png(2, 2, interlace: 1, data: List.filled(5 + 5 + 9, 0))), isTrue);
+    expect(pngIntact(png(2, 2, interlace: 1, data: List.filled(5 + 5 + 8, 0))), isFalse);
+  });
+
+  test('the shipped packs pass every check an import makes', () {
+    for (final id in ['deepy-whale', 'whale-girl']) {
+      final dir = 'assets/pets/$id';
+      final json = jsonDecode(File('$dir/pack.json').readAsStringSync()) as Map<String, Object?>;
+      expect(overlayPackProblem(json), isNull, reason: id);
+      final sheets = {for (final a in (json['animations']! as Map).values) (a as Map)['sheet'] as String};
+      for (final sheet in sheets) {
+        expect(pngIntact(File('$dir/$sheet').readAsBytesSync()), isTrue, reason: '$id/$sheet');
+      }
+    }
+  });
+
+  test("what the overlay's parser turns away, PetPack.parse aside", () {
+    final idle = (packJson()['animations']! as Map)['idle'] as Map<String, Object?>;
+    Map<String, Object?> withIdle(Map<String, Object?> change) => {
+      ...packJson(),
+      'animations': {
+        'idle': {...idle, ...change},
+      },
+    };
+    expect(overlayPackProblem(packJson()), isNull, reason: 'no scale: written out as 1');
+    expect(overlayPackProblem({...packJson(), 'scale': 2}), contains('box × scale'));
+    expect(overlayPackProblem({...packJson(), 'scale': 1.5}), contains('scale'));
+    expect(
+      overlayPackProblem({
+        ...packJson(),
+        'canvas': {'w': 16.5, 'h': 16},
+      }),
+      contains('canvas'),
+    );
+    expect(overlayPackProblem(withIdle({'frameW': 15})), contains('box × scale'));
+    expect(overlayPackProblem(withIdle({'cols': 1.6})), contains('frames of idle'));
+    expect(
+      overlayPackProblem(
+        withIdle({
+          'frames': [
+            {'i': 0, 'ms': 200},
+            {'i': 1},
+          ],
+        }),
+      ),
+      contains('frames of idle'),
+      reason: 'the app drops a frame without ms; the overlay refuses the pack',
+    );
+    // Deepy's 5× cells, as the shipped pack has them.
+    expect(
+      overlayPackProblem({
+        ...withIdle({
+          'frameW': 180,
+          'frameH': 120,
+          'box': {'x': 12, 'y': 26, 'w': 36, 'h': 24},
+        }),
+        'scale': 5,
+        'canvas': {'w': 52, 'h': 52},
+      }),
+      isNull,
+    );
   });
 
   test('a pack zipped from its folder: kept under its id, only what it uses', () async {
@@ -118,6 +206,26 @@ void main() {
     expect(pack.dir, dir.path);
     expect((await library.list()).map((p) => p.id), ['user-cat']);
     expect(leftovers(), isEmpty);
+    // What the overlay requires (scale) or reads the other way (pixelArt) is spelled out.
+    final kept = jsonDecode(File('${dir.path}/pack.json').readAsStringSync()) as Map;
+    expect(kept['id'], 'user-cat');
+    expect(kept['scale'], 1);
+    expect(kept['pixelArt'], isTrue);
+  });
+
+  test('two pets whose ids differ only outside a folder name both stay', () async {
+    for (final id in ['小猫', '小狗', 'my cat', 'my-cat']) {
+      await library.install(
+        zip({'pack.json': utf8.encode(jsonEncode(packJson(id: id, name: id))), 'idle.png': png(32, 16)}),
+      );
+    }
+    expect({for (final p in await library.list()) p.name}, {'小猫', '小狗', 'my cat', 'my-cat'});
+    // The same one again replaces itself.
+    final again = await library.install(
+      zip({'pack.json': utf8.encode(jsonEncode(packJson(id: '小猫', name: '大猫'))), 'idle.png': png(32, 16)}),
+    );
+    expect(again.replaced, isTrue);
+    expect({for (final p in await library.list()) p.name}, {'大猫', '小狗', 'my cat', 'my-cat'});
   });
 
   test('the same pet again replaces it; a different one sits beside it', () async {
@@ -135,6 +243,60 @@ void main() {
     // Never a built-in one.
     await library.remove('deepy-whale');
     expect(leftovers(), isEmpty);
+  });
+
+  group('an interrupted install or removal, put right before the next look', () {
+    Directory pets() => Directory('${temp.path}/pets');
+
+    Future<void> installCat() =>
+        library.install(zip({'pack.json': utf8.encode(jsonEncode(packJson())), 'idle.png': png(32, 16)}));
+
+    test('killed between the two renames: the old one comes back', () async {
+      await installCat();
+      // As if the app died after moving the old one aside, before the new one went in.
+      Directory('${pets().path}/user-cat').renameSync('${pets().path}/.old-123-user-cat');
+      Directory('${pets().path}/.staging-124').createSync();
+      expect((await library.list()).map((p) => p.name), ['小猫']);
+      expect(leftovers(), isEmpty);
+    });
+
+    test('read before it is listed: back too', () async {
+      await installCat();
+      Directory('${pets().path}/user-cat').renameSync('${pets().path}/.old-123-user-cat');
+      expect((await library.load('user-cat')).name, '小猫');
+    });
+
+    test('a replacement that landed is never undone; its backup goes', () async {
+      await installCat();
+      // The old one's folder outlived the swap (it couldn't be deleted then).
+      final backup = Directory('${pets().path}/.old-5-user-cat')..createSync();
+      File('${backup.path}/pack.json').writeAsStringSync(jsonEncode(packJson(id: 'user-cat', name: '旧猫')));
+      expect((await library.list()).map((p) => p.name), ['小猫']);
+      expect(leftovers(), isEmpty);
+    });
+
+    test("a removed pet's trash goes; the pet stays gone", () async {
+      await installCat();
+      Directory('${pets().path}/user-cat').renameSync('${pets().path}/.trash-9-user-cat');
+      expect(await library.list(), isEmpty);
+      expect(leftovers(), isEmpty);
+    });
+
+    test('a replacement whose sheet will not draw leaves the old one', () async {
+      await installCat();
+      final cut = png(32, 16);
+      await expectLater(
+        library.install(
+          zip({
+            'pack.json': utf8.encode(jsonEncode(packJson(name: '大猫'))),
+            'idle.png': Uint8List.sublistView(cut, 0, cut.length - 20),
+          }),
+        ),
+        problem(PetImportProblem.badSheet),
+      );
+      expect((await library.list()).map((p) => p.name), ['小猫']);
+      expect(leftovers(), isEmpty);
+    });
   });
 
   group('turned away, nothing left behind', () {
@@ -184,6 +346,20 @@ void main() {
       await expectLater(
         library.install(zip({'pack.json': utf8.encode(jsonEncode(packJson())), 'idle.png': utf8.encode('GIF89a')})),
         problem(PetImportProblem.badSheet),
+      );
+    });
+
+    test("what the overlay's parser would turn away", () async {
+      final idle = (packJson()['animations']! as Map)['idle'] as Map<String, Object?>;
+      final pack = {
+        ...packJson(),
+        'animations': {
+          'idle': {...idle, 'frameW': 15},
+        },
+      };
+      await expectLater(
+        library.install(zip({'pack.json': utf8.encode(jsonEncode(pack)), 'idle.png': png(32, 16)})),
+        problem(PetImportProblem.badPack),
       );
     });
 

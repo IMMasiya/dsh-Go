@@ -19,6 +19,7 @@ import io.flutter.plugin.common.MethodChannel
  *   ask?: {eventId, kind, text, approvable, choices}}, sessionId?, host?, active, foreground, packId,
  *   size, canStop, hosts: [{ref, label, current}]}`: the state PetMood reduced; nothing is reduced
  *   again here (`foreground` is read from the activity lifecycle instead);
+ * - `reloadPack {id}`: a brought pet's files changed (imported again, removed); read it again if shown;
  * - `setEnabled {enabled}`, `setAlwaysShow {on}`, `unsnooze` → status;
  * - `status` → status; `permissionStatus` → status after adding a test window (the real check);
  * - `requestPermission` → bool: opens 「显示在其他应用上层」 for this app;
@@ -94,6 +95,10 @@ class PetOverlayPlugin : FlutterPlugin, ActivityAware {
         when (call.method) {
             "push" -> {
                 (call.arguments as? Map<*, *>)?.let(PetOverlay::push)
+                result.success(null)
+            }
+            "reloadPack" -> {
+                call.argument<String>("id")?.let(PetOverlay::reloadPack)
                 result.success(null)
             }
             "setEnabled" -> result.success(PetOverlay.setEnabled(call.argument<Boolean>("enabled") == true))

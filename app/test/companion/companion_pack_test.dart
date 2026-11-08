@@ -179,6 +179,14 @@ void main() {
     );
     final character = jsonDecode(File('${store.pack.path}/character/character.json').readAsStringSync()) as Map;
     expect(character['model'], 'a/x.model3.json');
+    // Whatever case the exporter wrote the suffix in.
+    await store.install(
+      zip({
+        'M.MODEL3.JSON': utf8.encode('{}'),
+        'M.MOC3': [1],
+      }),
+    );
+    expect((await store.character()).name, 'M');
   });
 
   test('a bare model gets the same checks', () async {

@@ -427,6 +427,7 @@ class CompanionInvite extends StatelessWidget {
     required this.onDecline,
     this.remaining,
     this.total = const Duration(seconds: 8),
+    this.mark,
   });
 
   /// The invitation shown, or null for none.
@@ -440,6 +441,9 @@ class CompanionInvite extends StatelessWidget {
   /// Until it goes by itself; null while it is held.
   final Duration? remaining;
   final Duration total;
+
+  /// What the offer is about, at a glance; her cushion by default.
+  final Widget? mark;
 
   @override
   Widget build(BuildContext context) {
@@ -467,9 +471,9 @@ class CompanionInvite extends StatelessWidget {
                       child: Row(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          const Padding(
-                            padding: EdgeInsets.only(top: 3),
-                            child: ExcludeSemantics(child: CompanionCushionMark()),
+                          Padding(
+                            padding: const EdgeInsets.only(top: 3),
+                            child: ExcludeSemantics(child: mark ?? const CompanionCushionMark()),
                           ),
                           const SizedBox(width: 11),
                           Expanded(child: Text(text, style: theme.textTheme.bodyLarge?.copyWith(height: 1.45))),

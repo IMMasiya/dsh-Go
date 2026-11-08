@@ -246,15 +246,15 @@ Future<void> _install((String, String, String) args) async {
       if (!await current.exists()) throw const CompanionPackException(CompanionPackProblem.noRuntime);
       await _copy(current, Directory('${staging.path}/runtime'));
     }
-    if (!characterFiles.any((f) => f.endsWith('.model3.json'))) {
+    if (!characterFiles.any((f) => f.toLowerCase().endsWith('.model3.json'))) {
       throw const CompanionPackException(CompanionPackProblem.noModel);
     }
     // A bare model has no character.json: its model3.json (the shallowest)
     // and a name from it; the rest the person sets in the app.
     if (!characterFiles.contains('character.json')) {
-      final model = characterFiles.where((f) => f.endsWith('.model3.json')).toList()
+      final model = characterFiles.where((f) => f.toLowerCase().endsWith('.model3.json')).toList()
         ..sort((a, b) => '/'.allMatches(a).length.compareTo('/'.allMatches(b).length));
-      final name = model.first.split('/').last.replaceFirst(RegExp(r'\.model3\.json$'), '');
+      final name = model.first.split('/').last.replaceFirst(RegExp(r'\.model3\.json$', caseSensitive: false), '');
       await File('${staging.path}/character/character.json')
           .writeAsString(jsonEncode({'schema': 1, 'name': name, 'model': model.first}));
       characterFiles.add('character.json');

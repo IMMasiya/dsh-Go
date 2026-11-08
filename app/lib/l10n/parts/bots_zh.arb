@@ -757,7 +757,7 @@
       }
     }
   },
-  "botsPetImportBadSheet": "序列帧图不对：{name}（要 PNG，每边不超过 4096 像素，每一帧都在图内）",
+  "botsPetImportBadSheet": "序列帧图不对：{name}（要完整的 PNG，每边不超过 4096 像素，每一帧都在图内）",
   "@botsPetImportBadSheet": {
     "placeholders": {
       "name": {
@@ -776,6 +776,14 @@
     }
   },
   "botsPetRemoveBody": "删除后可以再导入。",
+  "botsPetRemoveFailed": "没能删除「{name}」，再试一次",
+  "@botsPetRemoveFailed": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
   "botsPetSize": "大小",
   "botsPetQuiet": "安静模式",
   "botsPetQuietSubtitle": "只做动作，不冒气泡",

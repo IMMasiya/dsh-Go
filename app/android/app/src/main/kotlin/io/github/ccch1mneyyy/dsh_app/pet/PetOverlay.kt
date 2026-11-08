@@ -255,6 +255,17 @@ internal object PetOverlay {
         evaluate()
     }
 
+    /**
+     * A brought pet's files changed (imported again, removed): what was read of [id] is stale even
+     * though its id and size are not. Read it again if it is the one out; else it is read fresh
+     * when next pushed.
+     */
+    fun reloadPack(id: String) {
+        if (!initialized) return
+        failedIds -= id
+        machine.last?.let { p -> if (p.packId == id) ensurePack(id, p.size, reload = true) }
+    }
+
     fun setEnabled(on: Boolean): Map<String, Any?> {
         if (!on) capture.invalidate()
         machine.enabled = on
@@ -446,9 +457,10 @@ internal object PetOverlay {
 
     private fun packKey(p: PetPush?): String? = p?.packId?.let { "$it@${p.size}" }
 
-    private fun ensurePack(id: String, size: String) {
+    /** Loads [id] at [size] unless it is loaded, loading or broken; [reload]: from disk again regardless. */
+    private fun ensurePack(id: String, size: String, reload: Boolean = false) {
         val key = "$id@$size"
-        if (key == loadedKey || key == loadingKey || id in failedIds) return
+        if (!reload && (key == loadedKey || key == loadingKey || id in failedIds)) return
         loadingKey = key
         val request = ++loadRequest
         val density = app.resources.displayMetrics.density
@@ -465,6 +477,14 @@ internal object PetOverlay {
                 if (l == null) {
                     Log.w(TAG, "pet pack $id not found")
                     failedIds += id
+                    // Read again (reloadPack) and gone or broken now: the old picture doesn't stay.
+                    if (loadedKey == key) {
+                        loaded?.release()
+                        loaded = null
+                        loadedKey = null
+                        stateKey = null
+                        if (petView != null) removeWindows()
+                    }
                 } else {
                     loaded?.release()
                     loaded = l

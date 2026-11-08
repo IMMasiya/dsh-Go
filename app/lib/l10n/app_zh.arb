@@ -1701,7 +1701,7 @@
       }
     }
   },
-  "botsPetImportBadSheet": "序列帧图不对：{name}（要 PNG，每边不超过 4096 像素，每一帧都在图内）",
+  "botsPetImportBadSheet": "序列帧图不对：{name}（要完整的 PNG，每边不超过 4096 像素，每一帧都在图内）",
   "@botsPetImportBadSheet": {
     "placeholders": {
       "name": {
@@ -1720,6 +1720,14 @@
     }
   },
   "botsPetRemoveBody": "删除后可以再导入。",
+  "botsPetRemoveFailed": "没能删除「{name}」，再试一次",
+  "@botsPetRemoveFailed": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
   "botsPetSize": "大小",
   "botsPetQuiet": "安静模式",
   "botsPetQuietSubtitle": "只做动作，不冒气泡",
@@ -3246,7 +3254,10 @@
     }
   },
   "companionMenuAdapt": "适配这个模型",
-  "companionAdaptHint": "用你配好的模型看一遍这个角色的参数，把转头、眨眼、表情和摸哪里对上。只发参数名单，不发模型文件。",
+  "companionAdaptHint": "用你配好的模型（你的 Key，按次计费）看一遍这个角色，把转头、眨眼、表情和摸哪里对上。会发出去的：模型名、参数名单、表情动作和部件的名字、你下面写的话和现在的适配表；模型文件和贴图不发。",
+  "companionAdaptOffer": "这个模型要适配一下：用你配好的模型看一遍它的参数名单和表情动作的名字（不发模型文件），会用你的 Key 调用一次。以后的新模型就自动来，菜单里能关。",
+  "companionAdaptOfferYes": "适配",
+  "companionAdaptOfferNo": "不用了",
   "companionAdaptNote": "哪里不对？（可以不填）",
   "companionAdaptNoteHint": "比如：摸头没反应，开心的时候脸是黑的",
   "companionAdaptRun": "让 AI 适配",

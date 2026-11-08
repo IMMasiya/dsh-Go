@@ -43,6 +43,28 @@ const companionAdaptParams = {
   'ParamBrowRAngle': '右眉角度，-1 到 1',
 };
 
+/// The range of each standard parameter (stage.js `STANDARD`).
+const companionAdaptRanges = {
+  'ParamAngleX': (-30.0, 30.0),
+  'ParamAngleY': (-30.0, 30.0),
+  'ParamAngleZ': (-30.0, 30.0),
+  'ParamBodyAngleX': (-10.0, 10.0),
+  'ParamBodyAngleY': (-10.0, 10.0),
+  'ParamBodyAngleZ': (-10.0, 10.0),
+  'ParamBreath': (0.0, 1.0),
+  'ParamEyeLOpen': (0.0, 1.0),
+  'ParamEyeROpen': (0.0, 1.0),
+  'ParamEyeBallX': (-1.0, 1.0),
+  'ParamEyeBallY': (-1.0, 1.0),
+  'ParamEyeSmile': (0.0, 1.0),
+  'ParamMouthOpenY': (0.0, 1.0),
+  'ParamMouthForm': (-1.0, 1.0),
+  'ParamBrowLY': (-1.0, 1.0),
+  'ParamBrowRY': (-1.0, 1.0),
+  'ParamBrowLAngle': (-1.0, 1.0),
+  'ParamBrowRAngle': (-1.0, 1.0),
+};
+
 /// Her feelings (stage.js `DEFAULT_EMOTIONS`, companion_reply.dart).
 const companionAdaptEmotions = [
   'calm',
@@ -221,9 +243,10 @@ const companionAdaptSystem = '''
 只输出一个 JSON 对象，不要解释，不要代码块。所有字段都可以省略；拿不准的就不写，宁缺毋错。字段：
 
 - "params"：{标准参数名: {"id": 模型参数 id 或 id 列表, "scale": 数字, "offset": 数字}}。App 写入的值 v 会换算成 v*scale+offset 再写给模型参数。只给模型里没有同名参数、或者同名参数意思不对的标准参数写；方向反了就用负的 scale；范围不同就用 scale 和 offset 换算。
-- "emotions"：{情绪: {"expression": 模型的表情名, "face": {标准参数名或模型参数 id: 数值}}}。情绪只能是：calm happy shy sad angry surprised confused smug sleepy worried。表情名必须是下面列出的表情之一。开关类的表情（换装、隐藏部件、水印）不要用作情绪。
+- "emotions"：{情绪: {"expression": 模型的表情名, "face": {标准参数名或模型参数 id: 数值}}}。face 里的数值是加在当前值上的量（比如 "ParamAngleZ": 10 是头再歪 10）。情绪只能是：calm happy shy sad angry surprised confused smug sleepy worried。表情名必须是下面列出的表情之一。开关类的表情（换装、隐藏部件、水印）不要用作情绪。
 - "actions"：{手势名: {"motion": 模型的动作名}}。手势名只能是：nod nodSmall shake tilt tiltLeft lookUp recoil duck sway stretch yawn wave。只在模型有明显对应的动作时写。
 - "zones"：触摸区列表，每项 {"id": head|face|body|tail|legs, "from": 0~1, "to": 0~1}，from/to 是从画面顶端往下的比例（0 顶，1 底），可选 "xFrom"/"xTo"（-1 左到 1 右）。按人物从上到下的大致比例估：头发和头顶、脸、身体、腿或尾巴。
+- "framing"：{"zoom": 0.3~3, "y": -1~1}，人物在画面里的缩放和上下位置（y 正数往上挪）。只在默认取景明显不对（人物太大、太小、头被切掉）时写。
 - "tail"：尾巴摆动用的模型参数 id 列表（没有尾巴就不写）。
 - "pose"：{模型参数 id: 数值}，进来时就固定的值，比如关掉水印、选一套默认衣服。
 - "notes"：一句给用户看的话（不超过 60 字），说明做了什么、哪里没法适配。
@@ -308,6 +331,14 @@ Map<String, Object?>? companionAdaptJson(String text) {
     return v.clamp(math.min(p.min, p.max), math.max(p.min, p.max)).toDouble();
   }
 
+  // A face value is added to where the parameter already is: it can move it
+  // at most the parameter's whole width, either way.
+  double clampAdd(String id, double v) {
+    final (lo, hi) = companionAdaptRanges[id] ?? (probe.param(id)?.min ?? -1.0, probe.param(id)?.max ?? 1.0);
+    final width = (hi - lo).abs();
+    return v.clamp(-width, width).toDouble();
+  }
+
   Map<String, Object?> map(Object? v) => v is Map ? v.cast<String, Object?>() : const {};
 
   final params = <String, Object?>{};
@@ -343,10 +374,8 @@ Map<String, Object?>? companionAdaptJson(String text) {
     for (final MapEntry(key: id, :value) in map(def['face']).entries) {
       final v = number(value);
       if (v == null) continue;
-      if (companionAdaptParams.containsKey(id)) {
-        face[id] = v.clamp(-1.0, 1.0);
-      } else if (ids.contains(id)) {
-        face[id] = clampTo(id, v);
+      if (companionAdaptParams.containsKey(id) || ids.contains(id)) {
+        face[id] = clampAdd(id, v);
       } else {
         dropped.add('emotions.$key.face.$id');
       }
@@ -371,21 +400,19 @@ Map<String, Object?>? companionAdaptJson(String text) {
   final rawZones = answer['zones'];
   for (final zone in rawZones is List ? rawZones : const []) {
     final z = map(zone);
-    final from = number(z['from']);
-    final to = number(z['to']);
-    if (!companionAdaptZones.contains(z['id']) || from == null || to == null || !(to > from)) {
+    final from = number(z['from'])?.clamp(0.0, 1.0);
+    final to = number(z['to'])?.clamp(0.0, 1.0);
+    final xFrom = number(z['xFrom'])?.clamp(-1.5, 1.5);
+    final xTo = number(z['xTo'])?.clamp(-1.5, 1.5);
+    if (!companionAdaptZones.contains(z['id']) ||
+        from == null ||
+        to == null ||
+        !(to > from) ||
+        (xFrom != null && xTo != null && !(xTo > xFrom))) {
       dropped.add('zones');
       continue;
     }
-    final xFrom = number(z['xFrom']);
-    final xTo = number(z['xTo']);
-    zones.add({
-      'id': z['id'],
-      'from': from.clamp(0.0, 1.0),
-      'to': to.clamp(0.0, 1.0),
-      if (xFrom != null) 'xFrom': xFrom.clamp(-1.5, 1.5),
-      if (xTo != null) 'xTo': xTo.clamp(-1.5, 1.5),
-    });
+    zones.add({'id': z['id'], 'from': from, 'to': to, 'xFrom': ?xFrom, 'xTo': ?xTo});
   }
 
   final tail = [
@@ -397,6 +424,14 @@ Map<String, Object?>? companionAdaptJson(String text) {
       if (ids.contains(id) && number(value) != null) id: clampTo(id, number(value)!),
   };
   final notes = answer['notes'] is String ? (answer['notes'] as String).trim() : '';
+  final rawFraming = map(answer['framing']);
+  final zoom = number(rawFraming['zoom']);
+  final y = number(rawFraming['y']);
+  final framing = <String, Object?>{
+    if (zoom != null && zoom > 0) 'zoom': zoom.clamp(0.3, 3.0),
+    'y': ?y?.clamp(-1.0, 1.0),
+  };
+  if (answer.containsKey('framing') && framing.isEmpty) dropped.add('framing');
 
   for (final key in answer.keys) {
     if (!const {'params', 'emotions', 'actions', 'zones', 'tail', 'pose', 'notes', 'framing'}.contains(key)) {
@@ -410,6 +445,7 @@ Map<String, Object?>? companionAdaptJson(String text) {
       if (emotions.isNotEmpty) 'emotions': emotions,
       if (actions.isNotEmpty) 'actions': actions,
       if (zones.isNotEmpty) 'zones': zones,
+      if (framing.isNotEmpty) 'framing': framing,
       if (tail.isNotEmpty) 'tail': tail,
       if (pose.isNotEmpty) 'pose': pose,
       if (notes.isNotEmpty) 'notes': notes.length > 120 ? notes.substring(0, 120) : notes,
@@ -495,6 +531,21 @@ Future<String?> companionMocFingerprint(Directory pack, CompanionProbe probe) as
     return null;
   }
 }
+
+/// Whether the person has said yes to a fitting once (an offer, or the menu):
+/// until then nothing goes out on its own.
+const _consentKey = 'companion_adapt_consented';
+
+Future<bool> companionAdaptConsented() async {
+  try {
+    return (await SharedPreferences.getInstance()).getBool(_consentKey) ?? false;
+  } on Object {
+    return false;
+  }
+}
+
+Future<void> companionAdaptSetConsented(bool yes) async =>
+    (await SharedPreferences.getInstance()).setBool(_consentKey, yes);
 
 /// Whether models are fitted on their own when they arrive (on unless turned off).
 const _autoKey = 'companion_adapt_auto';

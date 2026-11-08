@@ -101,42 +101,75 @@ class CompanionMoves {
     }
 
     return CompanionMoves(
-      expressions: [for (final raw in info.expressions) move(CompanionMoveKind.expression, raw)],
-      motions: [for (final raw in info.motions) move(CompanionMoveKind.motion, raw)],
+      expressions: _distinct([for (final raw in info.expressions) move(CompanionMoveKind.expression, raw)]),
+      motions: _distinct([for (final raw in info.motions) move(CompanionMoveKind.motion, raw)]),
     );
+  }
+
+  /// Two moves of a kind never share a label (a mark could only reach one of
+  /// them): later ones get a number, `脸红 2`.
+  static List<CompanionMove> _distinct(List<CompanionMove> moves) {
+    final taken = <String>{};
+    return [
+      for (final m in moves)
+        () {
+          var label = m.label;
+          for (var n = 2; taken.contains(label.toLowerCase()); n++) {
+            label = '${m.label} $n';
+          }
+          taken.add(label.toLowerCase());
+          return label == m.label ? m : m.copyWith(label: label);
+        }(),
+    ];
   }
 
   static String _key(CompanionMoveKind kind, String raw) => '${kind == CompanionMoveKind.expression ? 'e' : 'm'}:$raw';
 
-  CompanionMoves replaced(CompanionMove next) => CompanionMoves(
-    expressions: [for (final m in expressions) m.kind == next.kind && m.raw == next.raw ? next : m],
-    motions: [for (final m in motions) m.kind == next.kind && m.raw == next.raw ? next : m],
-  );
+  /// [next] in place of the move it renames or switches; a label another move
+  /// of its kind already has gets a number.
+  CompanionMoves replaced(CompanionMove next) {
+    final others = next.kind == CompanionMoveKind.expression ? expressions : motions;
+    final taken = {
+      for (final m in others)
+        if (m.raw != next.raw) m.label.toLowerCase(),
+    };
+    var label = next.label;
+    for (var n = 2; taken.contains(label.toLowerCase()); n++) {
+      label = '${next.label} $n';
+    }
+    final settled = label == next.label ? next : next.copyWith(label: label);
+    return CompanionMoves(
+      expressions: [for (final m in expressions) m.kind == settled.kind && m.raw == settled.raw ? settled : m],
+      motions: [for (final m in motions) m.kind == settled.kind && m.raw == settled.raw ? settled : m],
+    );
+  }
+
+  /// How many of each kind the AI is told about, at most.
+  static const most = 24;
 
   /// Whether this one is offered to the AI: allowed, and not a name one of her
   /// own marks already answers to.
   static bool _offered(CompanionMove m) =>
       m.ai &&
+      companionMarkLabelFits(m.label) &&
       !companionMarkKnown(
         m.kind == CompanionMoveKind.expression ? CompanionMarkKind.emotion : CompanionMarkKind.action,
         m.label,
       );
 
-  /// Label → raw name, for the marks the AI may write.
-  Map<String, String> get emotionLabels => {
-    for (final m in expressions)
-      if (_offered(m)) m.label: m.raw,
-  };
+  /// The ones the AI is told about: allowed, readable, the first [most].
+  Iterable<CompanionMove> get offeredExpressions => expressions.where(_offered).take(most);
+  Iterable<CompanionMove> get offeredMotions => motions.where(_offered).take(most);
 
-  Map<String, String> get actionLabels => {
-    for (final m in motions)
-      if (_offered(m)) m.label: m.raw,
-  };
+  /// Label → raw name, for the marks the AI may write: exactly the ones it was told.
+  Map<String, String> get emotionLabels => {for (final m in offeredExpressions) m.label: m.raw};
+
+  Map<String, String> get actionLabels => {for (final m in offeredMotions) m.label: m.raw};
 
   /// Told to the AI after her built-in marks; null when nothing is offered.
-  String? rules({int most = 24}) {
-    final faces = [for (final m in expressions.where(_offered).take(most)) '[表情:${m.label}]'];
-    final moves = [for (final m in motions.where(_offered).take(most)) '[动作:${m.label}]'];
+  String? rules() {
+    final faces = [for (final m in offeredExpressions) '[表情:${m.label}]'];
+    final moves = [for (final m in offeredMotions) '[动作:${m.label}]'];
     if (faces.isEmpty && moves.isEmpty) return null;
     return [
       '这个角色还有自己的表情和动作，同样写成标记，界面会执行：',
@@ -147,6 +180,9 @@ class CompanionMoves {
 
   /// Changes whenever what the AI is told changes.
   String get fingerprint => (rules() ?? '').hashCode.toString();
+
+  /// The fingerprint of telling nothing.
+  static String get noneFingerprint => ''.hashCode.toString();
 
   Map<String, Object?> toJson() => {
     for (final m in [...expressions, ...motions]) _key(m.kind, m.raw): {'label': m.label, 'ai': m.ai},
