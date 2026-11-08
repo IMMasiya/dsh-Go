@@ -1,7 +1,7 @@
 package io.github.ccch1mneyyy.dsh_app.phone.selfcheck
 
 /** Actual target lifecycle memory. Android callbacks and task snapshots feed this same state. */
-internal class TargetState(val targetRun: String) {
+internal class TargetState(val targetRun: String, val profile: TargetContract.Profile = TargetContract.Profile.C1) {
     data class Facts(
         val launchAttempted: Boolean,
         val created: Boolean,
@@ -23,6 +23,7 @@ internal class TargetState(val targetRun: String) {
     private var wrongMain = false
     private var finalized = false
     private var taskId: Int? = null
+    private var framePhase = 0
 
     init { require(TargetContract.validRun(targetRun)) }
 
@@ -56,6 +57,15 @@ internal class TargetState(val targetRun: String) {
         val allowed = attempted && !sealed && displayId > 0 && displayId == expectedDisplay
         if (!allowed) sealed = true
         allowed
+    }
+
+    /** Actual main job admission, not evidence that pixels were drawn or captured. */
+    fun advance(value: Any, displayId: Int, stage: TargetContract.FrameStage): Boolean = synchronized(lock) {
+        if (profile != TargetContract.Profile.C2 || sealed || finalized || destroyedForFinish ||
+            instance !== value || !created || displayId <= 0 || displayId != expectedDisplay ||
+            framePhase != stage.phase - 1) return false
+        framePhase = stage.phase
+        true
     }
 
     fun destroyed(value: Any, finishing: Boolean, changingConfiguration: Boolean): Boolean = synchronized(lock) {

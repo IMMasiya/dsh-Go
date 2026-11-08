@@ -67,7 +67,8 @@ class _PhoneSelfCheckPanelState extends State<PhoneSelfCheckPanel> {
             const SizedBox(height: 8),
             Text(l10n.phoneSelfCheckReportProfile(snapshot.profile ?? 'unknown'),
               key: const ValueKey('self-check-report-profile')),
-            Text(snapshot.profile == 'target_c1' ? l10n.phoneSelfCheckTargetScope : l10n.phoneSelfCheckScope),
+            Text(snapshot.profile == 'target_c2' ? l10n.phoneSelfCheckTargetC2Scope :
+              snapshot.profile == 'target_c1' ? l10n.phoneSelfCheckTargetScope : l10n.phoneSelfCheckScope),
             const SizedBox(height: 12),
             Text(l10n.phoneSelfCheckProfileChoice),
             DropdownButton<String>(

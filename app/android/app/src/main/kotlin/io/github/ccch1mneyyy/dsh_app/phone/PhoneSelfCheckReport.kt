@@ -1,9 +1,11 @@
 package io.github.ccch1mneyyy.dsh_app.phone
 
+import io.github.ccch1mneyyy.dsh_app.phone.selfcheck.TargetContract.FrameStage
+
 /** The actual local report: fixed values only, no owner, input, tree, image or exception text. */
 internal class PhoneSelfCheckReport(val profile: Profile = Profile.PROBE_B) {
     enum class Profile(val wire: String) {
-        PROBE_B("probe_b"), TARGET_C1("target_c1");
+        PROBE_B("probe_b"), TARGET_C1("target_c1"), TARGET_C2("target_c2");
 
         companion object {
             fun parse(value: Any?): Profile? = entries.firstOrNull { it.wire == value }
@@ -36,6 +38,10 @@ internal class PhoneSelfCheckReport(val profile: Profile = Profile.PROBE_B) {
         TARGET_CLEANUP_PENDING("targetCleanupPending"), TARGET_WRONG_MAIN("targetWrongMain"),
         TARGET_READBACK_MISMATCH("targetReadbackMismatch"), TREE_CLEANUP_PENDING("treeCleanupPending"),
         TARGET_LAUNCH_DENIED("targetLaunchDenied"),
+        TARGET_FRAME_UNAVAILABLE("targetFrameUnavailable"), TARGET_FRAME_MISMATCH("targetFrameMismatch"),
+        TARGET_CONTINUITY_UNCONFIRMED("targetContinuityUnconfirmed"),
+        MAIN_SAMPLES_CHANGED("mainSamplesChanged"), MAIN_SAMPLES_UNCHANGED("mainSamplesUnchanged"),
+        MAIN_SAMPLES_INCOMPLETE("mainSamplesIncomplete"), NOT_INSTALLED("notInstalled"),
         DEVICE_UNAVAILABLE("deviceUnavailable"), TIMEOUT("timeout"), OTHER("other");
 
         companion object {
@@ -49,25 +55,41 @@ internal class PhoneSelfCheckReport(val profile: Profile = Profile.PROBE_B) {
         val durationMs: Long? = null,
     )
     // The coordinator's short lock owns this model, including serialization.
-    private val steps = Stage.entries.associateWith { Step() }.toMutableMap()
+    private val steps = Stage.entries.associateWith {
+        if (profile == Profile.TARGET_C2 && it == Stage.OCR) Step(reason = Reason.NOT_INSTALLED) else Step()
+    }.toMutableMap()
+    // Four fixed producer sampling points, each with independent MAIN-vector and global-focus results.
+    private val mainSamples = arrayOfNulls<Pair<String?, String?>>(4)
 
     fun update(stage: Stage, state: State, observed: Boolean, reason: Reason? = null, durationMs: Long? = null) {
         val covered = when (profile) {
             Profile.PROBE_B -> stage in setOf(Stage.DEVICE, Stage.CHANNEL, Stage.DISPLAY, Stage.INPUT_PROBE, Stage.CLEANUP)
             Profile.TARGET_C1 -> stage in setOf(Stage.DEVICE, Stage.CHANNEL, Stage.DISPLAY,
                 Stage.LAUNCH, Stage.TREE, Stage.TAP, Stage.CLEANUP)
+            Profile.TARGET_C2 -> stage in setOf(Stage.DEVICE, Stage.CHANNEL, Stage.DISPLAY,
+                Stage.LAUNCH, Stage.TREE, Stage.TAP, Stage.TEXT_ASCII, Stage.TEXT_ZH,
+                Stage.CAPTURE, Stage.CONTINUITY, Stage.CLEANUP)
         }
-        // C1 can observe an actual wrong-MAIN target; it has no evidence of MAIN success.
-        if (!covered && !(profile == Profile.TARGET_C1 && stage == Stage.MAIN &&
-                state == State.FAIL && observed && reason == Reason.TARGET_WRONG_MAIN)) return
-        steps[stage] = Step(state, observed, reason, durationMs?.coerceIn(0, Int.MAX_VALUE.toLong()))
+        if (stage == Stage.MAIN) {
+            if (steps[stage]?.reason == Reason.TARGET_WRONG_MAIN) return
+            val wrongMain = profile != Profile.PROBE_B && state == State.FAIL && observed &&
+                reason == Reason.TARGET_WRONG_MAIN
+            val finiteSamples = profile == Profile.TARGET_C2 && (
+                state == State.FAIL && observed && reason == Reason.MAIN_SAMPLES_CHANGED ||
+                state == State.UNKNOWN && (reason == Reason.MAIN_SAMPLES_INCOMPLETE ||
+                    observed && reason == Reason.MAIN_SAMPLES_UNCHANGED))
+            if (!wrongMain && !finiteSamples) return
+        } else if (!covered) return
+        // A later phase failure cannot erase an earlier actual frame in this same continuity run.
+        val observedNow = observed || stage == Stage.CONTINUITY && steps[stage]?.observed == true
+        steps[stage] = Step(state, observedNow, reason, durationMs?.coerceIn(0, Int.MAX_VALUE.toLong()))
     }
 
     /** Exact echoes are checked before any fixed-target reply becomes a local fact. */
     private fun targetReply(
         expectedOwner: String, expectedRun: String, expectedNonce: String,
         owner: Any?, run: Any?, nonce: Any?, version: Any?, ok: Any?, error: Any?,
-    ): Boolean = profile == Profile.TARGET_C1 && owner is String && owner == expectedOwner &&
+    ): Boolean = profile != Profile.PROBE_B && owner is String && owner == expectedOwner &&
         run is String && run == expectedRun && nonce is String && nonce == expectedNonce &&
         version is Int && version == 1 && ok is Boolean &&
         !(ok && error != null)
@@ -77,6 +99,7 @@ internal class PhoneSelfCheckReport(val profile: Profile = Profile.PROBE_B) {
         expectedOwner: String, expectedRun: String, expectedNonce: String,
         owner: Any?, run: Any?, nonce: Any?, version: Any?, ok: Any?, error: Any?,
         displayReady: Any?, displayId: Any?, durationMs: Long,
+        mainVector: Any? = null, globalFocus: Any? = null,
     ): Int? {
         if (!targetReply(expectedOwner, expectedRun, expectedNonce, owner, run, nonce, version, ok, error) ||
             displayReady !is Boolean || displayReady && (displayId !is Int || displayId <= 0) ||
@@ -86,6 +109,7 @@ internal class PhoneSelfCheckReport(val profile: Profile = Profile.PROBE_B) {
         }
         update(Stage.DISPLAY, if (displayReady) State.PASS else State.FAIL, true,
             if (displayReady) null else Reason.fromWire(error), durationMs)
+        if (profile == Profile.TARGET_C2) recordMainSample(0, mainVector, globalFocus)
         return if (ok == true) displayId as Int else null
     }
 
@@ -94,6 +118,7 @@ internal class PhoneSelfCheckReport(val profile: Profile = Profile.PROBE_B) {
         expectedOwner: String, expectedRun: String, expectedNonce: String,
         owner: Any?, run: Any?, nonce: Any?, version: Any?, ok: Any?, error: Any?,
         matched: Any?, complete: Any?, initialCounter: Any?, durationMs: Long,
+        mainVector: Any? = null, globalFocus: Any? = null,
     ): Boolean {
         if (!targetReply(expectedOwner, expectedRun, expectedNonce, owner, run, nonce, version, ok, error) ||
             matched !is Boolean || complete !is Boolean || initialCounter !is Boolean ||
@@ -104,6 +129,7 @@ internal class PhoneSelfCheckReport(val profile: Profile = Profile.PROBE_B) {
         if (matched && complete && initialCounter) {
             update(Stage.LAUNCH, State.PASS, true, durationMs = durationMs)
             update(Stage.TREE, State.PASS, true, durationMs = durationMs)
+            if (profile == Profile.TARGET_C2) recordMainSample(1, mainVector, globalFocus)
         } else unknownTargetRead(Reason.fromWire(error), durationMs)
         return ok == true
     }
@@ -136,6 +162,87 @@ internal class PhoneSelfCheckReport(val profile: Profile = Profile.PROBE_B) {
                 State.FAIL else State.UNKNOWN, attempted, reason, durationMs)
         }
         return ok == true
+    }
+
+    /** Fixed native text only; accepted survives a failed post-read or connection cleanup. */
+    fun acceptTargetText(
+        stage: Stage, expectedOwner: String, expectedRun: String, expectedNonce: String,
+        owner: Any?, run: Any?, nonce: Any?, version: Any?, ok: Any?, error: Any?,
+        attempted: Any?, accepted: Any?, matched: Any?, complete: Any?, textMatched: Any?, durationMs: Long,
+        mainVector: Any? = null, globalFocus: Any? = null,
+    ): Boolean {
+        if (profile != Profile.TARGET_C2 ||
+            !targetReply(expectedOwner, expectedRun, expectedNonce, owner, run, nonce, version, ok, error) ||
+            attempted !is Boolean || accepted != null && accepted !is Boolean ||
+            matched != null && matched !is Boolean || complete != null && complete !is Boolean ||
+            textMatched != null && textMatched !is Boolean || !attempted && accepted != null ||
+            (matched == null) != (complete == null) || (complete == null) != (textMatched == null) ||
+            matched != null && (!attempted || accepted != true || complete != true) ||
+            ok != (attempted && accepted == true && matched == true && complete == true && textMatched == true)) {
+            update(stage, State.UNKNOWN, false, Reason.INVALID_RESPONSE, durationMs)
+            return false
+        }
+        if (ok == true) {
+            update(stage, State.PASS, true, durationMs = durationMs)
+            if (stage == Stage.TEXT_ZH) recordMainSample(2, mainVector, globalFocus)
+        } else {
+            val failed = !attempted || accepted == false || matched == true && complete == true && textMatched == false
+            update(stage, if (failed) State.FAIL else State.UNKNOWN, attempted, Reason.fromWire(error), durationMs)
+        }
+        return ok == true
+    }
+
+    /** Each sample belongs to the coordinator's fixed loop; only its third verified continuation finishes it. */
+    fun acceptTargetFrame(
+        frame: FrameStage, expectedOwner: String, expectedRun: String, expectedNonce: String,
+        owner: Any?, run: Any?, nonce: Any?, version: Any?, ok: Any?, error: Any?,
+        matched: Any?, complete: Any?, frameMatched: Any?, durationMs: Long,
+    ): Boolean {
+        val stage = if (frame == FrameStage.CAPTURE) Stage.CAPTURE else Stage.CONTINUITY
+        if (profile != Profile.TARGET_C2 ||
+            !targetReply(expectedOwner, expectedRun, expectedNonce, owner, run, nonce, version, ok, error) ||
+            matched !is Boolean || complete !is Boolean || frameMatched !is Boolean ||
+            ok != (matched && complete && frameMatched)) {
+            update(stage, State.UNKNOWN, false, Reason.INVALID_RESPONSE, durationMs)
+            return false
+        }
+        if (ok == true) {
+            val finished = frame == FrameStage.CAPTURE || frame == FrameStage.CONTINUITY_THIRD
+            update(stage, if (finished) State.PASS else State.RUNNING, true, durationMs = durationMs)
+        } else update(stage, State.UNKNOWN, false, Reason.fromWire(error), durationMs)
+        return ok == true
+    }
+
+    /** Called only after the shared physical receipt has independently been accepted. */
+    fun acceptFinalMain(
+        expectedOwner: String, expectedRun: String, expectedNonce: String,
+        owner: Any? = null, run: Any? = null, nonce: Any? = null, version: Any? = null,
+        ok: Any? = null, error: Any? = null, mainVector: Any? = null, globalFocus: Any? = null,
+    ) {
+        if (profile != Profile.TARGET_C2) return
+        if (!targetReply(expectedOwner, expectedRun, expectedNonce, owner, run, nonce, version, ok, error)) {
+            recordMainSample(3, null, null)
+            return
+        }
+        recordMainSample(3, mainVector, globalFocus)
+    }
+
+    private fun recordMainSample(slot: Int, mainVector: Any?, globalFocus: Any?) {
+        val allowed = if (slot == 0) setOf("baseline", "unavailable") else setOf("unchanged", "changed", "unavailable")
+        mainSamples[slot] = (mainVector as? String)?.takeIf { it in allowed } to
+            (globalFocus as? String)?.takeIf { it in allowed }
+        val baseline = mainSamples[0]
+        val compared = mainSamples.drop(1).flatMap { sample ->
+            listOfNotNull(
+                sample?.first?.takeIf { baseline?.first == "baseline" && it in setOf("unchanged", "changed") },
+                sample?.second?.takeIf { baseline?.second == "baseline" && it in setOf("unchanged", "changed") },
+            )
+        }
+        when {
+            "changed" in compared -> update(Stage.MAIN, State.FAIL, true, Reason.MAIN_SAMPLES_CHANGED)
+            compared.size == 6 -> update(Stage.MAIN, State.UNKNOWN, true, Reason.MAIN_SAMPLES_UNCHANGED)
+            else -> update(Stage.MAIN, State.UNKNOWN, compared.isNotEmpty(), Reason.MAIN_SAMPLES_INCOMPLETE)
+        }
     }
 
     /** Validate the actual fixed begin reply before accepting any display or delivery PASS. */
@@ -171,7 +278,7 @@ internal class PhoneSelfCheckReport(val profile: Profile = Profile.PROBE_B) {
     fun finishPending(cancelled: Boolean) {
         for ((stage, step) in steps.toMap()) {
             if (step.state == State.RUNNING) update(stage,
-                if (cancelled) State.CANCELLED else State.UNKNOWN, false,
+                if (cancelled) State.CANCELLED else State.UNKNOWN, step.observed,
                 if (cancelled) Reason.CANCELLED else Reason.DEVICE_UNAVAILABLE)
         }
     }

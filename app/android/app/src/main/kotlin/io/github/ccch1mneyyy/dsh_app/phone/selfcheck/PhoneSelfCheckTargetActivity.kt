@@ -6,12 +6,16 @@ import android.app.ActivityOptions
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.graphics.Canvas
+import android.graphics.Paint
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
+import android.text.InputType
 import android.view.View
 import android.widget.Button
+import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.TextView
 import io.github.ccch1mneyyy.dsh_app.R
@@ -24,6 +28,8 @@ import java.util.concurrent.TimeoutException
 /** A local, inert target. Only the privileged read of this screen can establish a test result. */
 class PhoneSelfCheckTargetActivity : Activity() {
     private var ticket: PhoneSelfCheckTarget.Ticket? = null
+    private var phaseLabel: TextView? = null
+    private var pattern: PatternView? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -60,7 +66,60 @@ class PhoneSelfCheckTargetActivity : Activity() {
             var count = 0
             setOnClickListener { count++; counter.text = TargetContract.counter(count) }
         })
+        if (original.state.profile == TargetContract.Profile.C2) {
+            // This fixed replacement API test never requests the IME or submits a form.
+            body.isFocusableInTouchMode = true
+            body.addView(EditText(this).apply {
+                id = R.id.phone_selfcheck_target_edit
+                hint = AppStrings.get(this@PhoneSelfCheckTargetActivity, R.string.phone_selfcheck_target_input)
+                inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
+                setSingleLine(true)
+                showSoftInputOnFocus = false
+            })
+            val phase = TextView(this).apply {
+                id = R.id.phone_selfcheck_target_phase
+                text = "0"
+            }
+            phaseLabel = phase
+            body.addView(phase)
+            val pixels = PatternView(this, original.state.targetRun)
+            pattern = pixels
+            body.addView(pixels, LinearLayout.LayoutParams(TargetFramePattern.WIDTH_PX, TargetFramePattern.HEIGHT_PX))
+            body.requestFocus()
+        }
         setContentView(body)
+    }
+
+    internal fun advance(original: PhoneSelfCheckTarget.Ticket, stage: TargetContract.FrameStage): Boolean {
+        check(Looper.myLooper() == Looper.getMainLooper())
+        val label = phaseLabel ?: return false
+        val pixels = pattern ?: return false
+        if (ticket !== original || isFinishing || isDestroyed ||
+            !original.state.advance(this, display?.displayId ?: -1, stage)) return false
+        label.text = stage.phase.toString()
+        pixels.phase = stage.phase
+        pixels.invalidate()
+        return true // Requested drawing only. The backend must still read the actual Bitmap.
+    }
+
+    private class PatternView(context: Context, private val run: String) : View(context) {
+        var phase = 0
+        private val paint = Paint().apply { isAntiAlias = false }
+        init {
+            id = R.id.phone_selfcheck_target_pattern
+            importantForAccessibility = IMPORTANT_FOR_ACCESSIBILITY_YES
+            contentDescription = AppStrings.get(context, R.string.phone_selfcheck_target_pattern)
+        }
+        override fun onDraw(canvas: Canvas) {
+            super.onDraw(canvas)
+            for (row in 0 until TargetFramePattern.GRID_ROWS) for (column in 0 until TargetFramePattern.GRID_COLUMNS) {
+                paint.color = TargetFramePattern.colorAt(run, phase, column, row)
+                canvas.drawRect(TargetFramePattern.cellLeft(column, width).toFloat(),
+                    TargetFramePattern.cellTop(row, height).toFloat(),
+                    TargetFramePattern.cellLeft(column + 1, width).toFloat(),
+                    TargetFramePattern.cellTop(row + 1, height).toFloat(), paint)
+            }
+        }
     }
 
     override fun onDestroy() {
@@ -75,6 +134,7 @@ class PhoneSelfCheckTargetActivity : Activity() {
 /** One run, one original launch job. A timeout never cancels a queued Android operation. */
 internal object PhoneSelfCheckTarget {
     internal class Ticket internal constructor(internal val state: TargetState) {
+        internal val frameJobs = arrayOfNulls<FutureTask<Boolean>>(TargetContract.FrameStage.values().size)
         internal var launchJob: FutureTask<Unit>? = null
         internal var finishJob: FutureTask<Unit>? = null
         @Volatile internal var teardownJob: FutureTask<Unit>? = null
@@ -89,9 +149,9 @@ internal object PhoneSelfCheckTarget {
     private var current: Ticket? = null
     private const val WAIT_MS = 2_000L
 
-    fun prepare(targetRun: String): Ticket = synchronized(lock) {
+    fun prepare(targetRun: String, profile: TargetContract.Profile = TargetContract.Profile.C1): Ticket = synchronized(lock) {
         check(current?.state?.facts()?.closed != false)
-        Ticket(TargetState(targetRun)).also { current = it }
+        Ticket(TargetState(targetRun, profile)).also { current = it }
     }
 
     internal fun find(identifier: String?): Ticket? = synchronized(lock) {
@@ -152,6 +212,21 @@ internal object PhoneSelfCheckTarget {
         return snapshot(ticket)
     }
 
+    /** Coordinator worker only; the next stage is called only after the previous pixel ACK. */
+    fun advance(ticket: Ticket, stage: TargetContract.FrameStage): Boolean {
+        check(Looper.myLooper() != Looper.getMainLooper())
+        var job = ticket.frameJobs[stage.ordinal]
+        if (job == null) {
+            job = FutureTask<Boolean> {
+                val activity = ticket.state.instance() as? PhoneSelfCheckTargetActivity
+                activity?.advance(ticket, stage) == true
+            }
+            ticket.frameJobs[stage.ordinal] = job
+            if (!main.post(job)) return false
+        }
+        return await(job) == true
+    }
+
     /** Seal first, then finish only the original instance; task IDs never select a finish target. */
     fun close(ticket: Ticket): TargetState.Facts {
         check(Looper.myLooper() != Looper.getMainLooper())
@@ -183,6 +258,7 @@ internal object PhoneSelfCheckTarget {
                 ticket.teardownJob = null
                 ticket.teardownCheck = null
                 ticket.appTask = null
+                ticket.frameJobs.fill(null)
                 break
             }
             if (!pause(ticket)) break
@@ -212,16 +288,19 @@ internal object PhoneSelfCheckTarget {
         }
     }
 
-    private fun await(job: FutureTask<Unit>?) {
-        if (job == null) return
-        try {
+    private fun <T> await(job: FutureTask<T>?): T? {
+        if (job == null) return null
+        return try {
             job.get(WAIT_MS, TimeUnit.MILLISECONDS)
         } catch (_: TimeoutException) {
-            // The same job may complete later; do not submit another start or cancel it.
+            // The same job may complete later; do not submit another operation or cancel it.
+            null
         } catch (_: InterruptedException) {
             Thread.currentThread().interrupt()
+            null
         } catch (_: java.util.concurrent.ExecutionException) {
             // Attempt and callback facts remain authoritative even when start/finish throws.
+            null
         }
     }
 

@@ -12,6 +12,8 @@ import io.github.ccch1mneyyy.dsh_app.phone.background.BackgroundReleaseReceipt
 import io.github.ccch1mneyyy.dsh_app.phone.background.PrivilegedChannel
 import io.github.ccch1mneyyy.dsh_app.phone.background.Proto
 import io.github.ccch1mneyyy.dsh_app.phone.selfcheck.PhoneSelfCheckTarget
+import io.github.ccch1mneyyy.dsh_app.phone.selfcheck.TargetContract
+import io.github.ccch1mneyyy.dsh_app.phone.selfcheck.TargetContract.FrameStage
 import io.github.ccch1mneyyy.dsh_app.phone.selfcheck.TargetState
 import java.util.UUID
 import java.util.concurrent.Executors
@@ -40,8 +42,12 @@ internal class PhoneSelfCheck(
         val handle = UUID.randomUUID().toString()
         val io = BackgroundDisplayIo<PrivilegedChannel>()
         val report = PhoneSelfCheckReport(profile)
-        val targetRun = if (profile == Profile.TARGET_C1) UUID.randomUUID().toString() else null
-        val target = targetRun?.let(PhoneSelfCheckTarget::prepare)
+        val targetRun = if (profile != Profile.PROBE_B) UUID.randomUUID().toString() else null
+        val target = targetRun?.let { PhoneSelfCheckTarget.prepare(it,
+            if (profile == Profile.TARGET_C2) TargetContract.Profile.C2 else TargetContract.Profile.C1) }
+        val targetVersionKey = if (profile == Profile.TARGET_C2) Proto.SELF_CHECK_TARGET_C2_VERSION
+            else Proto.SELF_CHECK_TARGET_VERSION
+        val releaseNonce = if (profile == Profile.TARGET_C2) UUID.randomUUID().toString() else null
         var state = "running"
         var cancelled = false
         var workerActive = true
@@ -155,7 +161,7 @@ internal class PhoneSelfCheck(
             unavailable() == null
 
     private fun execute(run: Run) {
-        if (run.profile == Profile.TARGET_C1) { executeTarget(run); return }
+        if (run.profile != Profile.PROBE_B) { executeTarget(run); return }
         var channelReady = false
         var beginAttempted = false
         val startedAt = clock()
@@ -230,7 +236,7 @@ internal class PhoneSelfCheck(
                         clock() - beganStageAt)
                     return@call null
                 }
-                if ((cap.get(Proto.SELF_CHECK_TARGET_VERSION) as? Int) != 1 ||
+                if ((cap.get(run.targetVersionKey) as? Int) != 1 ||
                     (cap.get(Proto.RELEASE_RECEIPT) as? Int) != 1) {
                     update(run, Stage.CHANNEL, State.FAIL, true, Reason.UNSUPPORTED_PEER,
                         clock() - beganStageAt)
@@ -251,8 +257,9 @@ internal class PhoneSelfCheck(
                 synchronized(lock) {
                     run.report.acceptTargetCreate(run.io.owner, targetRun, createNonce,
                         reply.get(Proto.OWNER), reply.get(Proto.TARGET_RUN), reply.get(Proto.STEP_NONCE),
-                        reply.get(Proto.SELF_CHECK_TARGET_VERSION), reply.get(Proto.OK), reply.get(Proto.ERROR),
-                        reply.get(Proto.SELF_CHECK_DISPLAY_READY), reply.get(Proto.DISPLAY_ID), clock() - beganStageAt)
+                        reply.get(run.targetVersionKey), reply.get(Proto.OK), reply.get(Proto.ERROR),
+                        reply.get(Proto.SELF_CHECK_DISPLAY_READY), reply.get(Proto.DISPLAY_ID), clock() - beganStageAt,
+                        reply.get(Proto.MAIN_VECTOR_RESULT), reply.get(Proto.GLOBAL_FOCUS_RESULT))
                 }.also { changed() }
             } ?: return
 
@@ -283,9 +290,10 @@ internal class PhoneSelfCheck(
             val ready = synchronized(lock) {
                 run.report.acceptTargetRead(run.io.owner, targetRun, readNonce,
                     readReply.get(Proto.OWNER), readReply.get(Proto.TARGET_RUN), readReply.get(Proto.STEP_NONCE),
-                    readReply.get(Proto.SELF_CHECK_TARGET_VERSION), readReply.get(Proto.OK), readReply.get(Proto.ERROR),
+                    readReply.get(run.targetVersionKey), readReply.get(Proto.OK), readReply.get(Proto.ERROR),
                     readReply.get(Proto.TARGET_MATCHED), readReply.get(Proto.TREE_COMPLETE),
-                    readReply.get(Proto.INITIAL_COUNTER_MATCHED), clock() - beganStageAt)
+                    readReply.get(Proto.INITIAL_COUNTER_MATCHED), clock() - beganStageAt,
+                    readReply.get(Proto.MAIN_VECTOR_RESULT), readReply.get(Proto.GLOBAL_FOCUS_RESULT))
             }
             changed()
             if (!ready) return
@@ -300,14 +308,83 @@ internal class PhoneSelfCheck(
                 if (!mayStart(run)) { cancelFromWorker(run); return@call null }
                 run.borrow.channel.execute(tapRequest)
             } ?: return
-            synchronized(lock) {
+            val tapped = synchronized(lock) {
                 run.report.acceptTargetTap(run.io.owner, targetRun, tapNonce,
                     tapReply.get(Proto.OWNER), tapReply.get(Proto.TARGET_RUN), tapReply.get(Proto.STEP_NONCE),
-                    tapReply.get(Proto.SELF_CHECK_TARGET_VERSION), tapReply.get(Proto.OK), tapReply.get(Proto.ERROR),
+                    tapReply.get(run.targetVersionKey), tapReply.get(Proto.OK), tapReply.get(Proto.ERROR),
                     tapReply.get(Proto.ACTION_ATTEMPTED), tapReply.get(Proto.TARGET_MATCHED),
                     tapReply.get(Proto.TREE_COMPLETE), tapReply.get(Proto.COUNTER_MATCHED), clock() - beganStageAt)
             }
             changed()
+            if (!tapped || run.profile != Profile.TARGET_C2) return
+
+            for ((stage, op) in listOf(Stage.TEXT_ASCII to Proto.OP_SELF_CHECK_TARGET_TEXT_ASCII,
+                    Stage.TEXT_ZH to Proto.OP_SELF_CHECK_TARGET_TEXT_ZH)) {
+                if (!mayStart(run)) { cancelFromWorker(run); return }
+                pendingStage = stage
+                beganStageAt = clock()
+                update(run, stage, State.RUNNING, false)
+                val nonce = UUID.randomUUID().toString()
+                val request = targetRequest(run, op, nonce)
+                val reply = run.io.call {
+                    if (!mayStart(run)) { cancelFromWorker(run); return@call null }
+                    run.borrow.channel.execute(request)
+                } ?: return
+                val matched = synchronized(lock) {
+                    run.report.acceptTargetText(stage, run.io.owner, targetRun, nonce,
+                        reply.get(Proto.OWNER), reply.get(Proto.TARGET_RUN), reply.get(Proto.STEP_NONCE),
+                        reply.get(run.targetVersionKey), reply.get(Proto.OK), reply.get(Proto.ERROR),
+                        reply.get(Proto.ACTION_ATTEMPTED), reply.get(Proto.ACCEPTED), reply.get(Proto.TARGET_MATCHED),
+                        reply.get(Proto.TREE_COMPLETE), reply.get(Proto.TEXT_MATCHED), clock() - beganStageAt,
+                        reply.get(Proto.MAIN_VECTOR_RESULT), reply.get(Proto.GLOBAL_FOCUS_RESULT))
+                }
+                changed()
+                if (!matched) return
+            }
+
+            var continuityStarted = 0L
+            for (frame in FrameStage.entries) {
+                if (!mayStart(run)) { cancelFromWorker(run); return }
+                val continuity = frame != FrameStage.CAPTURE
+                if (frame == FrameStage.CONTINUITY_FIRST) continuityStarted = clock()
+                pendingStage = if (continuity) Stage.CONTINUITY else Stage.CAPTURE
+                beganStageAt = if (continuity) continuityStarted else clock()
+                if (continuity && clock() - continuityStarted >= CONTINUITY_BUDGET_MS) {
+                    update(run, Stage.CONTINUITY, State.UNKNOWN, frame != FrameStage.CONTINUITY_FIRST,
+                        Reason.TARGET_CONTINUITY_UNCONFIRMED,
+                        clock() - beganStageAt)
+                    return
+                }
+                if (!continuity || frame == FrameStage.CONTINUITY_FIRST)
+                    update(run, pendingStage, State.RUNNING, false)
+                // The previous exact pixel ACK is accepted before this fixed next phase can exist.
+                if (!PhoneSelfCheckTarget.advance(target, frame)) {
+                    update(run, pendingStage, State.UNKNOWN, false, Reason.TARGET_FRAME_UNAVAILABLE,
+                        clock() - beganStageAt)
+                    return
+                }
+                val nonce = UUID.randomUUID().toString()
+                val request = targetRequest(run, if (continuity) Proto.OP_SELF_CHECK_TARGET_CONTINUITY
+                    else Proto.OP_SELF_CHECK_TARGET_CAPTURE, nonce)
+                val reply = run.io.call {
+                    if (!mayStart(run)) { cancelFromWorker(run); return@call null }
+                    if (continuity && clock() - continuityStarted >= CONTINUITY_BUDGET_MS) {
+                        update(run, Stage.CONTINUITY, State.UNKNOWN, frame != FrameStage.CONTINUITY_FIRST,
+                            Reason.TARGET_CONTINUITY_UNCONFIRMED, clock() - beganStageAt)
+                        return@call null
+                    }
+                    run.borrow.channel.execute(request)
+                } ?: return
+                val matched = synchronized(lock) {
+                    run.report.acceptTargetFrame(frame, run.io.owner, targetRun, nonce,
+                        reply.get(Proto.OWNER), reply.get(Proto.TARGET_RUN), reply.get(Proto.STEP_NONCE),
+                        reply.get(run.targetVersionKey), reply.get(Proto.OK), reply.get(Proto.ERROR),
+                        reply.get(Proto.TARGET_MATCHED), reply.get(Proto.TREE_COMPLETE),
+                        reply.get(Proto.FRAME_MATCHED), clock() - beganStageAt)
+                }
+                changed()
+                if (!matched) return
+            }
         } catch (_: Exception) {
             synchronized(lock) {
                 val reason = if (pendingStage == Stage.CHANNEL) Reason.CHANNEL_UNAVAILABLE else Reason.DEVICE_UNAVAILABLE
@@ -320,7 +397,7 @@ internal class PhoneSelfCheck(
     private fun targetRequest(run: Run, op: String, nonce: String): Bundle = Bundle().apply {
         putString(Proto.OP, op)
         putString(Proto.OWNER, run.io.owner)
-        putInt(Proto.SELF_CHECK_TARGET_VERSION, 1)
+        putInt(run.targetVersionKey, 1)
         putString(Proto.TARGET_RUN, checkNotNull(run.targetRun))
         putString(Proto.STEP_NONCE, nonce)
     }
@@ -357,10 +434,32 @@ internal class PhoneSelfCheck(
                     putString(Proto.OP, Proto.OP_RELEASE)
                     putString(Proto.OWNER, run.io.owner)
                     putInt(Proto.RELEASE_RECEIPT, 1)
+                    if (run.profile == Profile.TARGET_C2) {
+                        putInt(Proto.SELF_CHECK_TARGET_C2_VERSION, 1)
+                        putInt(Proto.SELF_CHECK_FINAL_MAIN, 1)
+                        putString(Proto.TARGET_RUN, checkNotNull(run.targetRun))
+                        putString(Proto.RELEASE_NONCE, checkNotNull(run.releaseNonce))
+                    }
                 })
-                BackgroundReleaseReceipt.accepts(run.io.owner, reply.get(Proto.RELEASE_RECEIPT),
+                val released = BackgroundReleaseReceipt.accepts(run.io.owner, reply.get(Proto.RELEASE_RECEIPT),
                     reply.get(Proto.OWNER), reply.get(Proto.OK), reply.get("released"),
                     reply.get(Proto.TASK_SCOPE_EMPTY), reply.get("neverCreated"))
+                if (released && run.profile == Profile.TARGET_C2) {
+                    // Measurement decode failure cannot retract an already valid physical receipt.
+                    try {
+                        synchronized(lock) {
+                            run.report.acceptFinalMain(run.io.owner, checkNotNull(run.targetRun),
+                                checkNotNull(run.releaseNonce), reply.get(Proto.OWNER), reply.get(Proto.TARGET_RUN),
+                                reply.get(Proto.RELEASE_NONCE), reply.get(Proto.SELF_CHECK_TARGET_C2_VERSION),
+                                reply.get(Proto.OK), reply.get(Proto.ERROR),
+                                reply.get(Proto.FINAL_MAIN_VECTOR), reply.get(Proto.FINAL_GLOBAL_FOCUS))
+                        }
+                    } catch (_: Exception) {
+                        synchronized(lock) { run.report.acceptFinalMain(run.io.owner,
+                            checkNotNull(run.targetRun), checkNotNull(run.releaseNonce)) }
+                    }
+                }
+                released
             }
         } catch (_: Exception) { false }
         // Resource completion, return of the original borrow, then registry release, in that order.
@@ -380,6 +479,8 @@ internal class PhoneSelfCheck(
         }
         changed()
     }
+
+    private companion object { const val CONTINUITY_BUDGET_MS = 10_000L }
 
     private fun update(run: Run, stage: Stage, state: State, observed: Boolean,
                        reason: Reason? = null, durationMs: Long? = null) {

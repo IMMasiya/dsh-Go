@@ -13,9 +13,10 @@ const phoneSelfCheckStages = <String>[
   'device', 'channel', 'display', 'input_probe', 'launch', 'tree', 'tap', 'scroll',
   'back', 'text_ascii', 'text_zh', 'capture', 'continuity', 'main', 'ocr', 'cleanup',
 ];
-const phoneSelfCheckProfiles = <String>['probe_b', 'target_c1'];
+const phoneSelfCheckProfiles = <String>['probe_b', 'target_c1', 'target_c2'];
 const _probeCovered = {'device', 'channel', 'display', 'input_probe', 'cleanup'};
 const _targetCovered = {'device', 'channel', 'display', 'launch', 'tree', 'tap', 'cleanup'};
+const _targetC2Covered = {..._targetCovered, 'text_ascii', 'text_zh', 'capture', 'continuity'};
 const _runStates = {'idle', 'running', 'cleaning', 'done', 'cancelled', 'cleanup_pending'};
 const _stepStates = {'not_run', 'running', 'pass', 'fail', 'skipped', 'unknown', 'cancelled'};
 const _reasons = {
@@ -27,6 +28,8 @@ const _reasons = {
   'inputProbeCleanupFailed', 'systemOperationDenied', 'deviceUnavailable', 'timeout',
   'targetUnavailable', 'targetChanged', 'targetCleanupPending', 'targetWrongMain',
   'targetReadbackMismatch', 'treeCleanupPending', 'targetLaunchDenied',
+  'targetFrameUnavailable', 'targetFrameMismatch', 'targetContinuityUnconfirmed',
+  'mainSamplesChanged', 'mainSamplesUnchanged', 'mainSamplesIncomplete', 'notInstalled',
 };
 String? _reason(Object? value) => value == null ? null : value is String && _reasons.contains(value) ? value : 'other';
 
@@ -53,6 +56,13 @@ String phoneSelfCheckReasonGroup(String? reason) => switch (reason) {
   'targetReadbackMismatch' => 'target_readback',
   'treeCleanupPending' => 'tree_cleanup',
   'targetLaunchDenied' => 'target_launch',
+  'targetFrameUnavailable' => 'frame_unavailable',
+  'targetFrameMismatch' => 'frame_mismatch',
+  'targetContinuityUnconfirmed' => 'continuity',
+  'mainSamplesChanged' => 'main_changed',
+  'mainSamplesUnchanged' => 'main_unchanged',
+  'mainSamplesIncomplete' => 'main_incomplete',
+  'notInstalled' => 'not_installed',
   'unavailable' || 'channelUnavailable' || 'deviceUnavailable' => 'unavailable',
   _ => 'other',
 };
@@ -66,11 +76,13 @@ class PhoneSelfCheckStep {
   final int? durationMs;
 
   static PhoneSelfCheckStep parse(String stage, Map? value, {String profile = 'probe_b'}) {
-    final main = profile == 'target_c1' && stage == 'main';
-    final covered = profile == 'target_c1' ? _targetCovered : _probeCovered;
-    if (!covered.contains(stage) && !main) return PhoneSelfCheckStep._(stage, 'not_run', false, null, null);
-    // C1 never samples absence of MAIN disturbance: only a real wrong-MAIN failure is evidence.
-    if (main && (value == null || value['state'] == 'not_run' && value['observed'] == false && value['reason'] == null)) {
+    final c2 = profile == 'target_c2';
+    final main = (profile == 'target_c1' || c2) && stage == 'main';
+    final ocr = c2 && stage == 'ocr';
+    final covered = c2 ? _targetC2Covered : profile == 'target_c1' ? _targetCovered : _probeCovered;
+    if (!covered.contains(stage) && !main && !ocr) return PhoneSelfCheckStep._(stage, 'not_run', false, null, null);
+    // No profile may turn a claim of MAIN absence into a pass. Initial unobserved state is allowed.
+    if (main && value == null) {
       return PhoneSelfCheckStep._(stage, 'not_run', false, null, null);
     }
     if (value == null) return PhoneSelfCheckStep._(stage, 'unknown', false, 'invalidResponse', null);
@@ -81,7 +93,20 @@ class PhoneSelfCheckStep {
         duration != null && (duration is! int || duration < 0)) {
       return PhoneSelfCheckStep._(stage, 'unknown', false, 'invalidResponse', null);
     }
-    if (main && (state != 'fail' || !observed || value['reason'] != 'targetWrongMain')) {
+    if (main && state == 'not_run' && !observed && value['reason'] == null) {
+      return PhoneSelfCheckStep._(stage, 'not_run', false, null, duration as int?);
+    }
+    if (main) {
+      final reason = value['reason'];
+      final wrongMain = state == 'fail' && observed && reason == 'targetWrongMain';
+      final sampled = c2 && (
+        state == 'fail' && observed && reason == 'mainSamplesChanged' ||
+        state == 'unknown' && observed && reason == 'mainSamplesUnchanged' ||
+        state == 'unknown' && reason == 'mainSamplesIncomplete');
+      if (!wrongMain && !sampled) return PhoneSelfCheckStep._(stage, 'unknown', false, 'invalidResponse', null);
+    }
+    if (ocr && (state != 'not_run' || observed || value['reason'] != 'notInstalled') ||
+        !ocr && value['reason'] == 'notInstalled') {
       return PhoneSelfCheckStep._(stage, 'unknown', false, 'invalidResponse', null);
     }
     // A claimed pass without an observation cannot be green; not_run never carries evidence.
@@ -256,6 +281,11 @@ String phoneSelfCheckMarkdown(PhoneSelfCheckSnapshot snapshot) {
     out.writeln('Only device, selected channel, ordinary display, fixed target launch/tree/tap and cleanup are covered.');
     out.writeln('MAIN only records an observed wrong-display failure; no MAIN pass or absence of disturbance is claimed.');
     out.writeln('Input receiver, scrolling, back, text, images, continuity and OCR are not tested.');
+  } else if (snapshot.profile == 'target_c2') {
+    out.writeln('Fixed local target: launch/tree/tap, fixed ASCII and Chinese ACTION_SET_TEXT replacement/readback, local pattern capture and three controlled refresh observations.');
+    out.writeln('Controlled refresh does not test FPS, smoothness or an uninterrupted stream. No producer timestamp freshness is claimed.');
+    out.writeln('MAIN compares finite task and focus samples only; unchanged samples cannot prove no disturbance between samples. MAIN never passes. Changes may include user actions.');
+    out.writeln('OCR is not installed or tested. Input receiver, scrolling and back are not tested.');
   } else if (snapshot.profile == 'probe_b') {
     out.writeln('Only device, selected channel, presentation display, input receiver and cleanup are covered.');
     out.writeln('Activity launch, text, images, continuity, MAIN disturbance and OCR are not tested.');

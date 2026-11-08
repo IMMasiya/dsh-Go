@@ -726,7 +726,7 @@
       }
     }
   },
-  "phoneSelfCheckStage": "{stage, select, device{设备前置条件} channel{已选通道} display{临时后台屏创建} input_probe{触摸接收核验} launch{应用启动} tree{控件树} tap{应用按钮点按} scroll{应用滚动} back{应用返回} text_ascii{英文输入} text_zh{中文输入} capture{截图} continuity{连续运行} main{主屏受扰观察} ocr{本机OCR} cleanup{严格清理} other{未知项目}}",
+  "phoneSelfCheckStage": "{stage, select, device{设备前置条件} channel{已选通道} display{临时后台屏创建} input_probe{触摸接收核验} launch{应用启动} tree{控件树} tap{应用按钮点按} scroll{应用滚动} back{应用返回} text_ascii{固定 ASCII 输入} text_zh{固定中文输入} capture{本地图样截图} continuity{有限受控刷新} main{有限主屏观察} ocr{本机OCR} cleanup{严格清理} other{未知项目}}",
   "@phoneSelfCheckStage": {
     "placeholders": {
       "stage": {
@@ -734,7 +734,7 @@
       }
     }
   },
-  "phoneSelfCheckReason": "{reason, select, busy{手机或通道正忙。} unsupported{设备或特权端不支持这项自检。} cancelled{本次请求已取消或退役。} disabled{手机操控尚未开启。} locked{设备已锁定。} identity{原运行或通道身份已改变。} invalid{请求或结果无法验证。} display{临时展示屏未能确认。} input{触摸送达未确认，不会重放已派发输入。} cleanup{资源清理未确认，仅可重试清理。} denied{系统拒绝了操作。} timeout{操作超时，已派发工作仍可能完成。} unavailable{本机状态或已选通道不可用。} target_unavailable{无法核实固定目标，请完成清理后再开始。} target_changed{原目标已变化，请仅继续清理。} target_cleanup{目标清理未确认，请仅重试清理。} target_main{目标曾出现在主屏，已停止后续步骤，请完成清理。} target_readback{目标计数回读不符，不要重复点击，请完成清理。} tree_cleanup{树连接清理未确认，请仅重试清理。} target_launch{目标启动被拒绝或未确认，请检查设备并完成清理。} other{收到无法识别的结果。}}",
+  "phoneSelfCheckReason": "{reason, select, busy{手机或通道正忙。} unsupported{设备或特权端不支持这项自检。} cancelled{本次请求已取消或退役。} disabled{手机操控尚未开启。} locked{设备已锁定。} identity{原运行或通道身份已改变。} invalid{请求或结果无法验证。} display{临时展示屏未能确认。} input{输入受理或送达未确认，不会重放已派发输入。} cleanup{资源清理未确认，仅可重试清理。} denied{系统拒绝了操作。} timeout{操作超时，已派发工作仍可能完成。} unavailable{本机状态或已选通道不可用。} target_unavailable{无法核实固定目标，请完成清理后再开始。} target_changed{原目标已变化，请仅继续清理。} target_cleanup{目标清理未确认，请仅重试清理。} target_main{目标曾出现在主屏，已停止后续步骤，请完成清理。} target_readback{固定目标计数或文本回读不符，不要重复操作，请完成清理。} tree_cleanup{树连接清理未确认，请仅重试清理。} target_launch{目标启动被拒绝或未确认，请检查设备并完成清理。} frame_unavailable{未取得可用的本地图样帧，请完成清理后再开始新的自检。} frame_mismatch{实际画面与本次目标及阶段不符，请完成清理。} continuity{有限受控刷新序列未确认；这不是帧率结果。} main_changed{主屏采样点发生变化，也可能包含用户操作；请完成清理，不能据此判定原因。} main_unchanged{这些有限采样点未见变化，采样之间是否受扰仍未知。} main_incomplete{主屏样本不完整，不能据此证明没有受扰。} not_installed{未安装本机 OCR 识别器，未执行 OCR 测试。} other{收到无法识别的结果。}}",
   "@phoneSelfCheckReason": {
     "placeholders": {
       "reason": {
@@ -744,7 +744,7 @@
   },
   "phoneSelfCheckTargetScope": "使用普通临时后台屏和固定本地目标，检查启动、控件树及一次按钮点击。文字、滚动、截图和 OCR 未测试；主屏只记录实际观察到的受扰失败，不提供通过结论。仅清理完成不证明曾创建后台屏。",
   "phoneSelfCheckProfileChoice": "选择下次自检（不会改变下方报告）",
-  "phoneSelfCheckProfile": "{profile, select, probe_b{输入接收探针（B）} target_c1{固定目标自检（C1）} other{未知模式}}",
+  "phoneSelfCheckProfile": "{profile, select, probe_b{输入接收探针（B）} target_c1{固定目标自检（C1）} target_c2{固定输入与画面自检（C2）} other{未知模式}}",
   "@phoneSelfCheckProfile": {
     "placeholders": {
       "profile": {
@@ -752,12 +752,13 @@
       }
     }
   },
-  "phoneSelfCheckReportProfile": "{profile, select, probe_b{本次报告：输入接收探针（B）} target_c1{本次报告：固定目标（C1）} other{本次报告模式未确认}}",
+  "phoneSelfCheckReportProfile": "{profile, select, probe_b{本次报告：输入接收探针（B）} target_c1{本次报告：固定目标（C1）} target_c2{本次报告：固定输入与画面（C2）} other{本次报告模式未确认}}",
   "@phoneSelfCheckReportProfile": {
     "placeholders": {
       "profile": {
         "type": "String"
       }
     }
-  }
+  },
+  "phoneSelfCheckTargetC2Scope": "使用固定本机目标核验启动、控件树、单次按钮点按、ASCII／中文 ACTION_SET_TEXT 整框替换与回读、本地图样截图和有限受控刷新；不衡量 FPS 或流畅度。有限主屏样本不能证明采样间全程无扰。OCR 未安装；触摸接收探针、滚动和返回不在本次范围。仅清理完成也不证明曾创建展示屏。"
 }
