@@ -33,6 +33,8 @@ internal class MlKitLocalOcr private constructor(context: Context) : LocalOcr {
     }
 
     val enabled: Boolean get() = synchronized(gate) { switchedOn }
+    /** Snapshot for the caller's same-observation read/format boundary; ON does not revive an old epoch. */
+    internal fun enabledEpoch(): Long? = synchronized(gate) { if (switchedOn) epoch else null }
     override val unavailableReason: LocalOcrResult.Reason?
         get() = if (enabled) null else LocalOcrResult.Reason.DISABLED
 
