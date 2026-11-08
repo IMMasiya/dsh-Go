@@ -43,8 +43,11 @@ const _ready = {'kind': 'ready', 'revision': _revision, 'invocation': _invocatio
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   final messenger = TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+  FakeDsh? openedHost;
   late FakeDsh host;
+  DshClient? openedClient;
   late DshClient client;
+  ProviderContainer? openedContainer;
   late ProviderContainer container;
   late HttpOverrides? previousHttp;
   PreparedPhoneSkill? prepared;
@@ -54,45 +57,59 @@ void main() {
     previousHttp = HttpOverrides.current;
     HttpOverrides.global = _RealHttp();
     try {
-      await tester.runAsync(() async {
+      final connected = await tester.runAsync(() async {
         host = await FakeDsh.start();
-        try {
-          client = await DshClient.connect(baseUri: host.baseUri, token: FakeDsh.token);
-          await client.mux.ready();
-        } catch (_) {
-          await host.close();
-          rethrow;
-        }
+        openedHost = host;
+        client = await DshClient.connect(baseUri: host.baseUri, token: FakeDsh.token);
+        openedClient = client;
+        await client.mux.ready();
+        return true;
       });
+      if (connected != true) fail('Loopback startup failed; see the original runAsync exception');
+      final connection = HostConnection(client: client, isLocal: true);
+      container = ProviderContainer(overrides: [
+        activeHostProvider.overrideWith(_Host.new),
+        currentSessionProvider.overrideWith(_Session.new),
+        activeConnectionProvider.overrideWithValue(AsyncData(connection)),
+        localConnectionProvider.overrideWith(() => _Local(connection)),
+      ]);
+      openedContainer = container;
+      await container.read(localConnectionProvider.future);
+      prepared = null;
+      await tester.pumpWidget(UncontrolledProviderScope(container: container, child: MaterialApp(
+        home: Builder(builder: (context) => Scaffold(body: TextButton(onPressed: () async {
+          prepared = await preparePhoneSkillUse(context, skillId: _skill, sessionId: 'S');
+        }, child: const Text('review')))),
+      )));
+      await tester.tap(find.text('review'));
+      await tester.pumpAndSettle();
     } catch (_) {
-      HttpOverrides.global = previousHttp;
+      await close(tester);
       rethrow;
     }
-    final connection = HostConnection(client: client, isLocal: true);
-    container = ProviderContainer(overrides: [
-      activeHostProvider.overrideWith(_Host.new),
-      currentSessionProvider.overrideWith(_Session.new),
-      activeConnectionProvider.overrideWithValue(AsyncData(connection)),
-      localConnectionProvider.overrideWith(() => _Local(connection)),
-    ]);
-    await container.read(localConnectionProvider.future);
-    prepared = null;
-    await tester.pumpWidget(UncontrolledProviderScope(container: container, child: MaterialApp(
-      home: Builder(builder: (context) => Scaffold(body: TextButton(onPressed: () async {
-        prepared = await preparePhoneSkillUse(context, skillId: _skill, sessionId: 'S');
-      }, child: const Text('review')))),
-    )));
-    await tester.tap(find.text('review'));
-    await tester.pumpAndSettle();
   }
 
   Future<void> close(WidgetTester tester) async {
-    await tester.pumpWidget(const SizedBox());
-    await tester.pump();
-    container.dispose();
-    await tester.runAsync(() async { await client.close(); await host.close(); });
-    HttpOverrides.global = previousHttp;
-    messenger.setMockMethodCallHandler(_method, null);
+    try {
+      await tester.pumpWidget(const SizedBox());
+      await tester.pump();
+    } finally {
+      try {
+        openedContainer?.dispose();
+        openedContainer = null;
+      } finally {
+        try {
+          await tester.runAsync(() async {
+            try { await openedClient?.close(); } finally { await openedHost?.close(); }
+          });
+        } finally {
+          openedClient = null;
+          openedHost = null;
+          HttpOverrides.global = previousHttp;
+          messenger.setMockMethodCallHandler(_method, null);
+        }
+      }
+    }
   }
 
   testWidgets('unsupported native descriptor offers no executable app or prepare', (tester) async {

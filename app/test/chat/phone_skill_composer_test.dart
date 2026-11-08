@@ -56,15 +56,39 @@ void main() {
       activeHostProvider.overrideWith(_Host.new),
       localConnectionProvider.overrideWith(() => _Local(connection)),
     ];
-    late SyncHarness h;
-    await tester.runAsync(() => HttpOverrides.runWithHttpOverrides(() async {
-      h = await SyncHarness.start(overrides: overrides);
-    }, RealSyncHttp()));
-    connection = HostConnection(client: h.client, isLocal: true);
-    await h.container.read(localConnectionProvider.future);
-    await fixture.mount(tester, h);
-    await pumpFrames(tester);
-    return h;
+    final h = await tester.runAsync(() => HttpOverrides.runWithHttpOverrides(
+      () => SyncHarness.start(overrides: overrides), RealSyncHttp()));
+    if (h == null) fail('Loopback startup failed; see the original runAsync exception');
+    try {
+      connection = HostConnection(client: h.client, isLocal: true);
+      await h.container.read(localConnectionProvider.future);
+      await fixture.mount(tester, h);
+      await pumpFrames(tester);
+      return h;
+    } catch (_) {
+      await disposeHarness(tester, h);
+      rethrow;
+    }
+  }
+
+  Future<void> settleIo(WidgetTester tester, bool Function() ready) async {
+    final deadline = Stopwatch()..start();
+    while (!ready()) {
+      if (deadline.elapsed >= const Duration(seconds: 4)) fail('Route RPC/UI completion did not arrive');
+      // Yield to actual socket events; success is the RPC/UI condition, never an iteration count.
+      await tester.runAsync(() => Future<void>.delayed(Duration.zero));
+      await tester.pump();
+    }
+  }
+
+  Future<void> disposeHarness(WidgetTester tester, SyncHarness h) async {
+    try {
+      await tester.pumpWidget(const SizedBox());
+      await tester.pump(const Duration(milliseconds: 600));
+    } finally {
+      await tester.runAsync(h.close);
+    }
+    await tester.pump();
   }
 
   PreparedPhoneSkill selection(SyncHarness h, {String invocation = _invocation}) => PreparedPhoneSkill(
@@ -86,7 +110,7 @@ void main() {
       await tester.ensureVisible(find.text(appL10n.phoneSkillReplayQueue));
       await tester.tap(find.text(appL10n.phoneSkillReplayQueue));
       await tester.pump();
-      await fixture.settleIo(tester, () => h.boundary.length == 1 && find.text(_text).evaluate().isEmpty);
+      await settleIo(tester, () => h.boundary.length == 1 && find.text(_text).evaluate().isEmpty);
       expect(h.boundary.single['endpoint'], 'session/prompt');
       expect((h.boundary.single['request'] as Map)['mode'], 'queue');
       expect(jsonEncode(h.boundary.single['request']), contains(_text));
@@ -94,7 +118,7 @@ void main() {
       expect(h.cancelledBackendRuns, isEmpty);
       expect(tester.widget<TextField>(find.byType(TextField)).controller!.text, 'my ordinary draft');
       expect(h.container.read(draftStoreProvider).drafts['S']?.text, 'my ordinary draft');
-    } finally { await fixture.disposeHarness(tester, h); }
+    } finally { await disposeHarness(tester, h); }
   });
 
   testWidgets('changing selection after preparation cannot silently restore old session or send', (tester) async {
@@ -113,7 +137,7 @@ void main() {
       expect(find.text(_text), findsNothing);
       expect(h.boundary, isEmpty);
       expect(discarded, [{'invocation': _invocation}]);
-    } finally { await fixture.disposeHarness(tester, h); }
+    } finally { await disposeHarness(tester, h); }
   });
 
   testWidgets('replacing an unconsumed typed insert discards just its original invocation', (tester) async {
@@ -135,6 +159,6 @@ void main() {
         expect(pending.read(composerInsertProvider), const ComposerInsert.skill('plain', sessionId: 'S'));
         expect(h.boundary, isEmpty);
       } finally { pending.dispose(); }
-    } finally { await fixture.disposeHarness(tester, h); }
+    } finally { await disposeHarness(tester, h); }
   });
 }
