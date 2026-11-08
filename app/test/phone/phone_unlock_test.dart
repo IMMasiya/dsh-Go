@@ -198,8 +198,12 @@ void main() {
     testWidgets('nothing lifted: no tag, the usual footnote, 未开启 on the row', (tester) async {
       await pumpPhone(tester, const PhoneControlScreen());
       expect(find.byType(UnlockedTag), findsNothing);
-      expect(find.text('密码、验证码、付款和系统设置都由你来'), findsOneWidget);
       expect(find.text('均未开启'), findsOneWidget);
+      // The self-check panel makes the lazy list taller; build the footer by scrolling to it.
+      final footnote = find.text('密码、验证码、付款和系统设置都由你来');
+      await tester.scrollUntilVisible(footnote, 200, scrollable: find.byType(Scrollable).first);
+      await settlePhone(tester);
+      expect(footnote, findsOneWidget);
     });
 
     testWidgets('something lifted: the tag under the overview opens 解除限制', (tester) async {
