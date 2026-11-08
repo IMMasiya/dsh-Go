@@ -112,9 +112,16 @@ class _PhoneDndPageState extends ConsumerState<PhoneDndPage> {
     return result.ok;
   }
 
-  /// The explicit choice. For root it is also the only way to su: the notice
-  /// first, then the root manager's own prompt.
+  bool get _resourceBlocked => ref.read(phoneProvider).status.background.gateCleanup?.blocked == true;
+
+  Future<void> _retryCleanup(String handle) async {
+    // Capture the displayed handle, never substitute a newer status after awaiting.
+    await _run(() => _phone.retryBackgroundGateCleanup(handle), done: context.l10n.phoneGateCleanupDone);
+  }
+
+  /// The explicit choice. Root still requires its risk notice and the manager prompt.
   Future<void> _use(PhonePrivilegedMode mode) async {
+    if (_resourceBlocked) return;
     if (mode == PhonePrivilegedMode.root && !await confirmRisk(context, RiskNotices.rootChannel)) return;
     if (!mounted) return;
     // Folded back once it works: the row says 使用中.
@@ -200,6 +207,24 @@ class _PhoneDndPageState extends ConsumerState<PhoneDndPage> {
       title: l10n.phoneDndTitle,
       subtitle: Text(l10n.phoneDndSubtitle),
       children: [
+        if (bg.gateCleanup case final cleanup? when cleanup.blocked)
+          ListPageCard(
+            margin: _groupMargin,
+            children: [
+              ListPageRow(
+                key: const ValueKey('phone-gate-cleanup'),
+                title: l10n.phoneGateCleanupTitle,
+                titleMaxLines: 3,
+                subtitle: cleanup.state == 'unknown' ? l10n.phoneGateCleanupUnknown : l10n.phoneGateCleanupRunning,
+                subtitleMaxLines: 8,
+                trailing: TextButton(
+                  key: const ValueKey('phone-gate-cleanup-retry'),
+                  onPressed: !_busy && cleanup.canRetry ? () => _retryCleanup(cleanup.handle!) : null,
+                  child: Text(l10n.phoneGateCleanupRetry),
+                ),
+              ),
+            ],
+          ),
         if (!bg.androidOk) PhoneNote(tone: NoteTone.warn, text: l10n.phoneDndUnsupported),
         if (using != PhonePrivilegedMode.off) ...[
           ListPageCard(
@@ -417,9 +442,11 @@ class _PhoneDndPageState extends ConsumerState<PhoneDndPage> {
   Widget _useButton(PhonePrivilegedMode mode, PhoneBackgroundStatus bg) {
     final l10n = context.l10n;
     return FilledButton(
-      onPressed: bg.androidOk && !_busy ? () => _use(mode) : null,
+      onPressed: bg.androidOk && !_busy && !_resourceBlocked ? () => _use(mode) : null,
       child: Text(
-        bg.effectiveMode == PhonePrivilegedMode.off
+        bg.effectiveMode == mode
+            ? l10n.phoneGateRetest
+            : bg.effectiveMode == PhonePrivilegedMode.off
             ? l10n.phoneDndEnableWith(mode.name)
             : l10n.phoneDndSwitchTo(mode.name),
       ),
@@ -456,7 +483,7 @@ class _PhoneDndPageState extends ConsumerState<PhoneDndPage> {
       else
         _Next(
           text: l10n.phoneDndShizukuAllSet,
-          button: bg.effectiveMode == PhonePrivilegedMode.shizuku ? null : _useButton(PhonePrivilegedMode.shizuku, bg),
+          button: bg.effectiveMode == PhonePrivilegedMode.shizuku && bg.effectiveReady ? null : _useButton(PhonePrivilegedMode.shizuku, bg),
         ),
       if ((sdk ?? 0) >= 37) _Fine(l10n.phoneDndShizukuCompatibility),
     ];
@@ -476,7 +503,7 @@ class _PhoneDndPageState extends ConsumerState<PhoneDndPage> {
       else
         _Next(
           text: l10n.phoneDndSuiAllSet,
-          button: bg.effectiveMode == PhonePrivilegedMode.sui ? null : _useButton(PhonePrivilegedMode.sui, bg),
+          button: bg.effectiveMode == PhonePrivilegedMode.sui && bg.effectiveReady ? null : _useButton(PhonePrivilegedMode.sui, bg),
         ),
     ];
   }
@@ -495,12 +522,12 @@ class _PhoneDndPageState extends ConsumerState<PhoneDndPage> {
             : r.connected
             ? (bg.keep.enabled ? l10n.phoneDndRootConnectedKept : l10n.phoneDndRootConnected)
             : null,
-        button: r.starting || (using && r.connected)
+        button: r.starting || (using && r.connected && bg.effectiveReady)
             ? null
             : using
             ? FilledButton(
-                onPressed: bg.androidOk && !_busy ? () => _use(PhonePrivilegedMode.root) : null,
-                child: Text(l10n.phoneDndRootRetry),
+                onPressed: bg.androidOk && !_busy && !_resourceBlocked ? () => _use(PhonePrivilegedMode.root) : null,
+                child: Text(r.connected ? l10n.phoneGateRetest : l10n.phoneDndRootRetry),
               )
             : _useButton(PhonePrivilegedMode.root, bg),
       ),
@@ -571,7 +598,7 @@ class _PhoneDndPageState extends ConsumerState<PhoneDndPage> {
           ),
         ),
         _Fine([l10n.phoneDndManualEntryHint, if (xiaomi) l10n.phoneDndXiaomiUsbHint].join('\n')),
-      ] else if (bg.effectiveMode != PhonePrivilegedMode.adb)
+      ] else if (bg.effectiveMode != PhonePrivilegedMode.adb || !bg.effectiveReady)
         _Next(button: _useButton(PhonePrivilegedMode.adb, bg)),
     ];
   }

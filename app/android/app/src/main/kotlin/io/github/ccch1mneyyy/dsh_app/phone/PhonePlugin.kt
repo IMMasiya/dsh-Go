@@ -230,6 +230,13 @@ class PhonePlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandle
                 if (mode != "root") control.background.cancelRootSelection()
                 async(result) { if (live()) control.background.setBackgroundMode(mode, live) else cancelledSelection() }
             }
+            "retryBackgroundGateCleanup" -> {
+                val args = call.arguments as? Map<*, *>
+                val handle = args?.get("handle") as? String
+                if (args == null || args.keys != setOf("v", "handle") || args["v"] !is Int || args["v"] != 1 || handle == null) {
+                    result.success(mapOf("ok" to false, "reason" to AppStrings.get(appContext, R.string.background_gate_cleanup_stale)))
+                } else async(result) { control.background.retryGateCleanup(handle) }
+            }
             "requestShizukuPermission" -> {
                 val live = stillWanted(privilegedActions.snapshot())
                 val provider = call.argument<String>("provider")
@@ -237,6 +244,7 @@ class PhonePlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandle
             }
             "prepareRoot" -> {
                 val live = stillWanted(privilegedActions.select())
+                control.background.cancelUnwantedPending()
                 async(result) { if (live()) control.background.prepareRoot(live) else cancelledSelection() }
             }
             "adbStartPairing" -> async(result) { control.background.adbStartPairing() }

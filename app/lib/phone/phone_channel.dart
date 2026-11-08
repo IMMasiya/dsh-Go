@@ -238,6 +238,30 @@ enum PhoneBackgroundViewport {
   }
 }
 
+/// Physical cleanup of the original settings probe; this is not a new probe action.
+class PhoneGateCleanup {
+  const PhoneGateCleanup({required this.state, required this.canRetry, this.handle});
+  final String state;
+  final bool canRetry;
+  final String? handle;
+  bool get blocked => state != 'idle';
+
+  static PhoneGateCleanup? parse(Object? value) {
+    if (value is! Map || value['v'] is! int || value['v'] != 1 ||
+        value['canRetry'] is! bool ||
+        !const {'idle', 'pending', 'cleaning', 'unknown'}.contains(value['state'])) return null;
+    final state = value['state'] as String;
+    final handle = value['handle'];
+    if (state == 'idle') {
+      if (handle != null || value['canRetry'] != false) return null;
+      return const PhoneGateCleanup(state: 'idle', canRetry: false);
+    }
+    if (handle is! String || handle.isEmpty || handle.length > 128 ||
+        (state != 'unknown' && value['canRetry'] == true)) return null;
+    return PhoneGateCleanup(state: state, canRetry: value['canRetry'] as bool, handle: handle);
+  }
+}
+
 class PhoneBackgroundStatus {
   const PhoneBackgroundStatus({
     this.mode = PhoneBackgroundMode.off,
@@ -251,6 +275,7 @@ class PhoneBackgroundStatus {
     this.viewport,
     this.previewVersion,
     this.previewEnabled = false,
+    this.gateCleanup,
   });
 
   factory PhoneBackgroundStatus.fromMap(Map<Object?, Object?> m) => PhoneBackgroundStatus(
@@ -265,6 +290,7 @@ class PhoneBackgroundStatus {
     viewport: PhoneBackgroundViewport.fromMap(_map(m['viewport'])),
     previewVersion: _int(_map(m['preview'])['v']),
     previewEnabled: _flag(_map(m['preview'])['enabled']),
+    gateCleanup: PhoneGateCleanup.parse(m['gateCleanup']),
   );
 
   final PhoneBackgroundMode mode;
@@ -284,6 +310,7 @@ class PhoneBackgroundStatus {
   final PhoneBackgroundViewport? viewport;
   final int? previewVersion;
   final bool previewEnabled;
+  final PhoneGateCleanup? gateCleanup;
 
   PhonePrivilegedMode get effectiveMode =>
       privileged?.mode ??
@@ -1166,6 +1193,9 @@ class PhoneChannel {
       return ScreenTestResult(ok: false, reason: e.message ?? e.code);
     }
   }
+
+  Future<PhoneResult> retryBackgroundGateCleanup(String handle) =>
+      _result('retryBackgroundGateCleanup', {'v': 1, 'handle': handle});
 
   Future<PhoneResult> setBackgroundMode(PhoneBackgroundMode mode) => _result('setBackgroundMode', {'mode': mode.name});
 
