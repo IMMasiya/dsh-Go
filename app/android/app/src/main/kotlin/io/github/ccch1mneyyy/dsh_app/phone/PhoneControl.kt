@@ -79,6 +79,10 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
             "phone_reading_screen" -> R.string.phone_reading_screen
             "phone_system_handler_unconfirmed" -> R.string.phone_system_handler_unconfirmed
             "phone_system_attempt_stopped" -> R.string.phone_system_attempt_stopped
+            "phone_system_review_notice" -> R.string.phone_system_review_notice
+            "phone_system_review_unavailable" -> R.string.phone_system_review_unavailable
+            "phone_system_review_timeout" -> R.string.phone_system_review_timeout
+            "phone_system_review_continued" -> R.string.phone_system_review_continued
             "phone_reading_list" -> R.string.phone_reading_list
             "phone_acting" -> R.string.phone_acting
             "phone_status_tap" -> R.string.phone_status_tap

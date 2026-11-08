@@ -1,6 +1,9 @@
 package io.github.ccch1mneyyy.dsh_app.phone
 
 import java.time.ZoneId
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 import org.junit.After
 import org.junit.Assert.*
 import org.junit.Test
@@ -10,6 +13,8 @@ class PhoneCorePromptOwnerTest {
     private val tasks = PhoneTasks()
     private var confirm: () -> Decision = { Decision.ALLOW_ONCE }
     private var handoff: () -> HandoffResult = { HandoffResult.CONTINUE }
+    private var gateAvailable = true
+    private var reviewRequired = false
     private var beforeHandoff: (PhoneTasks.Owner) -> Unit = {}
     private var asked = 0
     private val statuses = mutableListOf<String?>()
@@ -36,7 +41,7 @@ class PhoneCorePromptOwnerTest {
         override fun enabled() = true
         override fun policies() = policies
         override fun isLocked() = false
-        override fun gate() = object : UserGate {
+        override fun gate() = if (!gateAvailable) null else object : UserGate {
             override fun confirm(request: ConfirmRequest): Decision { asked++; return confirm() }
             override fun handoff(reason: String, timeoutMs: Long): HandoffResult { asked++; return handoff() }
             override fun status(text: String?) { statuses += text }
@@ -76,7 +81,8 @@ class PhoneCorePromptOwnerTest {
                 when (fake.kind) { "app" -> launches++; "url" -> urls++; "intent" -> intents++ }
                 afterStart()
                 val result = if (fake.kind == "app") launchResult else SysResult(true, "attempted")
-                return SysResult(result.ok, result.message, plan.target)
+                val needsReview = reviewRequired && result.ok && dispatch.commitNotice()
+                return SysResult(result.ok, result.message, plan.target, requiresReview = needsReview)
             }
             override fun notify(title: String, text: String) = error("unexpected notification")
             override fun clipboardSet(text: String) = error("unexpected clipboard")
@@ -132,6 +138,144 @@ class PhoneCorePromptOwnerTest {
     private fun openUrl() = core.call(PhoneToolCatalog.OPEN, mapOf("url" to "https://example.com"))
     private fun shareIntent() = core.call(PhoneToolCatalog.INTENT,
         mapOf("kind" to "share", "app" to "example.app", "text" to "example"))
+
+    @Test fun everySystemEntryUsesOneManualReviewAndNeverRepeatsTheLaunch() {
+        reviewRequired = true
+        for (call in listOf(::openApp, ::openUrl, ::shareIntent)) {
+            val before = launches + urls + intents
+            val beforeRead = main.reads
+            handoff = {
+                assertEquals(before + 1, launches + urls + intents)
+                assertEquals(beforeRead, main.reads)
+                HandoffResult.CONTINUE
+            }
+            val result = call()
+            assertFalse(result.text, result.isError)
+            assertEquals(before + 1, asked)
+            assertEquals(before + 1, launches + urls + intents)
+            assertEquals(beforeRead + 1, main.reads)
+            assertTrue(result.text.contains(if (before == 0) "launched" else "attempted"))
+        }
+    }
+
+    @Test fun manualReviewStopPreservesAttemptAndDoesNotReadOrRetry() {
+        reviewRequired = true
+        handoff = { HandoffResult.STOP }
+        val result = openApp()
+        assertTrue(result.isError)
+        assertTrue(result.text.contains("launched"))
+        assertEquals(1, launches)
+        assertEquals(1, asked)
+        assertEquals(0, main.reads)
+        assertTrue(tasks.isStopped())
+    }
+
+    @Test fun manualReviewTimeoutPreservesAttemptAndDoesNotReadOrRetry() {
+        reviewRequired = true
+        handoff = { HandoffResult.TIMEOUT }
+        val result = openApp()
+        assertTrue(result.isError)
+        assertTrue(result.text.contains("launched"))
+        assertEquals(1, launches)
+        assertEquals(1, asked)
+        assertEquals(0, main.reads)
+    }
+
+    @Test fun interruptedManualReviewPreservesTheAttempt() {
+        reviewRequired = true
+        handoff = { throw InterruptedException("manual review interrupted") }
+        val result = openApp()
+        assertTrue(result.isError)
+        assertTrue(result.text.contains("launched"))
+        assertEquals(1, launches)
+        assertEquals(1, asked)
+        assertEquals(0, main.reads)
+    }
+
+    @Test fun anExemptOrFailedLaunchDoesNotAskForReview() {
+        assertFalse(openApp().isError)
+        reviewRequired = true
+        launchResult = SysResult(false, "attempt failed")
+        val result = openApp()
+        assertTrue(result.isError)
+        assertTrue(result.text.contains("attempt failed"))
+        assertEquals(0, asked)
+        assertEquals(2, launches)
+        assertEquals(1, main.reads)
+    }
+
+    @Test fun unavailableManualReviewPreservesAttempt() {
+        reviewRequired = true
+        gateAvailable = false
+        val result = openApp()
+        assertTrue(result.isError)
+        assertTrue(result.text.contains("launched"))
+        assertEquals(1, launches)
+        assertEquals(0, asked)
+        assertEquals(0, main.reads)
+    }
+
+    @Test fun strictCleanupFailurePreservesAttemptWithoutOpeningAnotherPrompt() {
+        reviewRequired = true
+        beforeHandoff = { throw IllegalStateException("strict background release unconfirmed") }
+        val result = openApp()
+        assertTrue(result.isError)
+        assertTrue(result.text.contains("launched"))
+        assertFalse(result.text.contains("strict background release unconfirmed"))
+        assertEquals(1, launches)
+        assertEquals(0, asked)
+        assertEquals(0, main.reads)
+    }
+
+    @Test fun replacementDuringManualReviewCannotReadOrStopTheSuccessor() {
+        reviewRequired = true
+        handoff = { replace(); HandoffResult.STOP }
+        val result = openApp()
+        assertTrue(result.isError)
+        assertTrue(result.text.contains("launched"))
+        assertEquals(1, launches)
+        assertEquals(0, main.reads)
+        assertTrue(tasks.isActive)
+        assertFalse(tasks.isStopped())
+    }
+
+    @Test fun manualReviewStillFiltersTheFreshObservedScreen() {
+        reviewRequired = true
+        policies = PhonePolicies(denyPackages = listOf("blocked.screen"))
+        main.observedPackage = "blocked.screen"
+        main.observedText = "PRIVATE_BLOCKED_SCREEN"
+        val result = openApp()
+        assertFalse(result.text.contains("PRIVATE_BLOCKED_SCREEN"))
+        assertTrue(result.text.contains("launched"))
+        assertEquals(1, asked)
+        assertEquals(1, launches)
+        assertEquals(1, main.reads)
+    }
+
+    @Test fun stoppedWhileWaitingForManualReviewNeverReadsTheNextScreen() {
+        reviewRequired = true
+        val entered = CountDownLatch(1)
+        val release = CountDownLatch(1)
+        val caller = Executors.newSingleThreadExecutor()
+        handoff = {
+            entered.countDown()
+            assertTrue(release.await(5, TimeUnit.SECONDS))
+            HandoffResult.CONTINUE
+        }
+        try {
+            val reply = caller.submit<ToolOutput> { openApp() }
+            assertTrue(entered.await(5, TimeUnit.SECONDS))
+            assertEquals(1, launches)
+            assertEquals(0, main.reads)
+            tasks.stop("stopped during review")
+            release.countDown()
+            val result = reply.get(5, TimeUnit.SECONDS)
+            assertTrue(result.isError)
+            assertTrue(result.text.contains("launched"))
+            assertEquals(1, launches)
+            assertEquals(0, main.reads)
+        } finally { release.countDown(); caller.shutdownNow() }
+    }
 
     private fun collectCall(screen: String) = core.call(PhoneToolCatalog.COLLECT,
         mapOf("screen" to screen, "list" to 1, "max_pages" to 3))

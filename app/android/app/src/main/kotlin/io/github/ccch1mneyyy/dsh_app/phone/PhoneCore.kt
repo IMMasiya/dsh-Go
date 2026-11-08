@@ -240,7 +240,7 @@ class PhoneCore(
             return when (name) {
                 PhoneToolCatalog.APPS -> apps(a, owner)
                 PhoneToolCatalog.OPEN -> open(call, scope, owner)
-                PhoneToolCatalog.INTENT -> intent(call, owner)
+                PhoneToolCatalog.INTENT -> intent(call, scope, owner)
                 PhoneToolCatalog.NOTIFY -> notify(a, owner)
                 PhoneToolCatalog.CLIPBOARD -> clipboard(a, owner)
                 PhoneToolCatalog.SCREEN -> screen(a, owner)
@@ -375,7 +375,7 @@ class PhoneCore(
             if (!current(owner)) return stoppedOut("open")
             skillTrace.markIncomplete(owner)
             val r = env.system().launch(plan, tasks.systemDispatch(owner))
-            return afterSystem(owner, r, ui.get("phone_log_open_url_scheme", "打开链接 %1\$s:", url.substringBefore(':'))) // l10n:keep test default
+            return afterSystem(owner, scope, r, ui.get("phone_log_open_url_scheme", "打开链接 %1\$s:", url.substringBefore(':'))) // l10n:keep test default
         }
         val app = (plan.target as? SystemTarget.Known)?.app
             ?: return Out(Reasons.of("targetIdentityUnavailable"), error = true)
@@ -390,7 +390,7 @@ class PhoneCore(
                     skillTrace.finish(ticket, it.ok, false, false)
                 }
             } catch (e: Throwable) { skillTrace.fail(ticket); throw e }
-            return afterSystem(owner, result, ui.get("phone_log_open_app", "打开 %1\$s", app.packageName)) // l10n:keep test default
+            return afterSystem(owner, scope, result, ui.get("phone_log_open_app", "打开 %1\$s", app.packageName)) // l10n:keep test default
         }
         val driver = env.driver(PhoneScreen.BACKGROUND, owner)
             ?: return Out(env.backgroundUnavailable(), error = true, app = app.label, summary = ui.get("phone_log_open_background", "后台屏打开 %1\$s", app.packageName), decision = "unavailable") // l10n:keep test default
@@ -418,9 +418,44 @@ class PhoneCore(
     }
 
     /** The handler is a dispatch fact. Only the following read describes the actual foreground UI. */
-    private fun afterSystem(owner: PhoneTasks.Owner, r: SysResult, summary: String): Out {
+    private fun afterSystem(owner: PhoneTasks.Owner, scope: SerialWorker.Scope, r: SysResult, summary: String): Out {
         if (!current(owner)) return stoppedAfterSystem(r, summary)
         if (r.ok && !tasks.setAppIfCurrent(owner, r.appLabel)) return stoppedAfterSystem(r, summary)
+        var reviewNote = ""
+        if (r.requiresReview) {
+            skillTrace.markIncomplete(owner)
+            val unavailable = ui.get("phone_system_review_unavailable", "无法提供人工核对入口。原请求已尝试，不会重复派发；请直接查看目标界面。") // l10n:keep test default
+            val gate = env.gate() ?: return Out(r.message + "\n" + unavailable,
+                error = true, app = r.appLabel, summary = summary, decision = "review-unavailable")
+            val result = try {
+                val note = env.beforeHandoff(lastScreen, owner)
+                if (!current(owner)) return stoppedAfterSystem(r, summary)
+                val reason = r.message + "\n" + (note?.let { "$it\n" } ?: "") + ui.get("phone_system_review_notice",
+                    "请先核对原操作是否已完成；如未完成，请自行完成后点「继续」。DSH 不会再次发送原请求。") // l10n:keep test default
+                scope.userWait { gate.handoff(reason, HANDOFF_MS, null, owner) }
+            } catch (_: InterruptedException) {
+                Thread.currentThread().interrupt()
+                return stoppedAfterSystem(r, summary)
+            } catch (_: IllegalStateException) {
+                // beforeHandoff refuses when strict background release is not confirmed.
+                return Out(r.message + "\n" + unavailable,
+                    error = true, app = r.appLabel, summary = summary, decision = "review-unavailable")
+            }
+            if (!current(owner)) return stoppedAfterSystem(r, summary)
+            when (result) {
+                HandoffResult.CONTINUE -> {
+                    lastScreen = PhoneScreen.MAIN
+                    reviewNote = "\n" + ui.get("phone_system_review_continued", "用户已点「继续」；后续以当前读屏为准，未重复派发原请求。") // l10n:keep test default
+                }
+                HandoffResult.STOP -> {
+                    tasks.stopIfCurrent(owner, "用户在启动核对时选择了停止") // l10n:keep agent stop reason
+                    return stoppedAfterSystem(r, summary)
+                }
+                HandoffResult.TIMEOUT -> return Out(r.message + "\n" + ui.get("phone_system_review_timeout",
+                    "等待核对超时，原操作的实际结果仍未知；请先人工核对，不要重复派发。"), // l10n:keep test default
+                    error = true, app = r.appLabel, summary = summary, decision = "review-timeout")
+            }
+        }
         val screen = try {
             if (r.ok) {
                 if (!current(owner)) return stoppedAfterSystem(r, summary)
@@ -436,7 +471,7 @@ class PhoneCore(
         val observation = if (r.ok && expected != null && screen?.packageName != expected.packageName)
             ui.get("phone_system_handler_unconfirmed", "后续读屏未确认原处理应用位于前台；不会重复启动。") // l10n:keep test default
         else ""
-        return Out(r.message + if (observation.isEmpty()) "" else "\n$observation", error = !r.ok,
+        return Out(r.message + reviewNote + if (observation.isEmpty()) "" else "\n$observation", error = !r.ok,
             screen = screen, app = screen?.appLabel ?: r.appLabel, summary = summary, decision = if (r.ok) "ok" else "failed")
     }
 
@@ -467,7 +502,7 @@ class PhoneCore(
         }
     }
 
-    private fun intent(call: PreparedCall, owner: PhoneTasks.Owner): Out {
+    private fun intent(call: PreparedCall, scope: SerialWorker.Scope, owner: PhoneTasks.Owner): Out {
         if (!current(owner)) return stoppedOut("intent")
         val kind = call.args.str("kind") ?: ""
         if (env.isLocked()) return locked("intent $kind")
@@ -485,7 +520,7 @@ class PhoneCore(
         if (!current(owner)) return stoppedOut("intent $kind")
         skillTrace.markIncomplete(owner)
         val r = env.system().launch(plan, tasks.systemDispatch(owner))
-        return afterSystem(owner, r, "intent $kind")
+        return afterSystem(owner, scope, r, "intent $kind")
     }
 
     private fun notify(a: Args, owner: PhoneTasks.Owner): Out {

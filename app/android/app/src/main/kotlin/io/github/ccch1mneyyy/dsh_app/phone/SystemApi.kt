@@ -26,7 +26,9 @@ sealed interface SystemTarget {
 interface SystemLaunch { val target: SystemTarget }
 
 /** target is present only once a platform start was attempted, including a throwing start. */
-class SysResult(val ok: Boolean, val message: String, val target: SystemTarget? = null) {
+class SysResult(val ok: Boolean, val message: String, val target: SystemTarget? = null,
+    /** A returned platform start still needs the person to check its actual effect. */
+    val requiresReview: Boolean = false) {
     val appLabel: String? get() = (target as? SystemTarget.Known)?.app?.label
 }
 
