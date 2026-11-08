@@ -173,8 +173,7 @@ void main() {
         expectSync(manual, isA<bool>(), reason: 'the channel flag must be a fixed Boolean, not a filename');
         manualFlags.add(manual as bool);
         written.add(markdown);
-        reports['diagnostics.md'] = markdown;
-        if (manual == true) reports['diagnostics-manual.md'] = markdown;
+        reports[manual == true ? 'diagnostics-manual.md' : 'diagnostics.md'] = markdown;
         return {'bytes': markdown.length};
       },
     );
@@ -370,6 +369,7 @@ void main() {
     expect(reports.keys, ['diagnostics.md']);
     await f.publisher.publish(includeSystemIme: true);
     expect(written.last, contains('System IME evidence'));
+    expect(reports['diagnostics.md'], written.first, reason: 'manual publication must not update the main report');
     final zipSnapshot = await f.container.read(diagnosticsExporterProvider).collect(systemImeAt);
     expect(zipSnapshot.systemIme, same(evidence.evidence));
     expect(DiagnosticsBundle.entries(zipSnapshot).map((e) => e.name), contains('system-ime.json'));
@@ -395,6 +395,7 @@ void main() {
     )..observe();
     final manual = f.publisher.publish(includeSystemIme: true);
     await _flush(tester);
+    expect(reports, isEmpty);
     f.ready.complete(f.connected);
     await _flush(tester);
     hold.complete(VoiceMode.auto);
@@ -426,6 +427,7 @@ void main() {
     hold.complete(VoiceMode.auto);
     await manual;
     expect(written.single, isNot(contains('System IME evidence')));
+    expect(reports.keys, ['diagnostics-manual.md'], reason: 'manual-only publication must not create a main report');
   });
 
   for (final manualFirst in [true, false]) {
