@@ -192,9 +192,9 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
             override fun driver(screen: PhoneScreen, owner: PhoneTasks.Owner): PhoneDriver? =
                 driverForTask(screen, task, owner)?.let { observations.bind(it, owner) }
             override fun notifyFix(kind: String) = notifyFixFor(task, kind)
-            override fun beforeHandoff(screen: PhoneScreen): String? {
+            override fun beforeHandoff(screen: PhoneScreen, owner: PhoneTasks.Owner): String? {
                 if (screen != PhoneScreen.BACKGROUND) return null
-                check(background.endTask(task.snapshot().id)) { "后台屏释放尚未确认，暂不能交还主屏。" } // l10n:keep agent handoff failure
+                check(background.endTask(owner.taskId)) { "后台屏释放尚未确认，暂不能交还主屏。" } // l10n:keep agent handoff failure
                 return "后台屏已释放。请用户在主屏完成操作，继续前先重新读取主屏。" // l10n:keep agent handoff result
             }
         }
@@ -769,27 +769,28 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
      * The background driver is registered per task: bring it up on first use (worker thread; may
      * connect). The main one may be on its way back (自动恢复无障碍): give it a few seconds.
      */
-    override fun driver(screen: PhoneScreen): PhoneDriver? = driverForTask(screen, tasks)
+    override fun driver(screen: PhoneScreen): PhoneDriver? {
+        val owner = tasks.activeOwner() ?: return null
+        return driver(screen, owner)
+    }
 
     override fun driver(screen: PhoneScreen, owner: PhoneTasks.Owner): PhoneDriver? =
-        driverForTask(screen, tasks)?.let { legacyObservations.bind(it, owner) }
+        driverForTask(screen, tasks, owner)?.let { legacyObservations.bind(it, owner) }
 
-    private fun driverForTask(screen: PhoneScreen, task: PhoneTasks, owner: PhoneTasks.Owner? = null): PhoneDriver? {
+    private fun driverForTask(screen: PhoneScreen, task: PhoneTasks, owner: PhoneTasks.Owner): PhoneDriver? {
         if (screen == PhoneScreen.MAIN && PhoneRegistry.mainDriver == null && A11yKeeper.check(app)) {
             val until = SystemClock.elapsedRealtime() + KEEPER_WAIT_MS
             while (PhoneRegistry.mainDriver == null && SystemClock.elapsedRealtime() < until) Thread.sleep(100)
         }
-        if (screen != PhoneScreen.BACKGROUND) return PhoneRegistry.driver(screen)
-        return if (runCatching {
-            background.beginTask(owner?.taskId ?: task.snapshot().id, owner?.let { captured ->
-                { task.isCurrent(captured) && !Thread.currentThread().isInterrupted }
-            })
-        }.getOrDefault(false)) PhoneRegistry.backgroundDriver else null
+        if (screen != PhoneScreen.BACKGROUND) return PhoneRegistry.mainDriver
+        return runCatching {
+            background.driverForTask(owner) { task.isCurrent(owner) }
+        }.getOrNull()
     }
 
-    override fun beforeHandoff(screen: PhoneScreen): String? {
-        if (screen != PhoneScreen.BACKGROUND || PhoneRegistry.backgroundDriver == null) return null
-        check(background.endTask()) { "后台屏释放尚未确认，暂不能交还主屏。" } // l10n:keep agent handoff failure
+    override fun beforeHandoff(screen: PhoneScreen, owner: PhoneTasks.Owner): String? {
+        if (screen != PhoneScreen.BACKGROUND) return null
+        check(background.endTask(owner.taskId)) { "后台屏释放尚未确认，暂不能交还主屏。" } // l10n:keep agent handoff failure
         // l10n:keep agent stop reason
         return "后台屏已释放。请用户在主屏完成操作，继续前先重新读取主屏（s 开头的屏幕号）。"
     }

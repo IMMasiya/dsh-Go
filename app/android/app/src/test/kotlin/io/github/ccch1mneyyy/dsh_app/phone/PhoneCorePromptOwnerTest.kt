@@ -10,7 +10,7 @@ class PhoneCorePromptOwnerTest {
     private val tasks = PhoneTasks()
     private var confirm: () -> Decision = { Decision.ALLOW_ONCE }
     private var handoff: () -> HandoffResult = { HandoffResult.CONTINUE }
-    private var beforeHandoff: () -> Unit = {}
+    private var beforeHandoff: (PhoneTasks.Owner) -> Unit = {}
     private var asked = 0
     private val statuses = mutableListOf<String?>()
     private var beforeStatus: () -> Unit = {}
@@ -51,7 +51,7 @@ class PhoneCorePromptOwnerTest {
         override fun backgroundUnavailable() = "unavailable"
         override fun zone() = ZoneId.of("UTC")
         override fun notifyFix(kind: String) {}
-        override fun beforeHandoff(screen: PhoneScreen): String? { beforeHandoff(); return null }
+        override fun beforeHandoff(screen: PhoneScreen, owner: PhoneTasks.Owner): String? { beforeHandoff(owner); return null }
         override fun sleep(ms: Long) { settle() }
         override fun system() = object : SystemApi {
             override fun apps(): List<AppEntry> { lookup(); return listOf(AppEntry("Example", PhoneAppIdentity("example.app", 10123))) }
@@ -346,9 +346,27 @@ class PhoneCorePromptOwnerTest {
     }
 
     @Test fun replacementDuringBeforeHandoffCannotAskUnderNewTask() {
-        beforeHandoff = ::replace
+        beforeHandoff = { replace() }
         assertTrue(handoffCall().isError)
         assertEquals(0, asked)
+    }
+
+    @Test fun handoffCleanupReceivesTheOriginalOwnerEvenWhenTheTaskIsReplacedInsideTheHook() {
+        val original = (tasks.begin() as PhoneTasks.Begin.Go).owner
+        var cleanupOwner: PhoneTasks.Owner? = null
+        var successor: PhoneTasks.Owner? = null
+        beforeHandoff = { captured ->
+            replace()
+            successor = tasks.activeOwner()
+            cleanupOwner = captured // The real hook does not read the task's new activeOwner.
+        }
+        assertTrue(handoffCall().isError)
+        assertEquals(original.taskId, cleanupOwner!!.taskId)
+        assertEquals(original.lifecycle, cleanupOwner!!.lifecycle)
+        assertNotEquals(successor!!.taskId, cleanupOwner!!.taskId)
+        assertTrue(tasks.isCurrent(successor!!))
+        assertEquals(0, asked)
+        assertEquals(0, main.reads)
     }
 
     @Test fun lateConfirmationCannotWriteIntoSuccessor() {

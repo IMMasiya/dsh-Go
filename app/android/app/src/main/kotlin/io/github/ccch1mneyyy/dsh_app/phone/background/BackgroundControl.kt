@@ -17,15 +17,14 @@ import io.github.ccch1mneyyy.dsh_app.phone.PhoneControl
 import java.util.concurrent.Executors
 import java.util.concurrent.Future
 import java.util.concurrent.FutureTask
-import io.github.ccch1mneyyy.dsh_app.phone.PhoneRegistry
-import java.util.concurrent.atomic.AtomicLong
+import io.github.ccch1mneyyy.dsh_app.phone.PhoneTasks
 
 /**
  * The 不打扰模式 surface the core's `PhonePlugin` calls into: the `background` block of `status`,
  * and the actions behind `setBackgroundMode`, `requestShizukuPermission`, `adbStartPairing`,
  * `adbPair`, `adbConnect`. It owns the shared Shizuku/Sui, self-ADB and explicit root starters,
- * probes whether a trusted virtual display and input injection work here, and registers
- * [BackgroundDisplay] in [PhoneRegistry] only while a task runs. Method names match the
+ * probes whether a trusted virtual display and input injection work here, and retains
+ * the original task's [BackgroundDisplay] until its strict cleanup succeeds. Method names match the
  * `dsh/phone` channel.
  */
 class BackgroundControl private constructor(context: Context) {
@@ -57,7 +56,7 @@ class BackgroundControl private constructor(context: Context) {
     internal fun tryBorrowSelfCheck(): SelfCheckBorrow? {
         val borrowed = synchronized(this) {
             synchronized(keepGuard) {
-                if (driver != null || selectingResource || interruptRequested || interruptFinishing ||
+                if (taskResource.occupied || selectingResource || interruptRequested || interruptFinishing ||
                     selfCheckBorrow != null || gateCall != null || gate.needsRetest || transportUsers != 0 || restoring != null || selectionChange != null) return null
                 val current = channel ?: return null
                 if (mode !in PrivilegedKeepState.MODES) return null
@@ -133,9 +132,7 @@ class BackgroundControl private constructor(context: Context) {
     private val mode: String get() = keep.mode
     @Volatile private var rootSelected = mode == "root"
     @Volatile private var channel: PrivilegedChannel? = null
-    @Volatile private var driver: BackgroundDisplay? = null
-    @Volatile private var driverTaskId: Long? = null
-    private val endedTaskId = AtomicLong(Long.MIN_VALUE)
+    private val taskResource = BackgroundTaskSlot<BackgroundDisplay>(this)
     // Lock order: this -> keepGuard -> previewGuard (either prefix may be omitted). Never IPC or a reverse lock under previewGuard.
     private val previewGuard = Any()
     @Volatile private var previewTarget: BackgroundPreviewTarget? = null
@@ -154,13 +151,16 @@ class BackgroundControl private constructor(context: Context) {
         if (changed) onPreviewChanged()
     }
 
-    /** Republish only after the actual driver obtains this channel, never from a reconnect callback. */
-    private fun publishPreviewTarget(taskId: Long, value: PrivilegedChannel) {
-        val changed = synchronized(previewGuard) {
-            val active = driver
-            if (driverTaskId != taskId || active == null || PhoneRegistry.backgroundDriver !== active || channel !== value || !active.previewAvailable(value)) false
-            else if (previewTarget?.let { it.taskId == taskId && it.driver === active && it.channel === value } == true) false
-            else { previewTarget = BackgroundPreviewTarget(taskId, active.ownerToken, value, active); true }
+    /** The callback belongs to the original record, not whichever task is selected now. */
+    private fun publishPreviewTarget(record: BackgroundTaskSlot.TaskResource<BackgroundDisplay>, value: PrivilegedChannel) {
+        val changed = synchronized(this) {
+            synchronized(previewGuard) {
+                val active = record.driver
+                val taskId = record.owner.taskId
+                if (!taskResource.current(record) || channel !== value || !active.previewAvailable(value)) false
+                else if (previewTarget?.let { it.taskId == taskId && it.driver === active && it.channel === value } == true) false
+                else { previewTarget = BackgroundPreviewTarget(taskId, active.ownerToken, value, active); true }
+            }
         }
         if (changed) onPreviewChanged()
     }
@@ -327,13 +327,13 @@ class BackgroundControl private constructor(context: Context) {
             synchronized(this) {
                 synchronized(keepGuard) {
                     if (selectingResource || interruptRequested || gateCall != null || selfCheckBorrow != null ||
-                        transportUsers != 1 || restoring != null || selectionChange != null || !changing && driver != null) return transportBusy()
+                        transportUsers != 1 || restoring != null || selectionChange != null || !changing && taskResource.occupied) return transportBusy()
                     // Same-mode retests reserve the resource too, before any connection work.
                     selectingResource = true
                     // Connection/reset callbacks may arrive before the resource slot exists.
                     // This explicit check cannot inherit old/unknown capability readiness.
                     if (selected != "off") gate.requireRetest()
-                    if (changing) driver?.seal()
+                    if (changing) taskResource.seal()?.driver?.seal()
                 }
             }
             try {
@@ -553,80 +553,62 @@ class BackgroundControl private constructor(context: Context) {
 
     // ---- task lifecycle (called by the bridge/core) ------------------------
 
-    /** Connects, probes the gate, and registers the driver for the running task. */
-    fun beginTask(taskId: Long, currentOwner: (() -> Boolean)? = null): Boolean {
-        // Independent session ids are not ordered lifetimes. Legacy retains its high-water
-        // fence; session callers recheck their captured Owner after every blocking setup.
-        fun current() = currentOwner?.invoke() ?: (taskId > endedTaskId.get())
-        if (mode == "off" || !androidOk()) return false
-        synchronized(this) {
-            if (selfCheckBorrow != null || gateCall != null || gate.needsRetest || selectingResource || interruptRequested || !current() || (driverTaskId ?: Long.MIN_VALUE) > taskId) return false
-            if (driverTaskId == taskId && driver != null && PhoneRegistry.backgroundDriver === driver) return true
+    /** Returns this Owner's driver directly; another task's resource is never displaced. */
+    fun driverForTask(owner: PhoneTasks.Owner, currentOwner: () -> Boolean): BackgroundDisplay? {
+        fun current() = currentOwner() && !Thread.currentThread().isInterrupted
+        if (mode == "off" || !androidOk()) return null
+        val selection = synchronized(this) {
+            if (selfCheckBorrow != null || gateCall != null || gate.needsRetest || selectingResource || interruptRequested || !current()) return null
+            taskResource.find(owner)?.let { return it.driver }
+            if (taskResource.occupied) return null
+            keep.selectionTicket()
         }
-        // Channel setup may block. It must not hold the display ownership lock
-        // while an old task is trying to release through an already-live channel.
+        fun allowed() = current() && keep.selectionCurrent(selection)
+        // Setup can block; stop/cleanup must still be able to enter the ownership monitor.
         if (keep.enabled) {
             try { restoreKeptChannel()?.get() } catch (_: InterruptedException) {
-                Thread.currentThread().interrupt(); return false
-            } catch (_: Exception) { return false }
+                Thread.currentThread().interrupt(); return null
+            } catch (_: Exception) { return null }
         }
-        if (Thread.currentThread().isInterrupted || activeChannel() == null) return false
-        val previous = synchronized(this) { driverTaskId?.takeIf { it != taskId } }
-        if (previous != null && !endTask(previous)) return false
-        val created = synchronized(this) {
-            if (selfCheckBorrow != null || gateCall != null || gate.needsRetest || selectingResource || interruptRequested || mode == "off" || !current() || (driverTaskId ?: Long.MIN_VALUE) > taskId) return false
-            if (driverTaskId == taskId && driver != null && PhoneRegistry.backgroundDriver === driver) return true
-            if (driver != null) return false
-            val d = BackgroundDisplay(
-                channelProvider = { activeChannel() },
-                viewport = viewport,
-                onResourceReady = { publishPreviewTarget(taskId, it) },
-            ).also { driver = it }
-            // Publish the pending owner before checking cancellation: a stop
-            // either records the ended ID first, or sees this owner and releases
-            // it after the remaining registration (which performs no setup IPC).
-            driverTaskId = taskId
-            if (!current()) {
-                driver = null
-                driverTaskId = null
-                return false
-            }
-            PhoneRegistry.backgroundDriver = d
-            true
+        if (!allowed() || activeChannel(mayStart = ::allowed) == null) return null
+        val acquired = synchronized(this) {
+            if (selfCheckBorrow != null || gateCall != null || gate.needsRetest || selectingResource || interruptRequested || mode == "off") return null
+            lateinit var record: BackgroundTaskSlot.TaskResource<BackgroundDisplay>
+            record = taskResource.acquire(owner, ::allowed) {
+                // Construction has no platform work. A concurrent stop either invalidates
+                // current before admission, or seals this published record after this monitor.
+                BackgroundDisplay(
+                    channelProvider = { activeChannel() },
+                    viewport = viewport,
+                    onResourceReady = { publishPreviewTarget(record, it) },
+                )
+            } ?: return null
+            record
         }
-        if (created) notifyChanged()
-        return created
+        notifyChanged()
+        return acquired.driver
     }
 
-    /** Immediately seals dispatch; it never waits for platform I/O. */
+    /** Immediately seals dispatch; it never waits for platform I/O. Null explicitly means all. */
     fun sealTask(expectedTaskId: Long? = null) {
-        if (expectedTaskId != null) endedTaskId.accumulateAndGet(expectedTaskId) { previous, ended -> maxOf(previous, ended) }
         val changed = synchronized(this) {
-            if (expectedTaskId != null && expectedTaskId != driverTaskId) false
-            else driver?.let { it.seal(); withdrawPreviewTarget(it) } ?: false
+            taskResource.seal(expectedTaskId)?.driver?.let { it.seal(); withdrawPreviewTarget(it) } ?: false
         }
         if (changed) onPreviewChanged()
     }
 
-    /** Capture under the owner lock, wait outside it, then clear only that exact driver. */
+    /** Capture the original record, release outside the lock, then commit by record identity. */
     fun endTask(expectedTaskId: Long? = null): Boolean {
-        if (expectedTaskId != null) endedTaskId.accumulateAndGet(expectedTaskId) { previous, ended -> maxOf(previous, ended) }
         var previewChanged = false
         val captured = synchronized(this) {
-            if (expectedTaskId != null && expectedTaskId != driverTaskId) return true
-            val current = driver ?: return true
-            current.seal()
-            previewChanged = withdrawPreviewTarget(current)
-            current to driverTaskId
+            val record = taskResource.seal(expectedTaskId) ?: return true
+            record.driver.seal()
+            previewChanged = withdrawPreviewTarget(record.driver)
+            record
         }
         if (previewChanged) onPreviewChanged()
-        if (!captured.first.release()) return false
-        synchronized(this) {
-            if (driver !== captured.first || driverTaskId != captured.second) return false
-            driver = null
-            driverTaskId = null
-            if (PhoneRegistry.backgroundDriver === captured.first) PhoneRegistry.backgroundDriver = null
-        }
+        if (!captured.driver.release()) return false
+        if (!taskResource.complete(captured)) return false
         notifyChanged()
         finishInterrupt()
         return true
@@ -637,14 +619,14 @@ class BackgroundControl private constructor(context: Context) {
         val changed = synchronized(this) {
             interruptRequested = true
             synchronized(keepGuard) { gateCall?.io?.seal() }
-            driver?.let { it.seal(); withdrawPreviewTarget(it) } ?: false
+            taskResource.seal()?.driver?.let { it.seal(); withdrawPreviewTarget(it) } ?: false
         }
         if (changed) onPreviewChanged()
     }
 
     fun finishInterrupt() {
         synchronized(this) {
-            if (!interruptRequested || interruptFinishing || driver != null || selectingResource) return
+            if (!interruptRequested || interruptFinishing || taskResource.occupied || selectingResource) return
             synchronized(keepGuard) {
                 if (selfCheckBorrow != null || gateCall != null || transportUsers != 0 || restoring != null || selectionChange != null) return
                 interruptFinishing = true
@@ -728,7 +710,7 @@ class BackgroundControl private constructor(context: Context) {
                 // This settings body owns the only transport reservation, including its connection work.
                 if (interruptRequested || channel !== peer || !keep.selectionCurrent(selection) || !gate.current(probe))
                     return AppStrings.get(app, R.string.background_selection_cancelled)
-                if (driver != null || selfCheckBorrow != null || gateCall != null || transportUsers != 1 ||
+                if (taskResource.occupied || selfCheckBorrow != null || gateCall != null || transportUsers != 1 ||
                     restoring != null || selectionChange != null) return AppStrings.get(app, R.string.background_input_probe_busy)
                 BackgroundGateCall(peer, probe).also { gateCall = it }
             }

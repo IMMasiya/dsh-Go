@@ -33,7 +33,7 @@ class PhoneEngineExitTest {
         override fun backgroundUnavailable() = "unavailable"
         override fun zone() = ZoneId.of("UTC")
         override fun notifyFix(kind: String) {}
-        override fun beforeHandoff(screen: PhoneScreen): String? = null
+        override fun beforeHandoff(screen: PhoneScreen, owner: PhoneTasks.Owner): String? = null
         override fun sleep(ms: Long) {}
         override fun system() = object : SystemApi {
             override fun apps() = listOf(AppEntry("Example", PhoneAppIdentity("example.app", 10123)))

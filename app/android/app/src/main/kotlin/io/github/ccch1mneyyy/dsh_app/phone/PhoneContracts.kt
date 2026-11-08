@@ -275,7 +275,6 @@ interface ControlListener {
  */
 object PhoneRegistry {
     @Volatile var mainDriver: PhoneDriver? = null
-    @Volatile var backgroundDriver: PhoneDriver? = null
 
     /** Overlay gate when the accessibility service runs, else the notification gate. */
     @Volatile var overlayGate: UserGate? = null
@@ -292,11 +291,6 @@ object PhoneRegistry {
      * the overlay's 「已解除限制」 tag. Nothing lifted until the core says otherwise.
      */
     @Volatile var unlocks: () -> PhoneUnlocks = { PhoneUnlocks() }
-
-    fun driver(screen: PhoneScreen): PhoneDriver? = when (screen) {
-        PhoneScreen.MAIN -> mainDriver
-        PhoneScreen.BACKGROUND -> backgroundDriver
-    }
 
     fun gate(): UserGate? = overlayGate ?: notificationGate
 }

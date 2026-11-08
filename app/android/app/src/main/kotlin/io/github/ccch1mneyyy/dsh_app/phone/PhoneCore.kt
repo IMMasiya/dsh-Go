@@ -27,10 +27,10 @@ interface PhoneEnv {
     /** New native task only, under its current-owner check; no rendering or IO. */
     fun onTaskStarted(owner: PhoneTasks.Owner) {}
     /**
-     * Before `handoff` while the agent works on [screen]: for the background display, release it
-     * without destroying its content so the app comes to the main screen. A sentence for the model, or null.
+     * Before `handoff`, strictly release only this call's original background resource.
+     * Cleanup may outlive the active Owner; it must never adopt a successor's resource.
      */
-    fun beforeHandoff(screen: PhoneScreen): String? = null
+    fun beforeHandoff(screen: PhoneScreen, owner: PhoneTasks.Owner): String? = null
     fun sleep(ms: Long) = Thread.sleep(ms)
 }
 
@@ -880,7 +880,7 @@ class PhoneCore(
             refusal = null
         }) return stoppedOut("handoff")
         skillTrace.markIncomplete(owner)
-        val note = env.beforeHandoff(lastScreen)
+        val note = env.beforeHandoff(lastScreen, owner)
         if (!tasks.isCurrent(owner)) return stoppedOut("handoff")
         val result = scope.userWait { gate.handoff(reason, HANDOFF_MS, cause, owner) }
         if (!tasks.isCurrent(owner) || Thread.currentThread().isInterrupted) return stoppedOut("handoff")
