@@ -248,7 +248,7 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   test('preview parser accepts every non-image state and rejects malformed identity', () {
-    for (final state in ['off', 'waiting', 'unavailable', 'protected']) {
+    for (final state in ['off', 'waiting', 'unavailable', 'protected', 'inUse']) {
       final value = PhonePreviewFrame.parse(_event(state, 0));
       expect(value?.state, state);
       expect(value?.imageBytes, isNull);
@@ -596,6 +596,45 @@ void main() {
         expect(images.disposed.where((value) => identical(value, late)), hasLength(1));
         expect(find.byType(RawImage), findsNothing);
         expect(native.calls, ['listen', 'cancel']);
+      } finally {
+        try {
+          await _unmount(tester);
+          expect(images.created.every((image) => image.debugDisposed), isTrue,
+              reason: 'Both owner handles and RawImage render clones must retire.');
+        } finally { images.restore(); }
+      }
+    });
+    expect(tester.takeException(), isNull);
+  });
+  testWidgets('in-use preview clears its image and rejects old or foreign frames', (tester) async {
+    await tester.runAsync<void>(() async {
+      final native = _NativePreview()..install();
+      final channel = _DeliveryPhoneChannel();
+      final images = _Images()..install();
+      try {
+        await _mount(tester, channel);
+        final image = await _frame(tester, native, images, 1);
+        final inUse = channel.expectDelivery(1);
+        native.emit(_event('inUse', 2));
+        await inUse;
+        await _flush(tester);
+        expect(image.debugDisposed, isTrue);
+        expect(find.byType(RawImage), findsNothing);
+        expect(find.text(appL10n.phonePreviewInUse), findsOneWidget);
+
+        final rejected = channel.expectDelivery(2);
+        native.emit(_event('frame', 1));
+        native.emit(_event('frame', 99, task: 8));
+        await rejected;
+        await _flush(tester);
+        expect(find.byType(RawImage), findsNothing);
+        expect(find.text(appL10n.phonePreviewInUse), findsOneWidget);
+
+        final waiting = channel.expectDelivery(1);
+        native.emit(_event('waiting', 3, generation: 2));
+        await waiting;
+        await _flush(tester);
+        expect(find.text(appL10n.phonePreviewWaiting), findsOneWidget);
       } finally {
         try {
           await _unmount(tester);
