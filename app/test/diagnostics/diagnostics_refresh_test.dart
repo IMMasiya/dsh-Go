@@ -151,15 +151,6 @@ Future<void> _flush(WidgetTester tester) async {
   await tester.pump(Duration.zero);
 }
 
-Future<void> _waitForSecondWrite(WidgetTester tester, List<String> written) async {
-  // The connection notification, refresh timer and collection can span several
-  // event-loop turns. Do not advance the clock into a source's timeout fallback.
-  for (var pump = 0; pump < 20 && written.length < 2; pump++) {
-    await tester.pump(Duration.zero);
-  }
-  expect(written, hasLength(2), reason: 'automatic refresh must write exactly twice within 20 zero-duration pumps');
-}
-
 void main() {
   final written = <String>[];
   final manualFlags = <bool>[];
@@ -174,10 +165,12 @@ void main() {
       (call) async {
         if (call.method != 'publishDiagnostics') return null;
         final arguments = call.arguments as Map<Object?, Object?>;
-        expect(arguments.keys, ['markdown', 'manual']);
+        // Automatic calls run inside pump's async guard. The messenger converts
+        // ordinary expect's guard error into PlatformException, hiding the write.
+        expectSync(arguments.keys, ['markdown', 'manual']);
         final markdown = arguments['markdown'] as String;
         final manual = arguments['manual'];
-        expect(manual, isA<bool>(), reason: 'the channel flag must be a fixed Boolean, not a filename');
+        expectSync(manual, isA<bool>(), reason: 'the channel flag must be a fixed Boolean, not a filename');
         manualFlags.add(manual as bool);
         written.add(markdown);
         reports['diagnostics.md'] = markdown;
@@ -205,7 +198,7 @@ void main() {
       } else {
         f.ready.completeError(StateError('synthetic connection failure'));
       }
-      await _waitForSecondWrite(tester, written);
+      await _flush(tester);
       expect(written, hasLength(2));
       expect(written.last, contains('- state：${succeeds ? 'connected' : 'failed'}'));
     });
@@ -223,7 +216,7 @@ void main() {
     expect(written, isEmpty);
     hold.complete(VoiceMode.auto);
     await first;
-    await _waitForSecondWrite(tester, written);
+    await _flush(tester);
     expect(written, hasLength(2));
     expect(written.last, contains('- state：connected'));
   });
@@ -406,7 +399,7 @@ void main() {
     await _flush(tester);
     hold.complete(VoiceMode.auto);
     await manual;
-    await _waitForSecondWrite(tester, written);
+    await _flush(tester);
     expect(written, hasLength(2));
     expect(written.first, contains('System IME evidence'));
     expect(written.last, contains('- state：connected'));
