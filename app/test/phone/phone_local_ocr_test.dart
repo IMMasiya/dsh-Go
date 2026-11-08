@@ -99,7 +99,7 @@ void main() {
     final native = ocrNative();
     await pumpPhone(tester, const PhoneControlScreen(), native: native);
     final key = find.byKey(const ValueKey('phone-local-ocr-switch'));
-    await tester.ensureVisible(key);
+    await tester.scrollUntilVisible(key, 200, scrollable: find.byType(Scrollable).first);
     final write = Completer<bool>();
     final read = Completer<Map<String, Object?>?>();
     native.onSetPolicies = (_) => write.future;
@@ -122,7 +122,8 @@ void main() {
     await pumpPhone(tester, const PhoneControlScreen(), native: FakePhoneNative(status: phoneStatus(a11y: true)));
     expect(find.byKey(const ValueKey('phone-local-ocr-switch')), findsNothing);
     final text = find.text('暂时无法读取本机文字识别设置，请刷新后再试。');
-    await tester.ensureVisible(text);
+    await tester.scrollUntilVisible(text, 200, scrollable: find.byType(Scrollable).first);
     expect(text, findsOneWidget);
+    expect(find.byKey(const ValueKey('phone-local-ocr-switch')), findsNothing);
   });
 }
