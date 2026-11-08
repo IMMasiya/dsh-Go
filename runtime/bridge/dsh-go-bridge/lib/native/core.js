@@ -317,7 +317,7 @@ export class NativeCore {
 
   /** Token bucket + concurrency per plugin; returns a release function or undefined (429). */
   admitInvoke(pkg) {
-    const now = Date.now();
+    const now = performance.now();
     let b = this.buckets.get(pkg);
     if (b === undefined) {
       b = { tokens: LIMITS.invokeBurst, at: now, inflight: 0 };
