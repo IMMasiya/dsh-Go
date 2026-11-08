@@ -20,6 +20,7 @@ class PhoneVisualPermissionTest {
         var afterText: String? = null
         var afterImage: ByteArray? = null
         var afterCoordinates = false
+        var imageRequest: Pair<Boolean, Boolean>? = null
         var screenText = "Details"
         var policy = PhonePolicies(confirmMode = ConfirmMode.ASK)
         var decision: (ConfirmRequest) -> Decision = { if (it.visualScope != null) Decision.ALLOW_VISUAL_FOR_TASK else Decision.ALLOW_APP_FOR_TASK }
@@ -34,6 +35,10 @@ class PhoneVisualPermissionTest {
                 id = "b${++nextId}"; accepted = false
                 coordinateCandidate = this@Fixture.image != null || textCoordinates
                 return ScreenSnapshot(id, screenText, "Example", "example.app", image = this@Fixture.image)
+            }
+            override fun observe(detail: Boolean, image: Boolean, automaticImage: Boolean): ScreenSnapshot {
+                imageRequest = image to automaticImage
+                return observe(detail, image)
             }
             override fun visualScope(screenId: String) = scope.takeIf { screenId == id }
             override fun acceptVisualObservation(screenId: String) { if (screenId == id && coordinateCandidate) accepted = true }
@@ -112,6 +117,25 @@ class PhoneVisualPermissionTest {
             assertTrue(f.asks.all { it.visualScope == null && !it.offerTaskWaiver })
             assertFalse(f.tasks.isApproved("example.app")); assertFalse(f.tasks.isWaived)
             assertFalse(f.tasks.hasVisualGrant(f.tasks.activeOwner()!!, f.scope!!))
+        }
+    }
+    @Test fun imagePresenceModesReachTheDriverWithoutSkippingTheTaskObservationLedger() {
+        val cases = listOf(
+            emptyMap<String, Any?>() to (false to true),
+            mapOf<String, Any?>("image" to false) to (false to false),
+            mapOf<String, Any?>("image" to true) to (true to false),
+            mapOf<String, Any?>("image" to null) to (false to false),
+            mapOf<String, Any?>("image" to "true") to (false to false),
+            mapOf<String, Any?>("image" to "yes") to (false to false),
+            mapOf<String, Any?>("image" to 1) to (false to false),
+        )
+        for ((args, expected) in cases) Fixture().use { f ->
+            f.image = null; f.textCoordinates = true
+            val result = f.core.call(PhoneToolCatalog.SCREEN, mapOf("background" to true) + args)
+            assertFalse(result.isError)
+            assertEquals(expected, f.imageRequest)
+            // accept reaches the physical driver only when the wrapper remembered this owner/id.
+            assertTrue(f.accepted)
         }
     }
     @Test fun textOnlyScreenWithoutDriverCandidateCannotAuthorizeCoordinates() {

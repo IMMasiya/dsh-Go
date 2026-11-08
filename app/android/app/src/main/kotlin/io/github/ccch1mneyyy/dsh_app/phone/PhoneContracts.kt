@@ -135,6 +135,10 @@ interface PhoneDriver {
 
     fun observe(detail: Boolean, image: Boolean): ScreenSnapshot
 
+    /** An omitted image argument may return an image only for this observation's poor tree.
+     * Old drivers and explicit two-argument callers keep their original image behavior. */
+    fun observe(detail: Boolean, image: Boolean, automaticImage: Boolean): ScreenSnapshot = observe(detail, image)
+
     /** Accepts only a driver-recorded candidate after the task's final screen filter, including
      * text-only visual observations. A missing candidate is a no-op; not model-delivery evidence. */
     fun acceptVisualObservation(screenId: String) {}

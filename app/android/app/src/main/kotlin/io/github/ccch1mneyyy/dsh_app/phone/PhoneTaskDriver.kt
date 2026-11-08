@@ -45,6 +45,10 @@ class PhoneTaskObservations(private val tasks: PhoneTasks) {
             current()
             return try { remember(driver.observe(detail, image)) } finally { syncCurrentScope() }
         }
+        override fun observe(detail: Boolean, image: Boolean, automaticImage: Boolean): ScreenSnapshot {
+            current()
+            return try { remember(driver.observe(detail, image, automaticImage)) } finally { syncCurrentScope() }
+        }
         override fun acceptVisualObservation(screenId: String) {
             current()
             if (!tasks.runIfCurrent(owner) {

@@ -652,7 +652,8 @@ class PhoneCore(
         lastScreen = which
         say(owner, if (which == PhoneScreen.BACKGROUND) ui.get("phone_reading_background", "DSH 正在看后台屏") else ui.get("phone_reading_screen", "DSH 正在看屏幕")) // l10n:keep test default
         if (!current(owner)) return stoppedOut(summary)
-        val snap = driver.observe(detail = a.bool("detail") == true, image = a.bool("image") == true)
+        val snap = driver.observe(detail = a.bool("detail") == true, image = a.strictBool("image") == true,
+            automaticImage = !a.provided("image"))
         if (!current(owner) || !tasks.setAppIfCurrent(owner, snap.appLabel)) return stoppedOut(summary)
         val shown = returnedScreen(driver, snap, owner)
         val refused = shown !== snap

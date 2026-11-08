@@ -312,6 +312,10 @@ sealed interface Either<out L, out R> {
 /** Lenient typed access to tool arguments (models send "7" for 7 and 7.0 for 7). */
 class Args(private val map: Map<String, Any?>) {
     fun has(key: String) = map[key] != null
+    /** Presence differs from the existing non-null has(): explicit null must not request AUTO. */
+    fun provided(key: String) = map.containsKey(key)
+    /** Disclosure choices require an actual JSON boolean, not a coerced string or number. */
+    fun strictBool(key: String) = map[key] as? Boolean
 
     fun str(key: String): String? = when (val v = map[key]) {
         is String -> v.trim().takeIf { it.isNotEmpty() }
