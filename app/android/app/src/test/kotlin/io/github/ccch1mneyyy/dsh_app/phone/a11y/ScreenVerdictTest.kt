@@ -2,6 +2,7 @@ package io.github.ccch1mneyyy.dsh_app.phone.a11y
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class ScreenVerdictTest {
