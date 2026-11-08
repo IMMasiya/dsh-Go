@@ -27,7 +27,7 @@ internal class Capture(
     val ownAppInFront: Boolean,
     /** A system window (notification shade, quick settings) covers the screen. */
     val systemInFront: Boolean,
-    /** Hit the node or time cap: the tree may be incomplete. */
+    /** Hit a window, node, depth or time limit: the tree may be incomplete. */
     val truncated: Boolean,
     /** A declared tree part could not be read; the available content is retained. */
     val partial: Boolean = false,
@@ -132,13 +132,13 @@ internal object TreeCapture {
                     AccessibilityWindowInfo.TYPE_APPLICATION, AccessibilityWindowInfo.TYPE_SYSTEM -> {}
                     else -> continue // our overlay, other services' overlays, split-screen divider, magnifier
                 }
-                if (chosen.size >= MAX_WINDOWS) break
                 w.getBoundsInScreen(st.rect)
                 val bounds = Box(st.rect.left, st.rect.top, st.rect.right, st.rect.bottom)
                 val share = bounds.intersect(screen).area.toDouble() / screenArea
                 if (share <= 0) continue
                 // Status bar, navigation bar, a floating ball: small system windows are chrome, not content.
                 if (w.type == AccessibilityWindowInfo.TYPE_SYSTEM && share < 0.5) continue
+                if (chosen.size >= MAX_WINDOWS) { st.truncated = true; break }
                 // Some windows answer getRoot() with null (seen on the API 35 emulator for a Settings
                 // sub-page); the active window's root is still reachable through the service.
                 val root = w.root ?: (if (w.isActive || w.isFocused) activeRoot(service, w.id) else null)
