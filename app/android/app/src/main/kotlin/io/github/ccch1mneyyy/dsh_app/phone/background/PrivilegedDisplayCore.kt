@@ -46,6 +46,11 @@ import java.lang.reflect.InvocationTargetException
 import java.lang.reflect.Proxy
 import java.nio.ByteBuffer
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.ExecutorService
+import java.util.concurrent.Executors
+import java.util.concurrent.RejectedExecutionException
+import java.util.concurrent.locks.ReentrantLock
+import kotlin.concurrent.withLock
 
 /**
  * Runs as shell uid (inside the Shizuku UserService, or the adb-launched app_process).
@@ -67,7 +72,10 @@ class PrivilegedDisplayCore(private val context: Context) {
         runCatching { ActivityManager.RunningTaskInfo::class.java.getField("displayId") }.getOrNull()
     }
 
-    private val lock = Any()
+    private val lock = ReentrantLock()
+    private val preview = BackgroundPreviewState()
+    // Only created after an explicit preview request; never creates a display or a channel.
+    private var previewWorker: ExecutorService? = null
     @Volatile private var owner: String? = null
     @Volatile private var display: VirtualDisplay? = null
     @Volatile private var reader: ImageReader? = null
@@ -86,6 +94,7 @@ class PrivilegedDisplayCore(private val context: Context) {
                 response.putBoolean(Proto.OK, true)
                 response.putInt(Proto.UID, Process.myUid())
                 response.putString("revision", Proto.REVISION)
+                response.putInt(Proto.PREVIEW_VERSION, 1)
                 return response
             }
             if (op == Proto.OP_COLLECT_SYSTEM_IME) {
@@ -106,13 +115,16 @@ class PrivilegedDisplayCore(private val context: Context) {
                 response.putStringArray("imeOrigins", capture.events.map { it.origin }.toTypedArray())
                 return response
             }
+            if (op == Proto.OP_PREVIEW) {
+                return previewRequest(request)
+            }
             if (op == Proto.OP_DESTROY) {
                 releaseAll()
                 response.putBoolean(Proto.OK, true)
                 return response
             }
             if (op == Proto.OP_GATE) {
-                synchronized(lock) { gateProbe(response) }
+                lock.withLock { gateProbe(response) }
                 if (!response.containsKey(Proto.ERROR)) response.putBoolean(Proto.OK, true)
                 return response
             }
@@ -121,7 +133,7 @@ class PrivilegedDisplayCore(private val context: Context) {
                 response.putBoolean(Proto.OK, true)
                 return response
             }
-            synchronized(lock) { dispatch(op, request, response) }
+            lock.withLock { dispatch(op, request, response) }
             if (!response.containsKey(Proto.ERROR)) response.putBoolean(Proto.OK, true)
         } catch (e: Throwable) {
             response.putBoolean(Proto.OK, false)
@@ -298,7 +310,9 @@ class PrivilegedDisplayCore(private val context: Context) {
         return task?.topActivity?.packageName
     }
 
-    private fun releaseAll() = synchronized(lock) {
+    private fun releaseAll() = lock.withLock {
+        stopPreview()
+        preview.invalidate()
         owner = null
         var failed = false
         try { display?.release() } catch (_: Throwable) { failed = true } finally { display = null }
@@ -327,7 +341,13 @@ class PrivilegedDisplayCore(private val context: Context) {
         // Pixels alone never identify FLAG_SECURE. Keep an explicit secure failure authoritative.
         val secure = failure is Fault && failure.code == "secureWindow"
         response.putBoolean(Proto.SECURE, secure)
-        if (secure) { response.putBoolean(Proto.POOR, false); response.putInt(Proto.COUNT, 0); return }
+        if (secure) {
+            preview.protect()
+            response.putBoolean(Proto.POOR, false); response.putInt(Proto.COUNT, 0); return
+        }
+        // Local preview never enters ScreenSnapshot / MCP. Publish only after the secure verdict.
+        if (shot != null) shot.raw?.let { preview.captured(it) }
+        else preview.observationUnavailable(if (captureResult.isSuccess) null else "captureFailed")
         // A read must report its failure; observation after an already-dispatched write
         // must not turn that write into a failed action that a caller might replay.
         val tree = if (requireTree) treeResult.getOrThrow() else treeResult.getOrNull()
@@ -382,16 +402,17 @@ class PrivilegedDisplayCore(private val context: Context) {
         return runCatching { pm.getApplicationLabel(pm.getApplicationInfo(pkg, 0)).toString() }.getOrNull()
     }
 
-    private class CaptureResult(val jpeg: ByteArray)
+    private class CaptureResult(val jpeg: ByteArray, val raw: BackgroundPreviewState.RawFrame?)
 
     /** Null means only absent/black frames; other capture failures remain distinguishable. */
     private fun capture(): CaptureResult? {
         val ir = ImageReader.newInstance(width, height, PixelFormat.RGBA_8888, 2)
         try {
-            synchronized(lock) {
+            lock.withLock {
                 val vd = display ?: throw Fault("displayMissing")
                 val previous = reader
                 vd.surface = ir.surface
+                preview.readerChanged()
                 reader = ir
                 previous?.close()
             }
@@ -427,7 +448,11 @@ class PrivilegedDisplayCore(private val context: Context) {
                             BackgroundFrameReadiness.Next.READY -> {
                                 val buffer = ByteArrayOutputStream()
                                 bitmap.compress(Bitmap.CompressFormat.JPEG, 80, buffer)
-                                return CaptureResult(buffer.toByteArray())
+                                // Reuse the already-copied RGBA buffer only for an active local preview.
+                                // No JPEG decode round-trip: both preview sources compare identical pixels.
+                                val raw = if (preview.acceptsCandidate())
+                                    BackgroundPreviewState.RawFrame(width, height, pixels.array()) else null
+                                return CaptureResult(buffer.toByteArray(), raw)
                             }
                         }
                     } finally { bitmap.recycle() }
@@ -456,6 +481,126 @@ class PrivilegedDisplayCore(private val context: Context) {
             y += stepY
         }
         return total > 0 && dark * 100 / total >= 98
+    }
+
+    // ---- local, read-only preview ------------------------------------------
+
+    private fun previewRequest(request: Bundle): Bundle {
+        if (!request.containsKey(Proto.PREVIEW_ENABLED)) throw Fault("invalidArguments")
+        val enabled = request.getBoolean(Proto.PREVIEW_ENABLED)
+        var work: Pair<ExecutorService, BackgroundPreviewState.Ticket>? = null
+        // Disabling is a cleanup operation, never a cancellable shared-stream request.
+        if (enabled) {
+            if (!lock.tryLock()) return previewReply(request, busy = true)
+        } else lock.lock()
+        val reply = try {
+            val requestedOwner = request.getString(Proto.OWNER)
+            if (requestedOwner.isNullOrEmpty() || requestedOwner != owner) throw Fault("identityChanged")
+            requireDisplay()
+            if (!enabled) stopPreview()
+            else {
+                preview.configure(true)
+                if (keyguard?.isKeyguardLocked == true) preview.protect()
+                else preview.begin(SystemClock.uptimeMillis())?.let { ticket ->
+                    val worker = previewWorker ?: Executors.newSingleThreadExecutor { job ->
+                        Thread(job, "dsh-preview").apply { isDaemon = true }
+                    }.also { previewWorker = it }
+                    work = worker to ticket
+                }
+            }
+            previewReply(request)
+        } finally { lock.unlock() }
+        work?.let { (worker, ticket) ->
+            try { worker.execute { renderPreview(ticket) } }
+            catch (_: RejectedExecutionException) { preview.finish(ticket) } // Closed after unlock.
+        }
+        return reply
+    }
+
+    /** The reply is a small immutable cache snapshot; no frame wait, tree read, or JPEG work. */
+    private fun previewReply(request: Bundle, busy: Boolean = false): Bundle {
+        val value = preview.snapshot()
+        return Bundle().apply {
+            putBoolean(Proto.OK, true)
+            putString(Proto.PREVIEW_STATE, if (busy) "busy" else value.state)
+            putLong(Proto.PREVIEW_GENERATION, value.generation)
+            putLong(Proto.PREVIEW_SEQUENCE, value.sequence)
+            if (!busy) {
+                value.reason?.let { putString(Proto.PREVIEW_REASON, it) }
+                val frame = value.frame
+                if (frame != null && request.getLong(Proto.PREVIEW_AFTER_SEQUENCE, -1) != value.sequence) {
+                    putInt(Proto.PREVIEW_WIDTH, frame.width)
+                    putInt(Proto.PREVIEW_HEIGHT, frame.height)
+                    putByteArray(Proto.PREVIEW_BYTES, frame.jpeg)
+                }
+            }
+        }
+    }
+
+    /** Caller owns the display lock. Shutdown never waits for an encoder; its ticket is retired. */
+    private fun stopPreview() {
+        preview.configure(false)
+        previewWorker?.shutdown()
+        previewWorker = null
+    }
+
+    private fun renderPreview(ticket: BackgroundPreviewState.Ticket) {
+        var bitmap: Bitmap? = null
+        var thumbnail: Bitmap? = null
+        try {
+            // Agent dispatch owns this same lock for its complete capture, including the wait.
+            // A preview therefore cannot consume an Image from the reader an Agent is awaiting.
+            if (!lock.tryLock()) return
+            try {
+                if (!preview.current(ticket)) return
+                if (keyguard?.isKeyguardLocked == true) { preview.protect(); return }
+                val image = reader?.acquireLatestImage()
+                if (image != null) try {
+                    val plane = image.planes.singleOrNull() ?: throw Fault("screenshotFailed")
+                    if (plane.pixelStride != 4 || plane.rowStride < width * 4) throw Fault("screenshotFailed")
+                    val pixels = ByteBuffer.allocate(width * height * 4)
+                    val source = plane.buffer.duplicate()
+                    for (row in 0 until height) {
+                        val start = row * plane.rowStride
+                        source.limit(start + width * 4); source.position(start)
+                        pixels.put(source)
+                    }
+                    pixels.flip()
+                    bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+                    bitmap!!.copyPixelsFromBuffer(pixels)
+                } finally { image.close() }
+                // All Image/buffer access ends before releaseAll can close its ImageReader.
+            } finally { lock.unlock() }
+            if (bitmap == null) {
+                val raw = ticket.candidate ?: return // A static frame keeps the same cached image.
+                bitmap = Bitmap.createBitmap(raw.width, raw.height, Bitmap.Config.ARGB_8888)
+                bitmap!!.copyPixelsFromBuffer(ByteBuffer.wrap(raw.pixels))
+            }
+            preview.consumed(ticket)
+            val source = bitmap!!
+            if (isMostlyBlack(source)) { preview.unavailable(ticket, "blackFrame"); return }
+            val scale = minOf(1f, 360f / minOf(source.width, source.height),
+                800f / maxOf(source.width, source.height))
+            val w = (source.width * scale).toInt().coerceAtLeast(1)
+            val h = (source.height * scale).toInt().coerceAtLeast(1)
+            val small = Bitmap.createScaledBitmap(source, w, h, true).also { thumbnail = it }
+            val pixels = IntArray(w * h)
+            small.getPixels(pixels, 0, w, 0, 0, w, h)
+            if (!preview.changed(ticket, pixels, w, h)) return
+            val output = ByteArrayOutputStream()
+            if (!small.compress(Bitmap.CompressFormat.JPEG, 65, output)) throw Fault("screenshotFailed")
+            val bytes = output.toByteArray()
+            if (bytes.size > BackgroundPreviewState.MAX_BYTES) {
+                preview.unavailable(ticket, "frameTooLarge"); return
+            }
+            preview.publish(ticket, BackgroundPreviewState.Frame(w, h, pixels, bytes), SystemClock.uptimeMillis())
+        } catch (_: Exception) {
+            preview.unavailable(ticket, "captureFailed")
+        } finally {
+            if (thumbnail !== bitmap) thumbnail?.recycle()
+            bitmap?.recycle()
+            preview.finish(ticket)
+        }
     }
 
     // ---- UiAutomation control-tree read ------------------------------------

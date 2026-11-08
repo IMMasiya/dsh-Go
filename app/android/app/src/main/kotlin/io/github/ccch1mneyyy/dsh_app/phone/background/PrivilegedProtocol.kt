@@ -38,6 +38,18 @@ object Proto {
     const val DETAIL = "detail"
 
     // ops
+    const val OP_PREVIEW = "preview"
+    const val PREVIEW_VERSION = "previewVersion"
+    const val PREVIEW_ENABLED = "previewEnabled"
+    const val PREVIEW_AFTER_SEQUENCE = "previewAfterSequence"
+    const val PREVIEW_STATE = "previewState"
+    const val PREVIEW_GENERATION = "previewGeneration"
+    const val PREVIEW_SEQUENCE = "previewSequence"
+    const val PREVIEW_REASON = "previewReason"
+    const val PREVIEW_BYTES = "previewBytes"
+    const val PREVIEW_WIDTH = "previewWidth"
+    const val PREVIEW_HEIGHT = "previewHeight"
+
     const val OP_PROBE = "probe"
     const val OP_CREATE = "create"
     const val OP_LAUNCH = "launch"
