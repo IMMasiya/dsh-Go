@@ -63,7 +63,9 @@ object PrivilegedDisplayMain {
                 val request = Bundles.unmarshal(frame)
                 val response = core.handle(request)
                 synchronized(output) { Frames.write(output, Bundles.marshal(response)) }
-                if (request.getString(Proto.OP) == Proto.OP_DESTROY) break
+                // A rejected destroy must leave this peer available for its owner's cleanup.
+                if (request.getString(Proto.OP) == Proto.OP_DESTROY &&
+                    (response.get(Proto.OK) as? Boolean) == true) break
             }
         } catch (_: Throwable) {
             // stream closed or malformed: fall through to exit
