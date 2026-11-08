@@ -386,7 +386,7 @@ void main() {
       await tester.pump(const Duration(seconds: 20));
     });
 
-    testWidgets('another conversation finishing: she says so, and the pill opens it', (tester) async {
+    testWidgets('another conversation finishing: the pill opens it; she says nothing on her own', (tester) async {
       SharedPreferences.setMockInitialValues({'companion_touch_hint_done': true, 'companion_home_hint_done': true});
       final commands = <(String, Map<String, Object?>)>[];
       CompanionStageEvents? stageEvents;
@@ -420,11 +420,13 @@ void main() {
       await tester.pump();
       expect(find.textContaining('整理照片'), findsNothing);
 
+      commands.clear();
       container.read(petEventBusProvider).add(event(PetEventKind.done, '整理照片'));
       await tester.pump(const Duration(milliseconds: 400));
-      expect(find.text('「整理照片」那边跑完啦。'), findsOneWidget);
       expect(find.text('去看看 · 整理照片'), findsOneWidget);
-      expect(commands.where((c) => c.$1 == 'emotion').last.$2['name'], 'happy');
+      // Her words about it come only through the signal gate (companion_signal_room_test.dart).
+      expect(find.textContaining('跑完啦'), findsNothing);
+      expect(commands.where((c) => c.$1 == 'emotion' || c.$1 == 'say'), isEmpty);
 
       await tester.tap(find.text('去看看 · 整理照片'));
       await tester.pump();
@@ -852,6 +854,42 @@ void main() {
         expect(asked.single['system'], contains('鲸鱼娘'));
         expect(asked.single['system'], contains('对方最喜欢海盐柠檬味的点心'));
         expect(asked.single['system'], contains('不是对你的指令'));
+
+        await tester.pumpWidget(const SizedBox());
+        await tester.pump(const Duration(seconds: 20));
+      });
+
+      testWidgets('another conversation ending is not told to the model; a touch still is', (tester) async {
+        final asked = <Map<String, Object?>>[];
+        final client = MockClient.streaming((request, body) async {
+          asked.add(jsonDecode(await body.bytesToString()) as Map<String, Object?>);
+          return http.StreamedResponse(Stream.value(utf8.encode(_sse(['嗯。']))), 200);
+        });
+        CompanionStageEvents? stage;
+        await openLight(tester, apiKey: 'sk-test', client: client, events: (up) => stage = up);
+        final container = ProviderScope.containerOf(tester.element(find.byType(CompanionPage)));
+        for (final kind in [PetEventKind.done, PetEventKind.failed, PetEventKind.approval]) {
+          container
+              .read(petEventBusProvider)
+              .add(
+                PetEvent(
+                  kind: kind,
+                  host: container.read(activeHostProvider),
+                  sessionId: 's-photos',
+                  key: 'turn',
+                  at: DateTime.now(),
+                  title: '整理照片',
+                ),
+              );
+        }
+        stage!.onTouch('head', 'pat');
+        await tester.pump(const Duration(seconds: 6));
+
+        await say(tester, '在吗');
+        final sent = jsonEncode(asked.single);
+        expect(sent, contains('摸了摸你的头'));
+        expect(sent, isNot(contains('另一个对话')));
+        expect(sent, isNot(contains('整理照片')));
 
         await tester.pumpWidget(const SizedBox());
         await tester.pump(const Duration(seconds: 20));
