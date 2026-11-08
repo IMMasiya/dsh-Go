@@ -120,6 +120,25 @@ class PhoneSkillDraftsTest {
         assertNotSame(write, (f.save(edited) as PhoneSkillDrafts.Started).write)
     }
 
+    @Test fun viewingAnAsynchronousFailureReportsTheFixedOutcomeWithoutRetrying() {
+        for (failure in PhoneSkillInstallResult.Refused.values()) {
+            val f = Fixture(); val view = f.open()
+            val write = (f.save(view) as PhoneSkillDrafts.Started).write
+            assertTrue(write.beginCommit())
+            assertEquals(PhoneSkillWrite.Phase.COMMITTING,
+                (f.manager.view(f.client, view.draftId, 1) as PhoneSkillDrafts.Shown).view.phase)
+            write.finish(failure) // The installer may finish before its notification callback runs.
+            val expected = PhoneSkillDrafts.Code.valueOf(failure.name)
+            repeat(2) {
+                assertEquals(expected, code(f.manager.view(f.client, view.draftId, 1)))
+                assertEquals(expected, code(f.save(view)))
+            }
+            val edited = (f.manager.edit(f.client, view.draftId, 1, 1, changes()) as PhoneSkillDrafts.Shown).view
+            assertEquals(2L, edited.revision)
+            assertNotSame(write, (f.save(edited) as PhoneSkillDrafts.Started).write)
+        }
+    }
+
     @Test fun retiredQueuedClientCanNeverOpenAndOldDetachCannotCancelReplacement() {
         val f = Fixture(); f.manager.retireClient(f.client)
         assertEquals(PhoneSkillDrafts.Code.STALE, code(f.manager.open(f.client, f.source.owner, true)))

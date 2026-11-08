@@ -106,8 +106,11 @@ internal class PhoneSkillDrafts(private val newId: () -> String = { UUID.randomU
         if (!attached(client)) return Rejected(Code.STALE)
         receipts[draftId]?.takeIf { it.owner.taskId == taskId && it.client === client }?.let { return it.value }
         val e = matching(client, draftId, taskId) ?: return Rejected(Code.STALE)
-        settle()?.let { return it }
-        return shown(e)
+        // finish publishes the result before FINISHED under the write monitor. Capture the
+        // phase first so a concurrent finish cannot produce a Shown(FINISHED) without its result.
+        val phase = e.write?.phase()
+        if (phase == PhoneSkillWrite.Phase.FINISHED) return saved(e.id, e.write!!)
+        return shown(e, phase)
     }
 
     @Synchronized fun beginSave(client: Client, draftId: String, taskId: Long, revision: Long, explicitConfirmed: Boolean): SaveReply {
@@ -192,8 +195,9 @@ internal class PhoneSkillDrafts(private val newId: () -> String = { UUID.randomU
         editor = null
         return saved
     }
-    private fun shown(e: Editor): Shown = Shown(View(e.id, e.source.owner, e.revision, e.document.skillName,
-        e.document.markdown, e.order.toList(), e.parameters.toList(), e.write?.phase()))
+    private fun shown(e: Editor): Shown = shown(e, e.write?.phase())
+    private fun shown(e: Editor, phase: PhoneSkillWrite.Phase?): Shown = Shown(View(e.id, e.source.owner, e.revision, e.document.skillName,
+        e.document.markdown, e.order.toList(), e.parameters.toList(), phase))
     private fun uniqueId(): String? {
         val id = newId()
         return id.takeIf { HEX.matches(it) && it != editor?.id && it !in receipts }

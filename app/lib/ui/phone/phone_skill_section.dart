@@ -178,6 +178,11 @@ class _PhoneSkillEditorState extends State<PhoneSkillEditor> {
           _pendingWrite = true;
           _confirmed = false;
         case PhoneSkillReplyKind.rejected:
+          // Only definite installer failures end a pending write. A transport/stale/busy
+          // reply cannot establish whether the write has finished.
+          if (reply.code == 'io' || reply.code == 'no_home' || reply.code == 'conflict') {
+            _pendingWrite = false;
+          }
           _error = reply.code;
           _confirmed = false;
         case PhoneSkillReplyKind.discarded:
