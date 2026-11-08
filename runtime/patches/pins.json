@@ -1511,6 +1511,66 @@
           "before": "070c839e2c00e2d5f7c5d82307ca3d84dbb2323e46979daf265908751bbe8ae8"
         }
       }
+    },
+    "zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz-companion-recall-gates.diff": {
+      "0.2.2-rc.1": {
+        "node_modules/@deepseek-ai/dsh-agent-loop/lib/index.js": {
+          "after": "999a751912797e94773d224cd8fe69766815c5e75845a9d04295fd13acaf599d",
+          "before": "927efc78e67b6203502892f1ebef4d198c9b95dfc8f8432692ba28f41eb511bf"
+        },
+        "node_modules/@deepseek-ai/dsh-compaction-basic/lib/index.js": {
+          "after": "50f2ad189f66e5828f3953acd631f42be7b078de9c85d0bc8f4e8bb339805f70",
+          "before": "eafe4adbccc2b87377e4839f1a6093ebe1a0858caadc6c3dbffef19cb1dbc54b"
+        },
+        "node_modules/@deepseek-ai/dsh-llm-deepseek/lib/index.js": {
+          "after": "3ecbabcacad28c409e36cfccebdc429d00b455cb1315bc0d6c2252d4e391f76b",
+          "before": "955dc7bc7ca6c857ff4a7e373b87c143b96a4c43fc80325b67dc0982600dcc75"
+        },
+        "node_modules/@deepseek-ai/dsh-llm/lib/index.js": {
+          "after": "d46febb9df41fb1aa818e1c0ed23507a8e82a1b7ef4a7a8dd24f29be86177c94",
+          "before": "2f3e4c549b158136d6355c6e29f25bc09e31c622f31dbbc2e82bab7cd537eda0"
+        },
+        "node_modules/@deepseek-ai/dsh-session-title-llm/lib/index.js": {
+          "after": "00621f421b1dffb0062e6e63cc482016221a8f768c64bc02f18cf7734eb3cf11",
+          "before": "5a4b2862aa53a16b9ff6cd02a833667b13eb970a74c6acefc758451c1b248b2d"
+        },
+        "node_modules/@deepseek-ai/dsh-session/lib/index.js": {
+          "after": "39c4181a4c132f42c7d639d2fdeac9a7794e92a127c789f87eb7c0f7f7db5925",
+          "before": "442c6d710f300b4fc32d17a59d99bfd9c7fe35e46654cf211cdec8e0c8be1575"
+        },
+        "node_modules/@deepseek-ai/dsh-subagent-fork-in-process/lib/index.js": {
+          "after": "ebabfb40f4eaba72aad1b424d7277503ab110560d83a67ceaaee103f83cad604",
+          "before": "2ce7fff41b6e0f634087ccd1a11a9e1538e7619b1fb936cb990ea3a11564cb99"
+        },
+        "node_modules/@deepseek-ai/dsh-system-prompt/lib/index.js": {
+          "after": "4b458e437e3274765db5fbe430b6d3284fbdab361318c13ed6d14ba070ed388a",
+          "before": "ac76c82502d6888371869c3d48c4f1950ce377c4a4457cd89951f9461725fb03"
+        },
+        "node_modules/@deepseek-ai/dsh-tool-executor-native/lib/index.js": {
+          "after": "9211121d034ec6cd28e22fa78111ee27a3f7134295e99eb760219cb0d546957e",
+          "before": "db667cb6545bb642bc2609d49f797b1d7e852e4197d5d38bf541abc7ec078599"
+        },
+        "node_modules/@deepseek-ai/dsh-tools/lib/pipeline.js": {
+          "after": "d3762a4db75a3aacd78914e57972834faf522c2cadf80b9af13af833bed4541a",
+          "before": "f6c850cefce30831c4c5f160e831856b105935331bacd1ae0823129001614bc6"
+        }
+      }
+    },
+    "zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz-companion-signals.diff": {
+      "0.2.2-rc.1": {
+        "node_modules/@deepseek-ai/dsh-tool-bash/lib/index.js": {
+          "after": "7f5a2c438a9b32eb5c7beac97a6e589e1908b3df79b18abebb22ea192300cad1",
+          "before": "ae6be2d8b287b5e410d026acd2fdfc553ebb95565f7b361029c7fb5bcda5fd27"
+        },
+        "node_modules/@deepseek-ai/dsh-tools/lib/index.js": {
+          "after": "014eeff09dea063148d15d256d6dbb524a4c94a23a909a9ada728a722b91cf01",
+          "before": "1889cbf718d64518dd83245d4dba1e1f080b2c5326259c3ed5b1be7a7666a2bd"
+        },
+        "node_modules/@deepseek-ai/dsh-tools/lib/pipeline.js": {
+          "after": "281e593e0de6086334e3cd7c42da34406d71545325580ea5c9e3328683b8a5f9",
+          "before": "d3762a4db75a3aacd78914e57972834faf522c2cadf80b9af13af833bed4541a"
+        }
+      }
     }
   },
   "schema": 1
