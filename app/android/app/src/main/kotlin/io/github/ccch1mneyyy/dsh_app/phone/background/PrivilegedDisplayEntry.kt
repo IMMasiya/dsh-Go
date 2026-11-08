@@ -7,6 +7,7 @@ import android.content.Context
 import android.os.Binder
 import android.os.Bundle
 import android.os.Looper
+import android.os.Parcel
 import android.os.Process
 
 /**
@@ -18,6 +19,24 @@ import android.os.Process
 class PrivilegedDisplayService(context: Context) : IPrivilegedDisplay.Stub() {
     private val core = PrivilegedDisplayCore(context)
     private val appUid = context.applicationInfo.uid
+
+    override fun onTransact(code: Int, data: Parcel, reply: Parcel?, flags: Int): Boolean {
+        if (code == SHIZUKU_DESTROY_TRANSACTION) {
+            if (Binder.getCallingUid() != appUid && Binder.getCallingUid() != Process.myUid()) {
+                throw SecurityException("identityChanged")
+            }
+            data.enforceInterface(IPrivilegedDisplay.DESCRIPTOR)
+            // Official UserService lifecycle stop, not an owner RELEASE receipt. The manager
+            // removes its record before sending this one-way transaction and has no kill fallback.
+            kotlin.system.exitProcess(0)
+        }
+        return super.onTransact(code, data, reply, flags)
+    }
+
+    private companion object {
+        // Shizuku API 13.1.5 UserService reserved destroy transaction (also used by Sui).
+        const val SHIZUKU_DESTROY_TRANSACTION = 16777115
+    }
 
     override fun execute(request: Bundle): Bundle {
         if (Binder.getCallingUid() != appUid && Binder.getCallingUid() != Process.myUid()) {
