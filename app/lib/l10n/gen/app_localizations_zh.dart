@@ -10886,6 +10886,273 @@ class L10nZh extends L10n {
   String get phoneDndConnectPortHint => '在系统「无线调试」首页查看「IP 地址和端口」，填写冒号后的端口。请不要使用配对码页面的端口。';
 
   @override
+  String get phonePreviewTitle => '实时查看后台屏';
+
+  @override
+  String get phonePreviewDescription => '仅在预览可见时取帧。画面只留在本机；预览不可点击。';
+
+  @override
+  String get phonePreviewOpen => '查看后台屏';
+
+  @override
+  String get phonePreviewOff => '任务已结束或预览已关闭';
+
+  @override
+  String get phonePreviewUnavailable => '画面暂不可预览，或受到保护';
+
+  @override
+  String get phonePreviewWaiting => '等待后台屏的新画面';
+
+  @override
+  String get phoneViewportTitle => '后台视口';
+
+  @override
+  String get phoneViewportDescription => '下次新建后台屏时生效；当前后台屏不变，交还后重建会采用新设置。视口方向不会强制应用旋转。';
+
+  @override
+  String get phoneViewportPortrait => '竖屏';
+
+  @override
+  String get phoneViewportLandscape => '横屏';
+
+  @override
+  String get phoneResumeTask => '重新允许手机操控';
+
+  @override
+  String get phoneResumeTaskHint => '允许此对话之后的手机操作，不重放已经结束的动作。';
+
+  @override
+  String get phoneResumeTaskFailed => '暂时没能恢复，上一动作可能仍在收尾。';
+
+  @override
+  String phoneStoppedTask(int task) {
+    return '手机任务 $task 已停止';
+  }
+
+  @override
+  String get phoneTaskDrainingHint => '正在等待上一动作退出并清理后台屏。';
+
+  @override
+  String get phoneTaskCleanupFailedHint => '未能确认后台屏已清理，手机操控仍被阻挡。';
+
+  @override
+  String phoneFinishingTask(int task) {
+    return '手机任务 $task 正在收尾';
+  }
+
+  @override
+  String get phoneCleanupRetry => '重试清理';
+
+  @override
+  String get phoneCleanupRetryFailed => '仍未能确认上一后台屏已清理，屏幕占用继续保留。';
+
+  @override
+  String get phoneSelfCheckTitle => '本机手机自检';
+
+  @override
+  String get phoneSelfCheckPartial => '部分自检：仅已观察的项目有结果';
+
+  @override
+  String get phoneSelfCheckScope => '使用已选择并连接的通道和临时展示屏。应用启动、文字输入、截图、OCR及主屏受扰情况均未测试。清理通过不代表展示屏创建成功。';
+
+  @override
+  String get phoneSelfCheckStart => '开始部分自检';
+
+  @override
+  String get phoneSelfCheckCancel => '请求取消';
+
+  @override
+  String get phoneSelfCheckRetry => '仅重试清理';
+
+  @override
+  String get phoneSelfCheckRefresh => '刷新状态';
+
+  @override
+  String get phoneSelfCheckSave => '保存脱敏报告';
+
+  @override
+  String get phoneSelfCheckSaving => '保存中…';
+
+  @override
+  String get phoneSelfCheckSaved => '报告已存入下载/DSH-Go。';
+
+  @override
+  String get phoneSelfCheckSaveFailed => '报告保存失败。';
+
+  @override
+  String get phoneSelfCheckReportHint => '仅在你点击保存时导出。本机报告只含固定结果，不含截图、识别文字、日志、账户数据或运行标识。';
+
+  @override
+  String phoneSelfCheckRunState(String state) {
+    String _temp0 = intl.Intl.selectLogic(state, {
+      'idle': '尚未开始',
+      'running': '部分自检进行中',
+      'cleaning': '正在清理；取消不代表已撤销派发的输入',
+      'done': '执行和清理已结束，请逐项查看下方结果',
+      'cancelled': '已取消，已观察到的操作仍保留',
+      'cleanup_pending': '清理尚未确认，资源仍保留',
+      'other': '状态不可用',
+    });
+    return '$_temp0';
+  }
+
+  @override
+  String phoneSelfCheckStepState(String state) {
+    String _temp0 = intl.Intl.selectLogic(state, {
+      'not_run': '未运行／无观察',
+      'running': '进行中',
+      'pass': '已观察通过',
+      'fail': '失败',
+      'skipped': '已跳过',
+      'unknown': '未确认',
+      'cancelled': '已取消',
+      'other': '未确认',
+    });
+    return '$_temp0';
+  }
+
+  @override
+  String phoneSelfCheckStage(String stage) {
+    String _temp0 = intl.Intl.selectLogic(stage, {
+      'device': '设备前置条件',
+      'channel': '已选通道',
+      'display': '临时后台屏创建',
+      'input_probe': '触摸接收核验',
+      'launch': '应用启动',
+      'tree': '控件树',
+      'tap': '应用按钮点按',
+      'scroll': '应用滚动',
+      'back': '应用返回',
+      'text_ascii': '固定 ASCII 输入',
+      'text_zh': '固定中文输入',
+      'capture': '本地图样截图',
+      'continuity': '有限受控刷新',
+      'main': '有限主屏观察',
+      'ocr': '本机OCR',
+      'cleanup': '严格清理',
+      'other': '未知项目',
+    });
+    return '$_temp0';
+  }
+
+  @override
+  String phoneSelfCheckReason(String reason) {
+    String _temp0 = intl.Intl.selectLogic(reason, {
+      'busy': '手机或通道正忙。',
+      'unsupported': '设备或特权端不支持这项自检。',
+      'cancelled': '本次请求已取消或退役。',
+      'disabled': '手机操控尚未开启。',
+      'locked': '设备已锁定。',
+      'identity': '原运行或通道身份已改变。',
+      'invalid': '请求或结果无法验证。',
+      'display': '临时展示屏未能确认。',
+      'input': '输入受理或送达未确认，不会重放已派发输入。',
+      'cleanup': '资源清理未确认，仅可重试清理。',
+      'denied': '系统拒绝了操作。',
+      'timeout': '操作超时，已派发工作仍可能完成。',
+      'unavailable': '本机状态或已选通道不可用。',
+      'target_unavailable': '无法核实固定目标，请完成清理后再开始。',
+      'target_changed': '原目标已变化，请仅继续清理。',
+      'target_cleanup': '目标清理未确认，请仅重试清理。',
+      'target_main': '目标曾出现在主屏，已停止后续步骤，请完成清理。',
+      'target_readback': '固定目标计数或文本回读不符，不要重复操作，请完成清理。',
+      'tree_cleanup': '树连接清理未确认，请仅重试清理。',
+      'target_launch': '目标启动被拒绝或未确认，请检查设备并完成清理。',
+      'frame_unavailable': '未取得可用的本地图样帧，请完成清理后再开始新的自检。',
+      'frame_mismatch': '实际画面与本次目标及阶段不符，请完成清理。',
+      'continuity': '有限受控刷新序列未确认；这不是帧率结果。',
+      'main_changed': '主屏采样点发生变化，也可能包含用户操作；请完成清理，不能据此判定原因。',
+      'main_unchanged': '这些有限采样点未见变化，采样之间是否受扰仍未知。',
+      'main_incomplete': '主屏样本不完整，不能据此证明没有受扰。',
+      'not_installed': '未安装本机 OCR 识别器，未执行 OCR 测试。',
+      'other': '收到无法识别的结果。',
+    });
+    return '$_temp0';
+  }
+
+  @override
+  String get phoneSelfCheckTargetScope =>
+      '使用普通临时后台屏和固定本地目标，检查启动、控件树及一次按钮点击。文字、滚动、截图和 OCR 未测试；主屏只记录实际观察到的受扰失败，不提供通过结论。仅清理完成不证明曾创建后台屏。';
+
+  @override
+  String get phoneSelfCheckProfileChoice => '选择下次自检（不会改变下方报告）';
+
+  @override
+  String phoneSelfCheckProfile(String profile) {
+    String _temp0 = intl.Intl.selectLogic(profile, {
+      'probe_b': '输入接收探针（B）',
+      'target_c1': '固定目标自检（C1）',
+      'target_c2': '固定输入与画面自检（C2）',
+      'other': '未知模式',
+    });
+    return '$_temp0';
+  }
+
+  @override
+  String phoneSelfCheckReportProfile(String profile) {
+    String _temp0 = intl.Intl.selectLogic(profile, {
+      'probe_b': '本次报告：输入接收探针（B）',
+      'target_c1': '本次报告：固定目标（C1）',
+      'target_c2': '本次报告：固定输入与画面（C2）',
+      'other': '本次报告模式未确认',
+    });
+    return '$_temp0';
+  }
+
+  @override
+  String get phoneSelfCheckTargetC2Scope =>
+      '使用固定本机目标核验启动、控件树、单次按钮点按、ASCII／中文 ACTION_SET_TEXT 整框替换与回读、本地图样截图和有限受控刷新；不衡量 FPS 或流畅度。有限主屏样本不能证明采样间全程无扰。OCR 未安装；触摸接收探针、滚动和返回不在本次范围。仅清理完成也不证明曾创建展示屏。';
+
+  @override
+  String phoneTaskWaiting(int taskId) {
+    return '任务 $taskId · 等待资源';
+  }
+
+  @override
+  String phoneTaskWaitingApp(String packageName, int seconds) {
+    return '等待应用 $packageName，已等待 $seconds 秒。';
+  }
+
+  @override
+  String phoneTaskWaitingUnknown(int seconds) {
+    return '等待界面资源（应用身份未确认），已等待 $seconds 秒。';
+  }
+
+  @override
+  String phoneTaskWaitingScreen(String screen, int seconds) {
+    return '等待$screen，已等待 $seconds 秒。';
+  }
+
+  @override
+  String get phoneTaskMainResource => '主屏';
+
+  @override
+  String get phoneTaskBackgroundResource => '后台屏';
+
+  @override
+  String get phoneInterruptionTitle => '上次手机任务未确认结束';
+
+  @override
+  String get phoneInterruptionLoading => '正在读取任务中断记录…';
+
+  @override
+  String get phoneInterruptionStorageError => '无法保存或读取任务结束记录。请重试；这不表示后台资源已清理。';
+
+  @override
+  String phoneInterruptionHint(int count) {
+    return '有 $count 个任务中断或未能保存结束状态，操作结果可能已发生。请先核对；确认仅表示看过提示，不会恢复操作或证明后台资源已清理。';
+  }
+
+  @override
+  String get phoneInterruptionAcknowledge => '已核对中断提示';
+
+  @override
+  String get phoneInterruptionRetry => '重试保存或读取';
+
+  @override
+  String get phoneInterruptionActionFailed => '任务记录尚未确认，请重试';
+
+  @override
   String get phoneTaskResultReady => '任务完成 · 查看结果';
 
   @override
@@ -10956,6 +11223,24 @@ class L10nZh extends L10n {
       'root 管理器（Magisk、KernelSU 或 APatch）会弹窗问你。允许后，DSH Go 以 root 运行自己的后台服务；只有打开「保持 root 通道」，断开或重启后才会自己再去申请。';
 
   @override
+  String get phoneGateCleanupTitle => '探针清理尚未确认';
+
+  @override
+  String get phoneGateCleanupUnknown => '新后台资源已被阻止。原通道仍可用时，只能重试原清理，不会重跑探针。';
+
+  @override
+  String get phoneGateCleanupRunning => '正在等待原探针及清理完成；清理确认前保留原通道。';
+
+  @override
+  String get phoneGateCleanupRetry => '仅重试清理';
+
+  @override
+  String get phoneGateCleanupDone => '清理已确认。请再次明确选择通道，重新检查。';
+
+  @override
+  String get phoneGateRetest => '重新检查此通道';
+
+  @override
   String phoneKeepTitle(String mode) {
     String _temp0 = intl.Intl.selectLogic(mode, {
       'shizuku': '保持 Shizuku 通道',
@@ -10996,6 +11281,116 @@ class L10nZh extends L10n {
 
   @override
   String get phoneKeepFailed => '没连上；下次打开 App 或开始操控时再试';
+
+  @override
+  String get phoneResourceRecoveryTitle => '后台资源待核验';
+
+  @override
+  String get phoneResourceRecoveryRunning => '正在核对原资源记录，完成前不能开始新的手机任务。';
+
+  @override
+  String get phoneResourceRecoveryStorage => '无法读取或保存资源记录。可重试保存或读取；已确认的释放不会重复执行，也不会重放旧操作。';
+
+  @override
+  String get phoneResourceRecoveryPending =>
+      '旧后台资源尚未核验，新的手机任务暂被阻止。请选择原授权通道后重试；仍无法核验时，可重启设备后再次检查。旧操作结果可能已经发生。确认任务中断提示不会清除这些资源。';
+
+  @override
+  String get phoneResourceRecoveryRetry => '重试资源核验';
+
+  @override
+  String get phoneSkillSectionTitle => '成功任务与技能';
+
+  @override
+  String get phoneSkillAskAfterSuccess => '任务成功后询问是否存成技能';
+
+  @override
+  String get phoneSkillAskAfterSuccessHint => '默认关闭。此页可见时，新完成的任务会询问一次；也可随时手动选择。';
+
+  @override
+  String phoneSkillTask(int taskId, int steps) {
+    return '任务 $taskId · $steps 步';
+  }
+
+  @override
+  String get phoneSkillCandidateHint => '请先核对实际结果；工具返回成功不等于目标已经完成。';
+
+  @override
+  String get phoneSkillSaveAction => '存成技能';
+
+  @override
+  String get phoneSkillConfirmGoal => '这次任务达到了目标吗？';
+
+  @override
+  String get phoneSkillConfirmGoalBody => '请核对实际结果。确认后才会起草，保存前仍可查看和编辑。';
+
+  @override
+  String get phoneSkillGoalDone => '目标已完成，查看草稿';
+
+  @override
+  String get phoneSkillPrivacyHint => '草稿只在本机处理。不要填写密码、密钥或验证码。本阶段自由文字会替换成参数，删除和重排步骤会保留；以最终预览为准。';
+
+  @override
+  String get phoneSkillGoal => '目标';
+
+  @override
+  String get phoneSkillPrerequisites => '前提（应用、版本、登录态）';
+
+  @override
+  String phoneSkillStep(int number) {
+    return '原步骤 $number';
+  }
+
+  @override
+  String get phoneSkillCheckpoint => '这一步之后应看到什么';
+
+  @override
+  String get phoneSkillMoveUp => '上移一步';
+
+  @override
+  String get phoneSkillMoveDown => '下移一步';
+
+  @override
+  String get phoneSkillUpdatePreview => '更新脱敏预览';
+
+  @override
+  String get phoneSkillPreviewTitle => '将保存的完整内容';
+
+  @override
+  String get phoneSkillParameterizedHint => '自由文字已替换成参数；使用技能时需要补充并重新核对。';
+
+  @override
+  String get phoneSkillFinalConfirmation => '我已核对当前完整预览，同意保存这一版本。';
+
+  @override
+  String get phoneSkillSavedBody => '文件已写入本机技能目录。尚未核实引擎技能列表是否已刷新；可在技能页检查。';
+
+  @override
+  String get phoneSkillWriting => '正在写入技能';
+
+  @override
+  String get phoneSkillCannotCancel => '写入可能已进入提交阶段，无法保证撤回。关闭只关闭此页；已经提交的文件仍会保存。';
+
+  @override
+  String get phoneSkillKeepWaiting => '继续查看';
+
+  @override
+  String get phoneSkillCheckWrite => '检查写入结果';
+
+  @override
+  String get phoneSkillStale => '这份草稿已失效。请关闭后重新选择任务。';
+
+  @override
+  String get phoneSkillSensitive => '编辑中包含敏感内容，请移除后再更新预览。';
+
+  @override
+  String get phoneSkillInvalid => '编辑内容或步骤顺序不符合限制。请减少文字，至少保留一个步骤。';
+
+  @override
+  String get phoneSkillWriteFailed => '未能写入。请核对本机运行环境和存储；修改并更新预览后才能再次确认保存。';
+
+  @override
+  String get phoneSkillUnavailable => '当前无法处理技能草稿。请检查本机引擎状态后重试。';
 
   @override
   String get phoneModeTitle => '选择确认方式';

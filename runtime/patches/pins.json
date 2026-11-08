@@ -1488,6 +1488,14 @@
         }
       }
     },
+    "zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz-phone-caller-bundle.diff": {
+      "0.2.2-rc.1": {
+        "node_modules/@deepseek-ai/dsh-tools/lib/pipeline.js": {
+          "after": "eb891d29b281a0ed02e6b69c3128ee29ee525292c8565133999280cf20edcb5c",
+          "before": "f6c850cefce30831c4c5f160e831856b105935331bacd1ae0823129001614bc6"
+        }
+      }
+    },
     "zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz-storage-json-postpublish.diff": {
       "0.2.2-rc.1": {
         "node_modules/@deepseek-ai/dsh-storage-json/lib/index.js": {
@@ -1509,6 +1517,74 @@
         "node_modules/@deepseek-ai/dsh-llm-pi-ai/lib/index.js": {
           "after": "0a99a2fc903a4285044b09114b3bd20ee1e612f39aa381e4a71b10d48ee9e9f7",
           "before": "070c839e2c00e2d5f7c5d82307ca3d84dbb2323e46979daf265908751bbe8ae8"
+        }
+      }
+    },
+    "zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz-phone-caller.diff": {
+      "0.2.2-rc.1": {
+        "node_modules/@deepseek-ai/dsh-mcp-client/lib/index.js": {
+          "after": "01acaf2965cdd4389f7e2c7a73d364ed3e4329850692d1e1fb92e84469de8b63",
+          "before": "64dfc9127a47d9d453d72022b47d3b8d8a5c82cad756ac1114b09faf1a956120"
+        },
+        "node_modules/@deepseek-ai/dsh-mcp-client/lib/types/index.d.ts": {
+          "after": "8a62f38641cb39f122bbacc801a897b71b2448f63cdceb1f6405a9c198dc3b50",
+          "before": "a1b8499d30fe19a69d70c5332e7d447e87496e55b67f8ab25e5bb10021cc5596"
+        },
+        "node_modules/@deepseek-ai/dsh-mcp-client/lib/types/tools.d.ts": {
+          "after": "fc9e870f41278b1750b704827cff70bca6c89d3f1a4e8bbfb041a375cfdc41b7",
+          "before": "32fa23472d05bbe322ccf4541d033e1467aa795770fb3e0c3817271416e82dfc"
+        },
+        "node_modules/@deepseek-ai/dsh-tool-executor-ptc/lib/index.js": {
+          "after": "ab3c91f18752f6c1f89754baf816a560b878f06d4e77ca518d708a317004488b",
+          "before": "aab21d46e71316a97ad2a071ab7d8d21aa876c4192a4cd98094f61b2800cad9a"
+        },
+        "node_modules/@deepseek-ai/dsh-tools/lib/types/batch.js": {
+          "after": "f6e8980e29f23ad8c36702bd24b6453d62dd6012544152ddd3441889f2a1a693",
+          "before": "fc31ae28425535a39eb2fa0b17d14294b186cea0e3a7951333cccbc6e6f07c3b"
+        },
+        "node_modules/@deepseek-ai/dsh-tools/lib/types/contracts.d.ts": {
+          "after": "1ffde725339118581cb60ae10e67fdc423a51ff14a545661e6a56124418ec5f8",
+          "before": "f0f4b71173ab97a28b1da0a748a9b1f6a33033f25ea5c3499c9701d3393381d3"
+        },
+        "node_modules/@deepseek-ai/dsh-tools/lib/types/pipeline.js": {
+          "after": "6b5dd713195a14603da23a3602ce251142dae15503f04b3850fd145308239243",
+          "before": "17952abbbb42b85deb49254a83f1d839c7e0a15836d2601614f733298f177d19"
+        }
+      }
+    },
+    "zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz-phone-run-end.diff": {
+      "0.2.2-rc.1": {
+        "node_modules/@deepseek-ai/dsh-mcp-client/lib/index.js": {
+          "after": "851f298e025660da755bcd8207cba997a7520278ad189f4675e7e9c793c250a9",
+          "before": "01acaf2965cdd4389f7e2c7a73d364ed3e4329850692d1e1fb92e84469de8b63"
+        },
+        "node_modules/@deepseek-ai/dsh-mcp-client/lib/types/tools.d.ts": {
+          "after": "0bd873abe12af48b5a6552fe26f75fb478518d93d05daca2de5fc9e1b7f2bfb8",
+          "before": "fc9e870f41278b1750b704827cff70bca6c89d3f1a4e8bbfb041a375cfdc41b7"
+        },
+        "node_modules/@deepseek-ai/dsh-tools/lib/types/batch.js": {
+          "after": "dc556cd5a3cbd9cdc48b1e9d161baefc29ca5990609d590171c90e2792058fd7",
+          "before": "f6e8980e29f23ad8c36702bd24b6453d62dd6012544152ddd3441889f2a1a693"
+        },
+        "node_modules/@deepseek-ai/dsh-tools/lib/types/events.d.ts": {
+          "after": "2a8c42015d2cf4f276ce1ddc507e87ed03353a34b45d64fe45639333489941a4",
+          "before": "d9b88e373fb94f038c2ee76a30c45fdcd34bd8cca39cef7cd09a8d56de352ac9"
+        }
+      }
+    },
+    "zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz-phone-run-end-schema.diff": {
+      "0.2.2-rc.1": {
+        "node_modules/@deepseek-ai/dsh-mcp-client/lib/index.js": {
+          "after": "3af6303ee705551b6c44155549d6767dedd802a1a881b7aac0dcc84099c4e7b4",
+          "before": "851f298e025660da755bcd8207cba997a7520278ad189f4675e7e9c793c250a9"
+        }
+      }
+    },
+    "zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz-phone-run-end-retry.diff": {
+      "0.2.2-rc.1": {
+        "node_modules/@deepseek-ai/dsh-mcp-client/lib/index.js": {
+          "after": "a1ad048cbbb7caefe5471c583f076aa8e393f534efbc5b11b625308096efdace",
+          "before": "3af6303ee705551b6c44155549d6767dedd802a1a881b7aac0dcc84099c4e7b4"
         }
       }
     }
