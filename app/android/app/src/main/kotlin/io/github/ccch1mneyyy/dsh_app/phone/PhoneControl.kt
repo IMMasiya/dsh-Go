@@ -260,6 +260,10 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
         PhoneRegistry.unlocks = { policies().unlocks }
         background.onStatusChanged = { emitStatus() }
         background.onPreviewChanged = { main.post { preview.refresh() } }
+        background.localOcrAllowed = { target ->
+            isEnabled() && !isLocked() && target.packageName != app.packageName &&
+                target.packageName !in policies().denyPackages
+        }
         (app as? Application)?.let { AppVisibility.register(it) }
         tasks.addListener { onTask(it) }
         ticker.scheduleWithFixedDelay({ tick() }, 2, 2, TimeUnit.SECONDS)
