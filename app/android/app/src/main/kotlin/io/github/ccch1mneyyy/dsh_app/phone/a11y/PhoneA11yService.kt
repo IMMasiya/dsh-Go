@@ -112,7 +112,7 @@ class PhoneA11yService : AccessibilityService() {
     internal fun stopAll(reason: String) {
         driver?.abort()
         overlay?.stopAll()
-        PhoneRegistry.controlListener?.onStopRequested(reason)
+        PhoneRegistry.controlListener?.onStopAllRequested(reason)
     }
 
     private fun teardown(reason: String) {
@@ -132,7 +132,7 @@ class PhoneA11yService : AccessibilityService() {
         driver = null
         overlay = null
         Log.i(TAG, "accessibility service gone: $reason")
-        PhoneRegistry.controlListener?.let { it.onStopRequested(reason); it.onAccessibilityChanged(false) }
+        PhoneRegistry.controlListener?.let { it.onStopAllRequested(reason); it.onAccessibilityChanged(false) }
     }
 
     companion object {

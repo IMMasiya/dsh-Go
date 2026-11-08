@@ -9,6 +9,7 @@ import io.github.ccch1mneyyy.dsh_app.phone.PhoneAction
 import io.github.ccch1mneyyy.dsh_app.phone.PhoneDriver
 import io.github.ccch1mneyyy.dsh_app.phone.PhoneRegistry
 import io.github.ccch1mneyyy.dsh_app.phone.PhoneScreen
+import io.github.ccch1mneyyy.dsh_app.phone.PhoneTasks
 import io.github.ccch1mneyyy.dsh_app.phone.ScreenSnapshot
 import io.github.ccch1mneyyy.dsh_app.phone.TargetInfo
 
@@ -20,9 +21,16 @@ import io.github.ccch1mneyyy.dsh_app.phone.TargetInfo
  */
 class BackgroundDisplay(
     private val channelProvider: () -> PrivilegedChannel?,
-    private val releaseChannelProvider: () -> PrivilegedChannel?,
     private val viewport: BackgroundPolicy.Viewport = BackgroundPolicy.Viewport.PORTRAIT,
+    private val onResourceReady: (PrivilegedChannel) -> Unit = {},
 ) : PhoneDriver {
+
+    private val resourceIo = BackgroundDisplayIo<PrivilegedChannel>()
+    internal val ownerToken: String get() = resourceIo.owner
+    internal fun seal() = resourceIo.seal()
+    internal fun previewAvailable(peer: PrivilegedChannel): Boolean = resourceIo.previewAvailable(peer)
+    internal fun previewClosed(): Boolean = resourceIo.previewClosed()
+    internal fun tryPreview(request: Bundle): Bundle? = resourceIo.tryPreview { it.tryExecute(request) }
 
     override val screen: PhoneScreen = PhoneScreen.BACKGROUND
 
@@ -36,7 +44,7 @@ class BackgroundDisplay(
         if (Build.VERSION.SDK_INT < BackgroundPolicy.MIN_SDK)
             // l10n:keep agent screen protocol
             return Availability(false, "不打扰模式需要 Android 14 或更高版本")
-        val channel = channelProvider()
+        val channel = resourceIo.peer() ?: channelProvider()
         if (channel == null || !channel.alive())
             // l10n:keep agent screen protocol
             return Availability(false, "不打扰模式的特权通道未就绪")
@@ -45,44 +53,55 @@ class BackgroundDisplay(
 
     private fun channel(): PrivilegedChannel =
         // l10n:keep agent screen protocol
-        channelProvider() ?: throw IllegalStateException("背景屏通道未就绪")
+        resourceIo.peer() ?: channelProvider() ?: throw IllegalStateException("背景屏通道未就绪")
 
-    override fun open(packageName: String): ActionResult {
-        val active = channel()
-        if (viewport == BackgroundPolicy.Viewport.LANDSCAPE) {
-            val probe = active.execute(Bundle().apply { putString(Proto.OP, Proto.OP_PROBE) })
-            if (!probe.getBoolean(Proto.OK) || !BackgroundPolicy.supportsViewport(viewport, probe.get(Proto.VIEWPORT_VERSION))) {
-                return ActionResult(false, Reasons.of("viewportUnsupported"))
+    override fun open(packageName: String): ActionResult = try {
+        resourceIo.call {
+            val active = channel()
+            if (resourceIo.peer() == null) {
+                val probe = active.execute(Bundle().apply { putString(Proto.OP, Proto.OP_PROBE) })
+                check(probe.get(Proto.OK) == true && probe.get(Proto.RELEASE_RECEIPT) is Int && probe.getInt(Proto.RELEASE_RECEIPT) == 1) {
+                    "所选后台服务不支持安全收尾，请更新并重新连接该通道。" // l10n:keep agent resource result
+                }
+                check(BackgroundPolicy.supportsViewport(viewport, probe.get(Proto.VIEWPORT_VERSION))) {
+                    Reasons.of("viewportUnsupported")
+                }
+                // A stop during probe seals this short admission check before CREATE can be sent.
+                resourceIo.pin(active)
             }
+            val request = Bundle().apply {
+                putString(Proto.OP, Proto.OP_LAUNCH)
+                putInt(Proto.RELEASE_RECEIPT, 1)
+                putString(Proto.OWNER, ownerToken)
+                putString(Proto.PKG, packageName)
+                putInt(Proto.SHORT_SIDE, 720)
+                putString(Proto.VIEWPORT_PRESET, viewport.preset)
+                putBoolean(Proto.LOCAL_VISUAL, true)
+                putInt(Proto.WANT_IMAGE, 0)
+            }
+            currentPackage = packageName
+            val response = active.execute(request)
+            // Publish only after the first resource request has actually returned on its pinned peer.
+            onResourceReady(active)
+            toResult(response, "已在后台屏打开") // l10n:keep agent screen protocol
         }
-        if (Thread.currentThread().isInterrupted) throw InterruptedException()
-        val request = Bundle().apply {
-            putString(Proto.OP, Proto.OP_LAUNCH)
-            putString(Proto.OWNER, "task")
-            putString(Proto.PKG, packageName)
-            putInt(Proto.SHORT_SIDE, 720)
-            putString(Proto.VIEWPORT_PRESET, viewport.preset)
-            putInt(Proto.WANT_IMAGE, 0)
-            putBoolean(Proto.LOCAL_VISUAL, true)
-        }
-        currentPackage = packageName
-        val response = active.execute(request)
-        // l10n:keep agent screen protocol
-        return toResult(response, "已在后台屏打开")
+    } catch (error: Throwable) {
+        if (resourceIo.peer() == null) resourceIo.seal() // Failed preflight must not leave an idle I/O worker.
+        throw error
     }
 
     override fun observe(detail: Boolean, image: Boolean): ScreenSnapshot {
         val pkg = currentPackage ?: return idleSnapshot()
         val request = Bundle().apply {
             putString(Proto.OP, Proto.OP_OBSERVE)
-            putString(Proto.OWNER, "task")
+            putString(Proto.OWNER, ownerToken)
             putString(Proto.PKG, pkg)
             putBoolean(Proto.DETAIL, detail)
             putBoolean(Proto.WANT_IMAGE, image)
             putBoolean(Proto.LOCAL_VISUAL, true)
         }
         val response = try {
-            channel().execute(request)
+            resourceIo.call { channel().execute(request) }
         } catch (e: Exception) {
             clearSnapshot()
             throw e
@@ -98,7 +117,11 @@ class BackgroundDisplay(
         throw IllegalStateException(Reasons.of(code, detail))
     }
 
-    override fun collect(screenId: String, listElementId: Int, maxPages: Int, until: String?): CollectResult {
+    override fun collect(screenId: String, listElementId: Int, maxPages: Int, until: String?): CollectResult =
+        collect(screenId, listElementId, maxPages, until) { true }
+
+    override fun collect(screenId: String, listElementId: Int, maxPages: Int, until: String?, allowed: () -> Boolean): CollectResult {
+        if (!allowed()) return CollectResult(emptyList(), 0, PhoneTasks.STOPPED_MESSAGE, null)
         check(screenId == lastScreenId) { Reasons.of("staleSnapshot") }
         if (maxPages.coerceIn(1, 30) == 1) {
             val selected = lastElements.getOrNull(listElementId - 1)
@@ -115,6 +138,7 @@ class BackgroundDisplay(
         var stop = "listEnd"
         var last: ScreenSnapshot? = null
         while (pages < maxPages.coerceIn(1, 30)) {
+            if (!allowed()) { stop = PhoneTasks.STOPPED_MESSAGE; break }
             val snap = observe(detail = false, image = false)
             last = snap
             val before = seen.size
@@ -124,7 +148,7 @@ class BackgroundDisplay(
             if (seen.size == before) { stop = "listEnd"; break }
             if (pages >= maxPages) { stop = "pageLimit"; break }
             // Preserve the legacy whole-page collect path; explicit list tracking is separate.
-            val result = perform(PhoneAction.Scroll(snap.id, null, PhoneAction.Direction.DOWN))
+            val result = perform(PhoneAction.Scroll(snap.id, null, PhoneAction.Direction.DOWN), allowed)
             if (!result.ok) { stop = result.message; break }
         }
         return CollectResult(seen.toList(), pages, stop, last)
@@ -147,7 +171,9 @@ class BackgroundDisplay(
         )
     }
 
-    override fun perform(action: PhoneAction): ActionResult {
+    override fun perform(action: PhoneAction): ActionResult = perform(action) { true }
+
+    override fun perform(action: PhoneAction, allowed: () -> Boolean): ActionResult {
         // l10n:keep agent screen protocol
         val pkg = currentPackage ?: return ActionResult(false, "后台屏还没有打开应用")
         if (action is PhoneAction.Key && action.key != PhoneAction.GlobalKey.BACK) {
@@ -159,7 +185,7 @@ class BackgroundDisplay(
             return ActionResult(false, Reasons.of("staleSnapshot"), staleSnapshot = true)
         }
         val request = Bundle().apply {
-            putString(Proto.OWNER, "task")
+            putString(Proto.OWNER, ownerToken)
             putString(Proto.PKG, pkg)
         }
         when (action) {
@@ -196,24 +222,33 @@ class BackgroundDisplay(
             is PhoneAction.TapXY -> return ActionResult(false, "后台屏按元素编号操作，不用坐标")
         }
         // l10n:keep agent screen protocol
-        val active = channel()
-        if (Thread.currentThread().isInterrupted) throw InterruptedException()
-        return toResult(active.execute(request), "已在后台屏执行", textAction = action is PhoneAction.Type)
+        val response = resourceIo.call {
+            if (!allowed()) return@call null
+            channel().execute(request)
+        } ?: return ActionResult(false, PhoneTasks.STOPPED_MESSAGE)
+        return toResult(response, "已在后台屏执行", textAction = action is PhoneAction.Type)
     }
 
     override fun foregroundPackage(): String? = currentPackage
 
-    fun release() {
-        runCatching {
-            // Cleanup may use an existing session, but must not connect or start a new process.
-            releaseChannelProvider()?.execute(Bundle().apply {
-                putString(Proto.OP, Proto.OP_RELEASE); putString(Proto.OWNER, "task")
-            })
-        }
+    fun release(): Boolean {
+        val acknowledged = try {
+            resourceIo.release { pinned ->
+                val response = pinned.execute(Bundle().apply {
+                    putString(Proto.OP, Proto.OP_RELEASE); putString(Proto.OWNER, ownerToken)
+                    putInt(Proto.RELEASE_RECEIPT, 1)
+                })
+                BackgroundReleaseReceipt.accepts(ownerToken, response.get(Proto.RELEASE_RECEIPT),
+                    response.get(Proto.OWNER), response.get(Proto.OK), response.get("released"), response.get(Proto.TASK_SCOPE_EMPTY),
+                    response.get("neverCreated"))
+            }
+        } catch (_: Exception) { false }
+        if (!acknowledged) return false
         currentPackage = null
         lastScreenId = null
         lastElements = emptyList()
         previousLabels = emptySet()
+        return true
     }
 
     private fun fingerprint(elementId: Int, request: Bundle) {

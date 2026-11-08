@@ -184,18 +184,38 @@ internal class ControlOverlay(private val service: AccessibilityService) : UserG
             // over WindowManager work or enqueue a second, unguarded status runnable.
             if (!statusOwnership.publish(ifCurrent)) return@post
             statusText = text
+            paused = PhoneRegistry.controlListener?.isTaskPaused() == true
             setStopped(false)
             if (text == null) {
                 statusOwnership.clear()
                 paused = false
                 line = null
                 steps.clear()
-                removePill(animated = true)
+                removePill(animated = true, preservePrompts = true)
             } else {
                 val l = StatusLines(AppStrings.get(service, R.string.phone_waived_status), AppStrings.get(service, R.string.phone_acting)).parse(text)
                 line = l
                 steps.add(l)
                 showPill()
+            }
+        }
+    }
+
+    override fun clearStatus(ifCurrent: (() -> Unit) -> Unit) {
+        main.post {
+            // The displayed status can be stale even if this cleanup request lost selection.
+            // Prompt cards and their CONFIRM/HANDOFF holds belong to separate tickets.
+            val stale = statusOwnership.takeStale()
+            var accepted = false
+            ifCurrent { accepted = true }
+            if (stale || accepted) {
+                statusOwnership.clear()
+                statusText = null
+                line = null
+                steps.clear()
+                setStopped(false)
+                paused = false
+                removePill(animated = true, preservePrompts = true)
             }
         }
     }
@@ -654,7 +674,7 @@ internal class ControlOverlay(private val service: AccessibilityService) : UserG
 
     private fun togglePause() {
         if (stoppedNote) return
-        paused = !paused
+        paused = !(PhoneRegistry.controlListener?.isTaskPaused() ?: paused)
         renderPill()
         PhoneRegistry.controlListener?.onPauseChanged(paused)
         announce(s(if (paused) R.string.overlay_paused_short else R.string.overlay_resume_description))

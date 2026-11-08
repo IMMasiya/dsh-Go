@@ -260,6 +260,16 @@ class _PhoneControlScreenState extends ConsumerState<PhoneControlScreen> {
     if (!ok && mounted) _toast(context.l10n.phoneStopFailed);
   }
 
+  Future<void> _retryTaskCleanup(int taskId) async {
+    final ok = await _phone.retryTaskCleanup(taskId);
+    if (!ok && mounted) _toast(context.l10n.phoneCleanupRetryFailed);
+  }
+
+  Future<void> _resumeTask(int taskId) async {
+    final ok = await _phone.resumeTask(taskId);
+    if (!ok && mounted) _toast(context.l10n.phoneResumeTaskFailed);
+  }
+
   @override
   Widget build(BuildContext context) {
     final l10n = context.l10n;
@@ -270,6 +280,17 @@ class _PhoneControlScreenState extends ConsumerState<PhoneControlScreen> {
     final ready = state.loaded && status.ready;
     final toggle = _switchHandler(state, blocker);
     final task = status.task;
+    // A stopped task is inactive. Keep an explicit, session-scoped way to allow future calls.
+    final stoppedSessions = <Object, PhoneTaskStatus>{};
+    int recoveryPriority(PhoneTaskStatus item) => item.cleanupFailed ? 3 : item.finishing || item.draining || item.retiring ? 2 : 1;
+    for (final item in status.tasks) {
+      if (item.id == null || !(item.stopped || item.finishing || item.draining)) continue;
+      if (item.sessionId == null && !item.finishing && !item.draining && !item.cleanupFailed) continue;
+      final key = item.sessionId ?? #legacyPhoneTask;
+      final previous = stoppedSessions[key];
+      // A later stopped run must not hide the old resource that still requires cleanup.
+      if (previous == null || recoveryPriority(item) >= recoveryPriority(previous)) stoppedSessions[key] = item;
+    }
     const gap = SizedBox(height: 24);
 
     return AppPage.list(
@@ -318,6 +339,33 @@ class _PhoneControlScreenState extends ConsumerState<PhoneControlScreen> {
                     ? l10n.phoneControlTaskNoConfirmHint
                     : l10n.phoneControlFloatingBarHint,
                 trailing: FixButton(label: l10n.commonStop, onPressed: _stopTask),
+              ),
+            ],
+          ),
+        ],
+        for (final stopped in stoppedSessions.values) ...[
+          const SizedBox(height: 12),
+          ListPageCard(
+            children: [
+              ListPageRow(
+                icon: AppIcons.paused,
+                title: stopped.stopped ? l10n.phoneStoppedTask(stopped.id!) : l10n.phoneFinishingTask(stopped.id!),
+                subtitle: stopped.cleanupFailed
+                    ? l10n.phoneTaskCleanupFailedHint
+                    : stopped.retiring || stopped.draining || stopped.finishing || stopped.pendingCalls > 0
+                    ? l10n.phoneTaskDrainingHint
+                    : l10n.phoneResumeTaskHint,
+                trailing: FixButton(
+                  key: ValueKey('phone-resume-${stopped.id}'),
+                  label: stopped.cleanupFailed ? l10n.phoneCleanupRetry : l10n.phoneResumeTask,
+                  onPressed: stopped.cleanupFailed
+                      ? stopped.draining || stopped.settling || stopped.pendingCalls > 0
+                          ? null
+                          : () => _retryTaskCleanup(stopped.id!)
+                      : stopped.retiring || stopped.draining || stopped.finishing || stopped.cleanupFailed || stopped.pendingCalls > 0
+                      ? null
+                      : () => _resumeTask(stopped.id!),
+                ),
               ),
             ],
           ),

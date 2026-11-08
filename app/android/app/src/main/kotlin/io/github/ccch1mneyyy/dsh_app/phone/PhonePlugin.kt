@@ -249,7 +249,11 @@ class PhonePlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandle
             "setPolicies" -> async(result) { control.setPolicies(call.arguments as? Map<*, *>) }
             "actionLog" -> result.success(control.log.toMaps(call.argument<Int>("limit") ?: 100))
             // l10n:keep agent stop reason
-            "stopTask" -> result.success(control.stopTask("用户在 App 里停止"))
+            "stopTask" -> result.success(if (call.hasArgument("taskId") && taskId(call) == null) false
+                else control.stopTask("用户在 App 里停止", taskId(call)))
+            "retryTaskCleanup" -> async(result) { taskId(call)?.let(control::retryTaskCleanup) == true }
+            "resumeTask" -> result.success(taskId(call)?.let(control::resumeTask) == true)
+            "pauseTask" -> result.success(taskId(call)?.let { control.pauseTask(it, call.argument<Boolean>("paused") == true) } == true)
             "finishTask" -> finishTask(call, result)
             "presentPrompt" -> {
                 val owner = promptOwner
@@ -288,6 +292,12 @@ class PhonePlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandle
         }
     }
 
+    private fun taskId(call: MethodCall): Long? = when (val id = call.argument<Any>("taskId")) {
+        is Int -> id.toLong().takeIf { it > 0 }
+        is Long -> id.takeIf { it > 0 }
+        else -> null
+    }
+
     private fun cancelledSelection(): Map<String, Any?> =
         mapOf("ok" to false, "reason" to AppStrings.get(appContext, R.string.background_selection_cancelled))
 
@@ -308,23 +318,33 @@ class PhonePlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandle
         val taskId = when (rawTask) { is Int -> rawTask.toLong(); is Long -> rawTask; else -> null }?.takeIf { it > 0 }
         val session = call.argument<String>("sessionId")?.takeIf { it.isNotEmpty() }
         val host = call.argument<String>("host")
+        val returnSession = if (call.argument<Boolean>("appOnly") == true) null else session
         val reopen = call.argument<Boolean>("reopen") == true
+        val runId = call.argument<String>("runId")
+        val rawGeneration = call.argument<Any>("generation")
+        val generation = when (rawGeneration) { is Int -> rawGeneration.toLong(); is Long -> rawGeneration; else -> null }
         io.execute {
             if (!attached || promptOwner !== pluginOwner) {
                 main.post { result.success(mapOf("closed" to false, "busy" to false, "opened" to false,
                     "launched" to false, "notified" to false, "current" to false, "reason" to "stale")) }
                 return@execute
             }
-            val scope = taskId?.let { runCatching { control.finishTaskScope(it) }.getOrNull() }
+            val state = taskId?.let(control::taskState)
+            val matches = taskId != null && (control.taskSession(taskId) == null || control.taskSession(taskId) == session)
+            val scope = if (matches) taskId?.let {
+                if (control.taskSession(it) != null) {
+                    if (runId != null && generation != null) control.completedTask(it, runId, generation) else null
+                } else runCatching { control.finishTaskScope(it) }.getOrNull()
+            } else null
             val closed = scope != null
-            val busy = !closed && control.tasks.callsInFlight > 0
-            val waitingOwner = scope ?: taskId?.let { control.tasks.activeOwner(it) }
+            val busy = !closed && taskId != null && control.taskBusy(taskId)
+            val waitingOwner = scope ?: if (matches) state?.activeOwner(taskId) else null
             main.post {
                 PhoneTaskReturn(
-                    current = { attached && promptOwner === pluginOwner && waitingOwner != null && control.tasks.isCurrent(waitingOwner) },
+                    current = { attached && promptOwner === pluginOwner && waitingOwner != null && taskId != null && control.taskOwnerCurrent(taskId, waitingOwner) },
                     visible = control.prompts::appResumed,
-                    launch = { control.reopen(session, host) },
-                    notify = { taskId != null && control.notificationGate.notifyFinished(taskId, session, host) },
+                    launch = { control.reopen(returnSession, host) },
+                    notify = { taskId != null && control.notificationGate.notifyFinished(taskId, returnSession, host) },
                     schedule = { delay, block -> main.postDelayed(block, delay) },
                     clock = SystemClock::elapsedRealtime,
                 ).start(closed, busy, reopen, result::success)

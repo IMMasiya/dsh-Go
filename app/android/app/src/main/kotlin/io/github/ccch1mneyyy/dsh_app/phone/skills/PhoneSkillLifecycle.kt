@@ -18,6 +18,13 @@ internal class PhoneSkillLifecycle(private val trace: PhoneTaskTrace, private va
         active = Active(owner)
     }
 
+    /** Registry-owned scopes are independent; never adopt or end the legacy single active slot. */
+    @Synchronized fun startManaged(owner: PhoneTasks.Owner): Long? {
+        if (!running) return null
+        trace.start(owner)
+        return drafts.currentEpoch()
+    }
+
     /** An old listener delivery cannot retire a newer task. Stop/idle/invalidation never qualify. */
     @Synchronized fun changed(snapshot: PhoneTasks.Snapshot) {
         val a = active ?: return
@@ -30,6 +37,7 @@ internal class PhoneSkillLifecycle(private val trace: PhoneTaskTrace, private va
 
     /** Native integration only: B2 calls after real body drain AND cleanup, with its start-time epoch. */
     @Synchronized fun completeDrained(owner: PhoneTasks.Owner, startedEpoch: Long, completion: String): Boolean {
+        if (!running || startedEpoch != drafts.currentEpoch()) return false
         trace.complete(owner, completion == "completed")
         val snapshot = trace.snapshot(owner) ?: return false
         return drafts.offer(startedEpoch, snapshot)

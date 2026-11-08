@@ -176,17 +176,21 @@ internal class MainScreenDriver(private val service: PhoneA11yService, private v
         isSecretField = el.secret, isEditable = el.editable, viewId = el.viewId,
     )
 
-    override fun perform(action: PhoneAction): ActionResult {
+    override fun perform(action: PhoneAction): ActionResult = perform(action) { !overlay.paused }
+
+    override fun perform(action: PhoneAction, allowed: () -> Boolean): ActionResult {
         // l10n:keep agent screen result
         if (Looper.myLooper() == Looper.getMainLooper()) return ActionResult(false, "内部错误：手机动作不能在主线程执行。")
         val gen = abortGen
         synchronized(lock) {
             availability().let { if (!it.ok) return ActionResult(false, it.reason!!) }
             // l10n:keep agent screen result
-            if (overlay.paused) return ActionResult(false, "用户在悬浮条上按了暂停。等用户点「继续」后再操作，不要换别的方式绕过。")
+            if (!allowed()) return ActionResult(false, "用户在悬浮条上按了暂停。等用户点「继续」后再操作，不要换别的方式绕过。")
             // l10n:keep agent screen result
             if (!awaitInputIdle()) return ActionResult(false, "用户正在悬浮条上输入插话，稍等再操作。")
             if (cancelled(gen)) throw InterruptedException()
+            // Editing may have held this invocation for seconds after its first admission check.
+            if (!allowed()) return ActionResult(false, "本任务已暂停或停止，没有继续操作。") // l10n:keep agent result
             return when (action) {
                 is PhoneAction.Key -> key(action, gen)
                 is PhoneAction.Tap -> tap(action, gen)
@@ -233,7 +237,10 @@ internal class MainScreenDriver(private val service: PhoneA11yService, private v
         }
     }
 
-    override fun collect(screenId: String, listElementId: Int, maxPages: Int, until: String?): CollectResult {
+    override fun collect(screenId: String, listElementId: Int, maxPages: Int, until: String?): CollectResult =
+        collect(screenId, listElementId, maxPages, until) { !overlay.paused }
+
+    override fun collect(screenId: String, listElementId: Int, maxPages: Int, until: String?, allowed: () -> Boolean): CollectResult {
         // l10n:keep agent screen result
         if (Looper.myLooper() == Looper.getMainLooper()) return CollectResult(emptyList(), 0, "内部错误：不能在主线程执行", null)
         synchronized(lock) {
@@ -265,6 +272,7 @@ internal class MainScreenDriver(private val service: PhoneA11yService, private v
             val direction = if (el.horizontal) PhoneAction.Direction.RIGHT else PhoneAction.Direction.DOWN
             var lastBounds = el.bounds
             while (true) {
+                if (cancelled(gen) || !allowed()) { stop = "本任务已暂停或停止"; break } // l10n:keep agent result
                 val cap = capture()
                 try {
                     // Nothing readable in front: this says "cannot read" instead of blaming the list.
@@ -296,7 +304,7 @@ internal class MainScreenDriver(private val service: PhoneA11yService, private v
                     // l10n:keep agent screen result
                     if (cancelled(gen)) { stop = "已停止"; break }
                     // l10n:keep agent screen result
-                    if (overlay.paused) { stop = "用户暂停了"; break }
+                    if (!allowed()) { stop = "本任务已暂停或停止"; break }
                     // l10n:keep agent screen result
                     if (SystemClock.uptimeMillis() > deadline) { stop = "超时"; break }
                     // l10n:keep agent screen result
@@ -309,7 +317,7 @@ internal class MainScreenDriver(private val service: PhoneA11yService, private v
                     if (misses > 0) clock.pause(800) { cancelled(gen) } // lists that load more on demand
                 } finally { cap.recycle() }
             }
-            return CollectResult(items.list(), read, stop, observeQuiet())
+            return CollectResult(items.list(), read, stop, if (!cancelled(gen) && allowed()) observeQuiet() else null)
         }
     }
 

@@ -459,5 +459,14 @@
   "phoneViewportTitle": "Background viewport",
   "phoneViewportDescription": "Applies when the next background screen is created. The current screen stays unchanged; recreating it after handoff uses the new setting. This does not force apps to rotate.",
   "phoneViewportPortrait": "Portrait",
-  "phoneViewportLandscape": "Landscape"
+  "phoneViewportLandscape": "Landscape",
+  "phoneResumeTask": "Allow phone control again",
+  "phoneResumeTaskHint": "Allow future phone actions in this conversation. Finished actions will not be replayed.",
+  "phoneResumeTaskFailed": "Could not resume. The previous action may still be finishing.",
+  "phoneStoppedTask": "Phone task {task} stopped",
+  "phoneTaskDrainingHint": "Waiting for the previous action and background screen cleanup to finish.",
+  "phoneTaskCleanupFailedHint": "Background screen cleanup could not be confirmed. Phone control remains blocked.",
+  "phoneFinishingTask": "Phone task {task} is finishing",
+  "phoneCleanupRetry": "Retry cleanup",
+  "phoneCleanupRetryFailed": "The previous background screen is still unconfirmed. Its screen access remains reserved."
 }

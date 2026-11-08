@@ -279,20 +279,20 @@ class SafetyGate(
     }
 
     /** Resolves a verdict, asking the person if needed. InterruptedException means stop. */
-    fun resolve(verdict: Verdict, scope: SerialWorker.Scope): Result = when (verdict) {
+    fun resolve(verdict: Verdict, scope: SerialWorker.Scope, owner: PhoneTasks.Owner? = null): Result = when (verdict) {
         Verdict.Allow -> Result.Go("allowed")
         is Verdict.Refuse -> Result.No(verdict.message, "refused:${verdict.rule}")
-        is Verdict.Confirm -> ask(verdict, scope)
+        is Verdict.Confirm -> ask(verdict, scope, owner)
     }
 
-    private fun ask(v: Verdict.Confirm, scope: SerialWorker.Scope): Result {
+    private fun ask(v: Verdict.Confirm, scope: SerialWorker.Scope, admittedOwner: PhoneTasks.Owner?): Result {
         val g = gate() ?: return Result.No(
             // l10n:keep agent safety result
             "这一步需要用户确认，但现在没办法问用户：请用户允许 DSH 发通知，或开启 DSH 的无障碍（悬浮条确认）。",
             "refused:no-gate",
         )
-        val owner = tasks.activeOwner() ?: return stopped()
-        val decision = scope.userWait { g.confirm(v.request) }
+        val owner = admittedOwner ?: tasks.activeOwner() ?: return stopped()
+        val decision = scope.userWait { g.confirm(v.request.copy(owner = owner)) }
         // A real tap is not authority over a task that replaced the one being asked about.
         if (!tasks.isCurrent(owner)) return stopped()
         return when (decision) {

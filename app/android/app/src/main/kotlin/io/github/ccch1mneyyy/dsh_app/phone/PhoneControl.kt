@@ -53,7 +53,10 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
     private val nm = app.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
     private val ticker = Executors.newSingleThreadScheduledExecutor { r -> Thread(r, "dsh-phone-status").apply { isDaemon = true } }
 
-    val tasks = PhoneTasks(clock = SystemClock::elapsedRealtime)
+    private val taskIds = java.util.concurrent.atomic.AtomicLong()
+    private val cleanupIo = Executors.newSingleThreadExecutor { r -> Thread(r, "dsh-phone-cleanup").apply { isDaemon = true } }
+
+    val tasks = PhoneTasks(clock = SystemClock::elapsedRealtime, idSource = taskIds::incrementAndGet)
     val log = ActionLog()
     val system = SystemActions(app)
     private val localizedUi = PhoneUiText { key, args ->
@@ -139,25 +142,83 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
     private val skillLifecycle = PhoneSkillLifecycle(skillTrace, skillDrafts)
     internal val skillBridge = PhoneSkillBridge(skillDrafts,
         { write, done -> RuntimeController.get(app).savePhoneSkill(write, done) }, ::emitStatus)
-    val core = PhoneCore(this, tasks, log, skillTrace = skillTrace)
+    private val displaySelection = PhoneDisplaySelection()
+    private val legacyObservations = PhoneTaskObservations(tasks)
+    val core = PhoneCore(this, tasks, log, skillTrace = skillTrace,
+        onExecution = { owner -> selectExecution(tasks, owner) })
     val notificationGate = NotificationGate(app) { text, ifCurrent -> setStatusLine(text, ifCurrent) }
-    val prompts = PhonePrompts(app, tasks, ::isEnabled, ::isLocked, notificationGate, ::reopen)
-    // Caller attribution is parsed at the boundary; taskIsolation stays 0 until per-task state lands.
+    val prompts = PhonePrompts(app, tasks, ::isEnabled, ::isLocked, notificationGate, ::reopen, displaySelection) { id, session ->
+        sessions.task(id)?.takeIf { it.sessionId == null || it.sessionId == session }?.tasks
+    }
+    private val sessions = PhoneTaskSessions(SystemClock::elapsedRealtime, taskIds::incrementAndGet, ::createSessionCore, tasks, core, ::emitStatus,
+        { task -> if (task.sessionId != null) onSessionTask(task.tasks, task.tasks.snapshot()) },
+        settleResources = { taskId -> check(background.endTask(taskId)) { "Background release is unconfirmed" } },
+        dispatchCleanup = { action ->
+            if (Looper.myLooper() == Looper.getMainLooper()) cleanupIo.execute(action) else action()
+        },
+        startSkillScope = skillLifecycle::startManaged,
+        completeSkillScope = skillLifecycle::completeDrained,
+        cancelScope = { record, state ->
+            // Registry admission stays sealed until these lock-free side effects finish.
+            background.sealTask(state.id)
+            if (state.stopped) core.worker.interruptCurrent(record.tasks)
+            prompts.stopTask(record.tasks)
+        })
     private val server = McpServer(PhoneToolCatalog.listJson(), { name, args, _ -> core.call(name, args) }, SERVER_VERSION)
-    private val bridge = PhoneBridge(server) { line -> logger(line) }
+    private val bridge = PhoneBridge(server, { line -> logger(line) }, { call ->
+        val admission = sessions.admit(call.caller)
+        val invoke: () -> String = { call.run { name, args, _ -> sessions.run(admission, name, args) } }
+        invoke
+    }, { end ->
+        try {
+            val task = sessions.admitEnd(end.sessionId, end.runId, end.completion)
+            PhoneBridge.EndWork(end.ack()) {
+                if (task != null) { background.sealTask(task.tasks.snapshot().id); sessions.settleEnd(task) }
+            }
+        } catch (_: PhoneTaskSessions.CapacityExceeded) {
+            PhoneBridge.EndWork(McpServer.error(end.id, -32000, PhoneTaskSessions.CAPACITY_MESSAGE)) {}
+        }
+    })
+
+    private fun createSessionCore(task: PhoneTasks, sessionId: String?): PhoneCore {
+        val gate = prompts.scoped(task, sessionId)
+        val observations = PhoneTaskObservations(task)
+        val env = object : PhoneEnv by this@PhoneControl {
+            override fun gate(): UserGate = gate
+            override fun onTaskStarted(owner: PhoneTasks.Owner) {} // Registry owns managed trace start.
+            override fun driver(screen: PhoneScreen, owner: PhoneTasks.Owner): PhoneDriver? =
+                driverForTask(screen, task, owner)?.let { observations.bind(it, owner) }
+            override fun notifyFix(kind: String) = notifyFixFor(task, kind)
+            override fun beforeHandoff(screen: PhoneScreen): String? {
+                if (screen != PhoneScreen.BACKGROUND) return null
+                check(background.endTask(task.snapshot().id)) { "后台屏释放尚未确认，暂不能交还主屏。" } // l10n:keep agent handoff failure
+                return "后台屏已释放，App 回到主屏。请重新读取主屏。" // l10n:keep agent handoff result
+            }
+        }
+        task.addListener { state -> onSessionTask(task, state) }
+        return PhoneCore(env, task, log, core.worker, skillTrace = skillTrace,
+            onExecution = { owner -> selectExecution(task, owner) })
+    }
+
+    private fun onSessionTask(task: PhoneTasks, state: PhoneTasks.Snapshot) {
+        prompts.check()
+        val record = sessions.all().firstOrNull { it.tasks === task } ?: return
+        if (!state.active) sessions.onInactive(record, state)
+        updateTaskUi(task, state)
+        emitStatus()
+    }
 
     @Volatile private var logger: (String) -> Unit = {}
     @Volatile private var rootfs: File? = null
     @Volatile private var policiesCache: PhonePolicies? = null
-    @Volatile private var statusLine: String? = null
     @Volatile private var lastStatus: Map<String, Any?>? = null
     @Volatile private var keptTask = 0L
     private var screenReceiver: BroadcastReceiver? = null
     private val sinks = CopyOnWriteArraySet<(Map<String, Any?>) -> Unit>()
     val background: BackgroundControl = BackgroundControl.get(app)
     val preview = BackgroundPreview(app, background::previewTarget, { taskId ->
-        val task = tasks.snapshot()
-        task.active && task.id == taskId && !isLocked()
+        val task = sessions.task(taskId)?.tasks?.snapshot()
+        task?.active == true && task.id == taskId && !isLocked()
     }, ::emitStatus)
 
     init {
@@ -187,7 +248,7 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
         }
         if (!enabled) {
             // l10n:keep agent stop reason
-            tasks.stop("手机操控已关闭")
+            sessions.stopAll("手机操控已关闭")
             skillLifecycle.retired()
             stopBridge()
         } else {
@@ -316,7 +377,12 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
     }
 
     private fun stopBridge() {
+        background.sealTask()
         bridge.stop()
+        sessions.retire()
+        displaySelection.clear()
+        PhoneRegistry.overlayGate?.clearStatus { /* Stale displayed status only. */ }
+        core.worker.retire()
         rootfs?.let { PhoneGuest.clearConfig(it) }
         unregisterScreenOff()
     }
@@ -325,10 +391,37 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
 
     // ── Task ────────────────────────────────────────────────────────────────────────
 
-    fun stopTask(reason: String): Boolean {
-        tasks.stop(reason)
-        return true
+    fun stopTask(reason: String, taskId: Long? = null): Boolean {
+        val record = if (taskId == null) sessions.all().firstOrNull { it.sessionId == null } ?: return false
+            else sessions.task(taskId) ?: return false
+        val state = record.tasks.snapshot()
+        if (taskId != null && state.id != taskId) return false
+        return sessions.stop(record, state, reason)
     }
+
+    fun stopSelectedTask(reason: String): Boolean {
+        val selected = displaySelection.view() ?: return false
+        val record = sessions.task(selected.owner.taskId)?.takeIf { it.tasks === selected.task } ?: return false
+        return sessions.stop(record, selected.owner, reason)
+    }
+    fun retryTaskCleanup(taskId: Long): Boolean = sessions.retryCleanup(taskId)
+    fun resumeTask(taskId: Long): Boolean {
+        val record = sessions.task(taskId) ?: return false
+        val expected = record.tasks.snapshot()
+        if (expected.id != taskId) return false
+        return sessions.resume(record, expected)
+    }
+    fun pauseTask(taskId: Long, paused: Boolean): Boolean {
+        val task = sessions.task(taskId)?.tasks ?: return false
+        val owner = task.activeOwner(taskId) ?: return false
+        return task.setPausedIfCurrent(owner, paused)
+    }
+    fun taskState(taskId: Long): PhoneTasks? = sessions.task(taskId)?.tasks
+    fun taskBusy(taskId: Long): Boolean = sessions.task(taskId)?.let(sessions::isBusy) == true
+    fun taskSession(taskId: Long): String? = sessions.task(taskId)?.sessionId
+    fun completedTask(taskId: Long, runId: String, generation: Long): PhoneTasks.Owner? = sessions.completed(taskId, runId, generation)
+    fun taskOwnerCurrent(taskId: Long, owner: PhoneTasks.Owner): Boolean = sessions.ownerCurrent(taskId, owner)
+
 
     /**
      * Dart (`finishTask`): the turn that drove the phone ended. Ends the task — a stop's hold too —
@@ -340,13 +433,12 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
         return tasks.finish(taskId)
     }
 
-    /** B2 only, after physical drain/cleanup. Never called from legacy finishTask or a UI method. */
-    internal fun completeDrainedSkillTask(owner: PhoneTasks.Owner, startedEpoch: Long, completion: String) {
-        if (skillLifecycle.completeDrained(owner, startedEpoch, completion)) emitStatus()
+    fun finishTaskScope(expectedTaskId: Long): PhoneTasks.Owner? {
+        val record = sessions.task(expectedTaskId) ?: return null
+        val expected = record.tasks.snapshot()
+        if (expected.id != expectedTaskId) return null
+        return sessions.finish(record, expected)
     }
-
-    // Legacy SerialWorker has no physical-drain proof: finishing never publishes a candidate.
-    fun finishTaskScope(expectedTaskId: Long): PhoneTasks.Owner? = tasks.finishScope(expectedTaskId)
 
     /**
      * Brings the app forward on [sessionId] (just the app when null) after a finished task. Started
@@ -373,51 +465,53 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
         preview.refresh() // Clear local pixels before endTask can enter blocking release IPC.
         skillLifecycle.changed(s)
         prompts.check()
-        if (s.active && s.id != keptTask) {
-            keptTask = s.id
-            ticker.execute(::keep)
-        }
-        if (!s.active) {
-            tasks.runIfInactive(s) {
-                if (s.stopped && tasks.isStopped()) core.worker.interruptCurrent()
-                statusLine = null
-            }
-            runCatching { PhoneRegistry.overlayGate?.close { cleanup -> tasks.runIfInactive(s, cleanup) } }
-            // One virtual display per task: release it when the task ends.
-            // IPC must stay outside the PhoneTasks lock; the background owner
-            // check and release are serialized with its next registration.
-            runCatching { background.endTask(s.id) }
-        }
-        DshService.updateNotification(app)
-        LiveActivity.refresh(app)
+        val record = sessions.all().firstOrNull { it.tasks === tasks }
+        if (!s.active && record != null) sessions.onInactive(record, s)
+        updateTaskUi(tasks, s)
         emitStatus()
     }
 
-    private fun setStatusLine(text: String?, ifCurrent: (() -> Unit) -> Boolean) {
-        var changed = false
-        ifCurrent {
-            if (statusLine != text) { statusLine = text; changed = true }
+    private fun selectExecution(task: PhoneTasks, owner: PhoneTasks.Owner): (((() -> Unit) -> Boolean)?) {
+        val ticket = displaySelection.select(task, owner) ?: return null
+        // Even an apps-only execution must retire the preceding pill. Both platform sinks
+        // run after the short Tasks -> selection commit, never while either lock is held.
+        PhoneRegistry.overlayGate?.clearStatus { /* Check displayed status's own guard only. */ }
+        DshService.updateNotification(app)
+        LiveActivity.refresh(app)
+        emitStatus()
+        return displaySelection.guard(ticket)
+    }
+
+    private fun updateTaskUi(task: PhoneTasks, state: PhoneTasks.Snapshot) {
+        if (state.active && state.id != keptTask) {
+            keptTask = state.id
+            ticker.execute(::keep)
         }
-        if (!changed) return
-        // Refresh reads current state; notification Binder work stays outside the task lock.
+        if (!state.active) {
+            val cleanup = displaySelection.inactive(task, state)
+            cleanup {} // Clear the matching line now, outside any UI/Binder operation.
+            // Always enqueue: an old displayed status may be stale after B became selected.
+            PhoneRegistry.overlayGate?.clearStatus(cleanup)
+        }
         DshService.updateNotification(app)
         LiveActivity.refresh(app)
     }
 
-    /** What the live activity shows while a task runs: what DSH does now, in which app; null otherwise. */
-    fun liveTask(): LiveTask? {
-        val s = tasks.snapshot()
-        if (!s.active) return null
-        return LiveTask(s.id, statusLine, s.app, s.paused)
+    private fun setStatusLine(text: String?, ifCurrent: (() -> Unit) -> Boolean) {
+        if (!displaySelection.status(text, ifCurrent)) return
+        DshService.updateNotification(app)
+        LiveActivity.refresh(app)
+    }
+
+    /** One coherent task/owner/line snapshot; never splice another execution's line into its id. */
+    fun liveTask(): LiveTask? = displaySelection.view()?.let {
+        LiveTask(it.state.id, it.line, it.state.app, it.state.paused)
     }
 
     data class LiveTask(val id: Long, val line: String?, val app: String?, val paused: Boolean)
 
-    /** The engine notification's text while a task runs (with a 停止操作 button); null otherwise. */
-    fun foregroundLine(): String? {
-        val s = tasks.snapshot()
-        if (!s.active) return null
-        return statusLine ?: AppStrings.get(app, R.string.phone_running) + (s.app?.let { " · $it" } ?: "")
+    fun foregroundLine(): String? = liveTask()?.let {
+        it.line ?: AppStrings.get(app, R.string.phone_running) + (it.app?.let { label -> " · $label" } ?: "")
     }
 
     private fun registerScreenOff() {
@@ -427,8 +521,9 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
                 if (intent.action != Intent.ACTION_SCREEN_OFF) return
                 preview.refresh()
                 // l10n:keep agent stop reason
-                onStopRequested("熄屏")
-                if (PhoneRegistry.backgroundDriver != null) runCatching { background.interrupt() }
+                background.requestInterrupt()
+                onStopAllRequested("熄屏")
+                cleanupIo.execute { background.finishInterrupt() }
             }
         }
         screenReceiver = r
@@ -505,6 +600,10 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
         "background" to backgroundStatus(),
         "a11yKeeper" to keeperStatus(),
         "task" to tasks.snapshot().toMap(),
+        "taskProtocol" to 1,
+        "tasks" to sessions.snapshot(),
+        "selectedTaskId" to (displaySelection.ticket()?.owner?.taskId ?: 0L),
+        "parallelLimit" to 1,
         "device" to linkedMapOf(
             "manufacturer" to Build.MANUFACTURER,
             "sdkInt" to Build.VERSION.SDK_INT,
@@ -603,7 +702,7 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
     /** Every 2 s: end idle tasks; 自动恢复无障碍; push status changes we can't observe (accessibility connecting). */
     private fun tick() {
         try {
-            tasks.expireIdle()
+            sessions.all().forEach { it.tasks.expireIdle() }
             A11yKeeper.check(app)
             pushIfChanged(force = false)
         } catch (_: Exception) {
@@ -612,14 +711,20 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
 
     // ── ControlListener (the overlay's 暂停 / 停止 / 插话, the service's own stops) ──
 
-    override fun onPauseChanged(paused: Boolean) = tasks.setPaused(paused)
-
-    override fun onStopRequested(reason: String) {
-        // The service also reports screen off / service gone while idle: only a running task stops.
-        if (tasks.snapshot().active) tasks.stop(reason) else tasks.invalidateOwners()
+    override fun isTaskPaused(): Boolean = displaySelection.view()?.state?.paused == true
+    override fun onPauseChanged(paused: Boolean) {
+        displaySelection.view()?.let { it.task.setPausedIfCurrent(it.owner, paused) }
     }
 
-    override fun onInterject(text: String) = tasks.interject(text)
+    override fun onStopRequested(reason: String) {
+        stopSelectedTask(reason)
+    }
+
+    override fun onInterject(text: String) {
+        displaySelection.view()?.let { it.task.interjectIfCurrent(it.owner, text) }
+    }
+
+    override fun onStopAllRequested(reason: String) { sessions.stopAll(reason) }
 
     override fun onAccessibilityChanged(connected: Boolean) = emitStatus()
 
@@ -641,18 +746,27 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
      * The background driver is registered per task: bring it up on first use (worker thread; may
      * connect). The main one may be on its way back (自动恢复无障碍): give it a few seconds.
      */
-    override fun driver(screen: PhoneScreen): PhoneDriver? {
+    override fun driver(screen: PhoneScreen): PhoneDriver? = driverForTask(screen, tasks)
+
+    override fun driver(screen: PhoneScreen, owner: PhoneTasks.Owner): PhoneDriver? =
+        driverForTask(screen, tasks)?.let { legacyObservations.bind(it, owner) }
+
+    private fun driverForTask(screen: PhoneScreen, task: PhoneTasks, owner: PhoneTasks.Owner? = null): PhoneDriver? {
         if (screen == PhoneScreen.MAIN && PhoneRegistry.mainDriver == null && A11yKeeper.check(app)) {
             val until = SystemClock.elapsedRealtime() + KEEPER_WAIT_MS
             while (PhoneRegistry.mainDriver == null && SystemClock.elapsedRealtime() < until) Thread.sleep(100)
         }
         if (screen != PhoneScreen.BACKGROUND) return PhoneRegistry.driver(screen)
-        return if (runCatching { background.beginTask(tasks.snapshot().id) }.getOrDefault(false)) PhoneRegistry.backgroundDriver else null
+        return if (runCatching {
+            background.beginTask(owner?.taskId ?: task.snapshot().id, owner?.let { captured ->
+                { task.isCurrent(captured) && !Thread.currentThread().isInterrupted }
+            })
+        }.getOrDefault(false)) PhoneRegistry.backgroundDriver else null
     }
 
     override fun beforeHandoff(screen: PhoneScreen): String? {
         if (screen != PhoneScreen.BACKGROUND || PhoneRegistry.backgroundDriver == null) return null
-        runCatching { background.endTask() }
+        check(background.endTask()) { "后台屏释放尚未确认，暂不能交还主屏。" } // l10n:keep agent handoff failure
         // l10n:keep agent stop reason
         return "后台屏已释放，App 回到了主屏，用户在主屏上操作。之后请用主屏（s 开头的屏幕号）。"
     }
@@ -673,8 +787,10 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
 
     override fun zone(): ZoneId = ZoneId.systemDefault()
 
-    override fun notifyFix(kind: String) {
-        if (!tasks.firstNotice(kind)) return
+    override fun notifyFix(kind: String) = notifyFixFor(tasks, kind)
+
+    private fun notifyFixFor(task: PhoneTasks, kind: String) {
+        if (!task.firstNotice(kind)) return
         if (!nm.areNotificationsEnabled()) return
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             nm.createNotificationChannel(NotificationChannel(CHANNEL_FIX, AppStrings.get(app, R.string.phone_fix_channel), NotificationManager.IMPORTANCE_HIGH))

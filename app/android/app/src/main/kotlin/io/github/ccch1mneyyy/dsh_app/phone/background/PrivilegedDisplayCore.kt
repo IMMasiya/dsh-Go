@@ -86,9 +86,28 @@ class PrivilegedDisplayCore(private val context: Context) {
     @Volatile private var owner: String? = null
     @Volatile private var display: VirtualDisplay? = null
     @Volatile private var reader: ImageReader? = null
+    private var pendingReader: ImageReader? = null
+    private var readerAllocationUncertain = false
     private var width = 0
     private var height = 0
     private val released = AtomicBoolean(false)
+    private var strictOwner = false
+    private var releasingDisplayId: Int? = null
+    private var displayCreationAttempted = false
+    private var displayApiReleased = false
+    private var lastReleasedOwner: String? = null
+    private var lastReleaseNeverCreated = false
+    private val taskManager by lazy { Class.forName("android.app.ActivityTaskManager").getMethod("getService").invoke(null) }
+    private val rootTasksMethod by lazy {
+        Class.forName("android.app.IActivityTaskManager").getMethod("getAllRootTaskInfosOnDisplay", Int::class.javaPrimitiveType)
+    }
+    private val rootTaskInfoType by lazy { Class.forName("android.app.ActivityTaskManager\$RootTaskInfo") }
+
+    private fun rootTasksEmpty(displayId: Int): Boolean {
+        val result = rootTasksMethod.invoke(taskManager, displayId) as? List<*> ?: throw Fault("releaseQueryFailed")
+        if (result.any { !rootTaskInfoType.isInstance(it) }) throw Fault("releaseQueryFailed")
+        return result.isEmpty()
+    }
 
     private class Fault(val code: String) : Exception()
 
@@ -103,6 +122,8 @@ class PrivilegedDisplayCore(private val context: Context) {
                 response.putString("revision", Proto.REVISION)
                 response.putInt(Proto.PREVIEW_VERSION, 1)
                 response.putInt(Proto.VIEWPORT_VERSION, 1)
+                // A real successful full query is required; finding the reflective method is insufficient.
+                if (runCatching { rootTasksEmpty(Display.DEFAULT_DISPLAY) }.isSuccess) response.putInt(Proto.RELEASE_RECEIPT, 1)
                 return response
             }
             if (op == Proto.OP_COLLECT_SYSTEM_IME) {
@@ -171,11 +192,33 @@ class PrivilegedDisplayCore(private val context: Context) {
         val ownerId = request.getString(Proto.OWNER).orEmpty()
         if (op == null || ownerId.isEmpty()) throw Fault("invalidArguments")
         if (op == Proto.OP_RELEASE) {
-            if (owner == ownerId) releaseAll()
-            response.putBoolean("released", true)
+            if (request.containsKey(Proto.RELEASE_RECEIPT)) {
+                if (request.get(Proto.RELEASE_RECEIPT) !is Int || request.getInt(Proto.RELEASE_RECEIPT) != 1) throw Fault("invalidArguments")
+                val neverCreated = releaseStrict(ownerId)
+                response.putInt(Proto.RELEASE_RECEIPT, 1)
+                response.putString(Proto.OWNER, ownerId)
+                if (neverCreated) response.putBoolean("neverCreated", true)
+                else { response.putBoolean("released", true); response.putBoolean(Proto.TASK_SCOPE_EMPTY, true) }
+            } else {
+                if (owner == ownerId) releaseAll()
+                response.putBoolean("released", true)
+            }
             return
         }
         if (owner != null && owner != ownerId) throw Fault("identityChanged")
+        if ((op == Proto.OP_CREATE || op == Proto.OP_LAUNCH) && request.containsKey(Proto.RELEASE_RECEIPT)) {
+            if (request.get(Proto.RELEASE_RECEIPT) !is Int || request.getInt(Proto.RELEASE_RECEIPT) != 1) throw Fault("invalidArguments")
+            if (lastReleasedOwner == ownerId) throw Fault("identityChanged")
+            if (owner == null) {
+                owner = ownerId
+                strictOwner = true
+                releasingDisplayId = null
+                displayCreationAttempted = false
+                displayApiReleased = false
+            }
+        }
+        if (strictOwner && displayApiReleased) throw Fault("releasePending")
+        if (strictOwner && (readerAllocationUncertain || display == null && (displayCreationAttempted || reader != null || pendingReader != null))) throw Fault("releaseUnconfirmed")
         if (keyguard?.isKeyguardLocked == true) throw Fault("locked")
         val pkg = request.getString(Proto.PKG).orEmpty()
         if (!PACKAGE.matches(pkg)) throw Fault("invalidArguments")
@@ -286,7 +329,11 @@ class PrivilegedDisplayCore(private val context: Context) {
         val size = if (preset == null) BackgroundPolicy.displaySize(shortSide, aspectW, aspectH)
             else intArrayOf(preset.width, preset.height)
         val w = size[0]; val h = size[1]
+        if (reader != null || pendingReader != null || readerAllocationUncertain) throw Fault("releasePending")
+        readerAllocationUncertain = true
         val ir = ImageReader.newInstance(w, h, PixelFormat.RGBA_8888, 2)
+        pendingReader = ir
+        readerAllocationUncertain = false
         try {
             // Every flag must resolve; never silently make a focus-stealing display on an old ROM.
             // SECURE is deliberately not requested, so protected content stays protected.
@@ -297,13 +344,23 @@ class PrivilegedDisplayCore(private val context: Context) {
             } catch (_: ReflectiveOperationException) { throw Fault("displayUnsupported") }
             // Presentation requires this flag for the gate's inert receiver. Actual tasks keep
             // their existing display flags; this tests delivery, not every target app's policy.
+            displayCreationAttempted = true
             val vd = displays.createVirtualDisplay("dsh-background", w, h, 320, ir.surface,
                 flags or if (probe) DisplayManager.VIRTUAL_DISPLAY_FLAG_PRESENTATION else 0)
-            if (vd.display.displayId <= Display.DEFAULT_DISPLAY) { vd.release(); throw Fault("displayUnsupported") }
-            width = w; height = h; reader = ir; display = vd
+            display = vd; reader = ir; pendingReader = null
+            releasingDisplayId = vd.display.displayId
+            if (vd.display.displayId <= Display.DEFAULT_DISPLAY) throw Fault("displayUnsupported")
+            width = w; height = h
             // Keep the virtual display's keyboard off the main screen: IME policy HIDE.
             runCatching { setImePolicyHide(vd.display.displayId) }
-        } catch (e: Throwable) { ir.close(); if (e is Fault) throw e else throw Fault("displayUnsupported") }
+        } catch (e: Throwable) {
+            if (!strictOwner) {
+                runCatching { display?.release() }
+                display = null
+                closeReaders(strict = false)
+            }
+            if (e is Fault) throw e else throw Fault("displayUnsupported")
+        }
     }
 
     private fun launchPackage(pkg: String) {
@@ -344,15 +401,59 @@ class PrivilegedDisplayCore(private val context: Context) {
         return task?.topActivity?.packageName
     }
 
+    /** Old callers keep their best-effort contract. Strict owners use releaseStrict instead. */
     private fun releaseAll() = lock.withLock {
+        if (strictOwner) throw Fault("releaseReceiptRequired") // Never downgrade a strict owner's cleanup.
         visualObservation = null
         stopPreview()
         preview.invalidate()
-        owner = null
+        runCatching { display?.release() }
+        closeReaders(strict = false)
+        display = null; owner = null
+        strictOwner = false; releasingDisplayId = null; displayCreationAttempted = false; displayApiReleased = false
+        readerAllocationUncertain = false
+    }
+
+    /** At most current + pending reader are retained; failures prohibit another allocation. */
+    private fun closeReaders(strict: Boolean) {
         var failed = false
-        try { display?.release() } catch (_: Throwable) { failed = true } finally { display = null }
-        try { reader?.close() } catch (_: Throwable) { failed = true } finally { reader = null }
-        if (failed) { /* best effort */ }
+        try { reader?.close(); reader = null } catch (_: Throwable) { failed = true; if (!strict) reader = null }
+        try { pendingReader?.close(); pendingReader = null } catch (_: Throwable) { failed = true; if (!strict) pendingReader = null }
+        if (failed && strict) throw Fault("releaseFailed")
+        if (readerAllocationUncertain && strict) throw Fault("releaseUnconfirmed")
+    }
+
+    private fun releaseStrict(ownerId: String): Boolean {
+        // Only the last completed identity/variant is cached; it never touches a new owner.
+        if (lastReleasedOwner == ownerId) return lastReleaseNeverCreated
+        if (owner != ownerId || !strictOwner) throw Fault("identityChanged")
+        visualObservation = null
+        stopPreview()
+        preview.invalidate()
+        val neverCreated = !displayCreationAttempted
+        if (neverCreated) {
+            if (display != null || releasingDisplayId != null) throw Fault("releaseUnconfirmed")
+            closeReaders(strict = true)
+        } else {
+            val displayId = releasingDisplayId ?: throw Fault("releaseUnconfirmed")
+            if (!displayApiReleased) {
+                val original = display ?: throw Fault("releaseUnconfirmed")
+                original.release() // Failure preserves owner, ID and references for an exact retry.
+                displayApiReleased = true
+            }
+            closeReaders(strict = true)
+            val deadline = SystemClock.uptimeMillis() + 1_000
+            while (!rootTasksEmpty(displayId)) {
+                val remaining = deadline - SystemClock.uptimeMillis()
+                if (remaining <= 0) throw Fault("releasePending")
+                Thread.sleep(minOf(50L, remaining)) // Poll budget only; the actual empty ATMS result is the proof.
+            }
+        }
+        display = null; owner = null; strictOwner = false
+        releasingDisplayId = null; displayCreationAttempted = false; displayApiReleased = false
+        lastReleasedOwner = ownerId
+        lastReleaseNeverCreated = neverCreated
+        return neverCreated
     }
 
     // ---- observation (tree + optional screenshot) --------------------------
@@ -486,16 +587,21 @@ class PrivilegedDisplayCore(private val context: Context) {
 
     /** Null means only absent/black frames; other capture failures remain distinguishable. */
     private fun capture(localVisual: Boolean = false): CaptureResult? {
-        val ir = ImageReader.newInstance(width, height, PixelFormat.RGBA_8888, 2)
+        val ir = lock.withLock {
+            if (pendingReader != null || readerAllocationUncertain) throw Fault("releasePending")
+            val vd = display ?: throw Fault("displayMissing")
+            readerAllocationUncertain = true
+            val next = ImageReader.newInstance(width, height, PixelFormat.RGBA_8888, 2)
+            pendingReader = next
+            readerAllocationUncertain = false // Register before setSurface or closing the previous reader can throw.
+            preview.readerChanged()
+            vd.surface = next.surface
+            reader?.close()
+            reader = next
+            pendingReader = null
+            next
+        }
         try {
-            lock.withLock {
-                val vd = display ?: throw Fault("displayMissing")
-                val previous = reader
-                vd.surface = ir.surface
-                preview.readerChanged()
-                reader = ir
-                previous?.close()
-            }
             val deadline = SystemClock.uptimeMillis() + BackgroundFrameReadiness.CAPTURE_TIMEOUT_MS
             for (attempt in 0..1) {
                 if (released.get() || Thread.currentThread().isInterrupted) throw Fault("cancelled")

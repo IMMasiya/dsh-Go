@@ -35,12 +35,15 @@ class BackgroundPreview(
     @Volatile private var requestToken = Any()
     private var worker: ExecutorService? = null
     private var busy = false
-    private var cleanups = 0
+    private val pendingOff = LinkedHashSet<BackgroundPreviewTarget>()
+    private var cleanupBusy = false
+    private var cleanupScheduled = false
     private var probed: BackgroundPreviewTarget? = null // Accessed only on the serial worker.
     private var supported = false
     private var scheduled = false
     private var lastPollAt: Long? = null
     private val tick = Runnable { scheduled = false; poll() }
+    private val cleanupTick = Runnable { cleanupScheduled = false; drainOff() }
 
     fun setEnabled(value: Boolean): Boolean {
         checkMain()
@@ -94,7 +97,7 @@ class BackgroundPreview(
     }
 
     private fun schedule() {
-        if (current == null || current === unsupported || busy || scheduled) return
+        if (current == null || current === unsupported || busy || scheduled || pendingOff.isNotEmpty()) return
         scheduled = true
         val wait = lastPollAt?.let { (it + 200 - SystemClock.uptimeMillis()).coerceAtLeast(0) } ?: 0
         main.postDelayed(tick, wait)
@@ -105,18 +108,38 @@ class BackgroundPreview(
     }.also { worker = it }
 
     private fun disable(old: BackgroundPreviewTarget) {
-        cleanups++
+        pendingOff.add(old)
+        scheduleOff(0)
+    }
+
+    private fun scheduleOff(delayMs: Long = 200) {
+        if (pendingOff.isEmpty() || cleanupBusy || cleanupScheduled) return
+        cleanupScheduled = true
+        main.postDelayed(cleanupTick, delayMs)
+    }
+
+    private fun drainOff() {
+        val old = pendingOff.firstOrNull() ?: return
+        cleanupBusy = true
         io().execute {
-            // This command is ordered before any later enable on this same worker. Never interrupt
-            // a sent request: ADB/root must finish reading its response to preserve framing.
-            runCatching { old.channel.execute(request(old, false)) }
+            // Busy is not an ACK. Keep this off barrier so a quick off/on cannot overtake it.
+            // A sealed driver delegates physical preview cleanup to its strict release on this lane.
+            val done = old.driver.previewClosed() || runCatching {
+                old.driver.tryPreview(request(old, false))?.get(Proto.OK) == true
+            }.getOrDefault(false)
             if (probed === old) { probed = null; supported = false }
-            main.post { cleanups--; retireIdleWorker() }
+            main.post {
+                cleanupBusy = false
+                if (done || old.driver.previewClosed()) pendingOff.remove(old)
+                scheduleOff()
+                schedule()
+                retireIdleWorker()
+            }
         }
     }
 
     private fun retireIdleWorker() {
-        if (current == null && !busy && cleanups == 0) {
+        if (current == null && !busy && !cleanupBusy && pendingOff.isEmpty()) {
             worker?.shutdown()
             worker = null
         }
@@ -131,7 +154,7 @@ class BackgroundPreview(
 
     private fun poll() {
         val selected = current ?: return
-        if (busy) return
+        if (busy || pendingOff.isNotEmpty()) return
         if (target() !== selected || !allowed(selected.taskId)) { reconcile(); return }
         val ticket = delivery.generation
         val token = requestToken
@@ -143,14 +166,14 @@ class BackgroundPreview(
             val result = runCatching {
                 if (!wanted()) return@runCatching null
                 if (probed !== selected) {
-                    val probe = selected.channel.tryExecute(Bundle().apply { putString(Proto.OP, Proto.OP_PROBE) })
+                    val probe = selected.driver.tryPreview(Bundle().apply { putString(Proto.OP, Proto.OP_PROBE) })
                         ?: return@runCatching null
                     supported = probe.getBoolean(Proto.OK) && probe.getInt(Proto.PREVIEW_VERSION) == 1
                     probed = selected
                 }
                 if (!wanted()) return@runCatching null
                 if (!supported) Bundle().apply { putBoolean(Proto.OK, false); putString(Proto.PREVIEW_REASON, "unsupported") }
-                else selected.channel.tryExecute(request(selected, true, after))
+                else selected.driver.tryPreview(request(selected, true, after))
             }.getOrElse { Bundle().apply { putBoolean(Proto.OK, false) } }
             main.post {
                 busy = false

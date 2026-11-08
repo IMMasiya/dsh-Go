@@ -135,6 +135,11 @@ interface PhoneDriver {
 
     fun collect(screenId: String, listElementId: Int, maxPages: Int, until: String?): CollectResult
 
+    /** Multi-page implementations recheck this invocation's gate before each physical scroll. */
+    fun collect(screenId: String, listElementId: Int, maxPages: Int, until: String?, allowed: () -> Boolean): CollectResult =
+        if (allowed()) collect(screenId, listElementId, maxPages, until)
+        else CollectResult(emptyList(), 0, PhoneTasks.STOPPED_MESSAGE, null)
+
     /**
      * Resolves an element of a recent snapshot for the safety rules. Null when the
      * snapshot is stale or the element no longer matches its fingerprint
@@ -143,6 +148,10 @@ interface PhoneDriver {
     fun target(screenId: String, elementId: Int): TargetInfo?
 
     fun perform(action: PhoneAction): ActionResult
+
+    /** Invocation-owned pause/current check, separate from whichever task the overlay displays. */
+    fun perform(action: PhoneAction, allowed: () -> Boolean): ActionResult =
+        if (allowed()) perform(action) else ActionResult(false, PhoneTasks.STOPPED_MESSAGE)
 
     /** Launches [packageName] on this screen (BACKGROUND moves the task to the virtual display). */
     fun open(packageName: String): ActionResult
@@ -164,6 +173,8 @@ data class ConfirmRequest(
      * gate that ignores it still answers correctly, just asks more.
      */
     val offerTaskWaiver: Boolean = false,
+    /** Exact native task lifetime; never inferred from the visible conversation. */
+    val owner: PhoneTasks.Owner? = null,
 )
 
 /** [ALLOW_ALL_FOR_TASK]: nothing else in this task is asked (only offered with [ConfirmRequest.offerTaskWaiver]). */
@@ -210,6 +221,9 @@ interface UserGate {
     /** [handoff] with the rule behind it, for the card's title; gates that can't show it ignore it. */
     fun handoff(reason: String, timeoutMs: Long, cause: HandoffCause?): HandoffResult = handoff(reason, timeoutMs)
 
+    fun handoff(reason: String, timeoutMs: Long, cause: HandoffCause?, owner: PhoneTasks.Owner): HandoffResult =
+        handoff(reason, timeoutMs, cause)
+
     /** The one-line "DSH 正在操作 · 点「路线」" status; null clears it. */
     fun status(text: String?)
 
@@ -218,6 +232,8 @@ interface UserGate {
     fun status(text: String?, ifCurrent: (() -> Unit) -> Boolean) {
         if (ifCurrent {}) status(text)
     }
+    /** Retire only the task status, preserving independently owned prompt tickets. */
+    fun clearStatus(ifCurrent: (() -> Unit) -> Unit) = ifCurrent { status(null) }
 
     /** Run [ifCurrent] at cleanup time; a newer task must keep its windows and pending questions. */
     fun close(ifCurrent: (() -> Unit) -> Unit = { it() }) = ifCurrent { status(null) }
@@ -233,11 +249,15 @@ interface UserGate {
  * driver as well (defence in depth).
  */
 interface ControlListener {
+    fun isTaskPaused(): Boolean = false
     /** 暂停 (true) / 继续 (false) on the status bar. */
     fun onPauseChanged(paused: Boolean) {}
 
     /** 停止 on the status bar, screen off, keyguard, or the service going away. [reason] is Chinese. */
     fun onStopRequested(reason: String) {}
+
+    /** Device-wide boundary: screen off, lock, or loss of the accessibility service. */
+    fun onStopAllRequested(reason: String) = onStopRequested(reason)
 
     /** Text the person typed into 插话 and sent; meant for the agent as a user message. */
     fun onInterject(text: String) {}

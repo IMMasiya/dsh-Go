@@ -63,6 +63,8 @@ object Proto {
     const val OP_SCROLL = "scroll"
     const val OP_KEY = "key"
     const val OP_TEXT = "text"
+    const val RELEASE_RECEIPT = "releaseReceipt"
+    const val TASK_SCOPE_EMPTY = "taskScopeEmpty"
     const val OP_RELEASE = "release"
     const val OP_DESTROY = "destroy"
     const val OP_GATE = "gate"

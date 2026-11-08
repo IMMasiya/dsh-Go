@@ -88,12 +88,21 @@ class BackgroundControl private constructor(context: Context) {
     private fun publishPreviewTarget(taskId: Long, value: PrivilegedChannel) {
         val changed = synchronized(previewGuard) {
             val active = driver
-            if (driverTaskId != taskId || active == null || PhoneRegistry.backgroundDriver !== active || channel !== value) false
+            if (driverTaskId != taskId || active == null || PhoneRegistry.backgroundDriver !== active || channel !== value || !active.previewAvailable(value)) false
             else if (previewTarget?.let { it.taskId == taskId && it.driver === active && it.channel === value } == true) false
-            else { previewTarget = BackgroundPreviewTarget(taskId, "task", value, active); true }
+            else { previewTarget = BackgroundPreviewTarget(taskId, active.ownerToken, value, active); true }
         }
         if (changed) onPreviewChanged()
     }
+
+    /** Called under the driver owner lock after sealing dispatch; no callback or IPC here. */
+    private fun withdrawPreviewTarget(value: BackgroundDisplay): Boolean = synchronized(previewGuard) {
+        if (previewTarget?.driver !== value) false
+        else { previewTarget = null; true }
+    }
+    @Volatile private var interruptRequested = false
+    private var selectingResource = false
+    private var interruptFinishing = false
 
     private fun notifyChanged() = runCatching { onStatusChanged() }
 
@@ -234,51 +243,61 @@ class BackgroundControl private constructor(context: Context) {
         }
         if (selected != "off" && !androidOk()) return mapOf("ok" to false, "reason" to AppStrings.get(app, R.string.background_requires_android))
         val changing = selected != mode || selected == "off"
-        // Release through the old live cache before retiring that selection.
-        if (changing) endTask()
-        val (selection, transition) = synchronized(keepGuard) {
-            if (!mayStart() || selectionChange != null) return keepFailure("selectionChanged")
-            val leaving = if (mode == "sui") "shizuku" else mode
-            val owner = if (changing) Any().also { selectionChange = it } else null
-            keep.select(selected)
-            rootSelected = selected == "root"
-            if (changing) replaceChannel(null)
-            keep.selectionTicket() to owner?.let { it to leaving }
+        if (changing) synchronized(this) {
+            if (selectingResource || interruptRequested) return mapOf("ok" to false, "reason" to AppStrings.get(app, R.string.phone_background_cleanup_busy))
+            selectingResource = true
+            driver?.seal()
         }
-        if (transition != null) {
-            try {
-                // Retire the old family before admitting new borrowers; no long IPC under keepGuard.
-                disconnectTransports { selected == "off" || it == transition.second }
-                gate.reset()
-            } finally {
-                val finished = synchronized(keepGuard) {
-                    if (selectionChange !== transition.first) false
-                    else { selectionChange = null; true }
+        try {
+            // Do not change the selected transport while its original resource remains unconfirmed.
+            if (changing && !endTask()) return mapOf("ok" to false, "reason" to AppStrings.get(app, R.string.phone_background_cleanup_before_switch))
+            val (selection, transition) = synchronized(keepGuard) {
+                if (!mayStart() || selectionChange != null) return keepFailure("selectionChanged")
+                val leaving = if (mode == "sui") "shizuku" else mode
+                val owner = if (changing) Any().also { selectionChange = it } else null
+                keep.select(selected)
+                rootSelected = selected == "root"
+                if (changing) replaceChannel(null)
+                keep.selectionTicket() to owner?.let { it to leaving }
+            }
+            if (transition != null) {
+                try {
+                    // Retire the old family before admitting new borrowers; no long IPC under keepGuard.
+                    disconnectTransports { selected == "off" || it == transition.second }
+                    gate.reset()
+                } finally {
+                    val finished = synchronized(keepGuard) {
+                        if (selectionChange !== transition.first) false
+                        else { selectionChange = null; true }
+                    }
+                    // configure() may have changed keep generation while cleanup ran. The transition
+                    // owns its own completion, and a newly saved keep must get another restore chance.
+                    if (finished) restoreKeptChannel()
                 }
-                // configure() may have changed keep generation while cleanup ran. The transition
-                // owns its own completion, and a newly saved keep must get another restore chance.
-                if (finished) restoreKeptChannel()
             }
-        }
-        val allowed = { mayStart() && selectionChange == null && keep.selectionCurrent(selection) }
-        val cleared = synchronized(preferenceGuard) {
-            keep.keptMode != "off" || keepPrefs.edit().putString("keptMode", "off").commit()
-        }
-        updateKeepListeners()
-        if (!cleared) { notifyChanged(); return keepFailure("persistenceFailed") }
-        when (selected) {
-            "off" -> { notifyChanged(); return mapOf("ok" to true) }
-            "shizuku", "sui" -> shizuku.ensureListeners()
-            // 不打扰模式's only su; tasks just connect() to what it leaves.
-            "root" -> root.start(allowed)?.let { connected ->
-                synchronized(keepGuard) { if (allowed()) replaceChannel(connected) }
+            val allowed = { mayStart() && !interruptRequested && selectionChange == null && keep.selectionCurrent(selection) }
+            val cleared = synchronized(preferenceGuard) {
+                keep.keptMode != "off" || keepPrefs.edit().putString("keptMode", "off").commit()
             }
+            updateKeepListeners()
+            if (!cleared) { notifyChanged(); return keepFailure("persistenceFailed") }
+            when (selected) {
+                "off" -> { notifyChanged(); return mapOf("ok" to true) }
+                "shizuku", "sui" -> shizuku.ensureListeners()
+                // 不打扰模式's only su; tasks just connect() to what it leaves.
+                "root" -> root.start(allowed)?.let { connected ->
+                    synchronized(keepGuard) { if (allowed()) replaceChannel(connected) }
+                }
+            }
+            notifyChanged()
+            if (!allowed()) return keepFailure("selectionChanged")
+            // Probe eagerly so the UI can hide an unsupported switch rather than fail later.
+            val probe = runGateProbe(allowed)
+            return mapOf("ok" to (probe == null), "reason" to probe)
+        } finally {
+            if (changing) synchronized(this) { selectingResource = false }
+            finishInterrupt()
         }
-        notifyChanged()
-        if (!allowed()) return keepFailure("selectionChanged")
-        // Probe eagerly so the UI can hide an unsupported switch rather than fail later.
-        val probe = runGateProbe(allowed)
-        return mapOf("ok" to (probe == null), "reason" to probe)
     }
 
     fun requestShizukuPermission(provider: String? = null): Boolean =
@@ -302,7 +321,8 @@ class BackgroundControl private constructor(context: Context) {
 
     fun cancelRootSelection() {
         rootSelected = false
-        root.disconnect()
+        // Revoke unpublished authorization now; a borrowed resource pin closes only after cleanup.
+        root.cancelUnwantedPending()
     }
 
     private fun secureSettingsGranted(): Boolean =
@@ -430,10 +450,13 @@ class BackgroundControl private constructor(context: Context) {
     // ---- task lifecycle (called by the bridge/core) ------------------------
 
     /** Connects, probes the gate, and registers the driver for the running task. */
-    fun beginTask(taskId: Long): Boolean {
+    fun beginTask(taskId: Long, currentOwner: (() -> Boolean)? = null): Boolean {
+        // Independent session ids are not ordered lifetimes. Legacy retains its high-water
+        // fence; session callers recheck their captured Owner after every blocking setup.
+        fun current() = currentOwner?.invoke() ?: (taskId > endedTaskId.get())
         if (mode == "off" || !androidOk()) return false
         synchronized(this) {
-            if (taskId <= endedTaskId.get() || (driverTaskId ?: Long.MIN_VALUE) > taskId) return false
+            if (selectingResource || interruptRequested || !current() || (driverTaskId ?: Long.MIN_VALUE) > taskId) return false
             if (driverTaskId == taskId && driver != null && PhoneRegistry.backgroundDriver === driver) return true
         }
         // Channel setup may block. It must not hold the display ownership lock
@@ -443,80 +466,103 @@ class BackgroundControl private constructor(context: Context) {
                 Thread.currentThread().interrupt(); return false
             } catch (_: Exception) { return false }
         }
-        if (Thread.currentThread().isInterrupted) return false
-        val connected = activeChannel() ?: return false
-        synchronized(this) {
-            if (mode == "off" || taskId <= endedTaskId.get() || (driverTaskId ?: Long.MIN_VALUE) > taskId) return false
+        if (Thread.currentThread().isInterrupted || activeChannel() == null) return false
+        val previous = synchronized(this) { driverTaskId?.takeIf { it != taskId } }
+        if (previous != null && !endTask(previous)) return false
+        val created = synchronized(this) {
+            if (selectingResource || interruptRequested || mode == "off" || !current() || (driverTaskId ?: Long.MIN_VALUE) > taskId) return false
             if (driverTaskId == taskId && driver != null && PhoneRegistry.backgroundDriver === driver) return true
-            if (driver != null) endTask()
+            if (driver != null) return false
             val d = BackgroundDisplay(
-                channelProvider = { activeChannel()?.also { publishPreviewTarget(taskId, it) } },
-                releaseChannelProvider = { channel?.takeIf { it.alive() } },
+                channelProvider = { activeChannel() },
                 viewport = viewport,
-            )
+                onResourceReady = { publishPreviewTarget(taskId, it) },
+            ).also { driver = it }
             // Publish the pending owner before checking cancellation: a stop
             // either records the ended ID first, or sees this owner and releases
             // it after the remaining registration (which performs no setup IPC).
-            synchronized(previewGuard) {
-                driver = d
-                driverTaskId = taskId
-                if (taskId <= endedTaskId.get()) {
-                    driver = null
-                    driverTaskId = null
-                    return false
-                }
-                PhoneRegistry.backgroundDriver = d
-                if (channel === connected) previewTarget = BackgroundPreviewTarget(taskId, "task", connected, d)
-            }
-            onPreviewChanged()
-            notifyChanged()
-            return true
-        }
-    }
-
-    /** Releases the display without destroying content (handoff) and unregisters the driver. */
-    fun endTask(expectedTaskId: Long? = null) {
-        if (expectedTaskId != null) {
-            endedTaskId.accumulateAndGet(expectedTaskId) { previous, ended -> maxOf(previous, ended) }
-            // In-flight setup has no display to release. Do not make the stop
-            // caller wait for its synchronous IPC; beginTask checks this ID.
-            if (expectedTaskId != driverTaskId) return
-        }
-        synchronized(this) {
-            if (expectedTaskId != null && expectedTaskId != driverTaskId) return
-            val ended = synchronized(previewGuard) {
-                val previous = driver
-                previewTarget = null
+            driverTaskId = taskId
+            if (!current()) {
                 driver = null
                 driverTaskId = null
-                if (PhoneRegistry.backgroundDriver === previous) PhoneRegistry.backgroundDriver = null
-                previous
+                return false
             }
-            onPreviewChanged()
-            ended?.release()
-            notifyChanged()
+            PhoneRegistry.backgroundDriver = d
+            true
         }
+        if (created) notifyChanged()
+        return created
     }
 
-    /**
-     * Screen off / lock / channel death: stop and release, and drop the channels a later task
-     * reopens by itself ([PrivilegedPathPolicy.closesOnInterrupt]; root's would need su again).
-     */
-    fun interrupt() {
-        endTask()
-        disconnectAll(PrivilegedPathPolicy::closesOnInterrupt)
+    /** Immediately seals dispatch; it never waits for platform I/O. */
+    fun sealTask(expectedTaskId: Long? = null) {
+        if (expectedTaskId != null) endedTaskId.accumulateAndGet(expectedTaskId) { previous, ended -> maxOf(previous, ended) }
+        val changed = synchronized(this) {
+            if (expectedTaskId != null && expectedTaskId != driverTaskId) false
+            else driver?.let { it.seal(); withdrawPreviewTarget(it) } ?: false
+        }
+        if (changed) onPreviewChanged()
+    }
+
+    /** Capture under the owner lock, wait outside it, then clear only that exact driver. */
+    fun endTask(expectedTaskId: Long? = null): Boolean {
+        if (expectedTaskId != null) endedTaskId.accumulateAndGet(expectedTaskId) { previous, ended -> maxOf(previous, ended) }
+        var previewChanged = false
+        val captured = synchronized(this) {
+            if (expectedTaskId != null && expectedTaskId != driverTaskId) return true
+            val current = driver ?: return true
+            current.seal()
+            previewChanged = withdrawPreviewTarget(current)
+            current to driverTaskId
+        }
+        if (previewChanged) onPreviewChanged()
+        if (!captured.first.release()) return false
+        synchronized(this) {
+            if (driver !== captured.first || driverTaskId != captured.second) return false
+            driver = null
+            driverTaskId = null
+            if (PhoneRegistry.backgroundDriver === captured.first) PhoneRegistry.backgroundDriver = null
+        }
+        notifyChanged()
+        finishInterrupt()
+        return true
+    }
+
+    /** Screen-off withdraws dispatch immediately; disconnection follows exact physical cleanup. */
+    fun requestInterrupt() {
+        val changed = synchronized(this) {
+            interruptRequested = true
+            driver?.let { it.seal(); withdrawPreviewTarget(it) } ?: false
+        }
+        if (changed) onPreviewChanged()
+    }
+
+    fun finishInterrupt() {
+        synchronized(this) {
+            if (!interruptRequested || interruptFinishing || driver != null || selectingResource) return
+            interruptFinishing = true
+        }
+        // A single claimant disconnects outside the owner lock. No task/keep borrower may
+        // publish during this interval, including callbacks caused by disconnect itself.
+        try {
+            disconnectAll(PrivilegedPathPolicy::closesOnInterrupt)
+            synchronized(this) { interruptRequested = false }
+        } finally {
+            synchronized(this) { interruptFinishing = false }
+            notifyChanged()
+        }
     }
 
     // ---- channel plumbing --------------------------------------------------
 
     private fun activeChannel(mayStart: () -> Boolean = { true }, explicit: Boolean = false): PrivilegedChannel? {
-        if (!mayStart()) return null
+        if (!mayStart() || interruptRequested) return null
         val (selection, cached) = synchronized(keepGuard) {
             if (selectionChange != null) return null
             keep.selectionTicket() to channel
         }
         // Starter guards may call this; only volatile reads, never keepGuard acquisition.
-        val allowed = { mayStart() && selectionChange == null && keep.selectionCurrent(selection) }
+        val allowed = { mayStart() && !interruptRequested && selectionChange == null && keep.selectionCurrent(selection) }
         val selected = selection.mode
         // Disabling keep does not authorize a different shared-API provider.
         if ((selected == "shizuku" || selected == "sui") && shizuku.status().provider != selected) return null
@@ -654,7 +700,7 @@ class BackgroundControl private constructor(context: Context) {
 
     /** Foreground/start/BOOT hook. No UI permission request and no display/input gate. */
     fun restoreKeptChannel(): Future<PrivilegedChannel?>? {
-        if (!PhoneControl.switchedOn(app) || !androidOk() || !keep.enabled) return null
+        if (interruptRequested || !PhoneControl.switchedOn(app) || !androidOk() || !keep.enabled) return null
         updateKeepListeners()
         synchronized(keepGuard) {
             // The switch's finally retries after cleanup, including a keep saved during the switch.
@@ -689,10 +735,11 @@ class BackgroundControl private constructor(context: Context) {
         var failure: String? = "connectFailed"
         var waiting = false
         var value: PrivilegedChannel? = null
+        fun allowed() = !interruptRequested && keep.current(ticket)
         try {
-            if (!keep.current(ticket)) return null
+            if (!allowed()) return null
             value = when (ticket.mode) {
-                "root" -> root.start { keep.current(ticket) }.also {
+                "root" -> root.start { allowed() }.also {
                     if (it == null) failure = root.status().reasonCode ?: "restoreBusy"
                 }
                 "sui", "shizuku" -> {
@@ -704,7 +751,7 @@ class BackgroundControl private constructor(context: Context) {
                         else -> null
                     }
                     if (failure != null) { waiting = true; null }
-                    else shizuku.connect(whenAvailable = { recoveryAvailable(ticket) }, mayStart = { keep.current(ticket) }).also { if (it == null) failure = "connectFailed" }
+                    else shizuku.connect(whenAvailable = { recoveryAvailable(ticket) }, mayStart = { allowed() }).also { if (it == null) failure = "connectFailed" }
                 }
                 "adb" -> {
                     val facts = adb.status()
@@ -712,7 +759,7 @@ class BackgroundControl private constructor(context: Context) {
                     else if (!wifiAvailable()) { waiting = true; failure = "networkUnavailable"; null }
                     else {
                         enableWirelessOnce(ticket, facts.wirelessDebugging)
-                        adb.connect(whenAvailable = { recoveryAvailable(ticket) }, mayStart = { keep.current(ticket) }).also { if (it == null) failure = "connectFailed" }
+                        adb.connect(whenAvailable = { recoveryAvailable(ticket) }, mayStart = { allowed() }).also { if (it == null) failure = "connectFailed" }
                     }
                 }
                 else -> null
@@ -720,12 +767,12 @@ class BackgroundControl private constructor(context: Context) {
             // Starter publication owns successful channels. A stale borrower must never close one.
             val connected = value?.takeIf { it.alive() }
             synchronized(keepGuard) {
-                if (selectionChange == null && keep.current(ticket) && connected != null) {
+                if (selectionChange == null && allowed() && connected != null) {
                     replaceChannel(connected)
                     gate.connected(observed, connected)
                 }
             }
-            return value?.takeIf { keep.current(ticket) && it.alive() }
+            return value?.takeIf { allowed() && it.alive() }
         } catch (_: InterruptedException) {
             Thread.currentThread().interrupt()
             return null

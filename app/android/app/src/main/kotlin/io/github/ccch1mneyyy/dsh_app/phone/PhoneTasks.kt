@@ -17,6 +17,7 @@ class PhoneTasks(
     private val clock: () -> Long = System::currentTimeMillis,
     val idleMs: Long = 3 * 60_000L,
     val stopHoldMs: Long = 30_000L,
+    private val idSource: (() -> Long)? = null,
 ) {
     data class Snapshot(
         val id: Long,
@@ -47,6 +48,7 @@ class PhoneTasks(
     private var nextId = 1L
     private var taskId = 0L
     private var lifecycle = 0L
+    private var admissionEpoch = 0L
     private var active = false
     private var lastCallAt = 0L
     private var stoppedUntil = 0L
@@ -69,10 +71,13 @@ class PhoneTasks(
     }
 
     /** Called at the start of every phone tool call. */
-    fun begin(): Begin {
+    internal fun admissionEpoch(): Long = synchronized(lock) { admissionEpoch }
+
+    fun begin(expectedEpoch: Long? = null): Begin {
         var started = false
         val result: Begin
         synchronized(lock) {
+            if (expectedEpoch != null && expectedEpoch != admissionEpoch) return Begin.Refused(STOPPED_MESSAGE)
             val now = clock()
             if (now < stoppedUntil) {
                 stoppedUntil = now + stopHoldMs
@@ -82,7 +87,7 @@ class PhoneTasks(
             if (active && !paused && now - lastCallAt > idleMs) endLocked()
             if (!active) {
                 active = true
-                taskId = nextId++
+                taskId = idSource?.invoke() ?: nextId++
                 lifecycle++
                 stopReason = null
                 started = true
@@ -109,15 +114,52 @@ class PhoneTasks(
         return true
     }
 
-    fun stop(reason: String) {
-        synchronized(lock) {
-            if (active) endLocked() else lifecycle++
-            stoppedUntil = clock() + stopHoldMs
-            stopReason = reason
-            paused = false
-            lock.notifyAll()
+    /** A committed lifecycle change. Publishing its captured snapshot is deliberately separate:
+     * registry callers must release their admission lock before listeners/UI can run. */
+    internal class Change internal constructor(val snapshot: Snapshot)
+
+    internal fun stopForOwner(owner: Owner, reason: String): Change? = synchronized(lock) {
+        if (!currentLocked(owner)) return null
+        stopLocked(reason)
+    }
+
+    internal fun stopForSnapshot(expected: Snapshot, reason: String): Change? = synchronized(lock) {
+        // Snapshot.active may be false because of idle projection while internal active is true.
+        // The exact lifetime, rather than that projection, binds cold/idle stopAll calls.
+        if (taskId != expected.id || lifecycle != expected.lifecycle) return null
+        stopLocked(reason)
+    }
+
+    private fun stopLocked(reason: String): Change {
+        admissionEpoch++
+        if (active) endLocked() else lifecycle++
+        stoppedUntil = clock() + stopHoldMs
+        stopReason = reason
+        paused = false
+        lock.notifyAll()
+        return Change(snapshot())
+    }
+
+    internal fun resumeForSnapshot(expected: Snapshot): Change? = synchronized(lock) {
+        if (taskId != expected.id || lifecycle != expected.lifecycle) return null
+        if (clock() < stoppedUntil) {
+            lifecycle++
+            stoppedUntil = 0L
+            stopReason = null
         }
-        fire()
+        if (paused) {
+            paused = false
+            if (active) lastCallAt = clock()
+        }
+        lock.notifyAll()
+        Change(snapshot())
+    }
+
+    internal fun publish(change: Change) = fire(change.snapshot)
+
+    fun stop(reason: String) {
+        val change = synchronized(lock) { stopLocked(reason) }
+        publish(change)
     }
 
     /** Ends the task without a stop hold (the engine went away). */
@@ -222,7 +264,13 @@ class PhoneTasks(
 
     /** Engine/plugin shutdown also invalidates a prompt that predates any native task. */
     fun invalidateOwners() {
-        synchronized(lock) { lifecycle++ }
+        synchronized(lock) { lifecycle++; admissionEpoch++ }
+        fire()
+    }
+
+    /** Exact host run end wakes queued work without treating it as a new user stop/resume. */
+    fun cancelPending() {
+        synchronized(lock) { lifecycle++; admissionEpoch++; paused = false; lock.notifyAll() }
         fire()
     }
 
@@ -239,15 +287,8 @@ class PhoneTasks(
     }
 
     fun stopIfCurrent(owner: Owner, reason: String): Boolean {
-        synchronized(lock) {
-            if (!currentLocked(owner)) return false
-            if (active) endLocked() else lifecycle++
-            stoppedUntil = clock() + stopHoldMs
-            stopReason = reason
-            paused = false
-            lock.notifyAll()
-        }
-        fire()
+        val change = stopForOwner(owner, reason) ?: return false
+        publish(change)
         return true
     }
 
@@ -283,6 +324,22 @@ class PhoneTasks(
             lock.notifyAll()
         }
         fire()
+    }
+
+    /** Display controls retain their captured scope; listeners still run outside the lock. */
+    fun setPausedIfCurrent(owner: Owner, value: Boolean): Boolean {
+        var changed = false
+        synchronized(lock) {
+            if (!owner.active || !currentLocked(owner)) return false
+            if (paused != value) {
+                paused = value
+                if (!value) lastCallAt = clock()
+                lock.notifyAll()
+                changed = true
+            }
+        }
+        if (changed) fire()
+        return true
     }
 
     val isPaused: Boolean get() = synchronized(lock) { paused }
@@ -360,6 +417,17 @@ class PhoneTasks(
         }
     }
 
+    fun interjectIfCurrent(owner: Owner, text: String): Boolean {
+        val value = text.trim()
+        if (value.isEmpty()) return false
+        synchronized(lock) {
+            if (!owner.active || !currentLocked(owner)) return false
+            interjections += value
+            while (interjections.size > 5) interjections.removeAt(0)
+        }
+        return true
+    }
+
     fun drainInterjections(): List<String> = synchronized(lock) {
         val out = interjections.toList()
         interjections.clear()
@@ -387,8 +455,7 @@ class PhoneTasks(
         paused = false
     }
 
-    private fun fire() {
-        val s = snapshot()
+    private fun fire(s: Snapshot = snapshot()) {
         for (l in listeners) {
             try {
                 l(s)

@@ -197,8 +197,28 @@ class PhoneController extends Notifier<PhoneState> {
 
   Future<ScreenTestResult> testScreen() => _channel.testScreen();
 
-  Future<bool> stopTask() async {
-    final ok = await _channel.stopTask();
+  Future<bool> stopTask({int? taskId}) async {
+    final id = taskId ?? (state.status.taskProtocol == 1 ? state.status.task.id : null);
+    if (state.status.taskProtocol == 1 && id == null) return false;
+    final ok = await _channel.stopTask(taskId: id);
+    unawaited(refreshStatus());
+    return ok;
+  }
+
+  Future<bool> retryTaskCleanup(int taskId) async {
+    final ok = await _channel.retryTaskCleanup(taskId);
+    unawaited(refreshStatus());
+    return ok;
+  }
+
+  Future<bool> resumeTask(int taskId) async {
+    final ok = await _channel.resumeTask(taskId);
+    unawaited(refreshStatus());
+    return ok;
+  }
+
+  Future<bool> pauseTask(int taskId, bool paused) async {
+    final ok = await _channel.pauseTask(taskId, paused);
     unawaited(refreshStatus());
     return ok;
   }
@@ -391,10 +411,10 @@ final phoneConfirmPendingProvider = Provider<void>((ref) {
   }());
 });
 
-/// 停止 on the overlay or the notification ends the agent's turn too. The
-/// native side can't reach the session, so the app cancels every turn running
-/// on the local engine (phone control only drives the local engine). Kept
-/// alive by the home shell.
+/// Legacy-only launches keep the original cancel-all watcher. Modern stops are
+/// native and session-scoped; without an atomic host run-cancel protocol they
+/// refuse further phone calls but do not claim to stop host reasoning. Mixed
+/// launches never borrow legacy cancel-all to cancel another modern session.
 final phoneStopWatcherProvider = Provider<void>((ref) {
   final channel = ref.watch(phoneChannelProvider);
   StreamSubscription<PhoneStatus>? sub;
@@ -409,7 +429,9 @@ final phoneStopWatcherProvider = Provider<void>((ref) {
     if (disposed || !status.ready) return;
     var stopped = status.task.stopped;
     sub = channel.statusChanges.listen((s) {
-      if (s.task.stopped && !stopped) unawaited(_cancelLocalTurns(ref));
+      // Session-aware native owns targeted stopping. The host API has no atomic
+      // expected-run cancellation, so never cancel a later turn or every conversation.
+      if ((s.taskProtocol != 1 || !s.tasks.any((task) => task.sessionId != null)) && s.task.stopped && !stopped) unawaited(_cancelLocalTurns(ref));
       stopped = s.task.stopped;
     }, onError: (_) {});
   }());

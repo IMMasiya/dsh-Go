@@ -40,7 +40,10 @@ import kotlin.concurrent.thread
 class PhoneBridge(
     private val server: McpServer,
     private val log: (String) -> Unit,
+    private val admit: (McpServer.Dispatch.Call) -> (() -> String) = { call -> { call.run() } },
+    private val admitEnd: (McpServer.Dispatch.RunEnd) -> EndWork = { EndWork(it.ack()) {} },
 ) {
+    class EndWork(val reply: String, val finish: () -> Unit)
     @Volatile private var running = false
     private var local: LocalServerSocket? = null
     private var tcp: ServerSocket? = null
@@ -209,9 +212,21 @@ class PhoneBridge(
                     when (val d = server.dispatch(line)) {
                         McpServer.Dispatch.None -> Unit
                         is McpServer.Dispatch.Reply -> send(d.line)
-                        is McpServer.Dispatch.Call -> calls.execute {
-                            val reply = d.run()
-                            runCatching { send(reply) }
+                        is McpServer.Dispatch.RunEnd -> {
+                            val finish = synchronized(this@PhoneBridge) {
+                                if (current(token)) admitEnd(d) else null
+                            } ?: break
+                            // Cleanup is scheduled before ACK: a failed write must not strand an
+                            // accepted end intent. ACK means admission is fenced, not work drained.
+                            calls.execute { finish.finish() }
+                            send(finish.reply)
+                        }
+                        is McpServer.Dispatch.Call -> {
+                            // Admission and stop share the launch lock; queued work carries its epoch.
+                            val invoke = synchronized(this@PhoneBridge) {
+                                if (current(token)) admit(d) else null
+                            } ?: break
+                            calls.execute { runCatching { send(invoke()) } }
                         }
                     }
                 }

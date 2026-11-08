@@ -74,7 +74,7 @@ class DshService : Service() {
             ACTION_PHONE_STOP -> {
                 // 「停止操作」 on the notification: stop the phone task, keep the engine.
                 // l10n:keep agent stop reason
-                PhoneControl.get(this).stopTask("用户在通知里停止")
+                PhoneControl.get(this).stopSelectedTask("用户在通知里停止")
                 return START_NOT_STICKY
             }
             ACTION_STOP -> {

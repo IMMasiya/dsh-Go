@@ -9,17 +9,20 @@ class ToolOutput(
 )
 
 /** Host attribution, separate from tool arguments. It is not an approval or a task lease. */
-data class PhoneCaller(val sessionId: String, val runId: String, val callId: String) {
+data class PhoneCaller(val sessionId: String, val runId: String, val callId: String, val runLifecycle: Int = 0) {
     companion object {
         const val META_KEY = "dsh-go/phone-caller"
+
+        fun identifier(value: Any?): String? = (value as? String)?.takeIf {
+            it.length in 1..256 && it.none { c -> c < ' ' || c == '\u007f' }
+        }
 
         fun parse(value: Any?): PhoneCaller? {
             val m = value as? Map<*, *> ?: return null
             if (m["v"] != 1L) return null
-            fun id(key: String): String? = (m[key] as? String)?.takeIf {
-                it.length in 1..256 && it.none { c -> c < ' ' || c == '\u007f' }
-            }
-            return PhoneCaller(id("sessionId") ?: return null, id("runId") ?: return null, id("callId") ?: return null)
+            val lifecycle = if (m.containsKey("runLifecycle")) m["runLifecycle"] else 0L
+            if (lifecycle != 0L && lifecycle != 1L) return null
+            return PhoneCaller(identifier(m["sessionId"]) ?: return null, identifier(m["runId"]) ?: return null, identifier(m["callId"]) ?: return null, (lifecycle as Long).toInt())
         }
     }
 }
@@ -43,10 +46,14 @@ class McpServer(
         object None : Dispatch
 
         class Reply(val line: String) : Dispatch
+        class RunEnd(val id: Any?, val sessionId: String, val runId: String, val completion: String) : Dispatch {
+            fun ack(): String = result(id, emptyMap<String, Any?>())
+        }
 
         class Call(val id: Any?, val name: String, val args: Map<String, Any?>, val caller: PhoneCaller?, private val server: McpServer) : Dispatch {
             /** Runs the tool (blocking) and returns the response line. */
-            fun run(): String = server.runCall(id, name, args, caller)
+            fun run(handler: ((String, Map<String, Any?>, PhoneCaller?) -> ToolOutput)? = null): String =
+                server.runCall(id, name, args, caller, handler)
         }
     }
 
@@ -55,6 +62,7 @@ class McpServer(
         Dispatch.None -> null
         is Dispatch.Reply -> d.line
         is Dispatch.Call -> d.run()
+        is Dispatch.RunEnd -> null
     }
 
     fun dispatch(line: String): Dispatch {
@@ -76,12 +84,20 @@ class McpServer(
                 Dispatch.None
             }
         }
-        if (!hasId) return Dispatch.None // notifications/initialized, notifications/cancelled, …
+        if (!hasId) return Dispatch.None
         val params = msg["params"] as? Map<*, *> ?: emptyMap<String, Any?>()
         return when (method) {
             "initialize" -> Dispatch.Reply(result(id, initializeResult(params["protocolVersion"] as? String)))
             "ping" -> Dispatch.Reply(result(id, emptyMap<String, Any?>()))
             "tools/list" -> Dispatch.Reply(result(id, mapOf("tools" to tools)))
+            "dsh-go/phone-run-end" -> {
+                val session = PhoneCaller.identifier(params["sessionId"])
+                val run = PhoneCaller.identifier(params["runId"])
+                val completion = if (params.containsKey("completion")) params["completion"] else "unknown"
+                if (params["v"] != 1L || session == null || run == null || completion !in setOf("completed", "other", "unknown")) {
+                    Dispatch.Reply(error(id, INVALID_PARAMS, "Invalid phone run end context"))
+                } else Dispatch.RunEnd(id, session, run, completion as String)
+            }
             "tools/call" -> {
                 val name = params["name"] as? String
                     ?: return Dispatch.Reply(error(id, INVALID_PARAMS, "tools/call needs a tool name"))
@@ -106,14 +122,14 @@ class McpServer(
         "protocolVersion" to (requested?.takeIf { it in KNOWN_VERSIONS } ?: LATEST_VERSION),
         "capabilities" to mapOf(
             "tools" to mapOf("listChanged" to false),
-            "experimental" to mapOf(PhoneCaller.META_KEY to mapOf("v" to 1, "taskIsolation" to 0)),
+            "experimental" to mapOf(PhoneCaller.META_KEY to mapOf("v" to 1, "taskIsolation" to 1, "parallelLimit" to 1, "runLifecycle" to 1)),
         ),
         "serverInfo" to linkedMapOf("name" to "dsh-app-phone", "version" to serverVersion),
     )
 
-    internal fun runCall(id: Any?, name: String, args: Map<String, Any?>, caller: PhoneCaller?): String {
+    internal fun runCall(id: Any?, name: String, args: Map<String, Any?>, caller: PhoneCaller?, handler: ((String, Map<String, Any?>, PhoneCaller?) -> ToolOutput)? = null): String {
         val out = try {
-            call(name, args, caller)
+            (handler ?: call)(name, args, caller)
         } catch (e: Throwable) {
             // l10n:keep agent tool error
             ToolOutput("手机操控出错：${e.javaClass.simpleName}${e.message?.let { "：$it" } ?: ""}", isError = true)

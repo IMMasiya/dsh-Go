@@ -674,5 +674,28 @@
   "phoneViewportTitle": "后台视口",
   "phoneViewportDescription": "下次新建后台屏时生效；当前后台屏不变，交还后重建会采用新设置。视口方向不会强制应用旋转。",
   "phoneViewportPortrait": "竖屏",
-  "phoneViewportLandscape": "横屏"
+  "phoneViewportLandscape": "横屏",
+  "phoneResumeTask": "重新允许手机操控",
+  "phoneResumeTaskHint": "允许此对话之后的手机操作，不重放已经结束的动作。",
+  "phoneResumeTaskFailed": "暂时没能恢复，上一动作可能仍在收尾。",
+  "phoneStoppedTask": "手机任务 {task} 已停止",
+  "phoneTaskDrainingHint": "正在等待上一动作退出并清理后台屏。",
+  "phoneTaskCleanupFailedHint": "未能确认后台屏已清理，手机操控仍被阻挡。",
+  "@phoneStoppedTask": {
+    "placeholders": {
+      "task": {
+        "type": "int"
+      }
+    }
+  },
+  "phoneFinishingTask": "手机任务 {task} 正在收尾",
+  "@phoneFinishingTask": {
+    "placeholders": {
+      "task": {
+        "type": "int"
+      }
+    }
+  },
+  "phoneCleanupRetry": "重试清理",
+  "phoneCleanupRetryFailed": "仍未能确认上一后台屏已清理，屏幕占用继续保留。"
 }

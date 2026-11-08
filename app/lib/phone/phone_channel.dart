@@ -305,6 +305,19 @@ class PhoneBackgroundStatus {
 
 class PhoneTaskStatus {
   const PhoneTaskStatus({
+    this.sessionId,
+    this.runId,
+    this.generation,
+    this.waitingForScreen,
+    this.pendingCalls = 0,
+    this.finishing = false,
+    this.draining = false,
+    this.endedRunId,
+    this.endedGeneration,
+    this.completion = 'unknown',
+    this.retiring = false,
+    this.cleanupFailed = false,
+    this.settling = false,
     this.id,
     this.active = false,
     this.app,
@@ -314,6 +327,19 @@ class PhoneTaskStatus {
   });
 
   factory PhoneTaskStatus.fromMap(Map<Object?, Object?> m) => PhoneTaskStatus(
+    sessionId: _text(m['sessionId']),
+    runId: _text(m['runId']),
+    generation: _int(m['generation']),
+    waitingForScreen: _text(m['waitingForScreen']),
+    pendingCalls: _int(m['pendingCalls']) ?? 0,
+    finishing: _flag(m['finishing']),
+    draining: _flag(m['draining']),
+    endedRunId: _text(m['endedRunId']),
+    endedGeneration: _int(m['endedGeneration']),
+    retiring: _flag(m['retiring']),
+    cleanupFailed: _flag(m['cleanupFailed']),
+    settling: _flag(m['settling']),
+    completion: const {'completed', 'other', 'unknown'}.contains(m['completion']) ? m['completion'] as String : 'unknown',
     id: _int(m['id']),
     active: _flag(m['active']),
     app: _text(m['app']),
@@ -321,6 +347,20 @@ class PhoneTaskStatus {
     stopped: _flag(m['stopped']),
     waived: _flag(m['waived']),
   );
+
+  final String? sessionId;
+  final String? runId;
+  final int? generation;
+  final String? waitingForScreen;
+  final int pendingCalls;
+  final bool finishing;
+  final bool draining;
+  final String? endedRunId;
+  final int? endedGeneration;
+  final String completion;
+  final bool retiring;
+  final bool cleanupFailed;
+  final bool settling;
 
   /// The current (or last) task's number; a new one means a new task even
   /// when no inactive status came in between. Null from older builds.
@@ -338,6 +378,20 @@ class PhoneTaskStatus {
 
   /// 本任务免确认 was granted: the rest of this task asks nothing.
   final bool waived;
+}
+
+List<PhoneTaskStatus> _phoneTasks(Map<Object?, Object?> m) => m['taskProtocol'] == 1 && m['tasks'] is List
+    ? [for (final item in m['tasks'] as List) if (item is Map) PhoneTaskStatus.fromMap(item.cast<Object?, Object?>())]
+    : const [];
+
+PhoneTaskStatus _selectedPhoneTask(Map<Object?, Object?> m) {
+  final selected = _int(m['selectedTaskId']);
+  if (selected != null) {
+    for (final task in _phoneTasks(m)) {
+      if (task.id == selected) return task;
+    }
+  }
+  return PhoneTaskStatus.fromMap(_map(m['task']));
 }
 
 /// Where Android 13+'s 「受限制的设置」 stands for this app (native
@@ -415,6 +469,9 @@ class PhoneStatus {
     this.confirmationNotifications,
     this.background = const PhoneBackgroundStatus(),
     this.task = const PhoneTaskStatus(),
+    this.taskProtocol = 0,
+    this.tasks = const [],
+    this.parallelLimit = 1,
     this.device = const PhoneDevice(),
     this.skills = const PhoneSkillStatus(),
   });
@@ -431,6 +488,9 @@ class PhoneStatus {
       confirmationNotifications = null,
       background = const PhoneBackgroundStatus(),
       task = const PhoneTaskStatus(),
+      taskProtocol = 0,
+      tasks = const [],
+      parallelLimit = 1,
       device = const PhoneDevice(),
       skills = const PhoneSkillStatus();
 
@@ -443,7 +503,10 @@ class PhoneStatus {
     notifications: _flag(m['notifications']),
     confirmationNotifications: _maybeFlag(m['confirmationNotifications']),
     background: PhoneBackgroundStatus.fromMap(_map(m['background'])),
-    task: PhoneTaskStatus.fromMap(_map(m['task'])),
+    task: _selectedPhoneTask(m),
+    taskProtocol: m['taskProtocol'] == 1 ? 1 : 0,
+    tasks: _phoneTasks(m),
+    parallelLimit: _int(m['parallelLimit']) ?? 1,
     device: PhoneDevice.fromMap(_map(m['device'])),
     skills: PhoneSkillStatus.parse(m['skills']),
   );
@@ -469,6 +532,9 @@ class PhoneStatus {
   final bool? confirmationNotifications;
   final PhoneBackgroundStatus background;
   final PhoneTaskStatus task;
+  final int taskProtocol;
+  final List<PhoneTaskStatus> tasks;
+  final int parallelLimit;
   final PhoneDevice device;
   final PhoneSkillStatus skills;
 
@@ -484,6 +550,9 @@ class PhoneStatus {
     confirmationNotifications: confirmationNotifications,
     background: background,
     task: task,
+    taskProtocol: taskProtocol,
+    tasks: tasks,
+    parallelLimit: parallelLimit,
     device: device,
     skills: skills,
   );
@@ -1132,7 +1201,13 @@ class PhoneChannel {
     }
   }
 
-  Future<bool> stopTask() => _bool('stopTask');
+  Future<bool> stopTask({int? taskId}) => _bool('stopTask', taskId == null ? null : {'taskId': taskId});
+
+  Future<bool> retryTaskCleanup(int taskId) => _bool('retryTaskCleanup', {'taskId': taskId});
+
+  Future<bool> resumeTask(int taskId) => _bool('resumeTask', {'taskId': taskId});
+
+  Future<bool> pauseTask(int taskId, bool paused) => _bool('pauseTask', {'taskId': taskId, 'paused': paused});
 
   /// Private, structured engine request. Native owns the UI identity, nonce,
   /// one-active-card policy and 30-second deadline; text is never an action.
@@ -1210,13 +1285,16 @@ class PhoneChannel {
   /// The turn that drove the phone ended: closes the overlay and ends the
   /// task; with [reopen], brings the app forward on [sessionId] (just the app
   /// when null) if it is in the background, and says whether it came up.
-  Future<PhoneFinish> finishTask({required int taskId, String? sessionId, String? host, bool reopen = false}) async {
+  Future<PhoneFinish> finishTask({required int taskId, String? sessionId, String? host, bool reopen = false, String? runId, int? generation, bool appOnly = false}) async {
     try {
       final map = await _methods.invokeMapMethod<Object?, Object?>('finishTask', {
         'taskId': taskId,
         'sessionId': sessionId,
         'host': host,
         'reopen': reopen,
+        if (runId != null) 'runId': runId,
+        if (generation != null) 'generation': generation,
+        if (appOnly) 'appOnly': true,
       });
       return map == null ? const PhoneFinish() : PhoneFinish.fromMap(map);
     } on MissingPluginException {
