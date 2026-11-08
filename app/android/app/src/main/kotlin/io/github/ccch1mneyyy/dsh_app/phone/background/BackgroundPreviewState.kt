@@ -48,6 +48,7 @@ internal class BackgroundPreviewState {
     /** An Agent capture found no usable frame; an earlier picture must not mask that outcome. */
     @Synchronized fun observationUnavailable(reason: String?) {
         if (!enabled) return
+        readerEpoch++ // Capture can fail before readerChanged; a late encoder must not restore its old frame.
         candidate = null
         update(if (reason == null) "waiting" else "unavailable", reason)
     }

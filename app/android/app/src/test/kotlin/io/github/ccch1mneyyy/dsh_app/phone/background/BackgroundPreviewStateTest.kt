@@ -111,6 +111,33 @@ class BackgroundPreviewStateTest {
         assertEquals("frame", state.snapshot().state)
     }
 
+    @Test fun unavailableObservationBeforeReaderChangeRetiresLateEncodeButKeepsItsPhysicalSlot() {
+        for (reason in listOf(null, "captureFailed")) {
+            val state = BackgroundPreviewState(); state.configure(true)
+            val first = state.begin(0)!!
+            state.publish(first, frame(1), 0); state.finish(first)
+            state.captured(raw(9))
+            val encoding = state.begin(200)!!
+            // Real capture can throw at ImageReader allocation before readerChanged is reached.
+            state.observationUnavailable(reason)
+            val cleared = state.snapshot()
+            assertEquals(if (reason == null) "waiting" else "unavailable", cleared.state)
+            assertNull(cleared.frame)
+            assertFalse(state.current(encoding))
+            state.publish(encoding, frame(2), 200)
+            assertSame(cleared, state.snapshot())
+            assertNull(state.begin(400)) // Invalidating a ticket does not finish its physical work.
+            state.finish(encoding)
+            val recovery = state.begin(400)!!
+            assertNull(recovery.candidate)
+            state.finish(encoding) // An old completion must not release the new worker's slot.
+            assertTrue(state.current(recovery))
+            assertNull(state.begin(600))
+            state.publish(recovery, frame(3), 400); state.finish(recovery)
+            assertEquals(3, state.snapshot().frame!!.pixels.single())
+        }
+    }
+
     @Test fun noNewFrameKeepsTheSameSequenceAndImage() {
         val state = BackgroundPreviewState(); state.configure(true)
         val first = state.begin(0)!!; val image = frame(2, 4)
