@@ -27,6 +27,9 @@ class PhoneTaskSessionsTest {
     private val pool = Executors.newCachedThreadPool()
     @Volatile private var confirm: (ConfirmRequest) -> Decision = { Decision.UNAVAILABLE }
     private val actions = AtomicLong()
+    private val backgroundPreparations = AtomicLong()
+    private var lastOpenedDriver: PhoneDriver? = null
+    private var existingReplay: (PhoneTasks.Owner, PhoneAppIdentity) -> PhoneDriver? = { _, _ -> null }
     @Volatile private var open: (PhoneAppIdentity) -> ActionResult = { error("unexpected launch") }
     @Volatile private var appEntries = listOf(AppEntry("Example", PhoneAppIdentity("example.app", 10123)))
     @Volatile private var prepareLaunch: (AppEntry) -> SystemLaunch = { TestSystemLaunch(SystemTarget.Known(it)) }
@@ -58,8 +61,10 @@ class PhoneTaskSessionsTest {
             override fun collect(screenId: String, listElementId: Int, maxPages: Int, until: String?) = error("unexpected collect")
             override fun target(screenId: String, elementId: Int) = TargetInfo(screenId, elementId, "button", "Button", "example.app", "Example", false, false, false)
             override fun perform(action: PhoneAction): ActionResult { actions.incrementAndGet(); return ActionResult(true, "done") }
-            override fun open(target: PhoneAppIdentity) = this@PhoneTaskSessionsTest.open(target)
+            override fun open(target: PhoneAppIdentity): ActionResult =
+                this@PhoneTaskSessionsTest.open(target).also { if (it.ok) lastOpenedDriver = this }
         }
+        override fun existingReplayDriver(owner: PhoneTasks.Owner, app: PhoneAppIdentity): PhoneDriver? = existingReplay(owner, app)
         override fun a11yState() = A11yState.CONNECTED
         override fun backgroundUnavailable() = "unavailable"
         override fun zone() = ZoneId.of("UTC")
@@ -86,6 +91,7 @@ class PhoneTaskSessionsTest {
     private val sessions = PhoneTaskSessions(time::get, ids::incrementAndGet,
         { tasks, _ -> PhoneCore(env, tasks, ActionLog(), worker) }, legacy, legacyCore, { changed() }, settleResources = { cleanup(it) }, dispatchCleanup = { cleanupDispatch(it) }, cancelScope = { task, state -> cancelScope(task, state) },
         journal = journal, recoveryAdmission = { recoveryAdmission() },
+        prepareBackground = { _, _ -> backgroundPreparations.incrementAndGet(); null },
         createBackgroundWorker = { SerialWorker("session-background", time::get) { false }.also { backgroundWorkers += it } })
     private fun admit(session: String?, run: String = "1") = sessions.admit(session?.let { PhoneCaller(it, run, "call", runLifecycle = 1) })
     private fun invoke(session: String?, run: String = "1", tool: String = PhoneToolCatalog.APPS) =
@@ -1682,4 +1688,98 @@ class PhoneTaskSessionsTest {
         assertEquals(0L, actions.get())
         end("A"); end("B")
     }
+    private class BackgroundReplayFixture(
+        val selections: PhoneSkillReplaySelections,
+        val selection: PhoneSkillReplaySelections.Selection,
+        val outcomes: PhoneSkillOutcomes,
+    )
+
+    private fun backgroundReplay(session: String, run: String = "1"): BackgroundReplayFixture {
+        val registry = PhoneSkillReplaySelections { 0L }
+        val app = PhoneSkillReplaySelections.App("example.app", 10123, 1, 1, "a".repeat(64))
+        val route = PhoneSkillRoute.Route("phone-task-" + "1".repeat(32), "2".repeat(32),
+            "markor-navigation-v1", listOf("app1"), emptyList(), listOf(PhoneSkillRoute.Step(
+                PhoneSkillRoute.Op.SELECT_OPTION, "app1", PhoneScreen.BACKGROUND, "navigation", "bottom-tabs",
+                PhoneSkillRoute.Value.OptionLiteral("more"), PhoneSkillRoute.Post.OptionSelected)))
+        val selection = checkNotNull(registry.prepare(PhoneSkillDrafts().attachClient(), 1, { true },
+            PhoneSkillReplaySelections.Request(route.skillName, route.revision, session, app.packageName, app.uid),
+            PhoneSkillBundleReader.Read.Accepted(route, 2, "b".repeat(64), "c".repeat(64)), app))
+        assertTrue(registry.claim(selection, PhoneCaller(session, run, "c", 1)) is PhoneSkillReplaySelections.Claim.Start)
+        var stored: String? = null
+        return BackgroundReplayFixture(registry, selection, PhoneSkillOutcomes({ stored }, { stored = it; true }, "d".repeat(32)))
+    }
+
+    @Test fun backgroundReplayWithoutAnOriginalDriverDoesNotBootstrapOrAcquire() {
+        val f = backgroundReplay("empty")
+        val result = sessions.runReplay(admit("empty"), f.selection, f.selections, f.outcomes)
+        assertTrue(result.isError)
+        assertTrue(result.text.contains("原任务没有已就绪"))
+        assertEquals(0L, backgroundPreparations.get())
+        assertEquals(0L, actions.get())
+        assertNull(lastOpenedDriver)
+        assertTrue(task("empty").heldApps.isEmpty())
+        assertFalse(task("empty").holdsUnknownApp)
+        assertFalse(task("empty").tasks.isStopped())
+    }
+
+    @Test fun backgroundReplayFreezesTheOrdinaryRunsOriginalDriverAndKnownApp() {
+        val app = PhoneAppIdentity("example.app", 10123)
+        open = { ActionResult(true, "opened") }
+        assertFalse(openApp("A", app.packageName).isError)
+        val original = task("A")
+        val owner = checkNotNull(original.tasks.activeOwner())
+        val driver = checkNotNull(lastOpenedDriver)
+        val opensBefore = backgroundPreparations.get()
+        var lookups = 0
+        existingReplay = { requested, target ->
+            lookups++
+            if (requested.taskId == owner.taskId && requested.lifecycle == owner.lifecycle && original.tasks.isCurrent(owner) && target == app) driver else null
+        }
+        val f = backgroundReplay("A")
+        val prepared = original.core.prepareReplayCall(f.selection, f.selections, f.outcomes, owner)
+        assertTrue(prepared is Either.Right)
+        val call = (prepared as Either.Right).value
+        assertSame(driver, call.replayDriver)
+        assertEquals(app, call.knownApp)
+        assertEquals(listOf(PhoneScreen.BACKGROUND), call.screens)
+        assertFalse(call.unknownApp)
+        val result = sessions.runReplay(admit("A"), f.selection, f.selections, f.outcomes)
+        assertTrue(result.isError) // The real default device seam refuses typed replay; no producer success is fabricated.
+        assertEquals(opensBefore, backgroundPreparations.get())
+        assertEquals(2, lookups)
+        assertEquals(setOf(app), original.heldApps)
+        assertFalse(original.holdsUnknownApp)
+        assertEquals(0L, actions.get())
+        end("A")
+        assertTrue(original.resourcesReleased)
+        val next = backgroundReplay("A", "2")
+        val rejected = sessions.runReplay(admit("A", "2"), next.selection, next.selections, next.outcomes)
+        assertTrue(rejected.isError)
+        assertTrue(rejected.text.contains("原任务没有已就绪"))
+        assertEquals(opensBefore, backgroundPreparations.get())
+        assertTrue(task("A", "2").heldApps.isEmpty())
+    }
+
+    @Test fun backgroundReplayOriginalLookupStillConsumesTheSameAdmissionDeadline() {
+        open = { ActionResult(true, "opened") }
+        assertFalse(openApp("A", "example.app").isError)
+        val original = task("A")
+        val owner = checkNotNull(original.tasks.activeOwner())
+        val driver = checkNotNull(lastOpenedDriver)
+        existingReplay = { requested, _ ->
+            assertEquals(owner.taskId, requested.taskId)
+            assertEquals(owner.lifecycle, requested.lifecycle)
+            time.addAndGet(PhoneCore.MAX_TOTAL_MS)
+            driver
+        }
+        val count = backgroundPreparations.get()
+        val f = backgroundReplay("A")
+        assertTrue(sessions.runReplay(admit("A"), f.selection, f.selections, f.outcomes).isError)
+        assertEquals(count, backgroundPreparations.get())
+        assertEquals(0L, actions.get())
+        assertEquals(0, original.pending)
+        assertFalse(original.running)
+        end("A")
+    }
+
 }

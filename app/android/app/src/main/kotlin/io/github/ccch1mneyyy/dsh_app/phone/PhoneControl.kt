@@ -286,6 +286,9 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
             override fun onTaskStarted(owner: PhoneTasks.Owner) {} // Registry owns managed trace start.
             override fun driver(screen: PhoneScreen, owner: PhoneTasks.Owner): PhoneDriver? =
                 driverForTask(screen, task, owner)?.let { observations.bind(it, owner) }
+            override fun existingReplayDriver(owner: PhoneTasks.Owner, app: PhoneAppIdentity): PhoneDriver? =
+                background.existingReplayDriver(owner, app) { task.isCurrent(owner) }
+                    ?.let { observations.bind(it, owner) }
             override fun notifyFix(kind: String) = notifyFixFor(task, kind)
             override fun beforeHandoff(screen: PhoneScreen, owner: PhoneTasks.Owner): String? {
                 if (screen != PhoneScreen.BACKGROUND) return null

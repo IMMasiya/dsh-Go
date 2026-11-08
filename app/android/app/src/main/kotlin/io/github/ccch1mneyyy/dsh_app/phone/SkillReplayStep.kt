@@ -25,8 +25,11 @@ internal object SkillReplaySupport {
     private val mainMore = PhoneSkillRoute.Step(PhoneSkillRoute.Op.SELECT_OPTION, "app1", PhoneScreen.MAIN,
         "navigation", "bottom-tabs", PhoneSkillRoute.Value.OptionLiteral("more"), PhoneSkillRoute.Post.OptionSelected)
 
-    fun screen(route: PhoneSkillRoute.Route): PhoneScreen? =
-        if (route.descriptorId == "markor-navigation-v1" && route.slots == listOf("app1") &&
-            route.parameters.isEmpty() && route.steps.size in 1..16 && route.steps.all { it == mainMore })
-            PhoneScreen.MAIN else null
+    fun screen(route: PhoneSkillRoute.Route): PhoneScreen? {
+        if (route.descriptorId != "markor-navigation-v1" || route.slots != listOf("app1") ||
+            route.parameters.isNotEmpty() || route.steps.size !in 1..16) return null
+        val screen = route.steps.first().screen
+        val relation = mainMore.copy(screen = screen)
+        return screen.takeIf { route.steps.all { it == relation } }
+    }
 }

@@ -18,6 +18,8 @@ interface PhoneEnv {
     fun gate(): UserGate?
     fun driver(screen: PhoneScreen): PhoneDriver?
     fun driver(screen: PhoneScreen, owner: PhoneTasks.Owner): PhoneDriver? = driver(screen)
+    /** Original managed task resource only; must not connect, create or open. */
+    fun existingReplayDriver(owner: PhoneTasks.Owner, app: PhoneAppIdentity): PhoneDriver? = null
     fun a11yState(): A11yState
     /** Why the background display can't be used, as a sentence for the model. */
     fun backgroundUnavailable(): String
@@ -92,11 +94,13 @@ class PhoneCore(
         internal val replay: PhoneSkillReplaySelections.Selection? = null,
         internal val replaySelections: PhoneSkillReplaySelections? = null,
         internal val replayOutcomes: PhoneSkillOutcomes? = null,
+        internal val replayDriver: PhoneDriver? = null,
+        private val replayApp: PhoneAppIdentity? = null,
     ) {
         // Only Sessions reads/writes acquisition under its registry lock; never a Core-wide grant.
         internal var borrowedMainForBackgroundOpen = false
         @Volatile internal var backgroundOpenConfirmed = false
-        val knownApp: PhoneAppIdentity? get() = (launch?.target as? SystemTarget.Known)?.app?.identity
+        val knownApp: PhoneAppIdentity? get() = (launch?.target as? SystemTarget.Known)?.app?.identity ?: replayApp
         // A MAIN observation has no trustworthy window UID. BG open only queries the
         // selected package on MAIN before moving it; its actual target is checked by T1a.
         val unknownApp: Boolean get() = PhoneScreen.MAIN in screens &&
@@ -111,11 +115,17 @@ class PhoneCore(
             return Either.Left(ToolOutput("原手机路线来源已失效，未执行。", isError = true)) // l10n:keep replay result
         val screen = SkillReplaySupport.screen(selection.bundle.route)
             ?: return Either.Left(ToolOutput("当前执行器不支持这条完整路线，未执行。", isError = true)) // l10n:keep replay result
+        val app = PhoneAppIdentity(selection.app.packageName, selection.app.uid)
+        val originalDriver = if (screen == PhoneScreen.BACKGROUND) {
+            env.existingReplayDriver(owner, app)?.takeIf { it.screen == PhoneScreen.BACKGROUND }
+                ?: return Either.Left(ToolOutput("原任务没有已就绪的目标后台屏，未执行；不会连接或另开应用。", isError = true)) // l10n:keep replay result
+        } else null
         val key = PhoneSkillOutcomes.Key(selection.request.name, selection.request.revision, selection.bundle.routeSha256)
         if (outcomes.begin(selection.invocation, key) !in setOf(PhoneSkillOutcomes.Result.SAVED, PhoneSkillOutcomes.Result.UNCHANGED))
             return Either.Left(ToolOutput("路线结果记录不可用，未执行。", isError = true)) // l10n:keep replay result
         return Either.Right(PreparedCall(REPLAY, Args(emptyMap()), owner, listOf(screen),
-            replay = selection, replaySelections = selections, replayOutcomes = outcomes))
+            replay = selection, replaySelections = selections, replayOutcomes = outcomes,
+            replayDriver = originalDriver, replayApp = app.takeIf { screen == PhoneScreen.BACKGROUND }))
     }
 
     private fun replay(call: PreparedCall, scope: SerialWorker.Scope, owner: PhoneTasks.Owner): Out {
@@ -127,7 +137,10 @@ class PhoneCore(
         fun stop(reason: String): Out = Out(reason + " 已停止路线，不会自动重试；请交回用户或模型。", // l10n:keep replay result
             error = true, summary = REPLAY, decision = "handed_back")
         if (!live()) return stop("原任务或路线已不可继续。") // l10n:keep replay result
-        val driver = when (val result = driverFor(PhoneScreen.MAIN, owner)) {
+        val screen = call.screens.single()
+        val driver = if (screen == PhoneScreen.BACKGROUND) {
+            call.replayDriver ?: return stop("原后台屏已不可用。") // l10n:keep replay result
+        } else when (val result = driverFor(screen, owner)) {
             is Either.Left -> return stop(result.value)
             is Either.Right -> result.value
         }
@@ -144,7 +157,7 @@ class PhoneCore(
                 var confirmed = false
                 val refusal = AtomicReference<SafetyGate.Result.No?>(null)
                 fun writeVerdict() = safety.checkWrite(WriteKind.TAP, target, selection.app.packageName,
-                    target?.appLabel, null, false, null, null, PhoneScreen.MAIN, null)
+                    target?.appLabel, null, false, null, null, screen, null)
                 if (!plan.alreadySatisfied) {
                     if (target == null) return stop("当前页面没有唯一可操作目标。") // l10n:keep replay result
                     val verdict = writeVerdict()

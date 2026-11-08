@@ -329,7 +329,9 @@ class PhoneTaskSessions(
             }
             prepared = call
             if (remainingMs(admission) <= 0) return deadlineOutput()
-            if (PhoneScreen.BACKGROUND in call.screens) {
+            // Replay already froze an existing ready driver before acquiring its leases.
+            // The ordinary path may bootstrap; replay must never restore/connect/open here.
+            if (PhoneScreen.BACKGROUND in call.screens && replay == null) {
                 prepareBackground(task, owner)?.let { return ToolOutput(it, isError = true) }
                 if (remainingMs(admission) <= 0) return deadlineOutput()
             }

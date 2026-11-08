@@ -910,6 +910,32 @@ class BackgroundControl private constructor(context: Context) {
         return null
     }
 
+    /** Read-only original record lookup. No bootstrap, slot acquisition, IPC or target change. */
+    fun existingReplayDriver(owner: PhoneTasks.Owner, app: PhoneAppIdentity,
+                             currentOwner: () -> Boolean): BackgroundDisplay? {
+        fun current() = owner.active && currentOwner() && !Thread.currentThread().isInterrupted
+        if (!current() || mode == "off" || !androidOk() || resourceAdmission() != null) return null
+        val record = synchronized(this) {
+            synchronized(keepGuard) {
+                if (resourceMaintenance != null || retiredResourcePeer != null || selfCheckBorrow != null ||
+                    gateCall != null || gate.needsRetest || interruptRequested || selectingResource ||
+                    restoring?.isDone == false || selectionChange != null) return null
+                taskResource.find(owner)?.takeIf { channel === it.peer } ?: return null
+            }
+        }
+        // mayUse consults the original Tasks owner; never call it under controller/keep locks.
+        // The driver inspects its original allocation/peer/IO state without platform calls.
+        if (!record.driver.existingReplayTarget(app) || !current() || resourceAdmission() != null) return null
+        return synchronized(this) {
+            synchronized(keepGuard) {
+                if (mode == "off" || channel !== record.peer || !taskResource.current(record) ||
+                    resourceMaintenance != null || retiredResourcePeer != null || selfCheckBorrow != null ||
+                    gateCall != null || gate.needsRetest || interruptRequested || selectingResource ||
+                    restoring?.isDone == false || selectionChange != null) null else record.driver
+            }
+        }
+    }
+
     /** The lease already exists. The actual channel returned here becomes this driver's peer. */
     fun driverForTask(owner: PhoneTasks.Owner, currentOwner: () -> Boolean,
                       admitOwner: ((() -> Unit) -> Boolean)): BackgroundDisplay? {

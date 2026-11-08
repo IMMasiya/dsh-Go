@@ -33,6 +33,10 @@ class SkillReplaySupportTest {
         assertNull(SkillReplaySupport.screen(route.copy(descriptorId = "another")))
         assertNull(SkillReplaySupport.screen(route.copy(slots = listOf("app1", "app2"))))
         assertNull(SkillReplaySupport.screen(route.copy(parameters = listOf(R.Parameter("p", R.ParameterKind.BOOLEAN)))))
-        assertNull(SkillReplaySupport.screen(route.copy(steps = listOf(more.copy(screen = PhoneScreen.BACKGROUND)))))
+        val background = more.copy(screen = PhoneScreen.BACKGROUND)
+        assertEquals(PhoneScreen.BACKGROUND, SkillReplaySupport.screen(route.copy(steps = listOf(background))))
+        assertEquals(PhoneScreen.BACKGROUND, SkillReplaySupport.screen(route.copy(steps = List(16) { background })))
+        assertNull(SkillReplaySupport.screen(route.copy(steps = listOf(background.copy(op = R.Op.OPEN_APP)))))
+        assertNull(SkillReplaySupport.screen(route.copy(steps = listOf(background, more))))
     }
 }
