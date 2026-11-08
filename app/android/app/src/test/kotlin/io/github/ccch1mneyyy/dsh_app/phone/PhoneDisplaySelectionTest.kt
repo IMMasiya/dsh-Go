@@ -71,11 +71,11 @@ class PhoneDisplaySelectionTest {
         val old = start(task); val ticket = selection.select(task, old)!!
         task.stop("stop"); task.clearStop(); start(task)
         assertNull(selection.select(task, old))
-        assertFalse(selection.guard(ticket) { fail("retired publication") })
+        assertFalse(selection.guard(ticket).invoke { fail("retired publication") })
         assertNull(selection.view())
         val fresh = selection.select(task, task.activeOwner()!!)!!
         selection.clear()
-        assertFalse(selection.guard(fresh) { fail("cleared publication") })
+        assertFalse(selection.guard(fresh).invoke { fail("cleared publication") })
     }
 
     @Test fun notificationsNeverCombineOldLineWithNewTaskSnapshot() {

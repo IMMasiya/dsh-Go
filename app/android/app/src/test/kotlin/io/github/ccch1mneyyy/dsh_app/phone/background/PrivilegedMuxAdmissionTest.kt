@@ -42,7 +42,7 @@ class PrivilegedMuxAdmissionTest {
         for (success in listOf(true, false)) {
             val calls = PrivilegedCalls(3); val io = BackgroundDisplayIo<Any>(); val peer = Any()
             val entered = CountDownLatch(1); val response = CountDownLatch(1); val requestEntered = CountDownLatch(1)
-            val destroyed = Thread { calls.execute(global = true, terminal = { it }) { entered.countDown(); response.await(); success } }
+            val destroyed = Thread { calls.execute<Boolean>(global = true, terminal = { it }) { entered.countDown(); response.await(); success } }
             val pool = Executors.newSingleThreadExecutor()
             try {
                 destroyed.start(); await(entered)
