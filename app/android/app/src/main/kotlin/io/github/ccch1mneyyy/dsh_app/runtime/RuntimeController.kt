@@ -81,6 +81,9 @@ class RuntimeController private constructor(private val app: Context) : DshProce
     @Volatile private var runGen = 0
     @Volatile private var stopGen = -1
     @Volatile private var resetting = false
+    // A phone draft save may stage only within the ready runtime captured by its button press.
+    // Independent of bundled-skill attachment grants; it never borrows their write permission.
+    private var phoneSkillStoppedGeneration = -1
     // Retire skill writes at the stop request, before the Service receives ACTION_STOP.
     // This gate does not change process lifecycle or A5's ownership/launch decisions.
     private val managedSkillGate = ManagedSkillRuntimeGate()
@@ -272,6 +275,7 @@ class RuntimeController private constructor(private val app: Context) : DshProce
     }
 
     fun stop() {
+        synchronized(this) { phoneSkillStoppedGeneration = maxOf(phoneSkillStoppedGeneration, runGen) }
         managedSkillGate.stop(runGen)
         val intent = Intent(app, DshService::class.java).setAction(DshService.ACTION_STOP)
         app.startService(intent)
@@ -293,6 +297,31 @@ class RuntimeController private constructor(private val app: Context) : DshProce
 
     internal fun cancelManagedSkill(owner: ManagedSkillOwner, requestId: String? = null) {
         managedSkills.cancel(owner, requestId)
+    }
+
+    /** User-selected phone draft only. Lock order: Controller -> write; no IO under either. */
+    internal fun savePhoneSkill(write: PhoneSkillWrite, onDone: (PhoneSkillInstallResult) -> Unit) {
+        val generation = synchronized(this) {
+            if (phase == Phase.RUNNING && !runSafe && !resetting && stopGen < runGen &&
+                phoneSkillStoppedGeneration < runGen) runGen else null
+        }
+        if (generation == null) {
+            val result = PhoneSkillInstallResult.Refused.STALE
+            write.finish(result)
+            main.post { onDone(result) }
+            return
+        }
+        worker.execute {
+            fun current(): Boolean = phase == Phase.RUNNING && !runSafe && !resetting &&
+                runGen == generation && stopGen < generation && phoneSkillStoppedGeneration < generation
+            val result = PhoneSkillInstaller.install(installer.rootfs, write.document,
+                canStage = { synchronized(this) { current() && write.canStage() } },
+                beginCommit = { synchronized(this) { current() && write.beginCommit() } },
+            )
+            // Report what the filesystem did even if the UI retired after commit permission.
+            write.finish(result)
+            main.post { onDone(result) }
+        }
     }
 
     internal fun attachManagedSkillOwner(): ManagedSkillOwner {
