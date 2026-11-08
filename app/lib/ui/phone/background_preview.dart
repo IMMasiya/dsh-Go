@@ -103,7 +103,9 @@ class _PhoneBackgroundPreviewDialogState extends State<PhoneBackgroundPreviewDia
       return;
     }
     if (frame.taskId != widget.taskId || frame.generation < _nativeGeneration ||
-        frame.generation == _nativeGeneration && frame.sequence <= _nativeSequence) return;
+        frame.generation == _nativeGeneration && frame.sequence <= _nativeSequence) {
+      return;
+    }
     _nativeGeneration = frame.generation;
     _nativeSequence = frame.sequence;
     if (frame.state != 'frame') {

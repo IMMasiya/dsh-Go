@@ -33,7 +33,7 @@ class PhoneSkillStatus {
       candidates: List.unmodifiable([
         if (values is List)
           for (final value in values.take(8))
-            if (PhoneSkillCandidate.parse(value) case final candidate?) candidate,
+            ?PhoneSkillCandidate.parse(value),
       ]),
     );
   }
@@ -66,7 +66,9 @@ class PhoneSkillDraftView {
         order is! List || order.isEmpty || order.length > 60 ||
         order.any((v) => v is! int || v < 0 || v >= 60) || order.toSet().length != order.length ||
         fields is! List || fields.length > 62 || fields.any((v) => v is! String || v.length > 32) ||
-        phase != null && !const {'staging', 'committing', 'finished', 'cancelled'}.contains(phase)) return null;
+        phase != null && !const {'staging', 'committing', 'finished', 'cancelled'}.contains(phase)) {
+      return null;
+    }
     return PhoneSkillDraftView(draftId: id, taskId: task, generation: generation, revision: revision,
       skillName: name, markdown: markdown, stepOrder: List<int>.unmodifiable(order),
       parameterizedFields: List<String>.unmodifiable(fields), phase: phase as String?);

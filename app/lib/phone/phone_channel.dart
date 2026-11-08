@@ -4,7 +4,6 @@
 // (MissingPluginException → "未就绪") or failing (PlatformException → a reason).
 
 import 'dart:async';
-import 'dart:typed_data';
 
 import 'package:flutter/services.dart';
 
@@ -249,7 +248,9 @@ class PhoneGateCleanup {
   static PhoneGateCleanup? parse(Object? value) {
     if (value is! Map || value['v'] is! int || value['v'] != 1 ||
         value['canRetry'] is! bool ||
-        !const {'idle', 'pending', 'cleaning', 'unknown'}.contains(value['state'])) return null;
+        !const {'idle', 'pending', 'cleaning', 'unknown'}.contains(value['state'])) {
+      return null;
+    }
     final state = value['state'] as String;
     final handle = value['handle'];
     if (state == 'idle') {
@@ -257,7 +258,9 @@ class PhoneGateCleanup {
       return const PhoneGateCleanup(state: 'idle', canRetry: false);
     }
     if (handle is! String || handle.isEmpty || handle.length > 128 ||
-        (state != 'unknown' && value['canRetry'] == true)) return null;
+        (state != 'unknown' && value['canRetry'] == true)) {
+      return null;
+    }
     return PhoneGateCleanup(state: state, canRetry: value['canRetry'] as bool, handle: handle);
   }
 }
@@ -276,7 +279,9 @@ class PhoneResourceRecovery {
         value['count'] is! int || (value['count'] as int) < 0 || (value['count'] as int) > 256 ||
         value['canRetry'] is! bool ||
         !const {'loading', 'clear', 'pending', 'error', 'recovering'}.contains(value['state']) ||
-        value['reason'] != null && value['reason'] is! String) return null;
+        value['reason'] != null && value['reason'] is! String) {
+      return null;
+    }
     if (value['state'] == 'recovering' && value['canRetry'] == true) return null;
     return PhoneResourceRecovery(state: value['state'] as String, count: value['count'] as int,
       canRetry: value['canRetry'] as bool, reason: value['reason'] as String?);
@@ -549,11 +554,15 @@ class PhoneTaskInterruption {
     final token = raw['batchToken'];
     final error = raw['error'];
     if (state is! String || !const ['loading', 'ready', 'error'].contains(state) ||
-        count is! int || count < 0 || count > 256) return invalid;
+        count is! int || count < 0 || count > 256) {
+      return invalid;
+    }
     if (state == 'ready') {
       if (error != null || (count == 0 && token != null)) return invalid;
       if (count > 0 && (token is! String ||
-          !RegExp(r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$').hasMatch(token))) return invalid;
+          !RegExp(r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$').hasMatch(token))) {
+        return invalid;
+      }
     } else if (token != null || (state == 'loading' && (error != null || count != 0)) ||
         (state == 'error' && error != 'loadFailed' && error != 'writeFailed')) {
       return invalid;
@@ -1139,7 +1148,9 @@ class PhonePreviewFrame {
     final state = raw['state'];
     if (taskId is! int || taskId <= 0 || generation is! int || generation < 0 ||
         sequence is! int || sequence < 0 ||
-        !const {'off', 'waiting', 'frame', 'unavailable', 'protected'}.contains(state)) return null;
+        !const {'off', 'waiting', 'frame', 'unavailable', 'protected'}.contains(state)) {
+      return null;
+    }
     if (state != 'frame') {
       return PhonePreviewFrame(taskId: taskId, generation: generation, sequence: sequence, state: state as String);
     }
@@ -1147,7 +1158,9 @@ class PhonePreviewFrame {
     final width = raw['width'];
     final height = raw['height'];
     if (bytes is! Uint8List || bytes.isEmpty || bytes.lengthInBytes > 128 * 1024 ||
-        width is! int || width < 1 || width > 800 || height is! int || height < 1 || height > 800) return null;
+        width is! int || width < 1 || width > 800 || height is! int || height < 1 || height > 800) {
+      return null;
+    }
     return PhonePreviewFrame(taskId: taskId, generation: generation, sequence: sequence,
         state: 'frame', width: width, height: height, imageBytes: bytes);
   }

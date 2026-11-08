@@ -284,7 +284,9 @@ class PhoneTurnEndController extends Notifier<void> {
     if (!ref.mounted || !identical(_lifetime, lifetime) || !result.current ||
         _nativeLatest[session] != id ||
         !identical(ref.read(localConnectionProvider).value?.client, client) ||
-        !identical(client?.mux.generation, generation)) return;
+        !identical(client?.mux.generation, generation)) {
+      return;
+    }
     if (result.opened && result.launched && !bot) ref.read(chatRevealProvider.notifier).reveal(session);
     if (result.closed && reopen && !result.opened && !result.notified && !bot && !ref.read(appForegroundProvider)) {
       await ref.read(notifyChannelProvider).tryShow(

@@ -177,6 +177,8 @@ void main() {
       return container.read(phoneTurnEndProvider.notifier);
     }
 
+    Map<String, Object?> finishArgs() => (native.callsOf('finishTask').single.arguments as Map).cast<String, Object?>();
+
     Map<String, Object?> exactStatus({bool ended = false, int selected = 2}) => {
       ...phoneStatus(), 'taskProtocol': 1, 'parallelLimit': 1, 'selectedTaskId': selected,
       'tasks': [
@@ -240,8 +242,6 @@ void main() {
       expect(finishArgs()['reopen'], isFalse);
       expect(container.read(chatRevealProvider), isNull);
     });
-
-    Map<String, Object?> finishArgs() => (native.callsOf('finishTask').single.arguments as Map).cast<String, Object?>();
 
     test('the phone turn ending closes the overlay and brings the app back to that conversation', () async {
       final phone = await make(running: {'s2'}, viewed: 's2');

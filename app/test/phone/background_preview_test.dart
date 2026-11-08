@@ -3,7 +3,6 @@
 // through Image.onCreate; lifecycle/cancel races use explicit barriers.
 import 'dart:async';
 import 'dart:convert';
-import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'package:dsh_app/l10n/l10n.dart';
@@ -50,7 +49,7 @@ class _NativePreview {
 /// production subscription must await its actual cancel Future before re-listen.
 class _CancelAckMessenger implements BinaryMessenger {
   _CancelAckMessenger(this.delegate);
-  final BinaryMessenger delegate;
+  final TestDefaultBinaryMessenger delegate;
   Completer<void>? cancelAck;
   final calls = <String>[];
 

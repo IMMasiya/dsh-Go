@@ -378,7 +378,7 @@ void main() {
   testWidgets('actual failed step shows a fixed next-step explanation without a top reason', (tester) async {
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger.setMockMethodCallHandler(_phone, (_) async =>
       _reply('done', steps: [_step('input_probe', 'unknown', true, reason: 'inputUnconfirmed')]));
-    await tester.pumpWidget(goldenApp(home: const Scaffold(body: SingleChildScrollView(child: PhoneSelfCheckPanel()))));
+    await tester.pumpWidget(goldenApp(brightness: Brightness.light, home: const Scaffold(body: SingleChildScrollView(child: PhoneSelfCheckPanel()))));
     await tester.pump(); await tester.pump();
     final context = tester.element(find.byType(PhoneSelfCheckPanel));
     final reason = tester.widget<Text>(find.byKey(const ValueKey('self-check-reason-input_probe')));
@@ -394,7 +394,7 @@ void main() {
   testWidgets('Save button is explicit and a late export cannot revive a disposed panel', (tester) async {
     final report = _RecordingReport();
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger.setMockMethodCallHandler(_phone, (_) async => _reply('done'));
-    await tester.pumpWidget(goldenApp(home: Scaffold(body: SingleChildScrollView(child: PhoneSelfCheckPanel(report: report)))));
+    await tester.pumpWidget(goldenApp(brightness: Brightness.light, home: Scaffold(body: SingleChildScrollView(child: PhoneSelfCheckPanel(report: report)))));
     await tester.pump(); await tester.pump();
     expect(report.saved, isEmpty);
     await tester.ensureVisible(find.byKey(const ValueKey('self-check-save'))); await tester.pump();
@@ -413,7 +413,7 @@ void main() {
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger.setMockMethodCallHandler(_files, (_) async {
       fail('No explicit Save was requested');
     });
-    await tester.pumpWidget(goldenApp(home: const Scaffold(body: SingleChildScrollView(child: PhoneSelfCheckPanel()))));
+    await tester.pumpWidget(goldenApp(brightness: Brightness.light, home: const Scaffold(body: SingleChildScrollView(child: PhoneSelfCheckPanel()))));
     await tester.pump(); await tester.pump();
     expect(calls, ['phoneSelfCheckStatus']);
     expect(find.textContaining('hidden-id'), findsNothing);
@@ -431,7 +431,7 @@ void main() {
       return call.method == 'startPhoneSelfCheck'
         ? _reply('done', handle: 'legacy-b', steps: [_step('launch', 'pass', true)]) : _reply('idle');
     });
-    await tester.pumpWidget(goldenApp(home: const Scaffold(body: SingleChildScrollView(child: PhoneSelfCheckPanel()))));
+    await tester.pumpWidget(goldenApp(brightness: Brightness.light, home: const Scaffold(body: SingleChildScrollView(child: PhoneSelfCheckPanel()))));
     await tester.pump(); await tester.pump();
     final l10n = tester.element(find.byType(PhoneSelfCheckPanel)).l10n;
     await tester.tap(find.byKey(const ValueKey('self-check-profile'))); await tester.pumpAndSettle();
@@ -453,7 +453,7 @@ void main() {
       _reply('done', profile: 'target_c1', handle: 'private-handle', steps: [
         _step('main', 'fail', true, reason: 'targetWrongMain'), _step('tap', 'pass', true),
       ]));
-    await tester.pumpWidget(goldenApp(home: Scaffold(body: SingleChildScrollView(child: PhoneSelfCheckPanel(report: report)))));
+    await tester.pumpWidget(goldenApp(brightness: Brightness.light, home: Scaffold(body: SingleChildScrollView(child: PhoneSelfCheckPanel(report: report)))));
     await tester.pump(); await tester.pump();
     final l10n = tester.element(find.byType(PhoneSelfCheckPanel)).l10n;
     expect(tester.widget<Text>(find.byKey(const ValueKey('self-check-report-profile'))).data,
@@ -625,7 +625,7 @@ void main() {
         _step('ocr', 'not_run', false, reason: 'notInstalled'),
       ]);
     });
-    await tester.pumpWidget(goldenApp(home: Scaffold(body: SingleChildScrollView(child: PhoneSelfCheckPanel(report: report)))));
+    await tester.pumpWidget(goldenApp(brightness: Brightness.light, home: Scaffold(body: SingleChildScrollView(child: PhoneSelfCheckPanel(report: report)))));
     await tester.pump(); await tester.pump();
     final l10n = tester.element(find.byType(PhoneSelfCheckPanel)).l10n;
     await tester.tap(find.byKey(const ValueKey('self-check-profile'))); await tester.pumpAndSettle();
