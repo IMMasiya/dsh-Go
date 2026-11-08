@@ -326,24 +326,50 @@ internal class ControlOverlay(private val service: AccessibilityService) : UserG
     }
 
     /** Paired hides for full-display screenshots; captures may overlap. */
-    fun hideForCapture(hide: Boolean) {
+    fun hideForCapture(hide: Boolean) { captureHiddenResult(hide, false) }
+
+    /** Null means the UI hide did not finish normally. An empty set is a normal result.
+     * The IDs describe only this operation's invisible attached controls, not compositor pixels.
+     * The caller must still pair this with hideForCapture(false), including on interruption. */
+    internal fun hideForCaptureWithReceipt(): Set<Int>? = captureHiddenResult(true, true)
+
+    private fun captureHiddenResult(hide: Boolean, includeWindowIds: Boolean): Set<Int>? {
         if (Looper.myLooper() == Looper.getMainLooper()) {
             // The main-thread pet caller schedules its own delay before it shoots.
             applyCaptureHidden(hide)
-            return
+            return if (includeWindowIds) hiddenWindowIds() else null
         }
         // Both halves run on the main queue in the order they were asked for and are never
         // cancelled: a release can't overtake its own hide, and recovery still runs if the
         // screenshot worker times out or is interrupted.
         val applied = CountDownLatch(1)
         var settle = false
+        var windowIds: Set<Int>? = null
         main.post {
-            try { settle = applyCaptureHidden(hide) }
-            catch (e: Exception) { Log.w(TAG, "overlay main-thread call failed", e) }
+            try {
+                settle = applyCaptureHidden(hide)
+                if (includeWindowIds) windowIds = hiddenWindowIds()
+            } catch (e: Exception) { Log.w(TAG, "overlay main-thread call failed", e) }
             finally { applied.countDown() }
         }
-        // Blocking agent captures wait for the windows to go; a busy main thread costs only the wait.
-        if (hide && applied.await(500, TimeUnit.MILLISECONDS) && settle) SystemClock.sleep(120)
+        if (!hide || !applied.await(500, TimeUnit.MILLISECONDS)) return null
+        if (settle) SystemClock.sleep(120)
+        return windowIds
+    }
+
+    @Suppress("DEPRECATION")
+    private fun hiddenWindowIds(): Set<Int> = buildSet {
+        for ((root, _) in windows()) {
+            val id = runCatching {
+                if (!root.isAttachedToWindow || root.visibility == View.VISIBLE) null
+                else {
+                    val node = root.createAccessibilityNodeInfo()
+                    if (node == null) null
+                    else try { node.windowId.takeIf { it >= 0 } } finally { node.recycle() }
+                }
+            }.getOrNull()
+            if (id != null) add(id)
+        }
     }
 
     private fun applyCaptureHidden(hide: Boolean): Boolean {
