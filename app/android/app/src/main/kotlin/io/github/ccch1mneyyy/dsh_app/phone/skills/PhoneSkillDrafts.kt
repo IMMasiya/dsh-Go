@@ -80,14 +80,18 @@ internal class PhoneSkillDrafts(private val newId: () -> String = { UUID.randomU
     /** Native witness producer only; no bridge action accepts a route or descriptor from Flutter.
      * Binding changes what is saved, so it MUST invalidate an already displayed confirmation. */
     @Synchronized fun bindBundle(expectedEpoch: Long, owner: PhoneTaskTrace.OwnerKey, draftId: String,
-        expectedRevision: Long, bundle: PhoneSkillBundleInstaller.Document): Reply {
+        expectedRevision: Long, bundle: PhoneSkillBundleInstaller.Document,
+        preview: PhoneSkillDraft.Ready? = null): Reply {
         val e = editor ?: return Rejected(Code.STALE)
         if (epoch != expectedEpoch || e.retired || !attached(e.client) || e.source.owner != owner ||
             e.id != draftId || e.revision != expectedRevision) return Rejected(Code.STALE)
         if (e.write != null) return Rejected(Code.BUSY)
-        if (e.revision == Long.MAX_VALUE || bundle.identity.name != e.document.skillName ||
+        val document = preview ?: e.document
+        if (document.owner != e.source.owner || document.skillName != e.document.skillName ||
+            e.revision == Long.MAX_VALUE || bundle.identity.name != e.document.skillName ||
             bundle.identity.draftRevision != e.revision + 1 ||
-            !bundle.bytes()[0].contentEquals(e.document.markdown.toByteArray(Charsets.UTF_8))) return Rejected(Code.INVALID)
+            !bundle.bytes()[0].contentEquals(document.markdown.toByteArray(Charsets.UTF_8))) return Rejected(Code.INVALID)
+        e.document = document
         e.bundle = bundle
         e.revision++
         return shown(e)

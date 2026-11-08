@@ -334,4 +334,33 @@ class PhoneSkillDraftsTest {
         assertEquals(PhoneSkillDrafts.Code.STALE, code(f.manager.saved(bound.draftId, write)))
     }
 
+    @Test fun nativePublicSummaryIsShownAndSavedAtTheSameNewRevision() {
+        val f = Fixture(); val old = f.open()
+        val original = PhoneSkillDraft.render(f.source, old.skillName, true) as PhoneSkillDraft.Ready
+        val preview = PhoneSkillDraft.withRouteSummary(original, "1. 核对公共页面与唯一目标；执行后核对预期状态。")!!
+        val doc = bundle(old, markdown = preview.markdown)
+        val shown = (f.manager.bindBundle(f.manager.currentEpoch(), old.owner, old.draftId,
+            old.revision, doc, preview) as PhoneSkillDrafts.Shown).view
+        assertEquals(old.revision + 1, shown.revision)
+        assertEquals(preview.markdown, shown.markdown)
+        assertFalse(shown.markdown.contains("{{check_"))
+        assertEquals(PhoneSkillDrafts.Code.STALE, code(f.save(old)))
+        val write = (f.save(shown) as PhoneSkillDrafts.Started).write
+        assertEquals(shown.markdown, write.document.markdown)
+        assertArrayEquals(shown.markdown.toByteArray(Charsets.UTF_8), write.bundle!!.bytes()[0])
+    }
+
+    @Test fun mismatchedSummaryOrOwnerCannotChangeTheShownDocument() {
+        val f = Fixture(); val old = f.open()
+        val original = PhoneSkillDraft.render(f.source, old.skillName, true) as PhoneSkillDraft.Ready
+        val preview = PhoneSkillDraft.withRouteSummary(original, "公开摘要")!!
+        assertEquals(PhoneSkillDrafts.Code.INVALID, code(f.manager.bindBundle(f.manager.currentEpoch(),
+            old.owner, old.draftId, old.revision, bundle(old), preview)))
+        val foreign = PhoneSkillDraft.render(candidate(2), old.skillName, true) as PhoneSkillDraft.Ready
+        val other = PhoneSkillDraft.withRouteSummary(foreign, "公开摘要")!!
+        assertEquals(PhoneSkillDrafts.Code.INVALID, code(f.manager.bindBundle(f.manager.currentEpoch(),
+            old.owner, old.draftId, old.revision, bundle(old, markdown = other.markdown), other)))
+        assertEquals(old, (f.manager.view(f.client, old.draftId, old.owner.taskId) as PhoneSkillDrafts.Shown).view)
+    }
+
 }
