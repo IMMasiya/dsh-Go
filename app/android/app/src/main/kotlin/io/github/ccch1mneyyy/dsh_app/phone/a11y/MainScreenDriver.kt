@@ -30,6 +30,7 @@ import io.github.ccch1mneyyy.dsh_app.phone.PhoneRegistry
 import io.github.ccch1mneyyy.dsh_app.phone.PhoneUnlocks
 import io.github.ccch1mneyyy.dsh_app.phone.PhoneScreen
 import io.github.ccch1mneyyy.dsh_app.phone.SafetyRules
+import io.github.ccch1mneyyy.dsh_app.phone.SensitiveWords
 import io.github.ccch1mneyyy.dsh_app.phone.ScreenSnapshot
 import io.github.ccch1mneyyy.dsh_app.phone.TargetInfo
 import io.github.ccch1mneyyy.dsh_app.phone.VisualScope
@@ -579,8 +580,24 @@ internal class MainScreenDriver(private val service: PhoneA11yService, private v
             if (a.submit) {
                 // The read-back can take 1.5 s: a pause in it keeps the text but sends nothing.
                 if (!allowed()) return ActionResult(false, "$message 但本任务已暂停或停止，没有提交。") // l10n:keep agent result
+                val submitted = if (Build.VERSION.SDK_INT < 30 || !r.node.refresh()) false else {
+                    val id = AccessibilityNodeInfo.AccessibilityAction.ACTION_IME_ENTER.id
+                    if (r.node.actionList.none { it.id == id }) false else {
+                        val hint = ScreenFormat.clean(r.node.hintText?.toString())
+                            ?: if (r.node.isShowingHintText) ScreenFormat.clean(r.node.text?.toString()) else null
+                        val secret = r.node.isPassword || SensitiveWords.secretHit(
+                            hint, r.node.contentDescription?.toString(), r.node.viewIdResourceName,
+                        ) != null
+                        if (secret && !lifted.secretFields) {
+                            // l10n:keep agent screen result
+                            return after(before, r.snap, gen,
+                                "已输入并完成回读，但输入框现在属于密码或验证码等敏感字段，未发起键盘提交。请交给用户核对；不要重复输入。", ok = false)
+                        }
+                        if (cancelled(gen) || !allowed()) false else r.node.performAction(id)
+                    }
+                }
                 // l10n:keep agent screen result
-                if (actuator.imeEnter(r.node) { !cancelled(gen) && allowed() }) message += "已提交键盘上的发送 / 搜索操作。"
+                if (submitted) message += "已提交键盘上的发送 / 搜索操作。"
                 // l10n:keep agent screen result
                 else return after(before, r.snap, gen,
                     "$message 但键盘提交未获系统确认；不要重复输入或提交，请先核对新屏幕。", ok = false)

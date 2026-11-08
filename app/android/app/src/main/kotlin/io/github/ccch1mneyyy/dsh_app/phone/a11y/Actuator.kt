@@ -9,7 +9,6 @@ import android.accessibilityservice.AccessibilityService
 import android.accessibilityservice.GestureDescription
 import android.graphics.Path
 import android.graphics.Rect
-import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.HandlerThread
@@ -139,16 +138,6 @@ internal class Actuator(private val service: AccessibilityService, private val o
         }
         if (!allowed()) return false
         return node.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args)
-    }
-
-    /** The keyboard's action key (搜索 / 发送 / 完成): API 30+ only. */
-    fun imeEnter(node: AccessibilityNodeInfo, allowed: () -> Boolean): Boolean {
-        if (Build.VERSION.SDK_INT < 30) return false
-        val id = AccessibilityAction.ACTION_IME_ENTER.id
-        if (!node.refresh()) return false
-        if (node.actionList.none { it.id == id }) return false
-        if (!allowed()) return false
-        return node.performAction(id)
     }
 
     /** Node scroll action for [direction] if the node offers one, else a swipe inside [bounds]. */
