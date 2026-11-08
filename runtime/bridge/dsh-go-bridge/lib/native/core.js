@@ -5,6 +5,7 @@ import { randomBytes } from "node:crypto";
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, isAbsolute, join } from "node:path";
+import { performance } from "node:perf_hooks";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { ID, LIMITS, PKG, PROTOCOL, TONES, ICON } from "./limits.js";
 import { parseManifest, renderPlugin } from "./manifest.js";
@@ -520,7 +521,7 @@ export class Feed {
     this.cancel = undefined;
     this.waiters = [];
     this.pending = undefined;
-    this.lastFlush = 0;
+    this.lastFlush = undefined;
     this.timer = undefined;
     this.linger = undefined;
     this.lastUsed = Date.now();
@@ -576,7 +577,8 @@ export class Feed {
     if (this.stopped) return;
     this.pending = { value };
     if (this.timer !== undefined) return;
-    const wait = Math.max(0, this.lastFlush + 1000 / LIMITS.dataHz - Date.now());
+    const wait = this.lastFlush === undefined ? 0
+      : Math.max(0, Math.ceil(this.lastFlush + 1000 / LIMITS.dataHz - performance.now()));
     this.timer = setTimeout(() => this.#flush(), wait);
     this.timer.unref?.();
   }
@@ -586,7 +588,7 @@ export class Feed {
     if (this.stopped || this.pending === undefined) return;
     const next = this.pending.value;
     this.pending = undefined;
-    this.lastFlush = Date.now();
+    this.lastFlush = performance.now();
     const prev = this.data;
     if (prev !== undefined && deepEqual(prev, next)) return;
     const base = this.rev;
