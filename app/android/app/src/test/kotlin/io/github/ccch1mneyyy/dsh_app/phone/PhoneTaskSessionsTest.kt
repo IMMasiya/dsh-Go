@@ -78,7 +78,8 @@ class PhoneTaskSessionsTest {
     @Volatile private var journalCommit: (String) -> Boolean = { journalBytes = it; true }
     @Volatile private var recoveryAdmission: () -> String? = { null }
     private val journal = PhoneTaskJournal({ journalBytes }, { journalCommit(it) })
-    private val sessions = PhoneTaskSessions(::taskClock, ids::incrementAndGet,
+    // Deadline reads must not trip the Tasks.begin barrier used by the reserved-successor test.
+    private val sessions = PhoneTaskSessions(time::get, ids::incrementAndGet,
         { tasks, _ -> PhoneCore(env, tasks, ActionLog(), worker) }, legacy, legacyCore, { changed() }, settleResources = { cleanup(it) }, dispatchCleanup = { cleanupDispatch(it) }, cancelScope = { task, state -> cancelScope(task, state) },
         journal = journal, recoveryAdmission = { recoveryAdmission() },
         createBackgroundWorker = { SerialWorker("session-background", time::get) { false }.also { backgroundWorkers += it } })
