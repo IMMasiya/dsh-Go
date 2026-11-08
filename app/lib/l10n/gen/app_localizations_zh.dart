@@ -2585,6 +2585,53 @@ class L10nZh extends L10n {
   }
 
   @override
+  String botsPetCodexTitle(String name) {
+    return '「$name」是从 Codex 宠物转过来的';
+  }
+
+  @override
+  String get botsPetCodexBody => '大部分照原样，有几处不完全一样：';
+
+  @override
+  String get botsPetCodexOk => '知道了';
+
+  @override
+  String get botsPetCodexLoops => '动作会一直循环到状态变化，不像 Codex 里跑几遍就回到待机';
+
+  @override
+  String get botsPetCodexRoamLeft => '往左走用的是往右走那一行的镜像';
+
+  @override
+  String get botsPetCodexDrag => '拖着它时一律用朝右的那一行';
+
+  @override
+  String get botsPetCodexSleep => '睡觉时用待机的第一帧';
+
+  @override
+  String get botsPetCodexLook => '看向不同方向的那些格子没用上';
+
+  @override
+  String get botsPetCodexWebp => 'WebP 图转成了 PNG';
+
+  @override
+  String get botsPetCodexCustomTracks => '自定义的动作行没接到任何状态上';
+
+  @override
+  String get botsPetCodexFps => '帧率换算成毫秒时取了整';
+
+  @override
+  String get botsPetCodexOneShot => '只播一次的动作，播完回到哪里由 DSH 决定';
+
+  @override
+  String get botsPetCodexMissingAuthor => '包里没写作者';
+
+  @override
+  String get botsPetCodexMissingLicense => '包里没写授权';
+
+  @override
+  String get botsPetCodexMissingSource => '包里没写来源';
+
+  @override
   String botsPetImportReplaced(String name) {
     return '「$name」换成了新的';
   }
@@ -4568,6 +4615,9 @@ class L10nZh extends L10n {
   String get companionLogTitle => '聊天记录';
 
   @override
+  String get companionContextUnsupported => '这台主机的伙伴还不支持上下文：她的名字、设定和刚才发生的事传不过去，只发你说的话。升级主机或换成轻量模式就好。';
+
+  @override
   String get companionLogEmpty => '还没有说过话。';
 
   @override
@@ -4894,10 +4944,34 @@ class L10nZh extends L10n {
   String get companionInviteYes2 => '那我先躺好啦，你也放松点。';
 
   @override
-  String get companionMenuInvite => '主动邀请';
+  String get companionMenuPace => '她多主动';
 
   @override
-  String get companionMenuInviteHint => '你安静陪着她时，她偶尔会邀你一起歇一会儿';
+  String get companionPaceHint => '她只在你安静陪着她时开口：邀你歇一会儿，或提一句别的对话。深夜不说，每次进门最多邀一次。';
+
+  @override
+  String get companionPaceQuiet => '安静';
+
+  @override
+  String get companionPaceQuietHint => '不主动开口，你找她时才说话';
+
+  @override
+  String get companionPaceRare => '偶尔';
+
+  @override
+  String get companionPaceRareHint => '一天最多 2 次，至少隔 6 小时';
+
+  @override
+  String get companionPaceOften => '常常';
+
+  @override
+  String get companionPaceOftenHint => '一天最多 6 次，至少隔 2 小时';
+
+  @override
+  String get companionPaceChatty => '话多';
+
+  @override
+  String get companionPaceChattyHint => '一天最多 12 次，至少隔半小时';
 
   @override
   String get companionSetupBundled => '接她回家';
@@ -4951,39 +5025,80 @@ class L10nZh extends L10n {
   String get companionHugClose => '抱紧一点也没关系哦。';
 
   @override
-  String companionTaskDone(String title) {
-    return '「$title」那边跑完啦。';
-  }
-
-  @override
   String get companionTaskDoneUntitled => '你那边的任务跑完啦。';
-
-  @override
-  String companionTaskFailed(String title) {
-    return '「$title」好像出错了，要去看看吗？';
-  }
 
   @override
   String get companionTaskFailedUntitled => '你那边的任务好像出错了，要去看看吗？';
 
   @override
-  String companionTaskApproval(String title) {
-    return '「$title」在等你批准。';
-  }
-
-  @override
-  String get companionTaskApprovalUntitled => '你那边有件事在等你批准。';
-
-  @override
-  String companionTaskQuestion(String title) {
-    return '「$title」有事想问你。';
-  }
-
-  @override
-  String get companionTaskQuestionUntitled => '你那边有个问题在等你回答。';
-
-  @override
   String get companionTaskOpen => '去看看';
+
+  @override
+  String get companionMenuSignals => '她会提起什么';
+
+  @override
+  String get companionSignalsHint => '这些只在小屋里说给你听，不会发给模型。说多说少跟着「她多主动」，和邀请共用次数，深夜不说；选「安静」她也不说。';
+
+  @override
+  String get companionSignalState => '留意别的对话';
+
+  @override
+  String get companionSignalStateHint => '这台主机上别的对话跑完或出错时，她心里有数';
+
+  @override
+  String get companionSignalSpeech => '提一句';
+
+  @override
+  String get companionSignalSpeechHint => '挑你安静的时候说一句';
+
+  @override
+  String get companionSignalVoice => '用声音说出来';
+
+  @override
+  String get companionSignalVoiceHint => '她的声音开着时，把这句读出来';
+
+  @override
+  String get companionSignalNight => '深夜提醒你休息';
+
+  @override
+  String get companionSignalNightHint => '深夜在小屋里待了一阵，她轻轻提醒一次';
+
+  @override
+  String get companionSignalLateUse => '这么晚了还陪着我……要不要早点歇一会儿？';
+
+  @override
+  String get companionRecallTitle => '完整模式里自动想起记忆';
+
+  @override
+  String get companionRecallHint => '打开时换一段新对话；改动她记得的事会自动关掉';
+
+  @override
+  String get companionRecallConfirm =>
+      '打开后，她确认过的记忆（最多 12 条）会跟着完整模式里她的每次回复一起发给模型。会开始一段新对话，现在这段留在主对话列表里。改动记忆后会自动关掉，到时可以再打开。';
+
+  @override
+  String get companionRecallTurnOn => '打开';
+
+  @override
+  String get companionRecallOn => '好，从这段新对话起，我会想着你让我记住的事。';
+
+  @override
+  String get companionRecallBusy => '另一个对话正在用自动想起记忆，先在那边关掉再来';
+
+  @override
+  String get companionRecallUnsupported => '这台主机现在开不了自动想起记忆';
+
+  @override
+  String get companionRecallFailed => '自动想起记忆没打开，再试一次吧';
+
+  @override
+  String get companionRecallOff => '自动想起记忆关了，下一句会开始一段新对话';
+
+  @override
+  String get companionRecallOffFailed => '自动想起记忆没关掉，再试一次吧';
+
+  @override
+  String get companionRecallStopped => '自动想起记忆停了（她记得的事有改动），换成了一段新对话。想要的话可以在菜单里再打开。';
 
   @override
   String get companionMenuVoice => '她的声音';
@@ -14962,6 +15077,166 @@ class L10nZh extends L10n {
 
   @override
   String get searchKwRemoteCompactHistory => '精简 简洁 历史 工具 传输 流量 远程 compact slim lite';
+
+  @override
+  String get remotePairEntry => '扫码配对电脑';
+
+  @override
+  String get remotePairEntryHint => '扫电脑上 Remote 插件显示的二维码，不用注册 Remote 账号（需要先登录 DeepSeek）';
+
+  @override
+  String get remotePairAddComputer => '扫码添加电脑';
+
+  @override
+  String get remotePairTitle => '扫码配对电脑';
+
+  @override
+  String get remotePairSubtitle => '不用注册 Remote 账号，也不会传 DeepSeek 密码或登录凭据';
+
+  @override
+  String get remotePairNeedsDeepSeek => '先登录 DeepSeek 账号';
+
+  @override
+  String get remotePairNeedsDeepSeekBody => '扫码配对要先在 DSH Go 里登录 DeepSeek 账号。配对时只附带账号 ID 用来标记这台手机，不传密码、Cookie 或 Token。';
+
+  @override
+  String get remotePairScanHint => '对准电脑上 Remote 插件显示的配对二维码';
+
+  @override
+  String get remotePairPasteLink => '粘贴配对链接';
+
+  @override
+  String get remotePairPasteEmpty => '剪贴板里没有配对链接';
+
+  @override
+  String get remotePairFromImage => '从相册识别';
+
+  @override
+  String get remotePairImageNoCode => '这张图里没找到二维码';
+
+  @override
+  String get remotePairCameraDenied => '没有相机权限。可以在系统设置里打开，或者用「从相册识别」「粘贴配对链接」';
+
+  @override
+  String get remotePairCameraFailed => '相机打不开。可以用「从相册识别」或「粘贴配对链接」';
+
+  @override
+  String get remotePairReading => '正在读取配对信息…';
+
+  @override
+  String get remotePairConfirmTitle => '要连接这台电脑吗？';
+
+  @override
+  String get remotePairComputer => '电脑';
+
+  @override
+  String get remotePairServer => '服务器';
+
+  @override
+  String get remotePairFingerprint => '电脑指纹';
+
+  @override
+  String get remotePairFingerprintHint => '和电脑 Remote 插件上显示的指纹核对一致再继续。';
+
+  @override
+  String get remotePairConfirm => '确认是这台电脑，开始配对';
+
+  @override
+  String get remotePairNotThis => '不是这台，重新扫';
+
+  @override
+  String get remotePairClaiming => '正在生成验证码…';
+
+  @override
+  String get remotePairCodeTitle => '在电脑上输入这 8 位验证码';
+
+  @override
+  String remotePairCodeSemantics(String digits) {
+    return '验证码 $digits';
+  }
+
+  @override
+  String get remotePairCodeHint => '在电脑的 Remote 插件里输入，点「确认绑定」。手机不用再操作。';
+
+  @override
+  String get remotePairOneAttempt => '只有一次机会：输错后这次配对作废，要在电脑上重新生成二维码再扫。';
+
+  @override
+  String remotePairWaiting(String countdown) {
+    return '等电脑确认 · 剩余 $countdown';
+  }
+
+  @override
+  String get remotePairApproved => '电脑已确认，正在完成绑定…';
+
+  @override
+  String get remotePairCodeExpired => '验证码已过期，请在电脑上重新生成二维码';
+
+  @override
+  String remotePairConnecting(String name) {
+    return '配对完成，正在连接 $name…';
+  }
+
+  @override
+  String get remotePairFailedTitle => '没能配对';
+
+  @override
+  String remotePairOtherServerBody(String server) {
+    return '这个二维码来自 $server，和 DSH Go 现在用的 Remote 服务器不同。切换过去继续吗？两个服务器的登录各自保留。';
+  }
+
+  @override
+  String get remotePairSwitchServer => '切换服务器并继续';
+
+  @override
+  String get remotePairScanAgain => '重新扫码';
+
+  @override
+  String get remotePairErrInvalidCode => '这不是 DSH Go 的配对二维码';
+
+  @override
+  String get remotePairErrOtherServer => '这个二维码来自另一个 Remote 服务器';
+
+  @override
+  String get remotePairErrUnsupported => '这个 Remote 服务器还不支持扫码配对';
+
+  @override
+  String get remotePairErrExpired => '二维码已过期或已经用过了。请在电脑上重新生成二维码';
+
+  @override
+  String get remotePairErrCodeRejected => '电脑上输入的验证码不对，这次配对已作废。请在电脑上重新生成二维码再扫';
+
+  @override
+  String get remotePairErrCancelled => '配对已取消';
+
+  @override
+  String get remotePairErrAccountConflict => '这台手机已经登录了另一个 Remote 账号，和这台电脑的账号不一致。原来的登录保持不变；要换绑请先在 Remote 里退出登录';
+
+  @override
+  String get remotePairErrIdentity => '配对信息和这台电脑或这台手机对不上，已经停止。请在电脑上重新生成二维码';
+
+  @override
+  String get remotePairErrHostLimit => '这个账号绑定的电脑已经到上限了';
+
+  @override
+  String get remotePairErrNetwork => '连不上 Remote 服务器，检查网络后重试';
+
+  @override
+  String get remotePairErrFailed => '配对没有完成，请重新扫码';
+
+  @override
+  String remotePairSwitchFailedTitle(String name) {
+    return '已和 $name 配对';
+  }
+
+  @override
+  String get remotePairSwitchFailedBody => '但没能切换到这台电脑。可以重试，或者回到「远程主机」里点这台电脑。';
+
+  @override
+  String get remotePairDone => '完成';
+
+  @override
+  String get remotePairErrPinSave => '已经配对，但没能在手机上保存这台电脑的指纹。请在电脑上重新生成二维码，再扫一次';
 
   @override
   String get stateWorkspaceFilesHint => '已上传到当前工作区的文件：';

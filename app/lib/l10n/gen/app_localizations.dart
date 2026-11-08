@@ -4766,6 +4766,96 @@ abstract class L10n {
   /// **'「{name}」来了'**
   String botsPetImportDone(String name);
 
+  /// No description provided for @botsPetCodexTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'「{name}」是从 Codex 宠物转过来的'**
+  String botsPetCodexTitle(String name);
+
+  /// No description provided for @botsPetCodexBody.
+  ///
+  /// In zh, this message translates to:
+  /// **'大部分照原样，有几处不完全一样：'**
+  String get botsPetCodexBody;
+
+  /// No description provided for @botsPetCodexOk.
+  ///
+  /// In zh, this message translates to:
+  /// **'知道了'**
+  String get botsPetCodexOk;
+
+  /// No description provided for @botsPetCodexLoops.
+  ///
+  /// In zh, this message translates to:
+  /// **'动作会一直循环到状态变化，不像 Codex 里跑几遍就回到待机'**
+  String get botsPetCodexLoops;
+
+  /// No description provided for @botsPetCodexRoamLeft.
+  ///
+  /// In zh, this message translates to:
+  /// **'往左走用的是往右走那一行的镜像'**
+  String get botsPetCodexRoamLeft;
+
+  /// No description provided for @botsPetCodexDrag.
+  ///
+  /// In zh, this message translates to:
+  /// **'拖着它时一律用朝右的那一行'**
+  String get botsPetCodexDrag;
+
+  /// No description provided for @botsPetCodexSleep.
+  ///
+  /// In zh, this message translates to:
+  /// **'睡觉时用待机的第一帧'**
+  String get botsPetCodexSleep;
+
+  /// No description provided for @botsPetCodexLook.
+  ///
+  /// In zh, this message translates to:
+  /// **'看向不同方向的那些格子没用上'**
+  String get botsPetCodexLook;
+
+  /// No description provided for @botsPetCodexWebp.
+  ///
+  /// In zh, this message translates to:
+  /// **'WebP 图转成了 PNG'**
+  String get botsPetCodexWebp;
+
+  /// No description provided for @botsPetCodexCustomTracks.
+  ///
+  /// In zh, this message translates to:
+  /// **'自定义的动作行没接到任何状态上'**
+  String get botsPetCodexCustomTracks;
+
+  /// No description provided for @botsPetCodexFps.
+  ///
+  /// In zh, this message translates to:
+  /// **'帧率换算成毫秒时取了整'**
+  String get botsPetCodexFps;
+
+  /// No description provided for @botsPetCodexOneShot.
+  ///
+  /// In zh, this message translates to:
+  /// **'只播一次的动作，播完回到哪里由 DSH 决定'**
+  String get botsPetCodexOneShot;
+
+  /// No description provided for @botsPetCodexMissingAuthor.
+  ///
+  /// In zh, this message translates to:
+  /// **'包里没写作者'**
+  String get botsPetCodexMissingAuthor;
+
+  /// No description provided for @botsPetCodexMissingLicense.
+  ///
+  /// In zh, this message translates to:
+  /// **'包里没写授权'**
+  String get botsPetCodexMissingLicense;
+
+  /// No description provided for @botsPetCodexMissingSource.
+  ///
+  /// In zh, this message translates to:
+  /// **'包里没写来源'**
+  String get botsPetCodexMissingSource;
+
   /// No description provided for @botsPetImportReplaced.
   ///
   /// In zh, this message translates to:
@@ -8396,6 +8486,12 @@ abstract class L10n {
   /// **'聊天记录'**
   String get companionLogTitle;
 
+  /// No description provided for @companionContextUnsupported.
+  ///
+  /// In zh, this message translates to:
+  /// **'这台主机的伙伴还不支持上下文：她的名字、设定和刚才发生的事传不过去，只发你说的话。升级主机或换成轻量模式就好。'**
+  String get companionContextUnsupported;
+
   /// No description provided for @companionLogEmpty.
   ///
   /// In zh, this message translates to:
@@ -9032,17 +9128,65 @@ abstract class L10n {
   /// **'那我先躺好啦，你也放松点。'**
   String get companionInviteYes2;
 
-  /// No description provided for @companionMenuInvite.
+  /// No description provided for @companionMenuPace.
   ///
   /// In zh, this message translates to:
-  /// **'主动邀请'**
-  String get companionMenuInvite;
+  /// **'她多主动'**
+  String get companionMenuPace;
 
-  /// No description provided for @companionMenuInviteHint.
+  /// No description provided for @companionPaceHint.
   ///
   /// In zh, this message translates to:
-  /// **'你安静陪着她时，她偶尔会邀你一起歇一会儿'**
-  String get companionMenuInviteHint;
+  /// **'她只在你安静陪着她时开口：邀你歇一会儿，或提一句别的对话。深夜不说，每次进门最多邀一次。'**
+  String get companionPaceHint;
+
+  /// No description provided for @companionPaceQuiet.
+  ///
+  /// In zh, this message translates to:
+  /// **'安静'**
+  String get companionPaceQuiet;
+
+  /// No description provided for @companionPaceQuietHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'不主动开口，你找她时才说话'**
+  String get companionPaceQuietHint;
+
+  /// No description provided for @companionPaceRare.
+  ///
+  /// In zh, this message translates to:
+  /// **'偶尔'**
+  String get companionPaceRare;
+
+  /// No description provided for @companionPaceRareHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'一天最多 2 次，至少隔 6 小时'**
+  String get companionPaceRareHint;
+
+  /// No description provided for @companionPaceOften.
+  ///
+  /// In zh, this message translates to:
+  /// **'常常'**
+  String get companionPaceOften;
+
+  /// No description provided for @companionPaceOftenHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'一天最多 6 次，至少隔 2 小时'**
+  String get companionPaceOftenHint;
+
+  /// No description provided for @companionPaceChatty.
+  ///
+  /// In zh, this message translates to:
+  /// **'话多'**
+  String get companionPaceChatty;
+
+  /// No description provided for @companionPaceChattyHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'一天最多 12 次，至少隔半小时'**
+  String get companionPaceChattyHint;
 
   /// No description provided for @companionSetupBundled.
   ///
@@ -9146,23 +9290,11 @@ abstract class L10n {
   /// **'抱紧一点也没关系哦。'**
   String get companionHugClose;
 
-  /// No description provided for @companionTaskDone.
-  ///
-  /// In zh, this message translates to:
-  /// **'「{title}」那边跑完啦。'**
-  String companionTaskDone(String title);
-
   /// No description provided for @companionTaskDoneUntitled.
   ///
   /// In zh, this message translates to:
   /// **'你那边的任务跑完啦。'**
   String get companionTaskDoneUntitled;
-
-  /// No description provided for @companionTaskFailed.
-  ///
-  /// In zh, this message translates to:
-  /// **'「{title}」好像出错了，要去看看吗？'**
-  String companionTaskFailed(String title);
 
   /// No description provided for @companionTaskFailedUntitled.
   ///
@@ -9170,35 +9302,143 @@ abstract class L10n {
   /// **'你那边的任务好像出错了，要去看看吗？'**
   String get companionTaskFailedUntitled;
 
-  /// No description provided for @companionTaskApproval.
-  ///
-  /// In zh, this message translates to:
-  /// **'「{title}」在等你批准。'**
-  String companionTaskApproval(String title);
-
-  /// No description provided for @companionTaskApprovalUntitled.
-  ///
-  /// In zh, this message translates to:
-  /// **'你那边有件事在等你批准。'**
-  String get companionTaskApprovalUntitled;
-
-  /// No description provided for @companionTaskQuestion.
-  ///
-  /// In zh, this message translates to:
-  /// **'「{title}」有事想问你。'**
-  String companionTaskQuestion(String title);
-
-  /// No description provided for @companionTaskQuestionUntitled.
-  ///
-  /// In zh, this message translates to:
-  /// **'你那边有个问题在等你回答。'**
-  String get companionTaskQuestionUntitled;
-
   /// No description provided for @companionTaskOpen.
   ///
   /// In zh, this message translates to:
   /// **'去看看'**
   String get companionTaskOpen;
+
+  /// No description provided for @companionMenuSignals.
+  ///
+  /// In zh, this message translates to:
+  /// **'她会提起什么'**
+  String get companionMenuSignals;
+
+  /// No description provided for @companionSignalsHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'这些只在小屋里说给你听，不会发给模型。说多说少跟着「她多主动」，和邀请共用次数，深夜不说；选「安静」她也不说。'**
+  String get companionSignalsHint;
+
+  /// No description provided for @companionSignalState.
+  ///
+  /// In zh, this message translates to:
+  /// **'留意别的对话'**
+  String get companionSignalState;
+
+  /// No description provided for @companionSignalStateHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'这台主机上别的对话跑完或出错时，她心里有数'**
+  String get companionSignalStateHint;
+
+  /// No description provided for @companionSignalSpeech.
+  ///
+  /// In zh, this message translates to:
+  /// **'提一句'**
+  String get companionSignalSpeech;
+
+  /// No description provided for @companionSignalSpeechHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'挑你安静的时候说一句'**
+  String get companionSignalSpeechHint;
+
+  /// No description provided for @companionSignalVoice.
+  ///
+  /// In zh, this message translates to:
+  /// **'用声音说出来'**
+  String get companionSignalVoice;
+
+  /// No description provided for @companionSignalVoiceHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'她的声音开着时，把这句读出来'**
+  String get companionSignalVoiceHint;
+
+  /// No description provided for @companionSignalNight.
+  ///
+  /// In zh, this message translates to:
+  /// **'深夜提醒你休息'**
+  String get companionSignalNight;
+
+  /// No description provided for @companionSignalNightHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'深夜在小屋里待了一阵，她轻轻提醒一次'**
+  String get companionSignalNightHint;
+
+  /// No description provided for @companionSignalLateUse.
+  ///
+  /// In zh, this message translates to:
+  /// **'这么晚了还陪着我……要不要早点歇一会儿？'**
+  String get companionSignalLateUse;
+
+  /// No description provided for @companionRecallTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'完整模式里自动想起记忆'**
+  String get companionRecallTitle;
+
+  /// No description provided for @companionRecallHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'打开时换一段新对话；改动她记得的事会自动关掉'**
+  String get companionRecallHint;
+
+  /// No description provided for @companionRecallConfirm.
+  ///
+  /// In zh, this message translates to:
+  /// **'打开后，她确认过的记忆（最多 12 条）会跟着完整模式里她的每次回复一起发给模型。会开始一段新对话，现在这段留在主对话列表里。改动记忆后会自动关掉，到时可以再打开。'**
+  String get companionRecallConfirm;
+
+  /// No description provided for @companionRecallTurnOn.
+  ///
+  /// In zh, this message translates to:
+  /// **'打开'**
+  String get companionRecallTurnOn;
+
+  /// No description provided for @companionRecallOn.
+  ///
+  /// In zh, this message translates to:
+  /// **'好，从这段新对话起，我会想着你让我记住的事。'**
+  String get companionRecallOn;
+
+  /// No description provided for @companionRecallBusy.
+  ///
+  /// In zh, this message translates to:
+  /// **'另一个对话正在用自动想起记忆，先在那边关掉再来'**
+  String get companionRecallBusy;
+
+  /// No description provided for @companionRecallUnsupported.
+  ///
+  /// In zh, this message translates to:
+  /// **'这台主机现在开不了自动想起记忆'**
+  String get companionRecallUnsupported;
+
+  /// No description provided for @companionRecallFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'自动想起记忆没打开，再试一次吧'**
+  String get companionRecallFailed;
+
+  /// No description provided for @companionRecallOff.
+  ///
+  /// In zh, this message translates to:
+  /// **'自动想起记忆关了，下一句会开始一段新对话'**
+  String get companionRecallOff;
+
+  /// No description provided for @companionRecallOffFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'自动想起记忆没关掉，再试一次吧'**
+  String get companionRecallOffFailed;
+
+  /// No description provided for @companionRecallStopped.
+  ///
+  /// In zh, this message translates to:
+  /// **'自动想起记忆停了（她记得的事有改动），换成了一段新对话。想要的话可以在菜单里再打开。'**
+  String get companionRecallStopped;
 
   /// No description provided for @companionMenuVoice.
   ///
@@ -27253,6 +27493,306 @@ abstract class L10n {
   /// In zh, this message translates to:
   /// **'精简 简洁 历史 工具 传输 流量 远程 compact slim lite'**
   String get searchKwRemoteCompactHistory;
+
+  /// No description provided for @remotePairEntry.
+  ///
+  /// In zh, this message translates to:
+  /// **'扫码配对电脑'**
+  String get remotePairEntry;
+
+  /// No description provided for @remotePairEntryHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'扫电脑上 Remote 插件显示的二维码，不用注册 Remote 账号（需要先登录 DeepSeek）'**
+  String get remotePairEntryHint;
+
+  /// No description provided for @remotePairAddComputer.
+  ///
+  /// In zh, this message translates to:
+  /// **'扫码添加电脑'**
+  String get remotePairAddComputer;
+
+  /// No description provided for @remotePairTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'扫码配对电脑'**
+  String get remotePairTitle;
+
+  /// No description provided for @remotePairSubtitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'不用注册 Remote 账号，也不会传 DeepSeek 密码或登录凭据'**
+  String get remotePairSubtitle;
+
+  /// No description provided for @remotePairNeedsDeepSeek.
+  ///
+  /// In zh, this message translates to:
+  /// **'先登录 DeepSeek 账号'**
+  String get remotePairNeedsDeepSeek;
+
+  /// No description provided for @remotePairNeedsDeepSeekBody.
+  ///
+  /// In zh, this message translates to:
+  /// **'扫码配对要先在 DSH Go 里登录 DeepSeek 账号。配对时只附带账号 ID 用来标记这台手机，不传密码、Cookie 或 Token。'**
+  String get remotePairNeedsDeepSeekBody;
+
+  /// No description provided for @remotePairScanHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'对准电脑上 Remote 插件显示的配对二维码'**
+  String get remotePairScanHint;
+
+  /// No description provided for @remotePairPasteLink.
+  ///
+  /// In zh, this message translates to:
+  /// **'粘贴配对链接'**
+  String get remotePairPasteLink;
+
+  /// No description provided for @remotePairPasteEmpty.
+  ///
+  /// In zh, this message translates to:
+  /// **'剪贴板里没有配对链接'**
+  String get remotePairPasteEmpty;
+
+  /// No description provided for @remotePairFromImage.
+  ///
+  /// In zh, this message translates to:
+  /// **'从相册识别'**
+  String get remotePairFromImage;
+
+  /// No description provided for @remotePairImageNoCode.
+  ///
+  /// In zh, this message translates to:
+  /// **'这张图里没找到二维码'**
+  String get remotePairImageNoCode;
+
+  /// No description provided for @remotePairCameraDenied.
+  ///
+  /// In zh, this message translates to:
+  /// **'没有相机权限。可以在系统设置里打开，或者用「从相册识别」「粘贴配对链接」'**
+  String get remotePairCameraDenied;
+
+  /// No description provided for @remotePairCameraFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'相机打不开。可以用「从相册识别」或「粘贴配对链接」'**
+  String get remotePairCameraFailed;
+
+  /// No description provided for @remotePairReading.
+  ///
+  /// In zh, this message translates to:
+  /// **'正在读取配对信息…'**
+  String get remotePairReading;
+
+  /// No description provided for @remotePairConfirmTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'要连接这台电脑吗？'**
+  String get remotePairConfirmTitle;
+
+  /// No description provided for @remotePairComputer.
+  ///
+  /// In zh, this message translates to:
+  /// **'电脑'**
+  String get remotePairComputer;
+
+  /// No description provided for @remotePairServer.
+  ///
+  /// In zh, this message translates to:
+  /// **'服务器'**
+  String get remotePairServer;
+
+  /// No description provided for @remotePairFingerprint.
+  ///
+  /// In zh, this message translates to:
+  /// **'电脑指纹'**
+  String get remotePairFingerprint;
+
+  /// No description provided for @remotePairFingerprintHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'和电脑 Remote 插件上显示的指纹核对一致再继续。'**
+  String get remotePairFingerprintHint;
+
+  /// No description provided for @remotePairConfirm.
+  ///
+  /// In zh, this message translates to:
+  /// **'确认是这台电脑，开始配对'**
+  String get remotePairConfirm;
+
+  /// No description provided for @remotePairNotThis.
+  ///
+  /// In zh, this message translates to:
+  /// **'不是这台，重新扫'**
+  String get remotePairNotThis;
+
+  /// No description provided for @remotePairClaiming.
+  ///
+  /// In zh, this message translates to:
+  /// **'正在生成验证码…'**
+  String get remotePairClaiming;
+
+  /// No description provided for @remotePairCodeTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'在电脑上输入这 8 位验证码'**
+  String get remotePairCodeTitle;
+
+  /// No description provided for @remotePairCodeSemantics.
+  ///
+  /// In zh, this message translates to:
+  /// **'验证码 {digits}'**
+  String remotePairCodeSemantics(String digits);
+
+  /// No description provided for @remotePairCodeHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'在电脑的 Remote 插件里输入，点「确认绑定」。手机不用再操作。'**
+  String get remotePairCodeHint;
+
+  /// No description provided for @remotePairOneAttempt.
+  ///
+  /// In zh, this message translates to:
+  /// **'只有一次机会：输错后这次配对作废，要在电脑上重新生成二维码再扫。'**
+  String get remotePairOneAttempt;
+
+  /// No description provided for @remotePairWaiting.
+  ///
+  /// In zh, this message translates to:
+  /// **'等电脑确认 · 剩余 {countdown}'**
+  String remotePairWaiting(String countdown);
+
+  /// No description provided for @remotePairApproved.
+  ///
+  /// In zh, this message translates to:
+  /// **'电脑已确认，正在完成绑定…'**
+  String get remotePairApproved;
+
+  /// No description provided for @remotePairCodeExpired.
+  ///
+  /// In zh, this message translates to:
+  /// **'验证码已过期，请在电脑上重新生成二维码'**
+  String get remotePairCodeExpired;
+
+  /// No description provided for @remotePairConnecting.
+  ///
+  /// In zh, this message translates to:
+  /// **'配对完成，正在连接 {name}…'**
+  String remotePairConnecting(String name);
+
+  /// No description provided for @remotePairFailedTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'没能配对'**
+  String get remotePairFailedTitle;
+
+  /// No description provided for @remotePairOtherServerBody.
+  ///
+  /// In zh, this message translates to:
+  /// **'这个二维码来自 {server}，和 DSH Go 现在用的 Remote 服务器不同。切换过去继续吗？两个服务器的登录各自保留。'**
+  String remotePairOtherServerBody(String server);
+
+  /// No description provided for @remotePairSwitchServer.
+  ///
+  /// In zh, this message translates to:
+  /// **'切换服务器并继续'**
+  String get remotePairSwitchServer;
+
+  /// No description provided for @remotePairScanAgain.
+  ///
+  /// In zh, this message translates to:
+  /// **'重新扫码'**
+  String get remotePairScanAgain;
+
+  /// No description provided for @remotePairErrInvalidCode.
+  ///
+  /// In zh, this message translates to:
+  /// **'这不是 DSH Go 的配对二维码'**
+  String get remotePairErrInvalidCode;
+
+  /// No description provided for @remotePairErrOtherServer.
+  ///
+  /// In zh, this message translates to:
+  /// **'这个二维码来自另一个 Remote 服务器'**
+  String get remotePairErrOtherServer;
+
+  /// No description provided for @remotePairErrUnsupported.
+  ///
+  /// In zh, this message translates to:
+  /// **'这个 Remote 服务器还不支持扫码配对'**
+  String get remotePairErrUnsupported;
+
+  /// No description provided for @remotePairErrExpired.
+  ///
+  /// In zh, this message translates to:
+  /// **'二维码已过期或已经用过了。请在电脑上重新生成二维码'**
+  String get remotePairErrExpired;
+
+  /// No description provided for @remotePairErrCodeRejected.
+  ///
+  /// In zh, this message translates to:
+  /// **'电脑上输入的验证码不对，这次配对已作废。请在电脑上重新生成二维码再扫'**
+  String get remotePairErrCodeRejected;
+
+  /// No description provided for @remotePairErrCancelled.
+  ///
+  /// In zh, this message translates to:
+  /// **'配对已取消'**
+  String get remotePairErrCancelled;
+
+  /// No description provided for @remotePairErrAccountConflict.
+  ///
+  /// In zh, this message translates to:
+  /// **'这台手机已经登录了另一个 Remote 账号，和这台电脑的账号不一致。原来的登录保持不变；要换绑请先在 Remote 里退出登录'**
+  String get remotePairErrAccountConflict;
+
+  /// No description provided for @remotePairErrIdentity.
+  ///
+  /// In zh, this message translates to:
+  /// **'配对信息和这台电脑或这台手机对不上，已经停止。请在电脑上重新生成二维码'**
+  String get remotePairErrIdentity;
+
+  /// No description provided for @remotePairErrHostLimit.
+  ///
+  /// In zh, this message translates to:
+  /// **'这个账号绑定的电脑已经到上限了'**
+  String get remotePairErrHostLimit;
+
+  /// No description provided for @remotePairErrNetwork.
+  ///
+  /// In zh, this message translates to:
+  /// **'连不上 Remote 服务器，检查网络后重试'**
+  String get remotePairErrNetwork;
+
+  /// No description provided for @remotePairErrFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'配对没有完成，请重新扫码'**
+  String get remotePairErrFailed;
+
+  /// No description provided for @remotePairSwitchFailedTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'已和 {name} 配对'**
+  String remotePairSwitchFailedTitle(String name);
+
+  /// No description provided for @remotePairSwitchFailedBody.
+  ///
+  /// In zh, this message translates to:
+  /// **'但没能切换到这台电脑。可以重试，或者回到「远程主机」里点这台电脑。'**
+  String get remotePairSwitchFailedBody;
+
+  /// No description provided for @remotePairDone.
+  ///
+  /// In zh, this message translates to:
+  /// **'完成'**
+  String get remotePairDone;
+
+  /// No description provided for @remotePairErrPinSave.
+  ///
+  /// In zh, this message translates to:
+  /// **'已经配对，但没能在手机上保存这台电脑的指纹。请在电脑上重新生成二维码，再扫一次'**
+  String get remotePairErrPinSave;
 
   /// No description provided for @stateWorkspaceFilesHint.
   ///
