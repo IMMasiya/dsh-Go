@@ -13,6 +13,7 @@ class PhoneCorePromptOwnerTest {
     private val tasks = PhoneTasks()
     private var confirm: () -> Decision = { Decision.ALLOW_ONCE }
     private var handoff: () -> HandoffResult = { HandoffResult.CONTINUE }
+    private val handoffCauses = mutableListOf<HandoffCause?>()
     private var gateAvailable = true
     private var reviewRequired = false
     private var beforeHandoff: (PhoneTasks.Owner) -> Unit = {}
@@ -25,6 +26,7 @@ class PhoneCorePromptOwnerTest {
     private var beforeResolve: () -> Unit = {}
     private var freshApp: Either<String, AppEntry> = Either.Right(AppEntry("Example", PhoneAppIdentity("example.app", 10123)))
     private var prepareSystem: () -> Unit = {}
+    private var afterRejectedStart: () -> Unit = {}
     private var afterStart: () -> Unit = {}
     private var settle: () -> Unit = {}
     private var launchResult = SysResult(true, "launched")
@@ -44,6 +46,10 @@ class PhoneCorePromptOwnerTest {
         override fun gate() = if (!gateAvailable) null else object : UserGate {
             override fun confirm(request: ConfirmRequest): Decision { asked++; return confirm() }
             override fun handoff(reason: String, timeoutMs: Long): HandoffResult { asked++; return handoff() }
+            override fun handoff(reason: String, timeoutMs: Long, cause: HandoffCause?): HandoffResult {
+                handoffCauses += cause
+                return handoff(reason, timeoutMs)
+            }
             override fun status(text: String?) { statuses += text }
             override fun status(text: String?, ifCurrent: (() -> Unit) -> Boolean) {
                 beforeStatus()
@@ -126,7 +132,10 @@ class PhoneCorePromptOwnerTest {
     // Models the mandatory SystemApi ticket contract, not Android PM or Binder execution.
     private fun commit(dispatch: PhoneTasks.SystemDispatch) {
         prepareSystem()
-        if (!dispatch.commitStart()) throw InterruptedException(PhoneTasks.STOPPED_MESSAGE)
+        if (!dispatch.commitStart()) {
+            afterRejectedStart()
+            throw InterruptedException(PhoneTasks.STOPPED_MESSAGE)
+        }
     }
 
     private fun replace() { tasks.endTask(); tasks.begin() }
@@ -767,6 +776,78 @@ class PhoneCorePromptOwnerTest {
         assertFalse(tasks.isStopped())
         assertFalse(result.text.startsWith(PhoneTasks.STOPPED_MESSAGE))
         assertNotEquals("stopped", core.log.last()!!.decision)
+    }
+
+    @Test fun lateSystemDenyNamesTheFollowingHandoffWithoutChangingFailedDispatchFacts() {
+        for (call in listOf(::openApp, ::openUrl, ::shareIntent)) {
+            policies = PhonePolicies()
+            prepareSystem = { policies = PhonePolicies(denyPackages = listOf("example.app")) }
+            val result = call()
+            assertTrue(result.text, result.isError)
+            assertEquals("failed", core.log.last()!!.decision)
+            assertEquals(0, launches + urls + intents)
+            assertNull(startedPlan)
+            assertTrue(tasks.isActive)
+            assertFalse(tasks.isStopped())
+            policies = PhonePolicies()
+            assertFalse(handoffCall().isError)
+            assertEquals(HandoffCause.DENY_LIST, handoffCauses.last())
+        }
+        assertEquals(3, handoffCauses.size)
+    }
+
+    @Test fun anUnclassifiedLateSystemRefusalClearsTheSameOwnersEarlierCause() {
+        policies = PhonePolicies(denyPackages = listOf("example.app"))
+        assertTrue(openApp().isError)
+        assertEquals("refused:deny-list", core.log.last()!!.decision)
+        val owner = checkNotNull(tasks.activeOwner())
+        policies = PhonePolicies(unlocks = PhoneUnlocks(ownApp = true))
+        preparedTarget = SystemTarget.Known(AppEntry("DSH", PhoneAppIdentity(SafetyRules.OWN_PACKAGE, 10123)))
+        prepareSystem = { policies = PhonePolicies() }
+        val result = openUrl()
+        assertTrue(result.text, result.isError)
+        assertEquals("failed", core.log.last()!!.decision)
+        assertTrue(tasks.isCurrent(owner))
+        assertEquals(0, launches + urls + intents)
+        assertNull(startedPlan)
+        assertFalse(handoffCall().isError)
+        assertEquals(listOf<HandoffCause?>(null), handoffCauses)
+    }
+
+    @Test fun aLateRefusalFromAnOldOwnerCannotClearTheSuccessorsOwnCause() {
+        val successorWorker = SerialWorker("successor-refusal")
+        try {
+            policies = PhonePolicies(unlocks = PhoneUnlocks(ownApp = true))
+            preparedTarget = SystemTarget.Known(AppEntry("DSH", PhoneAppIdentity(SafetyRules.OWN_PACKAGE, 10123)))
+            prepareSystem = { policies = PhonePolicies() }
+            afterRejectedStart = {
+                // The old platform start was denied; before its exception reaches Core,
+                // another owner establishes its own refusal on the real prepared-call API.
+                replace()
+                afterRejectedStart = {}
+                policies = PhonePolicies(denyPackages = listOf("example.app"))
+                val successor = checkNotNull(tasks.activeOwner())
+                tasks.callStarted()
+                try {
+                    val prepared = when (val next = core.prepareCall(PhoneToolCatalog.OPEN,
+                        mapOf("app" to "example.app"), successor)) {
+                        is Either.Left -> error("Expected a prepared successor: ${next.value.text}")
+                        is Either.Right -> next.value
+                    }
+                    assertTrue(core.call(prepared, successorWorker).isError)
+                    assertEquals("refused:deny-list", core.log.last()!!.decision)
+                } finally { tasks.callEnded(successor) }
+            }
+            assertTrue(openUrl().isError)
+            assertEquals("stopped", core.log.last()!!.decision)
+            assertEquals(0, launches + urls + intents)
+            assertNull(startedPlan)
+            assertTrue(tasks.isActive)
+            assertFalse(tasks.isStopped())
+            policies = PhonePolicies()
+            assertFalse(handoffCall().isError)
+            assertEquals(listOf(HandoffCause.DENY_LIST), handoffCauses)
+        } finally { successorWorker.shutdown() }
     }
 
     @Test fun unrelatedLateDenyDoesNotCancelAnySystemEntry() {

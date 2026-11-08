@@ -558,6 +558,9 @@ class PhoneCore(
             // Only this call's explicit policy refusal means no start was committed. Owner
             // cancellation keeps its original exception; an already committed start is not recalled.
             val refusal = denied.get() ?: throw e
+            tasks.runIfCurrent(owner) {
+                this.refusal = HandoffCause.ofDecision("refused:${refusal.rule}")?.let { owner to it }
+            }
             SysResult(false, refusal.message)
         }
     }
