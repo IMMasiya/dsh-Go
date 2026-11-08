@@ -2739,6 +2739,54 @@ class L10nEn extends L10n {
   }
 
   @override
+  String botsPetCodexTitle(String name) {
+    return '$name was converted from a Codex pet';
+  }
+
+  @override
+  String get botsPetCodexBody => 'Most of it carries over as it was. A few things differ:';
+
+  @override
+  String get botsPetCodexOk => 'Got it';
+
+  @override
+  String get botsPetCodexLoops =>
+      'Motions loop until the state changes, instead of settling back to idle after a few rounds as in Codex';
+
+  @override
+  String get botsPetCodexRoamLeft => 'Walking left mirrors the walking-right row';
+
+  @override
+  String get botsPetCodexDrag => 'Dragging always uses the facing-right row';
+
+  @override
+  String get botsPetCodexSleep => 'Sleeping shows the first idle frame';
+
+  @override
+  String get botsPetCodexLook => 'The look-in-each-direction cells are not used';
+
+  @override
+  String get botsPetCodexWebp => 'The WebP sheet was converted to PNG';
+
+  @override
+  String get botsPetCodexCustomTracks => 'Custom motion rows are not tied to any state';
+
+  @override
+  String get botsPetCodexFps => 'Frame rates were rounded to whole milliseconds';
+
+  @override
+  String get botsPetCodexOneShot => 'Where a play-once motion returns to is decided by DSH';
+
+  @override
+  String get botsPetCodexMissingAuthor => 'The pack names no author';
+
+  @override
+  String get botsPetCodexMissingLicense => 'The pack names no license';
+
+  @override
+  String get botsPetCodexMissingSource => 'The pack names no source';
+
+  @override
   String botsPetImportReplaced(String name) {
     return '$name was updated';
   }

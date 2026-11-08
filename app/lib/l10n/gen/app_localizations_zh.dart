@@ -2585,6 +2585,53 @@ class L10nZh extends L10n {
   }
 
   @override
+  String botsPetCodexTitle(String name) {
+    return '「$name」是从 Codex 宠物转过来的';
+  }
+
+  @override
+  String get botsPetCodexBody => '大部分照原样，有几处不完全一样：';
+
+  @override
+  String get botsPetCodexOk => '知道了';
+
+  @override
+  String get botsPetCodexLoops => '动作会一直循环到状态变化，不像 Codex 里跑几遍就回到待机';
+
+  @override
+  String get botsPetCodexRoamLeft => '往左走用的是往右走那一行的镜像';
+
+  @override
+  String get botsPetCodexDrag => '拖着它时一律用朝右的那一行';
+
+  @override
+  String get botsPetCodexSleep => '睡觉时用待机的第一帧';
+
+  @override
+  String get botsPetCodexLook => '看向不同方向的那些格子没用上';
+
+  @override
+  String get botsPetCodexWebp => 'WebP 图转成了 PNG';
+
+  @override
+  String get botsPetCodexCustomTracks => '自定义的动作行没接到任何状态上';
+
+  @override
+  String get botsPetCodexFps => '帧率换算成毫秒时取了整';
+
+  @override
+  String get botsPetCodexOneShot => '只播一次的动作，播完回到哪里由 DSH 决定';
+
+  @override
+  String get botsPetCodexMissingAuthor => '包里没写作者';
+
+  @override
+  String get botsPetCodexMissingLicense => '包里没写授权';
+
+  @override
+  String get botsPetCodexMissingSource => '包里没写来源';
+
+  @override
   String botsPetImportReplaced(String name) {
     return '「$name」换成了新的';
   }

@@ -3,8 +3,12 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:archive/archive.dart';
+import 'package:dsh_app/l10n/gen/app_localizations.dart';
 import 'package:dsh_app/pets/pet_library.dart';
+import 'package:dsh_app/pets/pet_pack.dart';
 import 'package:dsh_app/pets/pet_pack_validator.dart' show petArchiveByteCap;
+import 'package:dsh_app/ui/pets/pet_picker.dart' show codexImportWarnings, codexWarningText;
+import 'package:flutter/widgets.dart' show Locale;
 import 'package:flutter_test/flutter_test.dart';
 
 /// A real (transparent) PNG of [w] × [h]; [data] replaces its image data
@@ -462,5 +466,27 @@ void main() {
         problem(PetImportProblem.badSheet),
       );
     });
+  });
+
+  test('a pet converted from a Codex pet says what did not carry over', () async {
+    final dir = Directory.systemTemp.createTempSync('codex-warnings');
+    addTearDown(() => dir.deleteSync(recursive: true));
+    final json = {
+      ...packJson(),
+      'codexImport': {
+        'warnings': ['roam-left-mirrors-right-track', 'missing-license', 'something-new'],
+      },
+    };
+    File('${dir.path}/pack.json').writeAsStringSync(jsonEncode(json));
+    final pack = PetPack.parse(json, dir: dir.path);
+    final warnings = codexImportWarnings(pack);
+    expect(warnings, ['roam-left-mirrors-right-track', 'missing-license', 'something-new']);
+    final l10n = lookupL10n(const Locale('zh'));
+    expect(codexWarningText(l10n, warnings[0]), '往左走用的是往右走那一行的镜像');
+    expect(codexWarningText(l10n, warnings[1]), '包里没写授权');
+    // One this app doesn't know yet: shown as it is.
+    expect(codexWarningText(l10n, warnings[2]), 'something-new');
+    // Any other pet: nothing to say.
+    expect(codexImportWarnings(PetPack.parse(packJson(), dir: dir.path.replaceAll('codex', 'none'))), isEmpty);
   });
 }

@@ -4766,6 +4766,96 @@ abstract class L10n {
   /// **'「{name}」来了'**
   String botsPetImportDone(String name);
 
+  /// No description provided for @botsPetCodexTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'「{name}」是从 Codex 宠物转过来的'**
+  String botsPetCodexTitle(String name);
+
+  /// No description provided for @botsPetCodexBody.
+  ///
+  /// In zh, this message translates to:
+  /// **'大部分照原样，有几处不完全一样：'**
+  String get botsPetCodexBody;
+
+  /// No description provided for @botsPetCodexOk.
+  ///
+  /// In zh, this message translates to:
+  /// **'知道了'**
+  String get botsPetCodexOk;
+
+  /// No description provided for @botsPetCodexLoops.
+  ///
+  /// In zh, this message translates to:
+  /// **'动作会一直循环到状态变化，不像 Codex 里跑几遍就回到待机'**
+  String get botsPetCodexLoops;
+
+  /// No description provided for @botsPetCodexRoamLeft.
+  ///
+  /// In zh, this message translates to:
+  /// **'往左走用的是往右走那一行的镜像'**
+  String get botsPetCodexRoamLeft;
+
+  /// No description provided for @botsPetCodexDrag.
+  ///
+  /// In zh, this message translates to:
+  /// **'拖着它时一律用朝右的那一行'**
+  String get botsPetCodexDrag;
+
+  /// No description provided for @botsPetCodexSleep.
+  ///
+  /// In zh, this message translates to:
+  /// **'睡觉时用待机的第一帧'**
+  String get botsPetCodexSleep;
+
+  /// No description provided for @botsPetCodexLook.
+  ///
+  /// In zh, this message translates to:
+  /// **'看向不同方向的那些格子没用上'**
+  String get botsPetCodexLook;
+
+  /// No description provided for @botsPetCodexWebp.
+  ///
+  /// In zh, this message translates to:
+  /// **'WebP 图转成了 PNG'**
+  String get botsPetCodexWebp;
+
+  /// No description provided for @botsPetCodexCustomTracks.
+  ///
+  /// In zh, this message translates to:
+  /// **'自定义的动作行没接到任何状态上'**
+  String get botsPetCodexCustomTracks;
+
+  /// No description provided for @botsPetCodexFps.
+  ///
+  /// In zh, this message translates to:
+  /// **'帧率换算成毫秒时取了整'**
+  String get botsPetCodexFps;
+
+  /// No description provided for @botsPetCodexOneShot.
+  ///
+  /// In zh, this message translates to:
+  /// **'只播一次的动作，播完回到哪里由 DSH 决定'**
+  String get botsPetCodexOneShot;
+
+  /// No description provided for @botsPetCodexMissingAuthor.
+  ///
+  /// In zh, this message translates to:
+  /// **'包里没写作者'**
+  String get botsPetCodexMissingAuthor;
+
+  /// No description provided for @botsPetCodexMissingLicense.
+  ///
+  /// In zh, this message translates to:
+  /// **'包里没写授权'**
+  String get botsPetCodexMissingLicense;
+
+  /// No description provided for @botsPetCodexMissingSource.
+  ///
+  /// In zh, this message translates to:
+  /// **'包里没写来源'**
+  String get botsPetCodexMissingSource;
+
   /// No description provided for @botsPetImportReplaced.
   ///
   /// In zh, this message translates to:
