@@ -586,8 +586,11 @@ class PhoneCallerCapability {
 }
 
 class PhoneStatus {
+  static const _keepError = Object();
   const PhoneStatus({
     this.ready = true,
+    this.statusRevision,
+    this.statusRevisionPresent = false,
     this.error,
     this.enabled = false,
     this.bridgeListening = false,
@@ -610,6 +613,8 @@ class PhoneStatus {
   /// The native module isn't there (or failed to answer): "未就绪".
   const PhoneStatus.notReady([this.error])
     : ready = false,
+      statusRevision = null,
+      statusRevisionPresent = false,
       enabled = false,
       bridgeListening = false,
       a11y = const PhoneA11yStatus(),
@@ -628,6 +633,9 @@ class PhoneStatus {
       taskInterruption = const PhoneTaskInterruption();
 
   factory PhoneStatus.fromMap(Map<Object?, Object?> m) => PhoneStatus(
+    statusRevision: m['statusRevision'] is int && (m['statusRevision'] as int) > 0
+        ? m['statusRevision'] as int : null,
+    statusRevisionPresent: m.containsKey('statusRevision'),
     enabled: _flag(m['enabled']),
     bridgeListening: _flag(m['bridgeListening']),
     a11y: PhoneA11yStatus.fromMap(_map(m['a11y'])),
@@ -646,8 +654,13 @@ class PhoneStatus {
     taskInterruption: PhoneTaskInterruption.parse(m['taskInterruption']),
   );
 
-  /// The native side answered. False → everything else is a default.
+  /// Whether native status is currently available. On transport failure the
+  /// other fields may retain the last trusted snapshot.
   final bool ready;
+
+  /// Process-lifetime native snapshot order; absent only on older native modules.
+  final int? statusRevision;
+  final bool statusRevisionPresent;
 
   /// Why it didn't, when it said.
   final String? error;
@@ -679,9 +692,11 @@ class PhoneStatus {
   /// waiting to start, or one still draining. Mirrors the native refusal of 解除限制.
   bool get anyTaskBusy => task.active || tasks.any((t) => t.active || t.pendingCalls > 0 || t.draining);
 
-  PhoneStatus copyWith({bool? enabled}) => PhoneStatus(
-    ready: ready,
-    error: error,
+  PhoneStatus copyWith({bool? enabled, bool? ready, Object? error = _keepError}) => PhoneStatus(
+    ready: ready ?? this.ready,
+    error: identical(error, _keepError) ? this.error : error as String?,
+    statusRevision: statusRevision,
+    statusRevisionPresent: statusRevisionPresent,
     enabled: enabled ?? this.enabled,
     bridgeListening: bridgeListening,
     a11y: a11y,

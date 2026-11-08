@@ -389,7 +389,7 @@ class _PhoneControlScreenState extends ConsumerState<PhoneControlScreen> {
                         label: status.taskInterruption.canAcknowledge
                             ? l10n.phoneInterruptionAcknowledge
                             : l10n.phoneInterruptionRetry,
-                        onPressed: _interruptionBusy ? null : () => _taskInterruptionAction(status.taskInterruption.batchToken),
+                        onPressed: !ready || _interruptionBusy ? null : () => _taskInterruptionAction(status.taskInterruption.batchToken),
                       ),
               ),
             ],
@@ -408,7 +408,7 @@ class _PhoneControlScreenState extends ConsumerState<PhoneControlScreen> {
                     : task.waived
                     ? l10n.phoneControlTaskNoConfirmHint
                     : l10n.phoneControlFloatingBarHint,
-                trailing: FixButton(label: l10n.commonStop, onPressed: () => _stopTask(task.id)),
+                trailing: FixButton(label: l10n.commonStop, onPressed: ready ? () => _stopTask(task.id) : null),
               ),
             ],
           ),
@@ -420,7 +420,7 @@ class _PhoneControlScreenState extends ConsumerState<PhoneControlScreen> {
             children: [
               ListPageRow(
                 key: ValueKey('phone-waiting-${waiting.id}'),
-                trailing: FixButton(label: l10n.commonStop, onPressed: () => _stopTask(waiting.id)),
+                trailing: FixButton(label: l10n.commonStop, onPressed: ready ? () => _stopTask(waiting.id) : null),
                 icon: AppIcons.phoneControl,
                 title: l10n.phoneTaskWaiting(waiting.id!),
                 subtitle: waiting.waitingForApp != null
@@ -449,7 +449,7 @@ class _PhoneControlScreenState extends ConsumerState<PhoneControlScreen> {
                 trailing: FixButton(
                   key: ValueKey('phone-resume-${stopped.id}'),
                   label: stopped.cleanupFailed ? l10n.phoneCleanupRetry : l10n.phoneResumeTask,
-                  onPressed: stopped.cleanupFailed
+                  onPressed: !ready ? null : stopped.cleanupFailed
                       ? stopped.draining || stopped.settling || stopped.pendingCalls > 0
                           ? null
                           : () => _retryTaskCleanup(stopped.id!)

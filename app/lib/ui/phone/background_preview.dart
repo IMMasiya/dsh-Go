@@ -9,10 +9,11 @@ import '../../phone/phone_channel.dart';
 
 /// A fixed, visible dialog surface. It owns decoded images, bypassing ImageCache.
 class PhoneBackgroundPreviewDialog extends StatefulWidget {
-  const PhoneBackgroundPreviewDialog({required this.channel, required this.taskId, super.key});
+  const PhoneBackgroundPreviewDialog({required this.channel, required this.taskId, this.enabled = true, super.key});
 
   final PhoneChannel channel;
   final int taskId;
+  final bool enabled;
 
   @override
   State<PhoneBackgroundPreviewDialog> createState() => _PhoneBackgroundPreviewDialogState();
@@ -52,6 +53,12 @@ class _PhoneBackgroundPreviewDialogState extends State<PhoneBackgroundPreviewDia
     _syncVisibility();
   }
 
+  @override
+  void didUpdateWidget(PhoneBackgroundPreviewDialog oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.enabled != widget.enabled) _syncVisibility();
+  }
+
   void _clearImage() {
     _imageRevision++;
     _pending = null;
@@ -73,7 +80,7 @@ class _PhoneBackgroundPreviewDialogState extends State<PhoneBackgroundPreviewDia
   }
 
   void _syncVisibility() {
-    final visible = _resumed && _routeCurrent;
+    final visible = widget.enabled && _resumed && _routeCurrent;
     if (_visible == visible) return;
     _visible = visible;
     final epoch = ++_epoch;

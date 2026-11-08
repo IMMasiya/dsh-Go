@@ -85,6 +85,7 @@ class PhoneController extends Notifier<PhoneState> {
 
   StreamSubscription<PhoneStatus>? _sub;
   Future<bool>? _applying;
+  int? _statusRevision;
 
   PhoneChannel get _channel => ref.read(phoneChannelProvider);
 
@@ -116,22 +117,40 @@ class PhoneController extends Notifier<PhoneState> {
     return ready;
   }
 
+  /// True only when this read supplies an accepted, ready native snapshot.
   Future<bool> refreshStatus() async {
+    final revisionAtRequest = _statusRevision;
     final status = await _channel.status();
     if (!ref.mounted) return false;
-    _apply(status);
-    if (status.ready) {
+    if (!status.ready) {
+      if (_statusRevision != revisionAtRequest) return false;
+      if (_statusRevision != null) {
+        // A transport failure is not evidence that the last task ended.
+        state = state.copyWith(status: state.status.copyWith(ready: false, error: status.error), loaded: true);
+      } else {
+        _apply(status);
+      }
+      return false;
+    }
+    final accepted = _apply(status);
+    if (accepted) {
       // Only now: activating the event stream with no native side reports an error.
       _sub ??= _channel.statusChanges.listen(_apply, onError: (_) {});
     }
-    return status.ready;
+    return accepted;
   }
 
-  void _apply(PhoneStatus status) {
-    if (!ref.mounted) return;
+  bool _apply(PhoneStatus status) {
+    if (!ref.mounted) return false;
+    final revision = status.statusRevision;
+    if (status.statusRevisionPresent && revision == null) return false;
+    final previous = _statusRevision;
+    if (previous != null && (revision == null || revision <= previous)) return false;
+    if (revision != null) _statusRevision = revision;
     final taskEnded = state.status.task.active && !status.task.active;
     state = state.copyWith(status: status, loaded: true);
     if (taskEnded) unawaited(refreshLog());
+    return true;
   }
 
   Future<void> refreshPolicies() async {
@@ -476,6 +495,16 @@ final phoneStopWatcherProvider = Provider<void>((ref) {
   final channel = ref.watch(phoneChannelProvider);
   StreamSubscription<PhoneStatus>? sub;
   var disposed = false;
+  int? statusRevision;
+  bool acceptStatus(PhoneStatus status) {
+    if (!status.ready) return false;
+    final revision = status.statusRevision;
+    if (status.statusRevisionPresent && revision == null) return false;
+    final previous = statusRevision;
+    if (previous != null && (revision == null || revision <= previous)) return false;
+    if (revision != null) statusRevision = revision;
+    return true;
+  }
   ref.onDispose(() {
     disposed = true;
     unawaited(sub?.cancel());
@@ -483,12 +512,13 @@ final phoneStopWatcherProvider = Provider<void>((ref) {
   unawaited(() async {
     final status = await channel.status();
     // No native side (tests, an older build): nothing to watch.
-    if (disposed || !status.ready) return;
+    if (disposed || !acceptStatus(status)) return;
     var stopped = status.task.stopped;
     var launch = status.callerCapability?.launch;
     var modernSeen = status.callerCapability?.modernSeen == true || status.tasks.any((task) => task.sessionId != null);
     var versioned = status.taskProtocol == 1 || launch != null;
     sub = channel.statusChanges.listen((s) {
+      if (disposed || !acceptStatus(s)) return;
       final capability = s.callerCapability;
       final previousLaunch = launch;
       if (capability != null && previousLaunch != null && capability.launch < previousLaunch) return;

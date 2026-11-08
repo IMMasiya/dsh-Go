@@ -151,12 +151,17 @@ class PhonePlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandle
             } catch (e: Throwable) {
                 Result.failure(e)
             }
-            main.post {
-                value.fold(
-                    onSuccess = { result.success(it) },
-                    onFailure = { result.error("phone_failed", it.message ?: it.javaClass.simpleName, null) },
-                )
-            }
+            complete(result, value)
+        }
+    }
+
+    /** Both async control work and the status capture lane finish on the original main handler. */
+    private fun complete(result: MethodChannel.Result, value: Result<Any?>) {
+        main.post {
+            value.fold(
+                onSuccess = { result.success(it) },
+                onFailure = { result.error("phone_failed", it.message ?: it.javaClass.simpleName, null) },
+            )
         }
     }
 
@@ -172,7 +177,7 @@ class PhonePlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandle
 
     override fun onMethodCall(call: MethodCall, result: MethodChannel.Result) {
         when (call.method) {
-            "status" -> async(result, shortControl = true) { control.status() }
+            "status" -> control.status { complete(result, it) }
             "acknowledgeTaskInterruption" -> async(result) {
                 (call.argument<Any?>("batchToken") as? String)?.let(control::acknowledgeTaskInterruption) == true
             }

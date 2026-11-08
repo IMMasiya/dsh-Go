@@ -127,6 +127,60 @@ void main() {
     expect(client.cancelled, isEmpty);
   });
 
+  test('revision rejects old stop edges and resets before legacy cancellation', () async {
+    Map<String, Object?> status(int revision, bool stopped) => {
+      ...phoneStatus(taskStopped: stopped), 'statusRevision': revision,
+      'taskProtocol': 1, 'tasks': [],
+      'callerCapability': {'launch': 1, 'modernSeen': false},
+    };
+    final native = FakePhoneNative(status: status(3, false))..install();
+    final client = _Client();
+    final container = ProviderContainer(overrides: [localConnectionProvider.overrideWith(() => _Local(client))]);
+    addTearDown(container.dispose);
+    await container.read(localConnectionProvider.future);
+    container.listen(phoneStopWatcherProvider, (_, _) {});
+    await pumpEventQueue();
+    expect(native.listening, isTrue);
+    native.push(status(2, true));
+    await pumpEventQueue();
+    expect(client.cancelled, isEmpty);
+    for (final value in <Object?>[null, '4', 4.0, -1]) {
+      native.push({...status(4, true), 'statusRevision': value});
+      await pumpEventQueue();
+    }
+    final missing = status(4, true)..remove('statusRevision');
+    native.push(missing);
+    await pumpEventQueue();
+    expect(client.cancelled, isEmpty);
+    native.push(status(5, true));
+    await pumpEventQueue();
+    expect(client.cancelled, ['busy']);
+    native.push(status(4, false));
+    await pumpEventQueue();
+    native.push(status(5, true));
+    await pumpEventQueue();
+    expect(client.cancelled, ['busy']);
+    native.push(status(6, false));
+    await pumpEventQueue();
+    native.push(status(7, true));
+    await pumpEventQueue();
+    expect(client.cancelled, ['busy', 'busy']);
+  });
+
+  test('invalid initial status revision cannot establish a stop watcher baseline', () async {
+    final native = FakePhoneNative(status: {...phoneStatus(), 'statusRevision': '1'})..install();
+    final client = _Client();
+    final container = ProviderContainer(overrides: [localConnectionProvider.overrideWith(() => _Local(client))]);
+    addTearDown(container.dispose);
+    await container.read(localConnectionProvider.future);
+    container.listen(phoneStopWatcherProvider, (_, _) {});
+    await pumpEventQueue();
+    expect(native.listening, isFalse);
+    native.push({...phoneStatus(taskStopped: true), 'statusRevision': 2});
+    await pumpEventQueue();
+    expect(client.cancelled, isEmpty);
+  });
+
   test('without the native side nothing is watched', () async {
     final client = _Client();
     final container = ProviderContainer(overrides: [localConnectionProvider.overrideWith(() => _Local(client))]);

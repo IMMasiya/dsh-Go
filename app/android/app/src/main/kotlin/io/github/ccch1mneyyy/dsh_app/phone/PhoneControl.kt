@@ -233,6 +233,8 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
     @Volatile private var logger: (String) -> Unit = {}
     @Volatile private var rootfs: File? = null
     @Volatile private var lastStatus: Map<String, Any?>? = null
+    // Only the process-lifetime ticker capture lane reads or increments this value.
+    private var statusRevision = 0L
     @Volatile private var keptTask = 0L
     private var screenReceiver: BroadcastReceiver? = null
     private val sinks = CopyOnWriteArraySet<(Map<String, Any?>) -> Unit>()
@@ -687,30 +689,44 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
         return null
     }
 
-    fun status(): Map<String, Any?> = linkedMapOf(
-        "enabled" to isEnabled(),
-        "skills" to skillsStatus(),
-        "bridgeListening" to bridge.listening,
-        "a11y" to linkedMapOf("enabled" to a11yEnabledInSettings(), "serviceConnected" to (PhoneRegistry.mainDriver != null)),
-        "overlay" to (PhoneRegistry.overlayGate != null),
-        "notifications" to nm.areNotificationsEnabled(),
-        "confirmationNotifications" to notificationGate.available(),
-        "background" to backgroundStatus(),
-        "a11yKeeper" to keeperStatus(),
-        "task" to tasks.snapshot().toMap(),
-        "taskInterruption" to taskJournal.status(),
-        "taskProtocol" to 1,
-        "callerCapability" to sessions.callerCapability(),
-        "tasks" to sessions.snapshot(),
-        "selectedTaskId" to (displaySelection.ticket()?.owner?.taskId ?: 0L),
-        "parallelLimit" to 1,
-        "device" to linkedMapOf(
-            "manufacturer" to Build.MANUFACTURER,
-            "sdkInt" to Build.VERSION.SDK_INT,
-            "sideloaded" to sideloaded(),
-            "restricted" to RestrictedSettings.read(app),
-        ),
-    )
+    /** Capture on the same lane as events; never occupy the plugin control queue while waiting. */
+    fun status(done: (Result<Map<String, Any?>>) -> Unit) {
+        ticker.execute {
+            val value = try { Result.success(captureStatus()) }
+                catch (failure: Throwable) { Result.failure(failure) }
+            done(value)
+        }
+    }
+
+    /** Called only on ticker: complete sampling and revision assignment cannot interleave. */
+    private fun captureStatus(): Map<String, Any?> {
+        val value = linkedMapOf<String, Any?>(
+            "enabled" to isEnabled(),
+            "skills" to skillsStatus(),
+            "bridgeListening" to bridge.listening,
+            "a11y" to linkedMapOf("enabled" to a11yEnabledInSettings(), "serviceConnected" to (PhoneRegistry.mainDriver != null)),
+            "overlay" to (PhoneRegistry.overlayGate != null),
+            "notifications" to nm.areNotificationsEnabled(),
+            "confirmationNotifications" to notificationGate.available(),
+            "background" to backgroundStatus(),
+            "a11yKeeper" to keeperStatus(),
+            "task" to tasks.snapshot().toMap(),
+            "taskInterruption" to taskJournal.status(),
+            "taskProtocol" to 1,
+            "callerCapability" to sessions.callerCapability(),
+            "tasks" to sessions.snapshot(),
+            "selectedTaskId" to (displaySelection.ticket()?.owner?.taskId ?: 0L),
+            "parallelLimit" to 1,
+            "device" to linkedMapOf(
+                "manufacturer" to Build.MANUFACTURER,
+                "sdkInt" to Build.VERSION.SDK_INT,
+                "sideloaded" to sideloaded(),
+                "restricted" to RestrictedSettings.read(app),
+            ),
+        )
+        value["statusRevision"] = ++statusRevision
+        return value
+    }
 
     private fun backgroundStatus(): Map<String, Any?> = try {
         background.status() + ("preview" to mapOf("v" to 1, "enabled" to preview.enabled))
@@ -790,12 +806,13 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
     private fun pushIfChanged(force: Boolean) {
         if (sinks.isEmpty()) return
         val s = try {
-            status()
+            captureStatus()
         } catch (_: Exception) {
             return
         }
-        if (!force && s == lastStatus) return
-        lastStatus = s
+        val report = s - "statusRevision"
+        if (!force && report == lastStatus) return
+        lastStatus = report
         main.post { sinks.forEach { runCatching { it(s) } } }
     }
 

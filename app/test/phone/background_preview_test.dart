@@ -208,6 +208,43 @@ Future<void> _unmount(WidgetTester tester) async {
 }
 
 void main() {
+  testWidgets('availability suspension keeps the original cancel ACK barrier and task', (tester) async {
+    final native = _NativePreview()..install();
+    final gate = _CancelAckMessenger(TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger);
+    final channel = PhoneChannel(preview: EventChannel(_events.name, _events.codec, gate));
+    var enabled = true;
+    late StateSetter update;
+    _resume(tester);
+    await tester.pumpWidget(goldenApp(brightness: Brightness.light, home: StatefulBuilder(
+      builder: (_, setState) {
+        update = setState;
+        return PhoneBackgroundPreviewDialog(channel: channel, taskId: 7, enabled: enabled);
+      },
+    )));
+    await _flush(tester);
+    expect(gate.calls, ['listen']);
+    final ack = Completer<void>();
+    gate.cancelAck = ack;
+    try {
+      update(() => enabled = false);
+      await _flush(tester);
+      expect(gate.calls, ['listen', 'cancel']);
+      expect(find.byType(RawImage), findsNothing);
+      update(() => enabled = true);
+      await _flush(tester);
+      expect(gate.calls, ['listen', 'cancel']);
+      ack.complete();
+      await _flush(tester);
+      expect(gate.calls, ['listen', 'cancel', 'listen']);
+      expect(native.arguments, [{'taskId': 7}, {'taskId': 7}]);
+    } finally {
+      if (!ack.isCompleted) ack.complete();
+      gate.cancelAck = null;
+      await _unmount(tester);
+    }
+    expect(tester.takeException(), isNull);
+  });
+
   TestWidgetsFlutterBinding.ensureInitialized();
 
   test('preview parser accepts every non-image state and rejects malformed identity', () {
