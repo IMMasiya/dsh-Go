@@ -69,6 +69,7 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
             "phone_status_type" -> R.string.phone_status_type
             "phone_status_scroll" -> R.string.phone_status_scroll
             "phone_status_tap_xy" -> R.string.phone_status_tap_xy
+            "phone_status_coordinate" -> R.string.phone_status_coordinate
             "phone_status_key" -> R.string.phone_status_key
             "phone_status_press" -> R.string.phone_status_press
             "phone_key_back" -> R.string.phone_key_back
@@ -82,6 +83,8 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
             "phone_confirm_type" -> R.string.phone_confirm_type
             "phone_confirm_submit" -> R.string.phone_confirm_submit
             "phone_confirm_tap_xy" -> R.string.phone_confirm_tap_xy
+            "phone_confirm_coordinate_long" -> R.string.phone_confirm_coordinate_long
+            "phone_confirm_coordinate_swipe" -> R.string.phone_confirm_coordinate_swipe
             "phone_confirm_scroll" -> R.string.phone_confirm_scroll
             "phone_confirm_key" -> R.string.phone_confirm_key
             "phone_current_app" -> R.string.phone_current_app
@@ -100,6 +103,7 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
             "phone_log_collect" -> R.string.phone_log_collect
             "phone_log_scroll" -> R.string.phone_log_scroll
             "phone_log_tap_xy" -> R.string.phone_log_tap_xy
+            "phone_log_coordinate" -> R.string.phone_log_coordinate
             "phone_log_key" -> R.string.phone_log_key
             "phone_log_handoff" -> R.string.phone_log_handoff
             "phone_log_long_tap" -> R.string.phone_log_long_tap

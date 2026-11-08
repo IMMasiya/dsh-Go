@@ -485,6 +485,11 @@ internal class MainScreenDriver(private val service: PhoneA11yService, private v
         if (snap.protectedPage && !lifted.systemPages) return ActionResult(false, "这是系统权限 / 安全相关页面，DSH 不在这里点击。需要的话请用 handoff 交给用户。")
         // l10n:keep agent screen result
         if (snap.hidden || snap.unreadable) return ActionResult(false, "这一屏读不到内容（可能受敏感视图策略限制），不盲点。请 handoff。", observeQuiet())
+        val end = if (a.gesture == PhoneAction.CoordinateGesture.SWIPE) {
+            if (a.durationMs !in 100..2_000) return ActionResult(false, "滑动时长须为 100–2000 毫秒。") // l10n:keep
+            geometry.toScreen(a.x2 ?: -1, a.y2 ?: -1)
+                ?: return ActionResult(false, "滑动终点不在截图内。") // l10n:keep
+        } else null
         val beforeImage: ImageObservation
         val cap = capture()
         try {
@@ -504,9 +509,15 @@ internal class MainScreenDriver(private val service: PhoneA11yService, private v
         snap.image = null
         val before = clock.count
         // l10n:keep agent screen result
-        if (!actuator.tap(point.first, point.second)) return ActionResult(false, "系统没有接受这次点击。", observeQuiet())
+        val accepted = when (a.gesture) {
+            PhoneAction.CoordinateGesture.TAP -> actuator.tap(point.first, point.second)
+            PhoneAction.CoordinateGesture.LONG -> actuator.tap(point.first, point.second, true)
+            PhoneAction.CoordinateGesture.SWIPE -> actuator.swipe(point.first, point.second, end!!.first, end.second, a.durationMs)
+        }
+        if (!accepted) return ActionResult(false, "系统未确认手势完成；可能已产生部分效果，请先读屏，不要直接重试。", observeQuiet())
         // l10n:keep agent screen result
-        return after(before, snap, gen, "已提交点击截图上的 (${a.x}, ${a.y})。", previousImage = beforeImage)
+        val verb = when (a.gesture) { PhoneAction.CoordinateGesture.TAP -> "点击"; PhoneAction.CoordinateGesture.LONG -> "长按"; PhoneAction.CoordinateGesture.SWIPE -> "滑动" }
+        return after(before, snap, gen, "已提交${verb}截图上的 (${a.x}, ${a.y})。", previousImage = beforeImage)
     }
 
     /** Waits for the UI to settle, reads the new screen (`+` marks) and says whether anything changed. */

@@ -547,9 +547,22 @@ class PhoneCore(
                 // l10n:keep agent tool result
                 if (x == null || y == null || x < 0 || y < 0) return Out("tap_xy 需要非负整数 x 和 y。", error = true)
                 point = x to y
-                action = PhoneAction.TapXY(sid, x, y)
+                val gesture = when (a.str("action") ?: if (a.has("action")) "" else "tap") {
+                    "tap" -> PhoneAction.CoordinateGesture.TAP
+                    "long" -> PhoneAction.CoordinateGesture.LONG
+                    "swipe" -> PhoneAction.CoordinateGesture.SWIPE
+                    else -> return Out("tap_xy 的 action 需要 tap / long / swipe。", error = true) // l10n:keep
+                }
+                val duration = if (a.has("duration_ms")) a.int("duration_ms") else 400
+                val x2 = a.int("x2"); val y2 = a.int("y2")
+                if (gesture == PhoneAction.CoordinateGesture.SWIPE &&
+                    (x2 == null || y2 == null || x2 < 0 || y2 < 0 || duration == null || duration !in 100..2000))
+                    return Out("swipe 需要非负终点 x2/y2，duration_ms 为 100–2000。", error = true) // l10n:keep
+                if (gesture != PhoneAction.CoordinateGesture.SWIPE && (a.has("x2") || a.has("y2") || a.has("duration_ms")))
+                    return Out("终点与 duration_ms 只用于 swipe。", error = true) // l10n:keep
+                action = PhoneAction.TapXY(sid, x, y, gesture, x2, y2, (duration ?: 400).toLong())
                 kind = WriteKind.TAP_XY
-                summary = ui.get("phone_log_tap_xy", "点坐标 %1\$s (%2\$d,%3\$d)", sid.toString(), x, y) // l10n:keep test default
+                summary = ui.get("phone_log_coordinate", "坐标手势 %1\$s · %2\$s", gesture.name.lowercase(), sid) // l10n:keep test default
             }
         }
         val driver = when (val d = driverFor(which)) {
@@ -570,7 +583,7 @@ class PhoneCore(
         val pkg = target?.packageName ?: driver.foregroundPackage()
         val appLabel = target?.appLabel
         val app = appLabel ?: pkg
-        val verdict = safety.checkWrite(kind, target, pkg, appLabel, typed, submit, point)
+        val verdict = safety.checkWrite(kind, target, pkg, appLabel, typed, submit, point, action as? PhoneAction.TapXY)
         val decision = when (val r = safety.resolve(verdict, scope)) {
             is SafetyGate.Result.No -> return Out(r.message, error = true, app = app, summary = summary, decision = r.decision)
             is SafetyGate.Result.Go -> r.decision
@@ -603,7 +616,7 @@ class PhoneCore(
             WriteKind.LONG_TAP -> ui.get("phone_status_long_tap", "长按「%1\$s」", label) // l10n:keep test default
             WriteKind.TYPE -> ui.get("phone_status_type", "输入「%1\$s」", if (typed == SafetyRules.MASK) typed else SafetyRules.quoteText(typed ?: "", 16)) // l10n:keep test default
             WriteKind.SCROLL -> ui.get("phone_status_scroll", "滚动") // l10n:keep test default
-            WriteKind.TAP_XY -> ui.get("phone_status_tap_xy", "点截图上的位置") // l10n:keep test default
+            WriteKind.TAP_XY -> ui.get("phone_status_coordinate", "执行截图坐标手势") // l10n:keep test default
             WriteKind.KEY -> ui.get("phone_status_key", "按键") // l10n:keep test default
         }
     }

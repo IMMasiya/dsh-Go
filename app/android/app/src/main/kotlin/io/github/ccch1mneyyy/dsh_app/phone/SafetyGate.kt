@@ -223,6 +223,7 @@ class SafetyGate(
         typed: String? = null,
         submit: Boolean = false,
         point: Pair<Int, Int>? = null,
+        coordinate: PhoneAction.TapXY? = null,
     ): Verdict {
         val app = labelOf(pkg, appLabel)
         if (kind == WriteKind.KEY) return Verdict.Allow // back / home / recents / shade: always a way out
@@ -241,12 +242,14 @@ class SafetyGate(
             return Verdict.Refuse("密码 / 验证码 / 支付框不代填也不代点。请 handoff 让用户输入。", "secret-field")
         }
         // Everything above is a hard rule (or one the person lifted); everything below only asks.
-        if (waived(p)) return Verdict.Allow
+        val forceOnce = kind == WriteKind.TAP_XY &&
+            coordinate?.gesture in setOf(PhoneAction.CoordinateGesture.LONG, PhoneAction.CoordinateGesture.SWIPE)
+        if (waived(p) && !forceOnce) return Verdict.Allow
         val everyWrite = pkg != null && pkg in p.confirmEveryWritePackages
-        val firstInApp = !everyWrite && (pkg == null || !tasks.isApproved(pkg))
+        val firstInApp = !forceOnce && !everyWrite && (pkg == null || !tasks.isApproved(pkg))
         val word = if (kind == WriteKind.TAP || kind == WriteKind.LONG_TAP) SafetyRules.sensitiveWord(target?.label, target?.viewId) else null
         val actionApp = appLabel ?: pkg ?: uiText.get("phone_current_app", "当前应用") // l10n:keep test default
-        val action = describe(kind, target, actionApp, if (secret) SafetyRules.MASK else typed, submit, point)
+        val action = describe(kind, target, actionApp, if (secret) SafetyRules.MASK else typed, submit, point, coordinate)
         val reason = when {
             kind == WriteKind.TAP_XY -> "tap_xy"
             kind == WriteKind.TYPE && submit -> "submit"
@@ -257,7 +260,7 @@ class SafetyGate(
         }
         val sentence = if (reason == "first-in-app") uiText.get("phone_confirm_first_app", "允许 DSH 在本任务中操作「%1\$s」？第一步：%2\$s", actionApp, action) else action // l10n:keep test default
         return Verdict.Confirm(
-            ConfirmRequest(sentence = sentence, appLabel = appLabel ?: pkg, packageName = pkg, firstInApp = firstInApp, offerTaskWaiver = p.confirmMode == ConfirmMode.TASK),
+            ConfirmRequest(sentence = sentence, appLabel = appLabel ?: pkg, packageName = pkg, firstInApp = firstInApp, offerTaskWaiver = p.confirmMode == ConfirmMode.TASK && !forceOnce),
             pkg,
             reason,
         )
@@ -342,13 +345,17 @@ class SafetyGate(
         return s.copy(text = "屏幕 ${s.id}$app\n$refusal", image = null, imageMime = null)
     }
 
-    private fun describe(kind: WriteKind, t: TargetInfo?, app: String, typed: String?, submit: Boolean, point: Pair<Int, Int>?): String {
+    private fun describe(kind: WriteKind, t: TargetInfo?, app: String, typed: String?, submit: Boolean, point: Pair<Int, Int>?, coordinate: PhoneAction.TapXY?): String {
         val label = t?.label?.takeIf { it.isNotBlank() }?.let { SafetyRules.quoteText(it, 30) } ?: t?.role?.let(uiText::role) ?: uiText.get("phone_confirm_element", "元素") // l10n:keep test default
         return when (kind) {
             WriteKind.TAP -> uiText.get("phone_confirm_tap", "在「%1\$s」点「%2\$s」", app, label) // l10n:keep test default
             WriteKind.LONG_TAP -> uiText.get("phone_confirm_long_tap", "在「%1\$s」长按「%2\$s」", app, label) // l10n:keep test default
             WriteKind.TYPE -> uiText.get("phone_confirm_type", "在「%1\$s」的「%2\$s」输入：\"%3\$s\"", app, label, if (typed == SafetyRules.MASK) typed else SafetyRules.quoteText(typed ?: "")) + if (submit) uiText.get("phone_confirm_submit", "，然后发送 / 提交") else "" // l10n:keep test default
-            WriteKind.TAP_XY -> uiText.get("phone_confirm_tap_xy", "在「%1\$s」点截图上的位置 (%2\$s, %3\$s)", app, point?.first.toString(), point?.second.toString()) // l10n:keep test default
+            WriteKind.TAP_XY -> when (coordinate?.gesture) {
+                PhoneAction.CoordinateGesture.LONG -> uiText.get("phone_confirm_coordinate_long", "在「%1\$s」长按截图位置 (%2\$s, %3\$s)", app, point?.first.toString(), point?.second.toString())
+                PhoneAction.CoordinateGesture.SWIPE -> uiText.get("phone_confirm_coordinate_swipe", "在「%1\$s」从 (%2\$d,%3\$d) 滑动到 (%4\$d,%5\$d)，%6\$d 毫秒", app, coordinate.x, coordinate.y, coordinate.x2 ?: -1, coordinate.y2 ?: -1, coordinate.durationMs)
+                else -> uiText.get("phone_confirm_tap_xy", "在「%1\$s」点截图上的位置 (%2\$s, %3\$s)", app, point?.first.toString(), point?.second.toString())
+            } // l10n:keep test defaults
             WriteKind.SCROLL -> uiText.get("phone_confirm_scroll", "在「%1\$s」滚动", app) // l10n:keep test default
             WriteKind.KEY -> uiText.get("phone_confirm_key", "按系统键") // l10n:keep test default
         }

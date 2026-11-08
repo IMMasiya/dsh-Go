@@ -11,6 +11,7 @@ class PhoneToolSchemaTest {
     private val actions = mutableListOf<PhoneAction>()
     private val pages = mutableListOf<Int>()
     private var confirmations = 0
+    private val confirmationText = mutableListOf<String>()
     private val driver = object : PhoneDriver {
         override val screen = PhoneScreen.MAIN
         override fun availability() = Availability(true)
@@ -35,7 +36,7 @@ class PhoneToolSchemaTest {
         override fun sleep(ms: Long) {}
         override fun driver(screen: PhoneScreen) = if (screen == PhoneScreen.MAIN) driver else null
         override fun gate() = object : UserGate {
-            override fun confirm(request: ConfirmRequest): Decision { confirmations++; return Decision.ALLOW_ONCE }
+            override fun confirm(request: ConfirmRequest): Decision { confirmations++; confirmationText += request.sentence; return Decision.ALLOW_ONCE }
             override fun handoff(reason: String, timeoutMs: Long): HandoffResult = error("unexpected handoff")
             override fun status(text: String?) {}
         }
@@ -119,4 +120,24 @@ class PhoneToolSchemaTest {
         assertEquals(listOf(PhoneAction.TapXY("s1", 0, 0)), actions)
         assertEquals(1, confirmations)
     }
+    @Test fun coordinateGesturesValidateEndpointsAndDescribeTheActualConfirmedOperation() {
+        val base = mapOf("observation" to "s1", "x" to 10, "y" to 20)
+        for (extra in listOf(
+            mapOf("action" to "unknown"), mapOf("action" to "swipe"),
+            mapOf("action" to "swipe", "x2" to 30, "y2" to 40, "duration_ms" to 99),
+            mapOf("action" to "swipe", "x2" to 30, "y2" to 40, "duration_ms" to 2001),
+            mapOf("action" to "long", "x2" to 30),
+        )) assertTrue(core.call(PhoneToolCatalog.TAP_XY, base + extra).isError)
+        assertTrue(actions.isEmpty())
+        assertEquals(0, confirmations)
+        assertFalse(core.call(PhoneToolCatalog.TAP_XY, base + ("action" to "long")).isError)
+        assertEquals(PhoneAction.CoordinateGesture.LONG, (actions.last() as PhoneAction.TapXY).gesture)
+        assertTrue(confirmationText.last().contains("长按"))
+        assertFalse(core.call(PhoneToolCatalog.TAP_XY, base + mapOf("action" to "swipe", "x2" to 30, "y2" to 40, "duration_ms" to 2000)).isError)
+        assertEquals(PhoneAction.TapXY("s1", 10, 20, PhoneAction.CoordinateGesture.SWIPE, 30, 40, 2000), actions.last())
+        assertTrue(confirmationText.last().contains("(30,40)"))
+        assertTrue(confirmationText.last().contains("2000"))
+        assertEquals(2, confirmations)
+    }
+
 }

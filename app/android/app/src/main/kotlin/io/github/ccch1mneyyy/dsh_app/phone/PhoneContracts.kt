@@ -88,7 +88,11 @@ sealed interface PhoneAction {
     data class Key(override val screenId: String, val key: GlobalKey) : PhoneAction
 
     /** Flash only: a point on a numbered screenshot ([screenId] is the observation it came from). Always confirmed. */
-    data class TapXY(override val screenId: String, val x: Int, val y: Int) : PhoneAction
+    data class TapXY(override val screenId: String, val x: Int, val y: Int,
+        val gesture: CoordinateGesture = CoordinateGesture.TAP,
+        val x2: Int? = null, val y2: Int? = null, val durationMs: Long = 400) : PhoneAction
+
+    enum class CoordinateGesture { TAP, LONG, SWIPE }
 
     enum class Direction { UP, DOWN, LEFT, RIGHT }
 

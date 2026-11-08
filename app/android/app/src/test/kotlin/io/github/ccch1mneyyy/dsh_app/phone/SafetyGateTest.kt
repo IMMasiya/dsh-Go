@@ -141,4 +141,23 @@ class SafetyGateTest {
         assertNull(secure.image)
         assertFalse(secure.text.contains("ordinary"))
     }
+    @Test fun longAndSwipeAlwaysConfirmOnceWhileLegacyTapKeepsWaiver() {
+        for (mode in ConfirmMode.entries) {
+            val tasks = PhoneTasks().apply { begin(); waive() }
+            val gate = SafetyGate({ PhonePolicies(confirmMode = mode) }, tasks, { null })
+            for (gesture in listOf(PhoneAction.CoordinateGesture.LONG, PhoneAction.CoordinateGesture.SWIPE)) {
+                val action = PhoneAction.TapXY("s1", 10, 20, gesture, 30, 40, 400)
+                repeat(2) {
+                    val verdict = gate.checkWrite(WriteKind.TAP_XY, null, "example.app", "Example",
+                        point = 10 to 20, coordinate = action) as SafetyGate.Verdict.Confirm
+                    assertFalse(verdict.request.firstInApp)
+                    assertFalse(verdict.request.offerTaskWaiver)
+                }
+            }
+            if (mode != ConfirmMode.ASK)
+                assertSame(SafetyGate.Verdict.Allow, gate.checkWrite(WriteKind.TAP_XY, null, "example.app", "Example",
+                    point = 10 to 20, coordinate = PhoneAction.TapXY("s1", 10, 20)))
+        }
+    }
+
 }
