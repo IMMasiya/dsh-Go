@@ -140,7 +140,7 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
     internal val skillBridge = PhoneSkillBridge(skillDrafts,
         { write, done -> RuntimeController.get(app).savePhoneSkill(write, done) }, ::emitStatus)
     val core = PhoneCore(this, tasks, log, skillTrace = skillTrace)
-    val notificationGate = NotificationGate(app) { setStatusLine(it) }
+    val notificationGate = NotificationGate(app) { text, ifCurrent -> setStatusLine(text, ifCurrent) }
     val prompts = PhonePrompts(app, tasks, ::isEnabled, ::isLocked, notificationGate, ::reopen)
     // Caller attribution is parsed at the boundary; taskIsolation stays 0 until per-task state lands.
     private val server = McpServer(PhoneToolCatalog.listJson(), { name, args, _ -> core.call(name, args) }, SERVER_VERSION)
@@ -393,9 +393,13 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
         emitStatus()
     }
 
-    private fun setStatusLine(text: String?) {
-        if (statusLine == text) return
-        statusLine = text
+    private fun setStatusLine(text: String?, ifCurrent: (() -> Unit) -> Boolean) {
+        var changed = false
+        ifCurrent {
+            if (statusLine != text) { statusLine = text; changed = true }
+        }
+        if (!changed) return
+        // Refresh reads current state; notification Binder work stays outside the task lock.
         DshService.updateNotification(app)
         LiveActivity.refresh(app)
     }

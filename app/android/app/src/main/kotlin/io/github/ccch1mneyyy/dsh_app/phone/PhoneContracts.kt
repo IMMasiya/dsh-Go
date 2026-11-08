@@ -213,6 +213,12 @@ interface UserGate {
     /** The one-line "DSH 正在操作 · 点「路线」" status; null clears it. */
     fun status(text: String?)
 
+    /** Owner gate: only short memory writes belong inside [ifCurrent], never platform IO.
+     * Asynchronous presenters must recheck at their final UI runnable, before applying it. */
+    fun status(text: String?, ifCurrent: (() -> Unit) -> Boolean) {
+        if (ifCurrent {}) status(text)
+    }
+
     /** Run [ifCurrent] at cleanup time; a newer task must keep its windows and pending questions. */
     fun close(ifCurrent: (() -> Unit) -> Unit = { it() }) = ifCurrent { status(null) }
 }

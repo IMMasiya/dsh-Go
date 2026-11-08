@@ -100,6 +100,11 @@ class PhonePrompts(
         PhoneRegistry.overlayGate?.status(text)
     }
 
+    override fun status(text: String?, ifCurrent: (() -> Unit) -> Boolean) {
+        notifications.status(text, ifCurrent)
+        PhoneRegistry.overlayGate?.status(text, ifCurrent)
+    }
+
     override fun close(ifCurrent: (() -> Unit) -> Unit) {
         onMain { ifCurrent { arbiter.stopAll(); clearDisplay(); status(null) } }
     }

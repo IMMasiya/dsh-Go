@@ -31,7 +31,7 @@ import java.util.concurrent.atomic.AtomicReference
 class NotificationGate(
     private val app: Context,
     /** The one-line status ("DSH 正在操作 · …"); the app shows it on the engine's notification. */
-    private val onStatus: (String?) -> Unit,
+    private val onStatus: (String?, (() -> Unit) -> Boolean) -> Unit,
 ) : UserGate, PhonePromptPresenter {
     private val nm = app.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
     private val ids = AtomicInteger(4200)
@@ -102,7 +102,9 @@ class NotificationGate(
         return HandoffResult.TIMEOUT
     }
 
-    override fun status(text: String?) = onStatus(text)
+    override fun status(text: String?) = onStatus(text) { update -> update(); true }
+
+    override fun status(text: String?, ifCurrent: (() -> Unit) -> Boolean) = onStatus(text, ifCurrent)
 
     /** Non-blocking presentation for the shared arbiter. Open uses an Activity PendingIntent. */
     override fun showPrompt(presentation: PromptPresentation): (() -> Unit)? {

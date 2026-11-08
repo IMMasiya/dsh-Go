@@ -48,8 +48,11 @@ class PhoneCore(
     val safety = SafetyGate(env::policies, tasks, env::gate, uiText = env.uiText())
 
     /** The overlay's status line; 免确认 stays visible the whole time nothing is asked. */
-    private fun say(text: String) {
-        env.gate()?.status(if (safety.waived()) ui.get("phone_waived_status", "免确认 · %1\$s", text) else text) // l10n:keep test default
+    private fun say(owner: PhoneTasks.Owner, text: String) {
+        if (!current(owner)) return
+        env.gate()?.status(if (safety.waived()) ui.get("phone_waived_status", "免确认 · %1\$s", text) else text) { update -> // l10n:keep test default
+            tasks.runIfCurrent(owner, update)
+        }
     }
 
     /** The screen of the last screen-based call, for `handoff`. */
@@ -270,7 +273,7 @@ class PhoneCore(
         }
         if (!tasks.isCurrent(owner) || Thread.currentThread().isInterrupted) return stoppedOut("open")
         lastScreen = PhoneScreen.BACKGROUND
-        say(ui.get("phone_opening_background", "DSH 正在后台屏打开「%1\$s」", app.label)) // l10n:keep test default
+        say(owner, ui.get("phone_opening_background", "DSH 正在后台屏打开「%1\$s」", app.label)) // l10n:keep test default
         if (!current(owner)) return stoppedOut("open")
         val ticket = skillTrace.beginOpen(owner, PhoneScreen.BACKGROUND)
         val res = traceResult(ticket) { driver.open(app.packageName) }
@@ -285,7 +288,12 @@ class PhoneCore(
         if (!current(owner)) return stoppedAfterSystem(r, summary, app)
         if (r.ok && !tasks.setAppIfCurrent(owner, r.appLabel ?: app)) return stoppedAfterSystem(r, summary, app)
         val screen = try {
-            if (r.ok) mainScreenAfter(owner, SETTLE_AFTER_LAUNCH_MS) else null
+            if (r.ok) {
+                // setAppIfCurrent notifies listeners, which can retire this owner.
+                if (!current(owner)) return stoppedAfterSystem(r, summary, app)
+                say(owner, ui.get("phone_reading_screen", "DSH 正在看屏幕")) // l10n:keep test default
+                mainScreenAfter(owner, SETTLE_AFTER_LAUNCH_MS)
+            } else null
         } catch (_: InterruptedException) {
             Thread.currentThread().interrupt()
             return stoppedAfterSystem(r, summary, app)
@@ -435,7 +443,7 @@ class PhoneCore(
         }
         if (env.isLocked()) return locked(summary)
         lastScreen = which
-        say(if (which == PhoneScreen.BACKGROUND) ui.get("phone_reading_background", "DSH 正在看后台屏") else ui.get("phone_reading_screen", "DSH 正在看屏幕")) // l10n:keep test default
+        say(owner, if (which == PhoneScreen.BACKGROUND) ui.get("phone_reading_background", "DSH 正在看后台屏") else ui.get("phone_reading_screen", "DSH 正在看屏幕")) // l10n:keep test default
         if (!current(owner)) return stoppedOut(summary)
         val snap = driver.observe(detail = a.bool("detail") == true, image = a.bool("image") == true)
         if (!current(owner) || !tasks.setAppIfCurrent(owner, snap.appLabel)) return stoppedOut(summary)
@@ -472,7 +480,7 @@ class PhoneCore(
         lastScreen = which
         val pkg = driver.foregroundPackage()
         safety.checkRead(pkg, null)?.let { return Out(it.message, error = true, app = pkg, summary = summary, decision = "refused:${it.rule}") }
-        say(ui.get("phone_reading_list", "DSH 正在滚动读取列表")) // l10n:keep test default
+        say(owner, ui.get("phone_reading_list", "DSH 正在滚动读取列表")) // l10n:keep test default
         if (!current(owner)) return stoppedOut(summary)
         skillTrace.markIncomplete(owner)
         val r = driver.collect(sid!!, list, pages, a.str("until"))
@@ -595,7 +603,7 @@ class PhoneCore(
         }
         if (!tasks.isCurrent(owner) || Thread.currentThread().isInterrupted) return stoppedOut(summary)
         if (!tasks.setAppIfCurrent(owner, appLabel ?: pkg)) return stoppedOut(summary)
-        say(ui.get("phone_acting", "DSH 正在操作 · %1\$s", statusLine(kind, target, if (secret) SafetyRules.MASK else typed))) // l10n:keep test default
+        say(owner, ui.get("phone_acting", "DSH 正在操作 · %1\$s", statusLine(kind, target, if (secret) SafetyRules.MASK else typed))) // l10n:keep test default
         if (!current(owner)) return stoppedOut(summary)
         val ticket = skillTrace.beginAction(owner, action, target)
         val res = traceResult(ticket) { driver.perform(action) }
@@ -683,7 +691,7 @@ class PhoneCore(
         }
         if (env.isLocked()) return locked(summary)
         lastScreen = which
-        say(ui.get("phone_status_press", "DSH 正在操作 · 按%1\$s", when (key) { // l10n:keep test default
+        say(owner, ui.get("phone_status_press", "DSH 正在操作 · 按%1\$s", when (key) { // l10n:keep test default
             PhoneAction.GlobalKey.BACK -> ui.get("phone_key_back", "返回") // l10n:keep test default
             PhoneAction.GlobalKey.HOME -> ui.get("phone_key_home", "桌面") // l10n:keep test default
             PhoneAction.GlobalKey.RECENTS -> ui.get("phone_key_recents", "最近任务") // l10n:keep test default

@@ -12,6 +12,10 @@ class PhoneCorePromptOwnerTest {
     private var handoff: () -> HandoffResult = { HandoffResult.CONTINUE }
     private var beforeHandoff: () -> Unit = {}
     private var asked = 0
+    private val statuses = mutableListOf<String?>()
+    private var beforeStatus: () -> Unit = {}
+    private var deferStatus = false
+    private val queuedStatuses = mutableListOf<() -> Unit>()
     private var lookup: () -> Unit = {}
     private var prepareSystem: () -> Unit = {}
     private var afterStart: () -> Unit = {}
@@ -29,7 +33,12 @@ class PhoneCorePromptOwnerTest {
         override fun gate() = object : UserGate {
             override fun confirm(request: ConfirmRequest): Decision { asked++; return confirm() }
             override fun handoff(reason: String, timeoutMs: Long): HandoffResult { asked++; return handoff() }
-            override fun status(text: String?) {}
+            override fun status(text: String?) { statuses += text }
+            override fun status(text: String?, ifCurrent: (() -> Unit) -> Boolean) {
+                beforeStatus()
+                val apply = { if (ifCurrent {}) statuses += text; Unit }
+                if (deferStatus) queuedStatuses += apply else apply()
+            }
         }
         override fun driver(screen: PhoneScreen) = if (screen == PhoneScreen.MAIN) main else background
         override fun a11yState() = A11yState.CONNECTED
@@ -204,6 +213,60 @@ class PhoneCorePromptOwnerTest {
         assertEquals(0, main.reads)
     }
 
+    @Test fun successfulSystemActionsPublishControlStatusBeforeTheirObservation() {
+        main.observing = { assertTrue("Control status must be published before post-launch observation", statuses.any { !it.isNullOrBlank() }) }
+        for (call in listOf(::openApp, ::openUrl, ::shareIntent)) {
+            statuses.clear()
+            assertFalse(call().isError)
+            assertEquals(1, statuses.size)
+            assertFalse(statuses.single()!!.contains("example.app"))
+            assertFalse(statuses.single()!!.contains("https://"))
+        }
+        assertEquals(3, main.reads)
+    }
+
+    @Test fun aFailedSystemLaunchDoesNotPublishAnActiveControl() {
+        launchResult = SysResult(false, "rejected")
+        assertTrue(openApp().isError)
+        assertTrue(statuses.isEmpty())
+        assertEquals(0, main.reads)
+    }
+
+    @Test fun listingAppsDoesNotCreateAScreenControl() {
+        assertFalse(core.call(PhoneToolCatalog.APPS, emptyMap()).isError)
+        assertTrue(statuses.isEmpty())
+        assertEquals(0, main.reads)
+    }
+
+    @Test fun stoppingAtTheStatusBoundaryCannotPublishOrReadForTheOldOwner() {
+        beforeStatus = { tasks.stop("stop before status publication") }
+        val result = openApp()
+        assertTrue(result.isError)
+        assertEquals(1, launches) // The already-returned system effect is not retracted.
+        assertEquals(0, main.reads)
+        assertTrue(statuses.isEmpty())
+    }
+
+    @Test fun delayedStatusIsRejectedAfterStopOrReplacementButCurrentStatusApplies() {
+        deferStatus = true
+        assertFalse(openApp().isError)
+        val stopped = queuedStatuses.removeAt(0)
+        tasks.stop("stop before UI application")
+        stopped()
+        assertTrue(statuses.isEmpty())
+        tasks.clearStop()
+
+        assertFalse(openApp().isError)
+        val replaced = queuedStatuses.removeAt(0)
+        replace()
+        replaced()
+        assertTrue(statuses.isEmpty())
+
+        assertFalse(openApp().isError)
+        queuedStatuses.removeAt(0)()
+        assertEquals(1, statuses.size)
+    }
+
     @Test fun currentSystemLaunchesStillDispatchExactlyOnce() {
         assertFalse(openApp().isError)
         assertFalse(openUrl().isError)
@@ -371,6 +434,7 @@ class PhoneCorePromptOwnerTest {
         assertEquals(1, launches)
         assertEquals(0, main.reads)
         assertEquals("successor", tasks.snapshot().app)
+        assertTrue("The app-label listener retired this owner before status publication", statuses.isEmpty())
     }
 
     @Test fun stoppingDuringSettlePreservesTheReturnedSystemResultWithoutReading() {

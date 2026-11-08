@@ -108,6 +108,7 @@ internal class ControlOverlay(private val service: AccessibilityService) : UserG
 
     // ---- main-thread state ----
     private var statusText: String? = null
+    private val statusOwnership = StatusOwnership()
     private var line: StatusLine? = null
     private val steps = StepHistory()
     private var stoppedNote = false
@@ -175,17 +176,22 @@ internal class ControlOverlay(private val service: AccessibilityService) : UserG
 
     // ---- UserGate --------------------------------------------------------------------------------
 
-    override fun status(text: String?) {
+    override fun status(text: String?) = status(text) { update -> update(); true }
+
+    override fun status(text: String?, ifCurrent: (() -> Unit) -> Boolean) {
         main.post {
+            // This runnable and close apply on the same queue. Never hold the task lock
+            // over WindowManager work or enqueue a second, unguarded status runnable.
+            if (!statusOwnership.publish(ifCurrent)) return@post
             statusText = text
             setStopped(false)
             if (text == null) {
+                statusOwnership.clear()
                 paused = false
                 line = null
                 steps.clear()
                 removePill(animated = true)
             } else {
-                // The core's formats in the app language: the prefixes it puts on, taken off here.
                 val l = StatusLines(AppStrings.get(service, R.string.phone_waived_status), AppStrings.get(service, R.string.phone_acting)).parse(text)
                 line = l
                 steps.add(l)
@@ -200,7 +206,18 @@ internal class ControlOverlay(private val service: AccessibilityService) : UserG
         val confirm = pendingConfirm
         val handoff = pendingHandoff
         main.post {
-            ifCurrent {
+            // A -> stop -> B can invalidate A's cleanup ticket while A's status is
+            // still displayed. Retire that status by its own owner, without touching B's cards.
+            if (statusOwnership.takeStale()) {
+                statusText = null
+                line = null
+                steps.clear()
+                setStopped(false)
+                removePill(animated = false, preservePrompts = true)
+            }
+            var cleanupCurrent = false
+            ifCurrent { cleanupCurrent = true }
+            if (cleanupCurrent) {
                 // A new pre-tool engine prompt can share an inactive task id. Remove only the
                 // questions captured by this cleanup, even when the task itself has not started.
                 if (sharedPrompt === shared) {
@@ -215,6 +232,7 @@ internal class ControlOverlay(private val service: AccessibilityService) : UserG
                     handoff?.resolve(HandoffResult.STOP)
                     dismissHandoff()
                 }
+                statusOwnership.clear()
                 statusText = null
                 line = null
                 steps.clear()
@@ -553,13 +571,17 @@ internal class ControlOverlay(private val service: AccessibilityService) : UserG
     }
 
     /** Takes the control away; [animated]: it fades first (a task that ended, not a rebuild). */
-    private fun removePill(animated: Boolean) {
+    private fun removePill(animated: Boolean, preservePrompts: Boolean = false) {
         clearPreview()
         val p = pill ?: return
         endEditing()
         main.removeCallbacks(foldTick)
         main.removeCallbacks(shrinkTick)
         fold.reset()
+        if (preservePrompts) {
+            if (waiting()) fold.hold(FoldClock.Hold.CONFIRM, now())
+            if (handoffCard != null) fold.hold(FoldClock.Hold.HANDOFF, now())
+        }
         val b = ball
         pill = null
         ball = null
