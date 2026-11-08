@@ -7,6 +7,8 @@ class PhoneTaskObservationsTest {
     private class Driver : PhoneDriver {
         override val screen = PhoneScreen.MAIN
         var actions = 0
+        var capturedAdmission: ((() -> Boolean) -> Boolean)? = null
+        var scope: VisualScope? = null
         val imageCommits = mutableListOf<String>()
         override fun acceptVisualObservation(screenId: String) { imageCommits += screenId }
         val opens = mutableListOf<PhoneAppIdentity>()
@@ -14,10 +16,16 @@ class PhoneTaskObservationsTest {
         var collectGate: (() -> Boolean)? = null
         var duringCollect: () -> Unit = {}
         var collected = CollectResult(emptyList(), 0, "done", null)
+        override fun visualScope(screenId: String): VisualScope? = scope.takeIf { screenId == "s1" }
         override fun availability() = Availability(true)
         override fun observe(detail: Boolean, image: Boolean) = ScreenSnapshot("s1", "screen", "App", "app")
         override fun target(screenId: String, elementId: Int) = TargetInfo(screenId, elementId, "button", "send", "app", "App", false, false, false)
         override fun perform(action: PhoneAction): ActionResult { actions++; return ActionResult(true, "done") }
+        override fun perform(action: PhoneAction, allowed: () -> Boolean,
+                             coordinateAdmission: ((() -> Boolean) -> Boolean)?): ActionResult {
+            capturedAdmission = coordinateAdmission
+            return if (allowed()) perform(action) else ActionResult(false, "stopped")
+        }
         override fun open(target: PhoneAppIdentity): ActionResult {
             opens += target
             duringOpen()
@@ -130,6 +138,30 @@ class PhoneTaskObservationsTest {
         a.stop("stop"); a.clearStop(); a.begin()
         assertThrows(InterruptedException::class.java) { bound.acceptVisualObservation("s1") }
         assertEquals(1, physical.imageCommits.size)
+    }
+
+    @Test fun actualWrapperCoordinateClaimCannotUseARetiredOrPausedOwner() {
+        val tasks = PhoneTasks(); val physical = Driver()
+        val owner = owner(tasks); val bound = PhoneTaskObservations(tasks).bind(physical, owner)
+        bound.observe(false, false); bound.perform(PhoneAction.TapXY("s1", 1, 1))
+        val admission = checkNotNull(physical.capturedAdmission)
+        var claims = 0
+        assertTrue(admission { claims++; true })
+        tasks.setPaused(true)
+        assertFalse(admission { claims++; true })
+        tasks.setPaused(false); tasks.stop("stop"); tasks.clearStop(); tasks.begin()
+        assertFalse(admission { claims++; true }); assertEquals(1, claims)
+    }
+    @Test fun actualLedgerRevokesScopeOnTextOnlyObservationBeforeAComesBack() {
+        val tasks = PhoneTasks(); val physical = Driver(); val owner = owner(tasks)
+        val bound = PhoneTaskObservations(tasks).bind(physical, owner)
+        val a = VisualScope.Main(Any(), Any(), 1, "app")
+        physical.scope = a; bound.observe(false, false)
+        assertTrue(tasks.confirmVisualIfCurrent(owner, a))
+        physical.scope = null; bound.observe(false, false)
+        assertFalse(tasks.confirmVisualIfCurrent(owner, a))
+        physical.scope = a; bound.observe(false, false)
+        assertFalse(tasks.hasVisualGrant(owner, a))
     }
 
 }

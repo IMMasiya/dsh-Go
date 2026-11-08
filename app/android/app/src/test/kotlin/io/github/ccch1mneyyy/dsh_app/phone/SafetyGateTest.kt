@@ -141,7 +141,7 @@ class SafetyGateTest {
         assertNull(secure.image)
         assertFalse(secure.text.contains("ordinary"))
     }
-    @Test fun longAndSwipeAlwaysConfirmOnceWhileLegacyTapKeepsWaiver() {
+    @Test fun unknownCoordinatesAndLongSwipeIgnoreOrdinaryWaivers() {
         for (mode in ConfirmMode.entries) {
             val tasks = PhoneTasks().apply { begin(); waive() }
             val gate = SafetyGate({ PhonePolicies(confirmMode = mode) }, tasks, { null })
@@ -154,9 +154,8 @@ class SafetyGateTest {
                     assertFalse(verdict.request.offerTaskWaiver)
                 }
             }
-            if (mode != ConfirmMode.ASK)
-                assertSame(SafetyGate.Verdict.Allow, gate.checkWrite(WriteKind.TAP_XY, null, "example.app", "Example",
-                    point = 10 to 20, coordinate = PhoneAction.TapXY("s1", 10, 20)))
+            assertTrue(gate.checkWrite(WriteKind.TAP_XY, null, "example.app", "Example",
+                point = 10 to 20, coordinate = PhoneAction.TapXY("s1", 10, 20)) is SafetyGate.Verdict.Confirm)
         }
     }
 

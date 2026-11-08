@@ -45,6 +45,9 @@ import android.view.ViewConfiguration
 import android.view.accessibility.AccessibilityNodeInfo
 import android.view.accessibility.AccessibilityWindowInfo
 import io.github.ccch1mneyyy.dsh_app.phone.SensitiveWords
+import io.github.ccch1mneyyy.dsh_app.phone.VisualBounds
+import io.github.ccch1mneyyy.dsh_app.phone.VisualNode
+import io.github.ccch1mneyyy.dsh_app.phone.VisualTargets
 import io.github.ccch1mneyyy.dsh_app.phone.selfcheck.TargetContract
 import io.github.ccch1mneyyy.dsh_app.phone.selfcheck.TargetFramePattern
 import java.io.ByteArrayOutputStream
@@ -216,6 +219,7 @@ class PrivilegedDisplayCore internal constructor(
             }
             if (!response.containsKey(Proto.ERROR)) response.putBoolean(Proto.OK, true)
         } catch (e: Throwable) {
+            if (response.containsKey(Proto.COORDINATE_SCOPE_VERSION)) response.putBoolean(Proto.COORDINATE_SCOPE_KNOWN, false)
             response.putBoolean(Proto.OK, false)
             response.putString(Proto.ERROR, failureCode(e))
             val detail = if (targetReply) null else if (selfCheckReply) (e as? InputProbe.Failure)?.observation?.encode() else failureDetail(e)
@@ -364,6 +368,8 @@ class PrivilegedDisplayCore internal constructor(
             }
             else -> throw Fault("invalidArguments")
         }
+        if (expected == null && response.containsKey(Proto.COORDINATE_SCOPE_VERSION))
+            response.putBoolean(Proto.COORDINATE_SCOPE_KNOWN, false)
         if (expected != null) {
             val actual = requireActualTarget(expected)
             response.putInt(Proto.TARGET_IDENTITY_VERSION, 1)
@@ -959,6 +965,8 @@ class PrivilegedDisplayCore internal constructor(
     private fun observe(pkg: String, wantImage: Boolean, response: Bundle, requireTree: Boolean = false, detail: Boolean = false,
                         localVisual: Boolean = false, coordinates: Boolean = false,
                         coordinatePost: BackgroundCoordinateObservation? = null) {
+        response.putInt(Proto.COORDINATE_SCOPE_VERSION, 1)
+        response.putBoolean(Proto.COORDINATE_SCOPE_KNOWN, false)
         coordinateObservation = null
         if (targetIdentity.verified) requireForeground(pkg)
         visualObservation = null
@@ -1035,6 +1043,7 @@ class PrivilegedDisplayCore internal constructor(
                 tree.complete && tree.elements.count { it.label.isNotEmpty() } >= 5,
                 tree.hasSecrets, tree.hasSensitive, SystemClock.uptimeMillis())
         }
+        response.putBoolean(Proto.COORDINATE_SCOPE_KNOWN, tree?.complete == true && tree.visualWindow != null)
         val elements = tree?.elements.orEmpty()
         if (detail) {
             val models = elements.mapIndexed { index, e ->
@@ -1064,6 +1073,17 @@ class PrivilegedDisplayCore internal constructor(
             }
             response.putAll(payload)
         } else emitElements(elements, response)
+        // Only expose indices that survived the actual bounded output, never merely <=120.
+        if (coordinateObservation != null && coordinates && tree != null) {
+            val ids = tree.eligibleNodes.mapNotNull { tree.coordinateElementIds[it] }
+                .filter { it <= minOf(120, response.getInt(Proto.COUNT)) }.sorted()
+            response.putInt(Proto.COORDINATE_TARGETS_VERSION, 1)
+            response.putIntArray(Proto.COORDINATE_TARGET_INDICES, ids.toIntArray())
+            response.putIntArray(Proto.COORDINATE_TARGET_BOUNDS, ids.flatMap { id ->
+                val b = elements[id - 1].bounds
+                listOf(b.left, b.top, b.right, b.bottom)
+            }.toIntArray())
+        }
     }
 
     private fun emitElements(elements: List<BgNode>, response: Bundle, count: Int = 120, detail: Boolean = false) {
@@ -1334,7 +1354,16 @@ class PrivilegedDisplayCore internal constructor(
     private class TreeRead(val targetId: Int = 0, val inspectVisual: Boolean = false,
                            val targetEvidence: SelfCheckTargetEvidence? = null, coordinates: Boolean = false) {
         val coordinateDigest: MessageDigest? = if (coordinates) MessageDigest.getInstance("SHA-256") else null
-        fun coordinateContext(): String? = coordinateDigest?.digest()?.joinToString("") { "%02x".format(it) }
+        val coordinateNodes: ArrayList<VisualNode>? = if (coordinates) ArrayList() else null
+        val coordinateElementIds = HashMap<Int, Int>()
+        var eligibleNodes: List<Int> = emptyList()
+        fun coordinateContext(): String? {
+            val digest = coordinateDigest ?: return null
+            // Final classification uses the whole real tree, including output-truncated blockers.
+            digest.update(ByteBuffer.allocate(4).putInt(eligibleNodes.size).array())
+            eligibleNodes.forEach { digest.update(ByteBuffer.allocate(4).putInt(it).array()) }
+            return digest.digest().joinToString("") { "%02x".format(it) }
+        }
         var visualWindow: BackgroundVisualObservation.Window? = null
         var hasSensitive = false
         val elements = ArrayList<BgNode>()
@@ -1401,7 +1430,7 @@ class PrivilegedDisplayCore internal constructor(
                 ?: throw Fault(if (roots.firstOrNull() != null) "displayTargetChanged" else "treeUnavailable")
             val tree = TreeRead(targetId, inspectVisual, targetEvidence, coordinates)
             if (targetEvidence != null) tree.targetWindowId = windows[selected.index].id
-            if (inspectVisual && displayWindows.size == 1 && windows.size == 1) {
+            if (displayWindows.size == 1 && windows.size == 1) {
                 val window = windows[selected.index]
                 tree.visualWindow = try {
                     val bounds = Rect().also { window.getBoundsInScreen(it) }
@@ -1424,6 +1453,11 @@ class PrivilegedDisplayCore internal constructor(
                         tree.complete = false
                     }
                 }
+                tree.coordinateNodes?.let { nodes ->
+                    val b = tree.visualWindow
+                    if (b != null) tree.eligibleNodes = VisualTargets.eligible(nodes,
+                        VisualBounds(b.left, b.top, b.right, b.bottom), tree.complete && !tree.hasSecrets && !tree.hasSensitive)
+                }
                 return tree
             } catch (e: Throwable) {
                 tree.target?.recycle()
@@ -1432,10 +1466,18 @@ class PrivilegedDisplayCore internal constructor(
         } finally { roots.forEach { it?.recycle() } }
     }
 
-    private fun walk(node: AccessibilityNodeInfo?, tree: TreeRead, indent: Int, budget: Int, emitElements: Boolean = true) {
+    private fun walk(node: AccessibilityNodeInfo?, tree: TreeRead, indent: Int, budget: Int, emitElements: Boolean = true, parentIndex: Int = -1) {
         if (node == null) { tree.complete = false; return }
         if (tree.visited >= budget) { tree.complete = false; return }
         tree.visited++
+        val coordinateIndex = tree.coordinateNodes?.size ?: -1
+        val actionClick = if (tree.coordinateNodes != null) node.actionList.any { it.id == AccessibilityNodeInfo.ACTION_CLICK } else false
+        tree.coordinateNodes?.add(VisualNode(parentIndex, node.className?.take(4097)?.toString(),
+            Rect().also { node.getBoundsInScreen(it) }.let { VisualBounds(it.left, it.top, it.right, it.bottom) },
+            node.isVisibleToUser, node.isEnabled, node.isClickable, actionClick, node.childCount,
+            node.isEditable, node.isCheckable, isSecret(node), node.isLongClickable, node.isScrollable,
+            node.text?.take(4097)?.toString(), node.contentDescription?.take(4097)?.toString(),
+            node.hintText?.take(4097)?.toString(), node.viewIdResourceName?.take(4097)))
         tree.targetEvidence?.let { evidence ->
             val id = node.viewIdResourceName
             evidence.observe(id, node.isVisibleToUser, node.text, node.contentDescription,
@@ -1466,7 +1508,7 @@ class PrivilegedDisplayCore internal constructor(
                     if (bytes != null) digest.update(bytes)
                 }
             }
-            val metadata = intArrayOf(indent, node.childCount, bounds.left, bounds.top, bounds.right, bounds.bottom,
+            val metadata = intArrayOf(parentIndex, if (actionClick) 1 else 0, indent, node.childCount, bounds.left, bounds.top, bounds.right, bounds.bottom,
                 node.inputType, if (node.isVisibleToUser) 1 else 0, if (node.isEnabled) 1 else 0,
                 if (node.isClickable) 1 else 0, if (node.isLongClickable) 1 else 0, if (node.isEditable) 1 else 0,
                 if (node.isScrollable) 1 else 0, if (node.isPassword) 1 else 0, if (node.isShowingHintText) 1 else 0,
@@ -1481,6 +1523,7 @@ class PrivilegedDisplayCore internal constructor(
             if (emit && node.isVisibleToUser) {
                 val rect = Rect().also { node.getBoundsInScreen(it) }
                 tree.elements.add(toElement(node, text, rect, indent))
+                if (coordinateIndex >= 0) tree.coordinateElementIds[coordinateIndex] = tree.elements.size
                 // Retain the exact node assigned this screen id, not whichever editor has focus.
                 if (tree.elements.size == tree.targetId) tree.target = AccessibilityNodeInfo.obtain(node)
                 if (node.isScrollable) childIndent = indent + 1
@@ -1489,7 +1532,7 @@ class PrivilegedDisplayCore internal constructor(
         for (i in 0 until node.childCount) {
             if (tree.visited >= budget) { tree.complete = false; break }
             val child = node.getChild(i)
-            try { walk(child, tree, childIndent, budget, emitElements) } finally { child?.recycle() }
+            try { walk(child, tree, childIndent, budget, emitElements, coordinateIndex) } finally { child?.recycle() }
         }
     }
 

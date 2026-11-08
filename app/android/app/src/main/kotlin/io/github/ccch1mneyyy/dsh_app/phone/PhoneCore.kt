@@ -731,10 +731,11 @@ class PhoneCore(
         }
         if (env.isLocked()) return locked(summary)
         lastScreen = which
+        val visual = (action as? PhoneAction.TapXY)?.let { driver.coordinateTarget(it) }
         val target: TargetInfo? = if (id != null && kind != WriteKind.TAP_XY) {
             driver.target(sid, id) ?: return stale(driver, sid, summary, owner)
         } else {
-            null
+            visual?.target
         }
         val secret = kind == WriteKind.TYPE && SafetyRules.isSecretTarget(target)
         if (kind == WriteKind.TYPE && !secret) {
@@ -743,10 +744,17 @@ class PhoneCore(
         val pkg = target?.packageName ?: driver.foregroundPackage()
         val appLabel = target?.appLabel
         val app = appLabel ?: pkg
-        val verdict = safety.checkWrite(kind, target, pkg, appLabel, typed, submit, point, action as? PhoneAction.TapXY, which)
-        val decision = when (val r = safety.resolve(verdict, scope, owner)) {
+        val verdict = safety.checkWrite(kind, target, pkg, appLabel, typed, submit, point, action as? PhoneAction.TapXY, which, visual)
+        var decision = when (val r = safety.resolve(verdict, scope, owner)) {
             is SafetyGate.Result.No -> return Out(r.message, error = true, app = app, summary = summary, decision = r.decision)
             is SafetyGate.Result.Go -> r.decision
+        }
+        if (action is PhoneAction.TapXY && visual != null &&
+            !(verdict is SafetyGate.Verdict.Confirm && verdict.reason == "tap_xy")) {
+            when (val r = safety.resolve(safety.checkVisual(action, visual, owner), scope, owner)) {
+                is SafetyGate.Result.No -> return Out(r.message, error = true, app = app, summary = summary, decision = r.decision)
+                is SafetyGate.Result.Go -> if (r.decision != "allowed") decision = r.decision
+            }
         }
         if (!tasks.isCurrent(owner) || Thread.currentThread().isInterrupted) return stoppedOut(summary)
         if (!tasks.setAppIfCurrent(owner, appLabel ?: pkg)) return stoppedOut(summary)

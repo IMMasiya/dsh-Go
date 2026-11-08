@@ -55,6 +55,9 @@ class PhoneTasks(
     private var stopReason: String? = null
     private val approved = LinkedHashSet<String>()
     private var waived = false
+    private var visualLifecycle = -1L
+    private val visualScopes = mutableMapOf<PhoneScreen, VisualScope>()
+    private val visualGrants = mutableMapOf<PhoneScreen, VisualScope>()
     private val notified = HashSet<String>()
     private var app: String? = null
     private var paused = false
@@ -286,6 +289,33 @@ class PhoneTasks(
         return true
     }
 
+    /** All consumers hold the original owner; scope changes revoke rather than restore history. */
+    fun syncVisualScope(owner: Owner, screen: PhoneScreen, scope: VisualScope?): Boolean = synchronized(lock) {
+        if (!owner.active || !currentLocked(owner)) return false
+        resetVisualLocked()
+        val value = scope?.takeIf { it.screen == screen }
+        if (visualScopes[screen] != value) visualGrants.remove(screen)
+        if (value == null) visualScopes.remove(screen) else visualScopes[screen] = value
+        true
+    }
+
+    fun hasVisualGrant(owner: Owner, scope: VisualScope): Boolean = synchronized(lock) {
+        owner.active && currentLocked(owner) && visualLifecycle == lifecycle &&
+            visualScopes[scope.screen] == scope && visualGrants[scope.screen] == scope
+    }
+
+    fun confirmVisualIfCurrent(owner: Owner, scope: VisualScope): Boolean = synchronized(lock) {
+        if (!owner.active || !currentLocked(owner) || visualLifecycle != lifecycle || visualScopes[scope.screen] != scope) return false
+        visualGrants[scope.screen] = scope
+        true
+    }
+
+    private fun resetVisualLocked() {
+        if (visualLifecycle != lifecycle) {
+            visualScopes.clear(); visualGrants.clear(); visualLifecycle = lifecycle
+        }
+    }
+
     fun stopIfCurrent(owner: Owner, reason: String): Boolean {
         val change = stopForOwner(owner, reason) ?: return false
         publish(change)
@@ -448,6 +478,7 @@ class PhoneTasks(
         lifecycle++
         active = false
         approved.clear()
+        visualScopes.clear(); visualGrants.clear(); visualLifecycle = lifecycle
         waived = false
         notified.clear()
         interjections.clear()

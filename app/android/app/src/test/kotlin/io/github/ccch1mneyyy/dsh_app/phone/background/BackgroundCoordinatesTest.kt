@@ -124,4 +124,35 @@ class BackgroundCoordinatesTest {
         assertEquals("unavailable", result(wire + (Proto.VISUAL_CHANGE to "PRIVATE_TEXT"))!!.change)
     }
 
+    @Test fun optionalNativeTargetsAreBoundedAndNeedTheAcceptedImage() {
+        val state = BackgroundCoordinateImage()
+        val target = PhoneAppIdentity("example.app", 10123)
+        val bounds = intArrayOf(1, 2, 20, 30)
+        val eligible = BackgroundCoordinateImage.targets(1, intArrayOf(1), bounds, 1, 40, 40)
+        assertEquals(1, eligible.size)
+        state.publishScope("b1", true, "resource", target)
+        val scope = state.scope("b1")
+        state.candidate("b1", BackgroundCoordinateImage.Receipt("nonce", 40, 40), eligible)
+        assertNull(state.targetAt("b1", 10, 10))
+        state.accept("b1"); assertEquals(1, state.targetAt("b1", 10, 10))
+        assertNull(state.targetAt("other", 10, 10))
+        state.take("b1"); assertNull(state.targetAt("b1", 10, 10))
+        state.publishScope("b2", true, "resource", target)
+        assertEquals(scope, state.scope("b2")) // new candidate is not a scope transition
+        state.publishScope("b3", false, "resource", target)
+        state.publishScope("b4", true, "resource", target)
+        assertNotEquals(scope, state.scope("b4")) // internal unknown cannot revive a previous grant
+    }
+    @Test fun malformedOptionalMetadataNeverInventsAUsableTarget() {
+        fun parsed(v: Any?, ids: Any?, boxes: Any?, count: Int = 2) = BackgroundCoordinateImage.targets(v, ids, boxes, count, 40, 40)
+        val b = intArrayOf(1, 2, 20, 30)
+        assertTrue(parsed(2, intArrayOf(1), b).isEmpty())
+        assertTrue(parsed(1L, intArrayOf(1), b).isEmpty())
+        assertTrue(parsed(1, listOf(1), b).isEmpty())
+        assertTrue(parsed(1, intArrayOf(1), b, 0).isEmpty()) // actual serialized prefix, not merely <=120
+        assertTrue(parsed(1, intArrayOf(1, 1), b + b).isEmpty())
+        assertTrue(parsed(1, intArrayOf(1, 2), b + b).isEmpty())
+        assertTrue(parsed(1, intArrayOf(1), intArrayOf(-1, 0, 20, 30)).isEmpty())
+    }
+
 }

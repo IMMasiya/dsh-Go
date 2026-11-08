@@ -1,5 +1,8 @@
 package io.github.ccch1mneyyy.dsh_app.phone.background
 
+import io.github.ccch1mneyyy.dsh_app.phone.VisualBounds
+import io.github.ccch1mneyyy.dsh_app.phone.VisualScope
+
 import io.github.ccch1mneyyy.dsh_app.phone.PhoneAppIdentity
 import io.github.ccch1mneyyy.dsh_app.phone.a11y.ImageGeometry
 import io.github.ccch1mneyyy.dsh_app.phone.a11y.ImageObservation
@@ -101,15 +104,48 @@ internal class BackgroundCoordinateImage {
             }
         }
     }
+    private var scopeScreen: String? = null
+    private var scope: VisualScope.Background? = null
+    private var targets: Map<Int, VisualBounds> = emptyMap()
+
+    @Synchronized fun publishScope(screenId: String, known: Boolean, owner: String, target: PhoneAppIdentity?) {
+        scopeScreen = screenId
+        scope = if (!known || target == null) null else (scope?.takeIf { it.resourceOwner == owner && it.target == target }
+            ?: VisualScope.Background(owner, target, Any()))
+    }
+    @Synchronized fun scope(screenId: String): VisualScope? = scope.takeIf { scopeScreen == screenId }
+    @Synchronized fun invalidateScope() { scopeScreen = null; scope = null }
+    @Synchronized fun targetAt(screenId: String, x: Int, y: Int): Int? =
+        if (accepted && screen == screenId && scopeScreen == screenId && scope != null)
+            targets.entries.singleOrNull { it.value.contains(x, y) }?.key else null
+
+    companion object {
+        fun targets(version: Any?, indices: Any?, bounds: Any?, count: Int, width: Int, height: Int): Map<Int, VisualBounds> {
+            if (version !is Int || version != 1 || indices !is IntArray || bounds !is IntArray ||
+                indices.size > 120 || bounds.size != indices.size * 4) return emptyMap()
+            val viewport = VisualBounds(0, 0, width, height)
+            val result = linkedMapOf<Int, VisualBounds>()
+            for (i in indices.indices) {
+                val id = indices[i]
+                val box = VisualBounds(bounds[i * 4], bounds[i * 4 + 1], bounds[i * 4 + 2], bounds[i * 4 + 3])
+                if (id !in 1..count || (i > 0 && id <= indices[i - 1]) || !viewport.contains(box) ||
+                    result.values.any { it.overlaps(box) }) return emptyMap()
+                result[id] = box
+            }
+            return result
+        }
+    }
     private var screen: String? = null
     private var receipt: Receipt? = null
     private var accepted = false
-    @Synchronized fun candidate(screenId: String, value: Receipt?) { screen = screenId; receipt = value; accepted = false }
+    @Synchronized fun candidate(screenId: String, value: Receipt?, eligible: Map<Int, VisualBounds> = emptyMap()) {
+        screen = screenId; receipt = value; accepted = false; targets = eligible.toMap()
+    }
     @Synchronized fun accept(screenId: String) { if (screen == screenId && receipt != null) accepted = true }
     @Synchronized fun take(screenId: String): Receipt? {
         val result = receipt.takeIf { accepted && screen == screenId }
         clear()
         return result
     }
-    @Synchronized fun clear() { screen = null; receipt = null; accepted = false }
+    @Synchronized fun clear() { screen = null; receipt = null; accepted = false; targets = emptyMap() }
 }

@@ -7,18 +7,18 @@ import org.junit.Test
 
 /** Real Core + task ledger + candidate state; synthetic bytes are not a platform screenshot test. */
 class PhoneCoordinateImageCommitTest {
-    private class Fixture : AutoCloseable {
+    private class Fixture(val physicalScreen: PhoneScreen = PhoneScreen.BACKGROUND) : AutoCloseable {
         val tasks = PhoneTasks()
         val ledger = PhoneTaskObservations(tasks)
         val image = BackgroundCoordinateImage()
-        var next = ScreenSnapshot("b1", "canvas", "Example", "example.app", image = byteArrayOf(1), imageMime = "image/jpeg")
+        var next = ScreenSnapshot("${physicalScreen.prefix}1", "canvas", "Example", "example.app", image = byteArrayOf(1), imageMime = "image/jpeg")
         var onObserve: () -> Unit = {}
         var commits = 0
         var confirmations = 0
         var performed = 0
         var policy = PhonePolicies(confirmMode = ConfirmMode.ALWAYS)
         private val physical = object : PhoneDriver {
-            override val screen = PhoneScreen.BACKGROUND
+            override val screen = physicalScreen
             override fun availability() = Availability(true)
             override fun observe(detail: Boolean, image: Boolean): ScreenSnapshot {
                 this@Fixture.image.candidate(next.id,
@@ -58,7 +58,7 @@ class PhoneCoordinateImageCommitTest {
             override fun notifyFix(kind: String) {}
             override fun sleep(ms: Long) {}
         }, tasks, ActionLog())
-        fun read() = core.call(PhoneToolCatalog.SCREEN, mapOf("background" to true, "image" to true))
+        fun read() = core.call(PhoneToolCatalog.SCREEN, mapOf("background" to (physicalScreen == PhoneScreen.BACKGROUND), "image" to true))
         fun tap() = core.call(PhoneToolCatalog.TAP_XY, mapOf("observation" to next.id, "x" to 10, "y" to 20))
         override fun close() { core.worker.shutdown() }
     }
@@ -75,7 +75,7 @@ class PhoneCoordinateImageCommitTest {
     }
 
     @Test fun finalFilteringOrMissingImageNeverCommitsTheCandidate() {
-        for (kind in listOf("card", "secure", "own", "deny", "missing")) Fixture().use { f ->
+        for (screen in PhoneScreen.entries) for (kind in listOf("card", "secure", "own", "deny", "missing")) Fixture(screen).use { f ->
             f.next = when (kind) {
                 "card" -> f.next.copy(text = "«银行卡 ****1234»")
                 "secure" -> f.next.copy(secure = true)

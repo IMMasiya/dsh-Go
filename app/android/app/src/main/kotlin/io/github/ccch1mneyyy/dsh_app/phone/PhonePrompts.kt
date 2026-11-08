@@ -81,6 +81,7 @@ class PhonePrompts(
             PromptOutcome.ALLOW_ONCE -> Decision.ALLOW_ONCE
             PromptOutcome.ALLOW_APP -> Decision.ALLOW_APP_FOR_TASK
             PromptOutcome.ALLOW_TASK -> Decision.ALLOW_ALL_FOR_TASK
+            PromptOutcome.ALLOW_VISUAL -> Decision.ALLOW_VISUAL_FOR_TASK
             PromptOutcome.STOPPED -> Decision.STOP
             PromptOutcome.UNAVAILABLE -> Decision.UNAVAILABLE
             else -> Decision.DENY

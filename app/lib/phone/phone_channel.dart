@@ -1003,6 +1003,7 @@ enum PhoneDecision {
       'confirmed' ||
       'confirmed_app' ||
       'confirmed_task' ||
+      'confirmed_visual' ||
       'allow_once' ||
       'allow_app_for_task' ||
       'allow_all_for_task' => allowed,

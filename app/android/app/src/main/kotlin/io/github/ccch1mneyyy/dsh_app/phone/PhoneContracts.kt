@@ -87,7 +87,7 @@ sealed interface PhoneAction {
 
     data class Key(override val screenId: String, val key: GlobalKey) : PhoneAction
 
-    /** Flash only: a point on a numbered screenshot ([screenId] is the observation it came from). Always confirmed. */
+    /** Flash only: a point on a numbered screenshot ([screenId] is the observation it came from). Unknown targets and long/swipe remain individually confirmed. */
     data class TapXY(override val screenId: String, val x: Int, val y: Int,
         val gesture: CoordinateGesture = CoordinateGesture.TAP,
         val x2: Int? = null, val y2: Int? = null, val durationMs: Long = 400) : PhoneAction
@@ -150,11 +150,21 @@ interface PhoneDriver {
      */
     fun target(screenId: String, elementId: Int): TargetInfo?
 
+    /** Pure memory, tied to this exact published observation; independent of image acceptance. */
+    fun visualScope(screenId: String): VisualScope? = null
+
+    /** Only native evidence from this observation may offer a reusable ordinary coordinate tap. */
+    fun coordinateTarget(action: PhoneAction.TapXY): VisualTarget? = null
+
     fun perform(action: PhoneAction): ActionResult
 
     /** Invocation-owned pause/current check, separate from whichever task the overlay displays. */
     fun perform(action: PhoneAction, allowed: () -> Boolean): ActionResult =
         if (allowed()) perform(action) else ActionResult(false, PhoneTasks.STOPPED_MESSAGE)
+
+    /** The claim is pure memory under the original task lock; dispatch happens after it returns. */
+    fun perform(action: PhoneAction, allowed: () -> Boolean,
+                coordinateAdmission: ((() -> Boolean) -> Boolean)?): ActionResult = perform(action, allowed)
 
     /** Launches the native-resolved [target] on this screen (BACKGROUND moves the task to the virtual display). */
     fun open(target: PhoneAppIdentity): ActionResult
@@ -178,10 +188,11 @@ data class ConfirmRequest(
     val offerTaskWaiver: Boolean = false,
     /** Exact native task lifetime; never inferred from the visible conversation. */
     val owner: PhoneTasks.Owner? = null,
+    val visualScope: VisualScope? = null,
 )
 
-/** [ALLOW_ALL_FOR_TASK]: nothing else in this task is asked (only offered with [ConfirmRequest.offerTaskWaiver]). */
-enum class Decision { ALLOW_ONCE, ALLOW_APP_FOR_TASK, ALLOW_ALL_FOR_TASK, DENY, STOP, UNAVAILABLE }
+/** Ordinary task waivers do not authorize independent visual scopes or bypass hard rules. */
+enum class Decision { ALLOW_ONCE, ALLOW_APP_FOR_TASK, ALLOW_ALL_FOR_TASK, ALLOW_VISUAL_FOR_TASK, DENY, STOP, UNAVAILABLE }
 
 enum class HandoffResult { CONTINUE, STOP, TIMEOUT }
 

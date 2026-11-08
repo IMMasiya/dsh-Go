@@ -833,8 +833,16 @@ internal class ControlOverlay(private val service: AccessibilityService) : UserG
         // 本任务免确认: the main choice waives the rest of the task. Otherwise, on the first action
         // in an app, the main choice allows that app for the rest of the task so later steps there
         // don't ask again. "Only this step" stays available as the quieter option either way.
-        val wide = request.offerTaskWaiver || request.firstInApp
-        if (request.offerTaskWaiver) {
+        val wide = request.visualScope != null || request.offerTaskWaiver || request.firstInApp
+        if (request.visualScope != null) {
+            val visual = GuardedButton(service, armedAt).apply {
+                text = AppStrings.get(service, R.string.phone_prompt_allow_visual)
+                style(this, c.accent, c.onAccent, c)
+                setOnClickListener { decide(Decision.ALLOW_VISUAL_FOR_TASK) }
+            }
+            guarded += visual
+            card.addView(visual, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(46)).apply { bottomMargin = dp(8) })
+        } else if (request.offerTaskWaiver) {
             val all4task = GuardedButton(service, armedAt).apply {
                 text = AppStrings.get(service, R.string.overlay_allow_remaining)
                 style(this, c.accent, c.onAccent, c)

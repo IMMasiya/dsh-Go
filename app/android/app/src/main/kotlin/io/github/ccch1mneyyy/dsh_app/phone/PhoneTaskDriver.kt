@@ -29,7 +29,10 @@ class PhoneTaskObservations(private val tasks: PhoneTasks) {
             if (Thread.currentThread().isInterrupted) throw InterruptedException()
             // Same order as reads: Tasks -> observation ledger, with owner check and write together.
             if (!tasks.runIfCurrent(owner) {
-                synchronized(seen) { seen[driver.screen] = Seen(driver, snapshot.id, owner) }
+                synchronized(seen) {
+                    seen[driver.screen] = Seen(driver, snapshot.id, owner)
+                    tasks.syncVisualScope(owner, driver.screen, driver.visualScope(snapshot.id))
+                }
             }) throw InterruptedException()
             return snapshot
         }
@@ -40,7 +43,7 @@ class PhoneTaskObservations(private val tasks: PhoneTasks) {
         }
         override fun observe(detail: Boolean, image: Boolean): ScreenSnapshot {
             current()
-            return remember(driver.observe(detail, image))
+            return try { remember(driver.observe(detail, image)) } finally { syncCurrentScope() }
         }
         override fun acceptVisualObservation(screenId: String) {
             current()
@@ -50,13 +53,35 @@ class PhoneTaskObservations(private val tasks: PhoneTasks) {
                     if (value != null && value.driver === driver && value.id == screenId &&
                         value.owner.taskId == owner.taskId && value.owner.lifecycle == owner.lifecycle) {
                         driver.acceptVisualObservation(screenId) // Memory only; Tasks -> ledger -> driver state.
+                        tasks.syncVisualScope(owner, driver.screen, driver.visualScope(screenId))
                     }
                 }
             }) throw InterruptedException()
         }
+        private fun syncCurrentScope() {
+            tasks.runIfCurrent(owner) {
+                synchronized(seen) {
+                    val value = seen[driver.screen]
+                    val scope = if (value != null && value.driver === driver && value.owner.taskId == owner.taskId && value.owner.lifecycle == owner.lifecycle)
+                        driver.visualScope(value.id) else null
+                    tasks.syncVisualScope(owner, driver.screen, scope)
+                }
+            }
+        }
+        override fun visualScope(screenId: String): VisualScope? {
+            current()
+            return if (owns(screenId)) driver.visualScope(screenId) else null
+        }
+        override fun coordinateTarget(action: PhoneAction.TapXY): VisualTarget? {
+            current()
+            if (!owns(action.screenId)) return null
+            val target = try { driver.coordinateTarget(action) } finally { syncCurrentScope() }
+            current()
+            return target?.takeIf { owns(action.screenId) && driver.visualScope(action.screenId) == it.scope }
+        }
         override fun target(screenId: String, elementId: Int): TargetInfo? {
             current()
-            return if (owns(screenId)) driver.target(screenId, elementId) else null
+            return try { if (owns(screenId)) driver.target(screenId, elementId) else null } finally { syncCurrentScope() }
         }
         override fun perform(action: PhoneAction): ActionResult {
             current()
@@ -64,17 +89,31 @@ class PhoneTaskObservations(private val tasks: PhoneTasks) {
                 // l10n:keep agent observation ownership result
                 return ActionResult(false, "这个屏幕编号不属于本任务的当前观察。请本任务重新 screen，不要使用另一对话的编号。")
             }
-            return result(driver.perform(action, ::allowed))
+            return try {
+                result(driver.perform(action, ::allowed) { claim ->
+                    var committed = false
+                    tasks.runIfCurrent(owner) { if (!tasks.isPaused) committed = claim() }
+                    committed
+                })
+            } finally { syncCurrentScope() }
         }
         override fun collect(screenId: String, listElementId: Int, maxPages: Int, until: String?): CollectResult {
             current()
             if (!owns(screenId)) return CollectResult(emptyList(), 0, "屏幕编号不属于本任务，请重新 screen", null) // l10n:keep agent observation ownership result
-            val result = driver.collect(screenId, listElementId, maxPages, until, ::allowed)
-            current()
-            result.screen?.let(::remember)
-            return result
+            return try {
+                val result = driver.collect(screenId, listElementId, maxPages, until, ::allowed)
+                current()
+                result.screen?.let(::remember)
+                result
+            } finally { syncCurrentScope() }
         }
-        override fun open(target: PhoneAppIdentity): ActionResult { current(); return result(driver.open(target)) }
-        override fun foregroundPackage(): String? { current(); return driver.foregroundPackage() }
+        override fun open(target: PhoneAppIdentity): ActionResult {
+            current()
+            return try { result(driver.open(target)) } finally { syncCurrentScope() }
+        }
+        override fun foregroundPackage(): String? {
+            current()
+            return try { driver.foregroundPackage() } finally { syncCurrentScope() }
+        }
     }
 }

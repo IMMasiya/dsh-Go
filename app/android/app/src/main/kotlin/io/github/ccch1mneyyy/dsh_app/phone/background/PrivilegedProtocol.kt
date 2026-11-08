@@ -90,6 +90,11 @@ object Proto {
     // Optional local summary only; independent of image delivery.
     const val LOCAL_VISUAL = "localVisual"
     const val VISUAL_CHANGE = "visualChange"
+    const val COORDINATE_SCOPE_VERSION = "coordinateScopeVersion"
+    const val COORDINATE_SCOPE_KNOWN = "coordinateScopeKnown"
+    const val COORDINATE_TARGETS_VERSION = "coordinateTargetsVersion"
+    const val COORDINATE_TARGET_INDICES = "coordinateTargetIndices"
+    const val COORDINATE_TARGET_BOUNDS = "coordinateTargetBounds"
     const val BACKGROUND_COORDINATES = "backgroundCoordinates"
     const val COORDINATE_OBSERVATION = "coordinateObservation"
     const val COORDINATE_WIDTH = "coordinateWidth"

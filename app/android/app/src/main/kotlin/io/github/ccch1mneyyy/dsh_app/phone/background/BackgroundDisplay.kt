@@ -13,6 +13,8 @@ import io.github.ccch1mneyyy.dsh_app.phone.PhoneScreen
 import io.github.ccch1mneyyy.dsh_app.phone.PhoneTasks
 import io.github.ccch1mneyyy.dsh_app.phone.ScreenSnapshot
 import io.github.ccch1mneyyy.dsh_app.phone.TargetInfo
+import io.github.ccch1mneyyy.dsh_app.phone.VisualScope
+import io.github.ccch1mneyyy.dsh_app.phone.VisualTarget
 
 /**
  * BACKGROUND [PhoneDriver] (screen ids `b<n>`): reads and drives the trusted virtual display
@@ -28,7 +30,7 @@ class BackgroundDisplay(
 
     private val resourceIo = BackgroundDisplayIo<PrivilegedChannel>()
     internal val ownerToken: String get() = resourceIo.owner
-    internal fun seal() = resourceIo.seal()
+    internal fun seal() { coordinateImage.invalidateScope(); resourceIo.seal() }
     internal fun previewAvailable(peer: PrivilegedChannel): Boolean = resourceIo.previewAvailable(peer)
     internal fun previewClosed(): Boolean = resourceIo.previewClosed()
     internal fun tryPreview(request: Bundle): Bundle? = resourceIo.tryPreview { peer ->
@@ -134,6 +136,14 @@ class BackgroundDisplay(
     }
 
     override fun acceptVisualObservation(screenId: String) = coordinateImage.accept(screenId)
+    override fun visualScope(screenId: String): VisualScope? = coordinateImage.scope(screenId)
+    override fun coordinateTarget(action: PhoneAction.TapXY): VisualTarget? {
+        if (action.gesture != PhoneAction.CoordinateGesture.TAP) return null
+        val index = coordinateImage.targetAt(action.screenId, action.x, action.y) ?: return null
+        val scope = coordinateImage.scope(action.screenId) ?: return null
+        val target = target(action.screenId, index) ?: return null
+        return VisualTarget(scope, target)
+    }
 
     /** A failed read is not an empty snapshot; old element numbers are no longer actionable. */
     internal fun requireObservation(ok: Boolean, code: String?, detail: String?) {
@@ -301,6 +311,7 @@ class BackgroundDisplay(
         val snap = try {
             if (response.containsKey(Proto.COUNT) || response.getBoolean(Proto.SECURE)) snapshot(response, markNew = true) else null
         } catch (_: Exception) { clearSnapshot(); null } // The gesture acknowledgement already exists.
+        if (snap == null) coordinateImage.invalidateScope()
         // l10n:keep agent coordinate protocol
         return ActionResult(true, "后台坐标手势已结束（不表示业务成功）" + backgroundVisualNote(result.change), snap)
     }
@@ -319,6 +330,7 @@ class BackgroundDisplay(
                     response.get("neverCreated"))
             }
         } catch (_: Exception) { false }
+        coordinateImage.invalidateScope()
         if (!acknowledged) return false
         coordinateImage.clear()
         currentTarget = null
@@ -353,6 +365,7 @@ class BackgroundDisplay(
     }
 
     private fun clearSnapshot() {
+        coordinateImage.invalidateScope()
         coordinateImage.clear()
         lastScreenId = null
         lastElements = emptyList()
@@ -387,13 +400,20 @@ class BackgroundDisplay(
         }
         val snap = if (response.containsKey(Proto.COUNT) || response.getBoolean(Proto.SECURE))
             snapshot(response, markNew = true) else null
+        if (snap == null) coordinateImage.invalidateScope()
         return ActionResult(ok, message, snap)
     }
 
     private fun snapshot(response: Bundle, markNew: Boolean): ScreenSnapshot {
         coordinateImage.clear()
         val id = "b${++counter}"
-        val pkg = currentTarget?.packageName
+        val target = currentTarget
+        val knownScope = response.get(Proto.COORDINATE_SCOPE_VERSION) == 1 &&
+            response.get(Proto.COORDINATE_SCOPE_VERSION) is Int && response.get(Proto.COORDINATE_SCOPE_KNOWN) == true &&
+            response.get(Proto.OK) == true && target != null && TargetIdentity.receipt(target,
+                response.get(Proto.TARGET_IDENTITY_VERSION), response.get(Proto.PKG), response.get(Proto.TARGET_UID))
+        coordinateImage.publishScope(id, knownScope, ownerToken, target)
+        val pkg = target?.packageName
         val appLabel = response.getString(Proto.APP_LABEL)
         if (response.getBoolean(Proto.SECURE)) {
             lastScreenId = id; lastElements = emptyList(); previousLabels = emptySet()
@@ -427,10 +447,13 @@ class BackgroundDisplay(
         val coordinate = if (image != null && coordinateSupported) BackgroundCoordinateImage.Receipt.parse(
             response.get(Proto.BACKGROUND_COORDINATES), response.get(Proto.COORDINATE_OBSERVATION),
             response.get(Proto.COORDINATE_WIDTH), response.get(Proto.COORDINATE_HEIGHT)) else null
-        coordinateImage.candidate(id, coordinate)
+        val eligible = if (coordinate == null) emptyMap() else BackgroundCoordinateImage.targets(
+            response.get(Proto.COORDINATE_TARGETS_VERSION), response.get(Proto.COORDINATE_TARGET_INDICES),
+            response.get(Proto.COORDINATE_TARGET_BOUNDS), elements.size, coordinate.width, coordinate.height)
+        coordinateImage.candidate(id, coordinate, eligible)
         if (coordinate != null) {
             // l10n:keep agent coordinate protocol
-            text += "\n截图坐标范围：${coordinate.width}×${coordinate.height}像素；30秒内可单次使用，仍需逐次确认。本机文字识别未安装，未证明画布敏感内容或目标像素未变。"
+            text += "\n截图坐标范围：${coordinate.width}×${coordinate.height}像素；30秒内可单次使用；只有明确普通目标可使用独立的本任务视觉许可，未知目标及长按/滑动仍逐次确认。本机文字识别未安装，未证明画布敏感内容或目标像素未变。"
         } else if (image != null && coordinateSupported) {
             // l10n:keep agent coordinate protocol
             text += "\n本次截图没有可用坐标凭据（窗口、隐私、几何或帧条件未满足）。请用元素操作或交给用户。"
@@ -482,6 +505,7 @@ class BackgroundDisplay(
     }
 
     private fun idleSnapshot(): ScreenSnapshot {
+        coordinateImage.invalidateScope()
         coordinateImage.clear()
         val id = "b${++counter}"
         lastScreenId = id; lastElements = emptyList()
