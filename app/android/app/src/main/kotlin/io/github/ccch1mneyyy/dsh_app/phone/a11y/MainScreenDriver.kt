@@ -180,6 +180,7 @@ internal class MainScreenDriver(private val service: PhoneA11yService, private v
             val text = StringBuilder(snap.screen.text)
             var bytes: ByteArray? = null
             var mime: String? = null
+            var imageReadPackages: Set<String> = emptySet()
             var secure = false
             var localText = shooter.localTextWithoutFrame()
             var formatted: LocalOcrVisual.Output? = null
@@ -225,6 +226,7 @@ internal class MainScreenDriver(private val service: PhoneA11yService, private v
                             visual.candidate(snap.id, capturedTransitions)) {
                             bytes = shot.bytes
                             mime = shot.mime
+                            imageReadPackages = ImageReadSources.knownPackages(cap, shot, ownPackage)
                             snap.ocrOnlyEpoch = null
                             snap.image = shot.observation
                             // l10n:keep agent screen result
@@ -243,7 +245,8 @@ internal class MainScreenDriver(private val service: PhoneA11yService, private v
             if (snap.screen.poorTree) text.append("\n").append(formatted?.text ?: LocalOcrBoundary.message(localText))
             if (secure) clearFocusCandidate()
             ScreenSnapshot(snap.id, text.toString(), snap.appLabel, snap.packageName, secure || snap.hidden, snap.screen.poorTree, bytes, mime,
-                readPackages = snap.readPackages, focus = snap.focus.takeUnless { secure })
+                readPackages = snap.readPackages, focus = snap.focus.takeUnless { secure },
+                imageReadPackages = imageReadPackages)
         } finally { cap.recycle() }
     }
 
