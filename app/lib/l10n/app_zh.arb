@@ -1675,6 +1675,28 @@
       }
     }
   },
+  "botsPetCodexTitle": "「{name}」是从 Codex 宠物转过来的",
+  "@botsPetCodexTitle": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "botsPetCodexBody": "大部分照原样，有几处不完全一样：",
+  "botsPetCodexOk": "知道了",
+  "botsPetCodexLoops": "动作会一直循环到状态变化，不像 Codex 里跑几遍就回到待机",
+  "botsPetCodexRoamLeft": "往左走用的是往右走那一行的镜像",
+  "botsPetCodexDrag": "拖着它时一律用朝右的那一行",
+  "botsPetCodexSleep": "睡觉时用待机的第一帧",
+  "botsPetCodexLook": "看向不同方向的那些格子没用上",
+  "botsPetCodexWebp": "WebP 图转成了 PNG",
+  "botsPetCodexCustomTracks": "自定义的动作行没接到任何状态上",
+  "botsPetCodexFps": "帧率换算成毫秒时取了整",
+  "botsPetCodexOneShot": "只播一次的动作，播完回到哪里由 DSH 决定",
+  "botsPetCodexMissingAuthor": "包里没写作者",
+  "botsPetCodexMissingLicense": "包里没写授权",
+  "botsPetCodexMissingSource": "包里没写来源",
   "botsPetImportReplaced": "「{name}」换成了新的",
   "@botsPetImportReplaced": {
     "placeholders": {
@@ -2938,6 +2960,7 @@
   "companionNotConnected": "现在连不上引擎，等一下再和我说吧。",
   "companionSendFailed": "这句话没送出去，要不要再说一次？",
   "companionLogTitle": "聊天记录",
+  "companionContextUnsupported": "这台主机的伙伴还不支持上下文：她的名字、设定和刚才发生的事传不过去，只发你说的话。升级主机或换成轻量模式就好。",
   "companionLogEmpty": "还没有说过话。",
   "companionLogYou": "你",
   "companionLogOpenChat": "在主对话里看",
@@ -3091,43 +3114,31 @@
   "companionCloser3": "以后也要常来哦，我会想你的。",
   "companionPatClose": "最喜欢被你摸头了。",
   "companionHugClose": "抱紧一点也没关系哦。",
-  "companionTaskDone": "「{title}」那边跑完啦。",
-  "@companionTaskDone": {
-    "placeholders": {
-      "title": {
-        "type": "String"
-      }
-    }
-  },
   "companionTaskDoneUntitled": "你那边的任务跑完啦。",
-  "companionTaskFailed": "「{title}」好像出错了，要去看看吗？",
-  "@companionTaskFailed": {
-    "placeholders": {
-      "title": {
-        "type": "String"
-      }
-    }
-  },
   "companionTaskFailedUntitled": "你那边的任务好像出错了，要去看看吗？",
-  "companionTaskApproval": "「{title}」在等你批准。",
-  "@companionTaskApproval": {
-    "placeholders": {
-      "title": {
-        "type": "String"
-      }
-    }
-  },
-  "companionTaskApprovalUntitled": "你那边有件事在等你批准。",
-  "companionTaskQuestion": "「{title}」有事想问你。",
-  "@companionTaskQuestion": {
-    "placeholders": {
-      "title": {
-        "type": "String"
-      }
-    }
-  },
-  "companionTaskQuestionUntitled": "你那边有个问题在等你回答。",
   "companionTaskOpen": "去看看",
+  "companionMenuSignals": "她会提起什么",
+  "companionSignalsHint": "这些只在小屋里说给你听，不会发给模型。她只在你安静陪着她时开口，和「主动邀请」共用次数：一天最多两次，至少隔 6 小时，深夜不说；关掉「主动邀请」她也不说。",
+  "companionSignalState": "留意别的对话",
+  "companionSignalStateHint": "这台主机上别的对话跑完或出错时，她心里有数",
+  "companionSignalSpeech": "提一句",
+  "companionSignalSpeechHint": "挑你安静的时候说一句",
+  "companionSignalVoice": "用声音说出来",
+  "companionSignalVoiceHint": "她的声音开着时，把这句读出来",
+  "companionSignalNight": "深夜提醒你休息",
+  "companionSignalNightHint": "深夜在小屋里待了一阵，她轻轻提醒一次",
+  "companionSignalLateUse": "这么晚了还陪着我……要不要早点歇一会儿？",
+  "companionRecallTitle": "完整模式里自动想起记忆",
+  "companionRecallHint": "打开时换一段新对话；改动她记得的事会自动关掉",
+  "companionRecallConfirm": "打开后，她确认过的记忆（最多 12 条）会跟着完整模式里她的每次回复一起发给模型。会开始一段新对话，现在这段留在主对话列表里。改动记忆后会自动关掉，到时可以再打开。",
+  "companionRecallTurnOn": "打开",
+  "companionRecallOn": "好，从这段新对话起，我会想着你让我记住的事。",
+  "companionRecallBusy": "另一个对话正在用自动想起记忆，先在那边关掉再来",
+  "companionRecallUnsupported": "这台主机现在开不了自动想起记忆",
+  "companionRecallFailed": "自动想起记忆没打开，再试一次吧",
+  "companionRecallOff": "自动想起记忆关了，下一句会开始一段新对话",
+  "companionRecallOffFailed": "自动想起记忆没关掉，再试一次吧",
+  "companionRecallStopped": "自动想起记忆停了（她记得的事有改动），换成了一段新对话。想要的话可以在菜单里再打开。",
   "companionMenuVoice": "她的声音",
   "companionMenuVoiceHint": "用手机自带的语音读出她说的话",
   "companionVoiceHello": "你好呀，这是我的声音。喜欢的话就留着吧。",

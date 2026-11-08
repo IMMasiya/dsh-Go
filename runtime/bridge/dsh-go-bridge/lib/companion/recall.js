@@ -14,7 +14,7 @@ const tagFailure = () => recallError(503, 'tag-unavailable', 'Companion recall s
 const factId = (value) => integer(value) || typeof value === 'string' && value.length > 0 && value.length <= 256;
 
 export function createRecallCoordinator({ store, adapter, markers = createRecallMarkers(),
-  ids = randomUUID, maxBindings = MAX_RECALL_BINDINGS, maxOperations = MAX_RECALL_OPERATIONS } = {}) {
+  ids = randomUUID, maxBindings = MAX_RECALL_BINDINGS, maxOperations = MAX_RECALL_OPERATIONS, promptContext } = {}) {
   const bridgeEpoch = ids();
   if (!canonicalUuid(bridgeEpoch) || !integer(maxBindings) || maxBindings < 1
     || !integer(maxOperations) || maxOperations < 2) throw unavailable();
@@ -68,6 +68,9 @@ export function createRecallCoordinator({ store, adapter, markers = createRecall
   function retireNow(binding, reason) {
     if (!binding || binding.status !== 'ready') return;
     const oldTarget = target(binding);
+    // Keep C800 query sidecars disabled after revoke, expiry or target change.
+    // Only memory is retired; the profile/event provider stays mounted.
+    promptContext?.retireMemory(oldTarget.agent);
     binding.status = 'retired';
     binding.reason = safeReason(reason, 'unavailable');
     if (epoch < Number.MAX_SAFE_INTEGER) binding.recallEpoch = ++epoch;
@@ -249,6 +252,11 @@ export function createRecallCoordinator({ store, adapter, markers = createRecall
           }
           const session = actual.agent.session;
           if (markers.readSync(input.sessionId) !== null) throw recallError(409, 'session-not-clean', 'Use a new clean session for automatic recall');
+          // This is inside the binding queue, after target/clean/store checks
+          // and before either persistent marker or ready can become visible.
+          // It fences pending query awaits as well as already claimed memory.
+          promptContext?.disableMemory(actual.agent);
+          clean(actual, session);
           await markers.write(input.sessionId, input.storeId);
           version(await readStore(), input);
           clean(actual, session);
@@ -301,6 +309,7 @@ export function createRecallCoordinator({ store, adapter, markers = createRecall
       let detached, invalidClone = false;
       try { detached = structuredClone(input); } catch { invalidClone = true; }
       return queue(() => {
+        promptContext?.invalidateMemories();
         retireAll('memory-changed');
         if (invalidClone) throw recallInvalid();
         return store[method](detached);
@@ -361,6 +370,15 @@ export function createRecallCoordinator({ store, adapter, markers = createRecall
       current(binding);
     },
     guardSession,
+    // A new Agent or bridge must not reopen the query lane of a session that
+    // has an automatic-recall marker. This is a memory policy, not admission.
+    allowsQueryContext(agent) {
+      if (closed || !agent || agent.session?.id !== agent.id) return false;
+      try {
+        return markers.readSync(agent.id) === null &&
+          ![...bindings.values()].some(binding => binding.sessionId === agent.id);
+      } catch { return false; }
+    },
     retireAgent(agent, reason = 'agent-changed') {
       if (activeBinding?.agent === agent) retireNow(activeBinding, reason);
     },

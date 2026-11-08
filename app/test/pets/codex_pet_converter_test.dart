@@ -190,6 +190,28 @@ void main() {
     expect(first.validated.sheets.keys, ['spritesheet.png']);
   });
 
+  test('C907 sheet lookup preserves leading BOM and spaces in authored names', () {
+    for (final name in ['\uFEFFatlas.png', ' atlas.png']) {
+      final converted = CodexPetConverter.convertArchive(petZip(metadata(sheet: name)));
+      expect(converted.validated.sheets.keys, [name]);
+      expect(converted.validated.sheets[name], v1Png);
+      expect((converted.validated.json['codexImport'] as Map)['sourceSheet'], name);
+    }
+  });
+  test('C907 only absent or whitespace sheet names use the CLI fallback', () {
+    for (final raw in [null, '', ' \t\n']) {
+      final meta = metadata()..['spritesheetPath'] = raw;
+      final converted = CodexPetConverter.convertArchive(petZip(meta, actualName: 'spritesheet.webp', bytes: v1Webp));
+      expect(converted.validated.sheets.keys, ['spritesheet.png']);
+    }
+  });
+  test('C907 multibyte Codex output names fail validation before filesystem installation', () {
+    final name = '${'界' * 84}.png';
+    expect(name.length, lessThanOrEqualTo(120));
+    expect(utf8.encode(name), hasLength(256));
+    expect(() => CodexPetConverter.convertArchive(petZip(metadata(sheet: name))), rejected('sheet-name'));
+  });
+
   test('a real CLI custom grid covers the unchanged atlas exactly', () {
     final meta = {
       ...metadata(),

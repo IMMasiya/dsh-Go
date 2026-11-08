@@ -47,6 +47,9 @@ class ValidatedPetPack {
 bool _safeSheetName(String name) =>
     name.isNotEmpty &&
     name.length <= petSheetNameCap &&
+    // The common 120-code-unit limit does not bound UTF-8 path components.
+    // Normalized sheets are written by this App, including market imports.
+    utf8.encode(name).length <= 255 &&
     !name.startsWith('.') &&
     !name.contains('/') &&
     !name.contains('\\') &&

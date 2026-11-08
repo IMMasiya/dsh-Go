@@ -184,13 +184,14 @@
  	dependencies;
  	files;
  	imageAccess = (ref) => {
-@@ -2228,6 +2229,9 @@
+@@ -2228,6 +2229,10 @@
  				});
  				signal.throwIfAborted();
  				const betas = [...fileIds !== void 0 && fileIds.size > 0 ? [MESSAGES_FILES_BETA] : [], ...body.messages.some((message) => message.content.some((block) => block.type === "tool_addition" || block.type === "tool_removal")) ? [MESSAGES_TOOL_CHANGES_BETA] : []];
 +				// Includes every stale-file retry; no SDK hides additional model POSTs.
 +				await dshGoRecall.beforeFetch(options);
 +				signal.throwIfAborted();
++				dshGoRecall.guardFetch(options);
  				const response = await fetch(`${messagesApiRoot(connection.baseURL)}/messages`, {
  					method: "POST",
  					signal,
@@ -204,7 +205,7 @@
  import { createRequire } from "node:module";
  import { Remote, RemoteError, TypertRemoteService } from "@deepseek-ai/dsh-typert-protocol";
  import { assertNever, deepFreeze, snapshotJsonValue } from "@deepseek-ai/dsh-util-values";
-@@ -5,6 +9,195 @@
+@@ -5,6 +9,215 @@
  import { brandString } from "@deepseek-ai/dsh-brand";
  import z from "@deepseek-ai/schemastery";
  import { MAX_TIMER_DELAY_MS } from "@deepseek-ai/dsh-timeout";
@@ -213,6 +214,7 @@
 +const RECALL_HISTORY_TYPE = "plugin:dsh-go/companion-recall";
 +const recallDrivers = new WeakMap();
 +const recallRequests = new WeakMap();
++const recallPhysicalRequests = new WeakMap();
 +const recallAssemblies = new WeakMap();
 +const recallToolExecutions = new WeakMap();
 +const recallMessageSources = new WeakMap();
@@ -366,6 +368,7 @@
 +		for (const [id, session] of recallSources(ctx, options)) if (recallProtected(id, session)) throw recallFailure("COMPANION_RECALL_AUXILIARY_BLOCKED");
 +	},
 +	async beforeFetch(options) {
++		recallPhysicalRequests.delete(options);
 +		const origin = recallRequests.get(options);
 +		if (origin === void 0) {
 +			if (recallProtected(options.sessionId)) throw recallFailure("COMPANION_RECALL_AUXILIARY_BLOCKED");
@@ -374,7 +377,25 @@
 +		recallOriginCurrent(origin);
 +		const permit = await origin.coordinator.admit({ agent: origin.agent, scope: origin.agent, stamp: origin.value.stamp,
 +			turnId: origin.turnId, stepId: origin.stepId, attemptId: randomUUID() });
++		recallOriginCurrent(origin);
++		recallPhysicalRequests.set(options, { origin, permit });
 +		recallDrivers.get(origin.agent).physicalPermit = permit;
++	},
++	guardFetch(options) {
++		const origin = recallRequests.get(options);
++		if (origin === void 0) {
++			if (recallProtected(options.sessionId)) throw recallFailure("COMPANION_RECALL_AUXILIARY_BLOCKED");
++			return;
++		}
++		// This synchronous guard runs in the provider's continuation, with no
++		// await before fetch. Retirement queued during admission may run after
++		// beforeFetch returns but before that continuation resumes.
++		recallOriginCurrent(origin);
++		const admitted = recallPhysicalRequests.get(options);
++		recallPhysicalRequests.delete(options);
++		if (admitted?.origin !== origin || typeof origin.coordinator.guardTool !== "function") throw recallFailure("COMPANION_RECALL_ADAPTER_UNAVAILABLE");
++		const result = origin.coordinator.guardTool({ agent: origin.agent, scope: origin.agent, permit: admitted.permit });
++		if (result?.then !== void 0) throw recallFailure("COMPANION_RECALL_ADAPTER_UNAVAILABLE");
 +	},
 +	captureTool(exec, agent) {
 +		recallToolExecutions.set(exec, { agent, permit: recallDrivers.get(agent)?.physicalPermit });
@@ -400,7 +421,7 @@
  //#region lib/types/message.js
  /** Message value types, identity, and immutable construction helpers. */
  /**
-@@ -1814,6 +2007,7 @@
+@@ -1814,6 +2027,7 @@
  				value: _metadata
  			});
  		}
@@ -408,7 +429,7 @@
  		adapters = (__runInitializers(this, _instanceExtraInitializers), /* @__PURE__ */ new Map());
  		directory = /* @__PURE__ */ new Map();
  		discoveries = /* @__PURE__ */ new Map();
-@@ -2227,7 +2421,8 @@
+@@ -2227,7 +2441,8 @@
  		* @param configure - pure control selection, called once before defaults and validation.
  		* @returns a prepared config and its registration-bound stream entry point.
  		*/
@@ -418,7 +439,7 @@
  			signal?.throwIfAborted();
  			const { provider, model, ...controls } = config;
  			const registration = this.registration(provider);
-@@ -2321,6 +2516,7 @@
+@@ -2321,6 +2536,7 @@
  			try {
  				const registration = prepared?.registration ?? this.registration(options.provider);
  				const adapter = registration.adapter;
@@ -426,7 +447,7 @@
  				let modelInfo;
  				let resolvedConfig;
  				let dispatch;
-@@ -2356,7 +2552,7 @@
+@@ -2356,7 +2572,7 @@
  					};
  					if (Object.isFrozen(resolvedOptions)) deepFreeze(projectedOptions);
  				}
@@ -435,7 +456,7 @@
  			} catch (error) {
  				yield adapterFailureChunk(error, options.signal);
  				return;
-@@ -2404,6 +2600,7 @@
+@@ -2404,6 +2620,7 @@
  			return this.streamWithRegistration(options);
  		}
  		streamWithRegistration(options, prepared) {
@@ -443,7 +464,7 @@
  			return this.ctx.waterfall(this, "llm/stream", options, () => this.adapterStream(options, prepared));
  		}
  	};
-@@ -2436,4 +2633,4 @@
+@@ -2436,4 +2653,4 @@
  	};
  }
  //#endregion
@@ -606,7 +627,16 @@
  	ctx;
  	source;
  	tools;
-@@ -356,6 +357,7 @@
+@@ -282,6 +283,8 @@
+ 		this.tools = ctx.tools;
+ 	}
+ 	get(name, scope, toolSet) {
++		// Every resolver may run plugin code, including later batch classification.
++		if (scope !== void 0) dshGoRecall.guardSession(this.ctx, { sessionId: scope.id, agent: scope, operation: "tool" });
+ 		return this.source.get === void 0 ? this.tools.executable(name, scope, toolSet) : this.source.get(name, scope, toolSet);
+ 	}
+ 	resolveExecution(name, scope, nested, toolSet) {
+@@ -356,6 +359,7 @@
  				...base,
  				arguments: deepFreeze(detached)
  			};
@@ -614,8 +644,12 @@
  			this.deferredContexts.set(execution, deferredContexts);
  			this.contentFinalizers.set(execution, finalizerFor());
  			if (!rejected) this.contentProjectors.set(execution, capturedProjector);
-@@ -493,6 +495,8 @@
+@@ -491,8 +495,12 @@
+ 		}
+ 		exec.signal = signal;
  		try {
++			// An around-execute await must not reach a plugin-owned tool-set view.
++			dshGoRecall.guardTool(this.ctx, exec);
  			const tool = this.resolveExecution(exec.name, exec.agent, exec.parent !== void 0, exec.toolSet);
  			if (!tool) throw new ToolNotFoundError(exec.name);
 +			// Final synchronous guard: an around-execute wrapper may have awaited.
@@ -623,3 +657,19 @@
  			state.bodyInvoked = true;
  			const returned = await tool.execute(exec.arguments, exec);
  			const result = this.createSuccessResult(exec, tool, returned);
+@@ -711,6 +719,7 @@
+ 		const additionalContexts = [...result.additionalContexts ?? [], ...decisionContexts];
+ 		if (Object.hasOwn(decision, "value")) {
+ 			if (result.isError) throw new TypeError("tools/post-execute cannot replace the value of a failed result");
++			dshGoRecall.guardTool(this.ctx, exec);
+ 			const tool = this.resolveExecution(exec.name, exec.agent, exec.parent !== void 0, exec.toolSet);
+ 			if (tool === void 0) throw new ToolNotFoundError(exec.name);
+ 			const replaced = this.createSuccessResult(exec, tool, decision.value);
+@@ -774,6 +783,7 @@
+ 			...result.meta !== void 0 ? { meta: result.meta } : {},
+ 			...result.additionalContexts !== void 0 ? { additionalContexts: result.additionalContexts } : {}
+ 		});
++		dshGoRecall.guardTool(this.ctx, exec);
+ 		const tool = this.resolveExecution(exec.name, exec.agent, exec.parent !== void 0, exec.toolSet);
+ 		if (tool === void 0) throw new ToolNotFoundError(exec.name);
+ 		const normalized = this.createSuccessResult(exec, tool, result.value);

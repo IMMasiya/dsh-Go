@@ -256,10 +256,12 @@ class DshMux {
     _generation = null;
     if (link != null) await link.close(1000, 'client closed');
     _setState(DshConnectionState.closed);
-    await _states.close();
-    await _hostEvents.close();
-    await _hostReceipts.close();
-    await _generations.close();
+    // Closing broadcasts stops new events immediately. Their done delivery is
+    // owned by listeners, and a paused listener must not hold transport teardown.
+    unawaited(_states.close());
+    unawaited(_hostEvents.close());
+    unawaited(_hostReceipts.close());
+    unawaited(_generations.close());
   }
 
   // ---------------------------------------------------------------------------

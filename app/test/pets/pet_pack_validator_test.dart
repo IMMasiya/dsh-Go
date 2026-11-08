@@ -275,6 +275,75 @@ void main() {
     }
   });
 
+  test('C907 sheet names must fit the UTF8 filesystem component byte limit', () {
+    final good = '${'界' * 83}xx.png', bad = '${'界' * 84}.png';
+    expect(utf8.encode(good), hasLength(255));
+    expect(utf8.encode(bad), hasLength(256));
+    final pixels = png(32, 16);
+    for (final profile in PetValidationProfile.values) {
+      final allowed = packJson(sheet: good)..addAll({'author': 'A', 'license': 'CC0', 'source': 'fixture'});
+      final rejected = packJson(sheet: bad)..addAll({'author': 'A', 'license': 'CC0', 'source': 'fixture'});
+      expect(() => PetPackValidator.validateParts(allowed, {good: pixels}, profile: profile), returnsNormally);
+      expect(() => PetPackValidator.validateParts(rejected, {bad: pixels}, profile: profile), denied('sheet-name'));
+    }
+  });
+
+  test('C907 unreferenced stored members cannot overlap referenced local records', () {
+    final bytes = zipFiles({
+      'extra.bin': [1, 2, 3],
+      'pack.json': utf8.encode(jsonEncode(packJson())),
+      'idle.png': png(32, 16),
+    });
+    final data = ByteData.sublistView(bytes);
+    final eocd = bytes.length - 22;
+    expect(data.getUint32(eocd, Endian.little), 0x06054b50);
+    final central = data.getUint32(eocd + 16, Endian.little);
+    expect(data.getUint32(central, Endian.little), 0x02014b50);
+    final local = data.getUint32(central + 42, Endian.little);
+    final start = local + 30 + data.getUint16(local + 26, Endian.little) + data.getUint16(local + 28, Endian.little);
+    // The first entry's payload now spans the two subsequent local records.
+    // Neither pack.json nor its PNG references it, so no readFile of extra.bin occurs.
+    final size = central - start;
+    data.setUint16(central + 10, 0, Endian.little);
+    data.setUint16(local + 8, 0, Endian.little);
+    data.setUint32(central + 20, size, Endian.little);
+    data.setUint32(central + 24, size, Endian.little);
+    data.setUint32(local + 18, size, Endian.little);
+    data.setUint32(local + 22, size, Endian.little);
+    expect(() => PetArchive.read(bytes), denied('archive-member-range'));
+    expect(() => PetPackValidator.validateArchive(bytes), denied('archive-member-range'));
+  });
+
+  test('C907 unreferenced file headers and directory payloads are range checked', () {
+    final malformed = zipFiles({
+      'extra.bin': [1],
+      'pack.json': utf8.encode(jsonEncode(packJson())),
+      'idle.png': png(32, 16),
+    });
+    final fileData = ByteData.sublistView(malformed);
+    fileData.setUint16(28, 0xffff, Endian.little);
+    expect(() => PetArchive.read(malformed), denied('archive-member-range'));
+
+    final files = Archive()
+      ..add(ArchiveFile.directory('extra/'))
+      ..add(ArchiveFile.bytes('pack.json', utf8.encode(jsonEncode(packJson()))))
+      ..add(ArchiveFile.bytes('idle.png', png(32, 16)));
+    final bytes = Uint8List.fromList(ZipEncoder().encode(files));
+    expect(() => PetPackValidator.validateArchive(bytes), returnsNormally);
+    final data = ByteData.sublistView(bytes);
+    final central = data.getUint32(bytes.length - 22 + 16, Endian.little);
+    final local = data.getUint32(central + 42, Endian.little);
+    final start = local + 30 + data.getUint16(local + 26, Endian.little) + data.getUint16(local + 28, Endian.little);
+    final size = central - start;
+    data.setUint16(central + 10, 0, Endian.little);
+    data.setUint16(local + 8, 0, Endian.little);
+    data.setUint32(central + 20, size, Endian.little);
+    data.setUint32(central + 24, size, Endian.little);
+    data.setUint32(local + 18, size, Endian.little);
+    data.setUint32(local + 22, size, Endian.little);
+    expect(() => PetArchive.read(bytes), denied('archive-member-range'));
+  });
+
   final archiveCases = {
     for (final item in fixture('pet-validation-small.json')['archive'] as List) item['name'] as String: item,
   };

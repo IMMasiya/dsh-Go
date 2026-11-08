@@ -4766,6 +4766,96 @@ abstract class L10n {
   /// **'「{name}」来了'**
   String botsPetImportDone(String name);
 
+  /// No description provided for @botsPetCodexTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'「{name}」是从 Codex 宠物转过来的'**
+  String botsPetCodexTitle(String name);
+
+  /// No description provided for @botsPetCodexBody.
+  ///
+  /// In zh, this message translates to:
+  /// **'大部分照原样，有几处不完全一样：'**
+  String get botsPetCodexBody;
+
+  /// No description provided for @botsPetCodexOk.
+  ///
+  /// In zh, this message translates to:
+  /// **'知道了'**
+  String get botsPetCodexOk;
+
+  /// No description provided for @botsPetCodexLoops.
+  ///
+  /// In zh, this message translates to:
+  /// **'动作会一直循环到状态变化，不像 Codex 里跑几遍就回到待机'**
+  String get botsPetCodexLoops;
+
+  /// No description provided for @botsPetCodexRoamLeft.
+  ///
+  /// In zh, this message translates to:
+  /// **'往左走用的是往右走那一行的镜像'**
+  String get botsPetCodexRoamLeft;
+
+  /// No description provided for @botsPetCodexDrag.
+  ///
+  /// In zh, this message translates to:
+  /// **'拖着它时一律用朝右的那一行'**
+  String get botsPetCodexDrag;
+
+  /// No description provided for @botsPetCodexSleep.
+  ///
+  /// In zh, this message translates to:
+  /// **'睡觉时用待机的第一帧'**
+  String get botsPetCodexSleep;
+
+  /// No description provided for @botsPetCodexLook.
+  ///
+  /// In zh, this message translates to:
+  /// **'看向不同方向的那些格子没用上'**
+  String get botsPetCodexLook;
+
+  /// No description provided for @botsPetCodexWebp.
+  ///
+  /// In zh, this message translates to:
+  /// **'WebP 图转成了 PNG'**
+  String get botsPetCodexWebp;
+
+  /// No description provided for @botsPetCodexCustomTracks.
+  ///
+  /// In zh, this message translates to:
+  /// **'自定义的动作行没接到任何状态上'**
+  String get botsPetCodexCustomTracks;
+
+  /// No description provided for @botsPetCodexFps.
+  ///
+  /// In zh, this message translates to:
+  /// **'帧率换算成毫秒时取了整'**
+  String get botsPetCodexFps;
+
+  /// No description provided for @botsPetCodexOneShot.
+  ///
+  /// In zh, this message translates to:
+  /// **'只播一次的动作，播完回到哪里由 DSH 决定'**
+  String get botsPetCodexOneShot;
+
+  /// No description provided for @botsPetCodexMissingAuthor.
+  ///
+  /// In zh, this message translates to:
+  /// **'包里没写作者'**
+  String get botsPetCodexMissingAuthor;
+
+  /// No description provided for @botsPetCodexMissingLicense.
+  ///
+  /// In zh, this message translates to:
+  /// **'包里没写授权'**
+  String get botsPetCodexMissingLicense;
+
+  /// No description provided for @botsPetCodexMissingSource.
+  ///
+  /// In zh, this message translates to:
+  /// **'包里没写来源'**
+  String get botsPetCodexMissingSource;
+
   /// No description provided for @botsPetImportReplaced.
   ///
   /// In zh, this message translates to:
@@ -8396,6 +8486,12 @@ abstract class L10n {
   /// **'聊天记录'**
   String get companionLogTitle;
 
+  /// No description provided for @companionContextUnsupported.
+  ///
+  /// In zh, this message translates to:
+  /// **'这台主机的伙伴还不支持上下文：她的名字、设定和刚才发生的事传不过去，只发你说的话。升级主机或换成轻量模式就好。'**
+  String get companionContextUnsupported;
+
   /// No description provided for @companionLogEmpty.
   ///
   /// In zh, this message translates to:
@@ -9146,23 +9242,11 @@ abstract class L10n {
   /// **'抱紧一点也没关系哦。'**
   String get companionHugClose;
 
-  /// No description provided for @companionTaskDone.
-  ///
-  /// In zh, this message translates to:
-  /// **'「{title}」那边跑完啦。'**
-  String companionTaskDone(String title);
-
   /// No description provided for @companionTaskDoneUntitled.
   ///
   /// In zh, this message translates to:
   /// **'你那边的任务跑完啦。'**
   String get companionTaskDoneUntitled;
-
-  /// No description provided for @companionTaskFailed.
-  ///
-  /// In zh, this message translates to:
-  /// **'「{title}」好像出错了，要去看看吗？'**
-  String companionTaskFailed(String title);
 
   /// No description provided for @companionTaskFailedUntitled.
   ///
@@ -9170,35 +9254,143 @@ abstract class L10n {
   /// **'你那边的任务好像出错了，要去看看吗？'**
   String get companionTaskFailedUntitled;
 
-  /// No description provided for @companionTaskApproval.
-  ///
-  /// In zh, this message translates to:
-  /// **'「{title}」在等你批准。'**
-  String companionTaskApproval(String title);
-
-  /// No description provided for @companionTaskApprovalUntitled.
-  ///
-  /// In zh, this message translates to:
-  /// **'你那边有件事在等你批准。'**
-  String get companionTaskApprovalUntitled;
-
-  /// No description provided for @companionTaskQuestion.
-  ///
-  /// In zh, this message translates to:
-  /// **'「{title}」有事想问你。'**
-  String companionTaskQuestion(String title);
-
-  /// No description provided for @companionTaskQuestionUntitled.
-  ///
-  /// In zh, this message translates to:
-  /// **'你那边有个问题在等你回答。'**
-  String get companionTaskQuestionUntitled;
-
   /// No description provided for @companionTaskOpen.
   ///
   /// In zh, this message translates to:
   /// **'去看看'**
   String get companionTaskOpen;
+
+  /// No description provided for @companionMenuSignals.
+  ///
+  /// In zh, this message translates to:
+  /// **'她会提起什么'**
+  String get companionMenuSignals;
+
+  /// No description provided for @companionSignalsHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'这些只在小屋里说给你听，不会发给模型。她只在你安静陪着她时开口，和「主动邀请」共用次数：一天最多两次，至少隔 6 小时，深夜不说；关掉「主动邀请」她也不说。'**
+  String get companionSignalsHint;
+
+  /// No description provided for @companionSignalState.
+  ///
+  /// In zh, this message translates to:
+  /// **'留意别的对话'**
+  String get companionSignalState;
+
+  /// No description provided for @companionSignalStateHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'这台主机上别的对话跑完或出错时，她心里有数'**
+  String get companionSignalStateHint;
+
+  /// No description provided for @companionSignalSpeech.
+  ///
+  /// In zh, this message translates to:
+  /// **'提一句'**
+  String get companionSignalSpeech;
+
+  /// No description provided for @companionSignalSpeechHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'挑你安静的时候说一句'**
+  String get companionSignalSpeechHint;
+
+  /// No description provided for @companionSignalVoice.
+  ///
+  /// In zh, this message translates to:
+  /// **'用声音说出来'**
+  String get companionSignalVoice;
+
+  /// No description provided for @companionSignalVoiceHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'她的声音开着时，把这句读出来'**
+  String get companionSignalVoiceHint;
+
+  /// No description provided for @companionSignalNight.
+  ///
+  /// In zh, this message translates to:
+  /// **'深夜提醒你休息'**
+  String get companionSignalNight;
+
+  /// No description provided for @companionSignalNightHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'深夜在小屋里待了一阵，她轻轻提醒一次'**
+  String get companionSignalNightHint;
+
+  /// No description provided for @companionSignalLateUse.
+  ///
+  /// In zh, this message translates to:
+  /// **'这么晚了还陪着我……要不要早点歇一会儿？'**
+  String get companionSignalLateUse;
+
+  /// No description provided for @companionRecallTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'完整模式里自动想起记忆'**
+  String get companionRecallTitle;
+
+  /// No description provided for @companionRecallHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'打开时换一段新对话；改动她记得的事会自动关掉'**
+  String get companionRecallHint;
+
+  /// No description provided for @companionRecallConfirm.
+  ///
+  /// In zh, this message translates to:
+  /// **'打开后，她确认过的记忆（最多 12 条）会跟着完整模式里她的每次回复一起发给模型。会开始一段新对话，现在这段留在主对话列表里。改动记忆后会自动关掉，到时可以再打开。'**
+  String get companionRecallConfirm;
+
+  /// No description provided for @companionRecallTurnOn.
+  ///
+  /// In zh, this message translates to:
+  /// **'打开'**
+  String get companionRecallTurnOn;
+
+  /// No description provided for @companionRecallOn.
+  ///
+  /// In zh, this message translates to:
+  /// **'好，从这段新对话起，我会想着你让我记住的事。'**
+  String get companionRecallOn;
+
+  /// No description provided for @companionRecallBusy.
+  ///
+  /// In zh, this message translates to:
+  /// **'另一个对话正在用自动想起记忆，先在那边关掉再来'**
+  String get companionRecallBusy;
+
+  /// No description provided for @companionRecallUnsupported.
+  ///
+  /// In zh, this message translates to:
+  /// **'这台主机现在开不了自动想起记忆'**
+  String get companionRecallUnsupported;
+
+  /// No description provided for @companionRecallFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'自动想起记忆没打开，再试一次吧'**
+  String get companionRecallFailed;
+
+  /// No description provided for @companionRecallOff.
+  ///
+  /// In zh, this message translates to:
+  /// **'自动想起记忆关了，下一句会开始一段新对话'**
+  String get companionRecallOff;
+
+  /// No description provided for @companionRecallOffFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'自动想起记忆没关掉，再试一次吧'**
+  String get companionRecallOffFailed;
+
+  /// No description provided for @companionRecallStopped.
+  ///
+  /// In zh, this message translates to:
+  /// **'自动想起记忆停了（她记得的事有改动），换成了一段新对话。想要的话可以在菜单里再打开。'**
+  String get companionRecallStopped;
 
   /// No description provided for @companionMenuVoice.
   ///

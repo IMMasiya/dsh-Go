@@ -2739,6 +2739,54 @@ class L10nEn extends L10n {
   }
 
   @override
+  String botsPetCodexTitle(String name) {
+    return '$name was converted from a Codex pet';
+  }
+
+  @override
+  String get botsPetCodexBody => 'Most of it carries over as it was. A few things differ:';
+
+  @override
+  String get botsPetCodexOk => 'Got it';
+
+  @override
+  String get botsPetCodexLoops =>
+      'Motions loop until the state changes, instead of settling back to idle after a few rounds as in Codex';
+
+  @override
+  String get botsPetCodexRoamLeft => 'Walking left mirrors the walking-right row';
+
+  @override
+  String get botsPetCodexDrag => 'Dragging always uses the facing-right row';
+
+  @override
+  String get botsPetCodexSleep => 'Sleeping shows the first idle frame';
+
+  @override
+  String get botsPetCodexLook => 'The look-in-each-direction cells are not used';
+
+  @override
+  String get botsPetCodexWebp => 'The WebP sheet was converted to PNG';
+
+  @override
+  String get botsPetCodexCustomTracks => 'Custom motion rows are not tied to any state';
+
+  @override
+  String get botsPetCodexFps => 'Frame rates were rounded to whole milliseconds';
+
+  @override
+  String get botsPetCodexOneShot => 'Where a play-once motion returns to is decided by DSH';
+
+  @override
+  String get botsPetCodexMissingAuthor => 'The pack names no author';
+
+  @override
+  String get botsPetCodexMissingLicense => 'The pack names no license';
+
+  @override
+  String get botsPetCodexMissingSource => 'The pack names no source';
+
+  @override
   String botsPetImportReplaced(String name) {
     return '$name was updated';
   }
@@ -4860,6 +4908,10 @@ class L10nEn extends L10n {
   String get companionLogTitle => 'Log';
 
   @override
+  String get companionContextUnsupported =>
+      'This host can\'t take her context yet: her name, persona and what just happened won\'t reach her, only what you say. Update the host or switch to light mode.';
+
+  @override
   String get companionLogEmpty => 'Nothing said yet.';
 
   @override
@@ -5254,39 +5306,82 @@ class L10nEn extends L10n {
   String get companionHugClose => 'You can hold me tighter, you know.';
 
   @override
-  String companionTaskDone(String title) {
-    return '\"$title\" is done over there.';
-  }
-
-  @override
   String get companionTaskDoneUntitled => 'Your task over there is done.';
-
-  @override
-  String companionTaskFailed(String title) {
-    return '\"$title\" seems to have hit an error. Take a look?';
-  }
 
   @override
   String get companionTaskFailedUntitled => 'Your task over there seems to have hit an error. Take a look?';
 
   @override
-  String companionTaskApproval(String title) {
-    return '\"$title\" is waiting for your approval.';
-  }
-
-  @override
-  String get companionTaskApprovalUntitled => 'Something over there is waiting for your approval.';
-
-  @override
-  String companionTaskQuestion(String title) {
-    return '\"$title\" has a question for you.';
-  }
-
-  @override
-  String get companionTaskQuestionUntitled => 'There\'s a question waiting for you over there.';
-
-  @override
   String get companionTaskOpen => 'Take a look';
+
+  @override
+  String get companionMenuSignals => 'What she brings up';
+
+  @override
+  String get companionSignalsHint =>
+      'These are said only to you, here in her room; nothing goes to the model. She speaks up only while you sit quietly with her, and shares Invitations\' allowance: at most twice a day, at least 6 hours apart, never late at night. With Invitations off she stays quiet too.';
+
+  @override
+  String get companionSignalState => 'Keep track of other conversations';
+
+  @override
+  String get companionSignalStateHint => 'She notices when another conversation on this host finishes or fails';
+
+  @override
+  String get companionSignalSpeech => 'Mention it';
+
+  @override
+  String get companionSignalSpeechHint => 'She says a short line while you\'re quiet';
+
+  @override
+  String get companionSignalVoice => 'Say it out loud';
+
+  @override
+  String get companionSignalVoiceHint => 'Reads the line aloud when her voice is on';
+
+  @override
+  String get companionSignalNight => 'Late-night reminder to rest';
+
+  @override
+  String get companionSignalNightHint => 'After a while in her room late at night, she gently reminds you once';
+
+  @override
+  String get companionSignalLateUse => 'It\'s so late and you\'re still here with me... maybe rest a little?';
+
+  @override
+  String get companionRecallTitle => 'Remember things in full mode';
+
+  @override
+  String get companionRecallHint => 'Turning it on starts a new conversation; changing what she remembers turns it off';
+
+  @override
+  String get companionRecallConfirm =>
+      'Once on, her confirmed memories (up to 12) go to the model along with each of her replies in full mode. A new conversation starts; the current one stays in the main chat list. Changing her memories turns this off, and you can turn it on again.';
+
+  @override
+  String get companionRecallTurnOn => 'Turn on';
+
+  @override
+  String get companionRecallOn => 'From this new conversation on, I\'ll keep in mind what you asked me to remember.';
+
+  @override
+  String get companionRecallBusy => 'Another conversation is already using automatic recall. Turn it off there first.';
+
+  @override
+  String get companionRecallUnsupported => 'This host can\'t turn on automatic recall right now';
+
+  @override
+  String get companionRecallFailed => 'Automatic recall didn\'t turn on. Try again.';
+
+  @override
+  String get companionRecallOff => 'Automatic recall is off. Your next message starts a new conversation.';
+
+  @override
+  String get companionRecallOffFailed => 'Automatic recall didn\'t turn off. Try again.';
+
+  @override
+  String get companionRecallStopped =>
+      'Automatic recall stopped (what she remembers changed), so a new conversation began. You can turn it on again from the menu.';
 
   @override
   String get companionMenuVoice => 'Her voice';

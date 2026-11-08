@@ -9,9 +9,20 @@ export interface MarketAsset {
   size: number;
 }
 
+const FAILURE_CODES = [
+  'invalid-path', 'upstream-http', 'upstream-size', 'upstream-empty', 'body-too-large',
+  'invalid-adapter-size', 'asset-integrity', 'invalid-adapter', 'stored-json-missing', 'stored-integrity', 'asset-race',
+  'invalid-json', 'catalog-too-large', 'invalid-catalog', 'invalid-publication', 'invalid-release-history',
+  'unbound-catalog', 'history-migration-required', 'stored-publication-too-large', 'stored-publication-size',
+  'publication-condition', 'version-rewritten', 'release-history-full', 'publication-too-large',
+  'future-catalog', 'catalog-rollback', 'withdrawal-rollback', 'missing-withdrawal', 'blocked-version-rollback',
+  'stage-budget', 'invalid-stage', 'stage-conflict', 'publication-conflict',
+] as const;
 export class PetMarketError extends Error {
-  constructor(readonly code: string) { super(code); }
+  constructor(readonly code: typeof FAILURE_CODES[number]) { super(code); }
 }
+export const failureCode = (error: unknown): string => error instanceof PetMarketError && FAILURE_CODES.includes(error.code)
+  ? error.code : 'storage-or-network';
 
 export const hex = (bytes: ArrayBuffer) => Array.from(new Uint8Array(bytes), b => b.toString(16).padStart(2, '0')).join('');
 export const digest = async (bytes: Uint8Array) => hex(await crypto.subtle.digest('SHA-256', bytes));
@@ -68,6 +79,14 @@ export function storedAsset(object: R2Object | null, asset: MarketAsset): boolea
   return !!object && object.size === asset.size && !!object.checksums?.sha256 && hex(object.checksums.sha256) === asset.sha256;
 }
 
+// Migrated JSON may not carry R2's native SHA. Its bounded actual bytes still
+// have to pass checkJson; an explicitly supplied, wrong native SHA is never
+// treated as absent. Opaque ZIP/preview objects keep requiring a native SHA.
+function storedJsonMetadata(object: R2Object | null, asset: MarketAsset): boolean {
+  return !!object && object.size === asset.size &&
+    (!object.checksums?.sha256 || hex(object.checksums.sha256) === asset.sha256);
+}
+
 function jsonSize(asset: MarketAsset): void {
   if (!Number.isSafeInteger(asset.size) || asset.size < 1 || asset.size > ADAPTER_CAP)
     throw new PetMarketError('invalid-adapter-size');
@@ -93,7 +112,7 @@ export async function readStoredJson(env: Env, asset: MarketAsset,
   jsonSize(asset);
   const object = await env.DL.get(asset.url.slice(1));
   if (!object) throw new PetMarketError('stored-json-missing');
-  if (object.size !== asset.size) {
+  if (!storedJsonMetadata(object, asset)) {
     cancel(object.body);
     throw new PetMarketError('stored-integrity');
   }
@@ -113,7 +132,8 @@ export async function mirrorAsset(env: Env, base: string, asset: MarketAsset, ty
   const key = asset.url.slice(1);
   const previous = await env.DL.head(key);
   if (previous) {
-    if (!storedAsset(previous, asset)) throw new PetMarketError('stored-integrity');
+    if (!(validateJson ? storedJsonMetadata(previous, asset) : storedAsset(previous, asset)))
+      throw new PetMarketError('stored-integrity');
     if (validateJson) await readStoredJson(env, asset, validateJson);
     return;
   }
@@ -166,7 +186,9 @@ export async function mirrorAsset(env: Env, base: string, asset: MarketAsset, ty
     }
   }
   if (!result) {
-    if (!storedAsset(await env.DL.head(key), asset)) throw new PetMarketError('asset-race');
+    const winner = await env.DL.head(key);
+    if (!(validateJson ? storedJsonMetadata(winner, asset) : storedAsset(winner, asset)))
+      throw new PetMarketError('asset-race');
     if (validateJson) await readStoredJson(env, asset, validateJson);
   }
 }

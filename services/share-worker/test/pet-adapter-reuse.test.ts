@@ -115,6 +115,56 @@ it('rejects an out-of-budget adapter before reading its stored body', async () =
   expect(get).not.toHaveBeenCalled();
 });
 
+it.each(['head', 'get', 'both'])('accepts missing native SHA in %s only after actual-byte and current-profile verification', async missing => {
+  const c = setup(true); await c.stage();
+  const head = c.dl.head.bind(c.dl), get = c.dl.get.bind(c.dl);
+  vi.spyOn(c.dl, 'head').mockImplementation(async key => {
+    const value = await head(key);
+    return value && key === c.row.url.slice(1) && missing !== 'get' ? { ...value, checksums: {} } as any : value;
+  });
+  vi.spyOn(c.dl, 'get').mockImplementation(async (key, options) => {
+    const value = await get(key, options);
+    return value && key === c.row.url.slice(1) && missing !== 'head' ? { ...value, checksums: {} } as any : value;
+  });
+  await expect(publishPetCatalog(c.env, 'adapters')).resolves.toBeUndefined();
+  expect((await petMarket(request(c.row.url), c.env, c.ctx)).status).toBe(200);
+  // A present wrong checksum still overrides valid actual bytes.
+  vi.mocked(c.dl.head).mockImplementation(async key => {
+    const value = await head(key);
+    return value && key === c.row.url.slice(1) ? { ...value, checksums: { sha256: new Uint8Array(32).buffer } } : value;
+  });
+  await expect(publishPetCatalog(c.env, 'adapters')).rejects.toThrow('stored-integrity');
+});
+
+it('never accepts the old invalid profile merely because native checksums are absent', async () => {
+  const c = setup(); await c.stage();
+  const head = c.dl.head.bind(c.dl), get = c.dl.get.bind(c.dl);
+  vi.spyOn(c.dl, 'head').mockImplementation(async key => {
+    const value = await head(key); return value ? { ...value, checksums: {} } as any : value;
+  });
+  vi.spyOn(c.dl, 'get').mockImplementation(async (key, options) => {
+    const value = await get(key, options); return value ? { ...value, checksums: {} } as any : value;
+  });
+  await expect(publishPetCatalog(c.env, 'adapters')).rejects.toThrow('invalid-adapter');
+  expect(c.dl.objects.has(publication)).toBe(false);
+});
+
+it('verifies an actual competing JSON winner whose native checksum is absent', async () => {
+  const c = setup(true), put = c.dl.put.bind(c.dl), head = c.dl.head.bind(c.dl), get = c.dl.get.bind(c.dl);
+  vi.spyOn(c.dl, 'put').mockImplementation(async (key, value, options) => {
+    const result = await put(key, value, options);
+    return key === c.row.url.slice(1) ? null : result;
+  });
+  vi.spyOn(c.dl, 'head').mockImplementation(async key => {
+    const value = await head(key); return value && key === c.row.url.slice(1) ? { ...value, checksums: {} } as any : value;
+  });
+  const reads = vi.spyOn(c.dl, 'get').mockImplementation(async (key, options) => {
+    const value = await get(key, options); return value && key === c.row.url.slice(1) ? { ...value, checksums: {} } as any : value;
+  });
+  await publishPetCatalog(c.env, 'adapters');
+  expect(reads.mock.calls.filter(([key]) => key === c.row.url.slice(1))).toHaveLength(1);
+});
+
 it('rechecks a competing create-once adapter winner instead of trusting its HEAD alone', async () => {
   const c = setup(true), put = c.dl.put.bind(c.dl), get = c.dl.get.bind(c.dl);
   vi.spyOn(c.dl, 'put').mockImplementation(async (key, value, options) => {

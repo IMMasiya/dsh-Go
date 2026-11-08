@@ -452,6 +452,15 @@ class ChatAlertsController extends Notifier<ChatAlert?> {
   void _attach(HostRef host, HostConnection? connection) {
     final current = _trackers[host];
     if (current != null && identical(current.$1, connection)) return;
+    if (current != null &&
+        connection != null &&
+        identical(current.$1.client, connection.client) &&
+        current.$2.updateCompanionConnection(previous: current.$1, next: connection)) {
+      // A name/cwd refresh wraps the same live client. Keep its pending scopes,
+      // phone card and alert history; future metadata uses the new wrapper.
+      _trackers[host] = (connection, current.$2);
+      return;
+    }
     if (current != null) {
       _cancelPhonePrompt(host: host);
       _trackers.remove(host);
@@ -464,7 +473,7 @@ class ChatAlertsController extends Notifier<ChatAlert?> {
     bool attached() =>
         scope.mounted &&
         identical(_lifetime, lifetime) &&
-        identical(_trackers[host]?.$1, connection) &&
+        identical(_trackers[host]?.$1.client, connection.client) &&
         identical(_trackers[host]?.$2, tracker);
     tracker = HostAlertTracker(
       host: host,

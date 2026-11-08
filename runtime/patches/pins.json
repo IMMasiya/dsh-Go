@@ -1531,11 +1531,11 @@
           "before": "eafe4adbccc2b87377e4839f1a6093ebe1a0858caadc6c3dbffef19cb1dbc54b"
         },
         "node_modules/@deepseek-ai/dsh-llm-deepseek/lib/index.js": {
-          "after": "3ecbabcacad28c409e36cfccebdc429d00b455cb1315bc0d6c2252d4e391f76b",
+          "after": "2e265c0bb1b759035682f65a8243ac8c9a33d7c6e793530fa290b48b0c55605f",
           "before": "955dc7bc7ca6c857ff4a7e373b87c143b96a4c43fc80325b67dc0982600dcc75"
         },
         "node_modules/@deepseek-ai/dsh-llm/lib/index.js": {
-          "after": "d46febb9df41fb1aa818e1c0ed23507a8e82a1b7ef4a7a8dd24f29be86177c94",
+          "after": "57b013af341a490b68573f934173c6ce2b1a2d3e1207b79fae5089b941846ba3",
           "before": "2f3e4c549b158136d6355c6e29f25bc09e31c622f31dbbc2e82bab7cd537eda0"
         },
         "node_modules/@deepseek-ai/dsh-session-title-llm/lib/index.js": {
@@ -1559,7 +1559,7 @@
           "before": "db667cb6545bb642bc2609d49f797b1d7e852e4197d5d38bf541abc7ec078599"
         },
         "node_modules/@deepseek-ai/dsh-tools/lib/pipeline.js": {
-          "after": "3ea67df6db4578ba88bbf2b391da7006b4ff0f6650661572dae46c5270ce0101",
+          "after": "b81acfa19e913d50c5c5b67eed76c49dfa3c718182581a577bab6fec05dc736e",
           "before": "eb891d29b281a0ed02e6b69c3128ee29ee525292c8565133999280cf20edcb5c"
         }
       }
@@ -1603,12 +1603,12 @@
           "before": "ae6be2d8b287b5e410d026acd2fdfc553ebb95565f7b361029c7fb5bcda5fd27"
         },
         "node_modules/@deepseek-ai/dsh-tools/lib/index.js": {
-          "after": "014eeff09dea063148d15d256d6dbb524a4c94a23a909a9ada728a722b91cf01",
+          "after": "8ae46512081dde3af5a12b7c3d37c2d7a89f48e344c15e2fdc2887f4176c8bf0",
           "before": "1889cbf718d64518dd83245d4dba1e1f080b2c5326259c3ed5b1be7a7666a2bd"
         },
         "node_modules/@deepseek-ai/dsh-tools/lib/pipeline.js": {
-          "after": "aa6745a87779e41864bf1721d51ead909554053fea3064d9581c6ed94ba451a2",
-          "before": "3ea67df6db4578ba88bbf2b391da7006b4ff0f6650661572dae46c5270ce0101"
+          "after": "ffc614ba600aaf9f3c2a4497dff441c8e8c228c22212741b9de43a0958b0b907",
+          "before": "b81acfa19e913d50c5c5b67eed76c49dfa3c718182581a577bab6fec05dc736e"
         }
       }
     },

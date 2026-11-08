@@ -314,7 +314,7 @@ it('source failure and R2 failure have different stale semantics; TTL is not sou
   c.feed.mockImplementation(async () => new Response(null, { status: 503 }));
   vi.spyOn(console, 'error').mockImplementation(() => {});
   vi.spyOn(Date, 'now').mockReturnValue(now + 86_400_000);
-  await publishPetMarket(c.env);
+  await expect(publishPetMarket(c.env)).rejects.toThrow('pet-market-publish-failed:pets=upstream-http;adapters=upstream-http');
   const healthy = await petMarket(request('/market/adapters.json'), c.env, c.ctx);
   expect(healthy.status).toBe(200); expect(healthy.headers.get('X-Market-Stale')).toBe('false');
   expect(healthy.headers.get('Warning')).toBeNull(); expect(healthy.headers.get('Cache-Control')).toBe('public, max-age=300');

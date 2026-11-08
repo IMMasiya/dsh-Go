@@ -25,7 +25,7 @@
  		ctx.tools.register(bashTool(void 0));
 --- a/node_modules/@deepseek-ai/dsh-tools/lib/index.js
 +++ b/node_modules/@deepseek-ai/dsh-tools/lib/index.js
-@@ -1,9 +1,118 @@
+@@ -1,9 +1,120 @@
 +export const dshGoCompanionResultVersion = 1;
  import { a as ToolNotFoundError, c as assertObjectJsonSchema, d as isPlainJsonArray, f as isPlainJsonRecord, h as ToolExecutorUnavailableError, i as ToolActivationError, l as assertSupportedJsonSchema, m as ToolBatchExecutionError, n as TOOL_ABORTED, o as ToolOutputError, p as validateJsonSchemaValue, r as TOOL_ABORTED_BEFORE_DISPATCH, s as JsonSchemaError, t as RUN_CODE_NAME, u as isJsonSchemaRecord } from "./shared-DTdn5dXO.js";
  import { Service } from "@deepseek-ai/cordis";
@@ -50,6 +50,8 @@
 +	return "command";
 +}
 +function createCompanionResultRegistry() {
++	// Only the native wrapper function carries provenance. Definition copies
++	// can retain it; replacement execute functions and metadata cannot mint it.
 +	const producers = new WeakMap(), executions = new WeakMap(), finalized = new WeakMap(), listeners = new Set();
 +	const strip = (result) => {
 +		if (result.meta === null || typeof result.meta !== "object" || !Object.hasOwn(result.meta, COMPANION_RESULT_META)) return result;
@@ -92,15 +94,15 @@
 +					throw error;
 +				}
 +			} };
-+			producers.set(wrapped, { token, execute: wrapped.execute });
++			producers.set(wrapped.execute, { token, execute: wrapped.execute });
 +			return wrapped;
 +		},
 +		hasProducer(definition) {
-+			const producer = definition && producers.get(definition);
++			const producer = producers.get(definition?.execute);
 +			return producer !== void 0 && definition.execute === producer.execute;
 +		},
 +		capture(exec, definition) {
-+			const producer = definition && producers.get(definition);
++			const producer = producers.get(definition?.execute);
 +			if (producer === void 0 || definition.execute !== producer.execute) return;
 +			executions.set(exec, { token: producer.token, agent: exec.agent, session: exec.agent?.session, callId: exec.callId,
 +				signal: exec.signal, runKind: companionRunKind(exec.arguments?.command), started: false });
@@ -144,7 +146,7 @@
  //#region lib/types/schema.js
  /** Unified JSON-value schema DSL, inference, compilation, and tool definition helpers. @module dsh-tools/schema */
  const ANNOTATION_KEYS = [
-@@ -402,6 +511,7 @@
+@@ -402,6 +513,7 @@
  };
  /** Concrete tool registry and scoped executor dispatcher. */
  var ToolsService = class extends Service {
@@ -198,7 +200,7 @@
  		}
  		this.results.push({
  			callId: block.id,
-@@ -358,6 +363,7 @@
+@@ -360,6 +365,7 @@
  				arguments: deepFreeze(detached)
  			};
  			dshGoRecall.captureTool(execution, agent);
@@ -206,7 +208,7 @@
  			this.deferredContexts.set(execution, deferredContexts);
  			this.contentFinalizers.set(execution, finalizerFor());
  			if (!rejected) this.contentProjectors.set(execution, capturedProjector);
-@@ -591,6 +597,7 @@
+@@ -595,6 +601,7 @@
  		} catch (error) {
  			finalResult = this.materializeFinalResult(toolErrorResult(error));
  		}

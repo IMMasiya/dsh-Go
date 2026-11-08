@@ -4,6 +4,7 @@ import worker from '../src/index';
 import { validateAdapter, validatePetCatalog } from '../src/pet-catalog';
 import { publishPetCatalog, publishPetMarket } from '../src/pet-market';
 import { publicationKey } from '../src/pet-market-state';
+import { stageKey } from '../src/pet-market-stage';
 import { makeCtx, makeEnv } from './fakes';
 import { FixedStream, PetBucket, sha } from './pet-market-fakes';
 
@@ -255,7 +256,7 @@ it('isolates a failed pets source from an otherwise valid adapter publication', 
   docs.pets.pets[0].url = 'https://evil.example/nope.zip';
   feed(docs);
   const log = vi.spyOn(console, 'error').mockImplementation(() => {});
-  await publishPetMarket(c.env);
+  await expect(publishPetMarket(c.env)).rejects.toThrow('pet-market-publish-failed:pets=invalid-catalog');
   expect(c.dl.objects.has(publicationKey('pets'))).toBe(false);
   expect(c.dl.objects.has(publicationKey('adapters'))).toBe(true);
   expect(log).toHaveBeenCalledWith('pet market publish failed', 'pets', 'invalid-catalog');
@@ -317,7 +318,8 @@ it('stages a large initial feed across runs without exposing an incomplete index
   const f = feed(docs);
   await expect(publishPetCatalog(c.env, 'adapters')).rejects.toThrow('stage-budget');
   expect(c.dl.objects.has(publicationKey('adapters'))).toBe(false);
-  expect(c.dl.objects.size).toBe(24);
+  expect(c.dl.objects.size).toBe(25); // 24 verified resources plus their durable cursor.
+  expect(JSON.parse(new TextDecoder().decode(c.dl.objects.get(stageKey('adapters'))!.bytes)).cursor).toBe(24);
   f.mockClear();
   await publishPetCatalog(c.env, 'adapters');
   expect(f).toHaveBeenCalledTimes(2); // One index, one remaining artifact.

@@ -1,6 +1,8 @@
-# C903：宠物与适配表市场的发布状态与读接口
+# C903 / C907：宠物与适配表市场的发布状态与读接口
 
 本补丁在 dsh-go `c76c0db2d83573895f240307179e19802f674b1d` 上整合 C700，并修复完整发布语义批准、跨版本资源绑定和当前 App 契约。公开目录仍是 schema 1；内部 publication envelope 为版本 1；市场的维护者批准为 schema 2。这三个版本号代表不同协议。
+
+C907 在 `2ef25c07be4c63df15349ea491da6763da1b0528` 基底上补充迁移 JSON 校验、持久分批续做、缺失资源修复、当前 ETag 验证缓存和 Cron 失败汇总；没有修改上述公开协议或目录容量上限。
 
 本模块提供发布、目录读取与资源完整性校验。App 的浏览页、安装接线、模型 probe 和效果验收由主线完成。这里记录的是待部署代码合同；没有声明当前 go/dl 域名已配置、市场内容已经上架或实际模型已经验证。既有插件市场的 KV、静态目录与刷新逻辑不变。
 
@@ -56,9 +58,9 @@ GET、HEAD、OPTIONS 可用；其他方法 405。索引和单指纹查询支持 
 发布顺序：
 
 1. 有界读取并校验源目录。
-2. 从 R2 读取、完整校验当前 envelope；不得使用内存缓存的历史发布。
+2. 向 R2 检查当前 envelope；首次或 ETag 变化时读取并完整校验正文。仅当当前条件 GET 证明 ETag 和长度仍与已验证状态一致时，才复用该状态；缺失、故障和校验失败都清除其授权缓存。
 3. 校验时间和撤回连续性，合并每个当前条目的历史资源 binding，并检查状态上限。
-4. 验证/暂存该分区所有需要的新资源。adapter 即使已在 R2、仍是当前资源或目录字节完全相同，也必须重新读取完整有界 JSON，核真实 size/SHA 与现行 profile；匹配 HEAD checksum 不能替代语法验证。未完成时不提交目录或 binding。目录无变化时，adapter 重验后结束而不额外提交状态。
+4. 按目录原顺序分批验证/暂存该分区的全部资源，以私有 CAS 检查点续做。adapter 即使已在 R2、仍是当前资源或目录字节完全相同，也必须在每次完整扫描中读取完整有界 JSON，核真实 size/SHA 与现行 profile；匹配 HEAD checksum 不能替代语法验证。ZIP/预览即使目录未变或只改元数据，也检查存在性和原生校验和，并重新镜像缺失对象。扫描未完成时不提交目录或 binding；未变目录扫描完成后不额外提交 publication。
 5. 对**同一个 envelope 对象**执行条件 PUT：已有对象使用读取时的 ETag/If-Match，首次使用 If-None-Match: *。
 6. 成功响应后才更新当前 isolate 的公开目录缓存。HTTP 目录响应只投影 `catalogText`。
 
@@ -66,7 +68,7 @@ GET、HEAD、OPTIONS 可用；其他方法 405。索引和单指纹查询支持 
 
 **调用方异常不一定证明 PUT 没有提交。** 已提交但确认丢失时，完整目录和 binding 已一起提交；重试必须重新读取。结果未知的早期 PUT 也可能在一次负读之后才尝试提交，但它仍携带原始条件，与同 key 的竞争写在提交时决胜。这里依赖 R2 对单 key 条件写的原子性，不声称跨 key 事务。[R2 一致性及条件写说明](https://developers.cloudflare.com/r2/reference/consistency/)；[Workers API 的 put/onlyIf 返回语义](https://developers.cloudflare.com/r2/api/workers/workers-api-reference/)。
 
-宠物和适配表各有自己的发布点；它们与既有插件分区之间没有跨分区事务。Cron 等待已启动的分区任务结束，单个宠物分区失败不阻止尝试另一个。
+宠物和适配表各有自己的发布点；它们与既有插件分区之间没有跨分区事务。宠物 publisher 顺序尝试两个分区，收集固定错误码后才拒绝；只要其中一个失败，即使插件分区成功，Cron 也失败。汇总形如 `pet-market-publish-failed:pets=stage-budget;adapters=stored-integrity`，未知异常仅记作 `storage-or-network`，不附原始异常、URL 或响应正文。顶层 Cron 等待插件和宠物 publisher 都结束后才报告失败。
 
 | 资源 | 明确上限 |
 | --- | ---: |
@@ -77,11 +79,27 @@ GET、HEAD、OPTIONS 可用；其他方法 405。索引和单指纹查询支持 
 | 单份预览 | 4 MiB |
 | adapter JSON | 256 KiB |
 | 一次宠物 Cron 新资源传输 | 两分区合计 24 个资源、256 MiB |
+| 一次 Cron 每个宠物/适配表分区的资源检查 | 最多 96 个资源（宠物一条有 ZIP、PNG、GIF 三个资源） |
+| 私有扫描检查点 | 每分区一个对象，最多 4096 字节 |
 | 单次上游请求 | 30 秒，须返回 200 |
 
 达到 envelope 字节/条目上限会拒绝新状态，保留当前提交；不删除旧 binding 腾空间。修改上限需要受审的新版本；容量迁移仍须保留完整历史。ZIP/预览用 FixedLengthStream 和 R2 SHA-256 校验；adapter 有界缓冲后校验数据语法。详情见 `pet-market-io.ts`。
 
+### 2.1. 分批扫描、身份绑定与预算
+
+私有 `market/_staging-v1/{pets,adapters}.json` 保存候选目录文本 SHA-256、规范化源站根的 SHA-256、读取到的 publication ETag（首次为 null）、当前校验指纹、资源总数和已验证前缀的游标。目录原顺序和每条宠物的 ZIP→PNG→GIF 顺序不排序、不省略；仍先执行完整目录、时间、撤回连续性和 lifetime binding 校验。只有实际成功验证的前缀可以推进游标；资源失败不推进，冷 isolate 从 R2 收据续做。候选、源站、校验指纹、发布基底或资源总数变化都会从零开始。上游候选须在完整扫描期间保持稳定，持续更换候选会重新扫描。
+
+首次检查点使用 If-None-Match: *，续写使用读到的 ETag/If-Match；每次写入附随机 nonce，确保重复 claim 的正文 ETag 也变化。检查点 CAS 失败报 `stage-conflict`，该调用不能提交 publication。达到资源/传输预算时，先条件保存已验证游标，再报 `stage-budget`；这表示“已持久保存但尚未完成”，有意让 Cron 失败，不能被解释为发布完成。成功的变更目录通过 publication 的单对象 CAS 提交；新 publication ETag 自动使旧检查点失效。未变目录的完整扫描结束时把游标条件重置为 0，下一轮继续检查缺失资源。检查点不是发布点，也不被读取路由用作下载授权。
+
+校验指纹由 `scripts/build-pet-market-profile.mjs` 自动生成：递归读取全部 Worker `src/**/*.ts`（排除 `generated`），加上生成器、build-site 接线、package.json、package-lock.json 和 tsconfig.json；对排序后的路径/文件 SHA-256 对再求 SHA-256。因此 validator、词表、IO 规则、新增 helper 和依赖/编译配置变化都使旧收据失效，无需手写 profile 版本号。`npm run build`、`npm test` 以及现有 dev/deploy build 接线都会重建生成模块；`node scripts/build-pet-market-profile.mjs --check` 和 profile 测试会拒绝陈旧生成物。无关 Worker 源码变化也会保守地重启扫描。
+
+预算按实际 R2 操作路径计算：一个资源至多 HEAD、PUT、竞争胜者 HEAD、JSON GET 四次；两分区各 96 个资源，至多 768 次资源操作。每分区的 publication GET/旧裸键 HEAD、检查点 GET/PUT 和最终 publication PUT 至多再加 5 次；现有插件两次 R2 PUT 和一次 KV PUT 合计后上界为 781 次内部请求。上游两个插件索引、两个宠物索引和 24 次资源传输合计最多 28 次外部请求。此界针对本 Cron 的现有路径；改动 IO 或新增任务时须重算。Cloudflare 官方的 Free 限额分别为 1000 次内部服务请求和 50 次外部请求：[Workers limits](https://developers.cloudflare.com/workers/platform/limits/#subrequests)。这些调用预算不等于真实部署的 CPU、内存或延迟验收。
+
+**验证过的不同对象不是跨 key 原子快照。** 运维在较早批次验证后删除某个资源，仍可能在稍后 publication 提交时造成该资源缺失；不能宣称提交时所有制品原子存在。读取该资源仍失败关闭为 503，下一次扫描从头检查并修复它。本协议依赖正常 writer 的资源 create-once 行为，publication 只保证目录和永久绑定在同一个对象中原子推进。
+
 ## 3. 故障、stale 与缓存寿命
+
+每个 Env 最多缓存宠物和适配表两份完整验证状态，受既有 envelope 字节/条数限制。每次读请求仍对 publication 发起条件 GET；R2 条件不满足时返回不带 body 的对象元数据，仅 ETag 和 size 都与缓存一致才可复用。每分区同一时间只执行一个读/验证过程，等待者结束等待后还须发起自己的当前条件读，所以等待期间发生的撤回不会被先前的读取结果掩盖。遇到 missing/error/无效状态立即清除完整状态缓存；另有的公开目录缓存只能 stale 浏览，不能授权制品。[R2 条件 GET 和 PUT 返回语义](https://developers.cloudflare.com/r2/api/workers/workers-api-reference/#bucket-method-definitions)。
 
 | 实际状态 | 目录 | 制品/指纹查找 |
 | --- | --- | --- |
@@ -123,6 +141,8 @@ GET、HEAD、OPTIONS 可用；其他方法 405。索引和单指纹查询支持 
 
 公开 index 只检查 envelope 的目录和历史结构，不逐条读 adapter；它可以展示一条资源暂不可用的记录。指纹查找和 adapter 文件 GET/HEAD/条件请求则先读取最多 256 KiB 的完整对象，核声明 size、实际字节数、SHA-256、UTF-8 JSON 与当前 profile；任何失败返回 503 artifact_unavailable，不能因条件命中返回 304。文件响应直接使用这份已验证的 bytes，支持单 Range、HEAD、ETag/If-Modified-Since 与 416；HEAD 忽略 Range。此门不使用裸目录、缓存目录或仅 HEAD 作为资源授权依据。
 
+迁移 JSON 的 HEAD 或 GET 可能没有原生 SHA-256 元数据；这时仅允许走上述实际字节校验，不能免验 profile。若原生 SHA 明确存在但错误，或者声明 size 错误，仍立即拒绝；竞争 create-once 的胜者也执行同样检查。ZIP/PNG/GIF 不使用这项 JSON 例外，仍要求匹配的原生 SHA。
+
 市场表与 C810/App 本地的当前适配状态有明确边界：下载后还须核 moc、用当前模型的 probe 验证每个 target/expression/motion，执行本地范围处理和效果验收。不能只取多 target 的第一个，不能把无 probe 的结构校验说成可直接安装或视觉效果已验证。本补丁不增加页面/stage 接线，不传送模型素材。notes 的市场文本上限为 4000 码点，主线本地检查器会缩短展示文本；不把市场文字长度当作 UI 展示保证。
 
 ## 6. 撤回与 C700 旧合同被替代的条款
@@ -146,8 +166,12 @@ GET、HEAD、OPTIONS 可用；其他方法 405。索引和单指纹查询支持 
 
 ```sh
 npm ci --ignore-scripts
+npm run build
 npm test -- --maxWorkers=1 --testTimeout=20000
 npm run typecheck
+node scripts/build-pet-market-profile.mjs --check
 ```
+
+C907 回归使用 600 和 1000 个实际有效、已暂存的 adapter JSON，跨全新模块/Env 续做并逐次计数 R2 调用；保持 schema 的 1000 项上限。另覆盖检查点身份变化、并发 CAS 胜负、存储/资源故障、扫描重置、验证后外部删除，以及 10,000 条历史的并发条件读取和等待期间撤回。profile 测试直接修改隔离源码副本，确认 validator、IO 和新增 helper 都改变指纹，且陈旧生成模块无法通过检查。
 
 完整 gate 包含既有 Worker 用例；单 worker 和显式 20 秒超时用于本地共享执行环境。R2/FixedLengthStream 单元替身模拟本文所用条件与校验合同；它们不替代真实 Cloudflare/R2/域名的部署验收。发布前需在有权限的测试环境验证原生 checksum、条件冲突、目录 origin、缓存及清除流程。C903 两仓代码、合成构建与测试是可复现证据，不是实机、真实模型或生产上线证明。
