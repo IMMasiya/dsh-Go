@@ -28,12 +28,14 @@ void main() {
 
   testWidgets('only explicit selection saves and does not operate the running background task', (tester) async {
     final h = await pumpPhone(tester, const PhoneDndPage(), native: FakePhoneNative(status: viewportStatus()));
+    expect(h.native!.methods, ['status', 'getPolicies', 'actionLog']);
+    h.native!.calls.clear();
     expect(h.native!.callsOf('setBackgroundViewport'), isEmpty);
     await tester.tap(find.byKey(const ValueKey('phone-viewport-landscape')));
     await settlePhone(tester);
     expect(h.native!.callsOf('setBackgroundViewport').single.arguments, {'preset': 'landscape'});
     expect(phoneOf(tester).status.background.viewport, PhoneBackgroundViewport.landscape);
-    expect(h.native!.methods.where((m) => m != 'status' && m != 'setBackgroundViewport'), isEmpty);
+    expect(h.native!.methods, ['setBackgroundViewport', 'status']);
     await tester.pump();
     expect(h.native!.callsOf('setBackgroundViewport'), hasLength(1));
     expect(phoneOf(tester).status.task.active, isTrue);

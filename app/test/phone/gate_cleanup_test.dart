@@ -63,12 +63,14 @@ void main() {
   testWidgets('pending or unavailable cleanup never offers a retry or a new resource', (tester) async {
     final native = FakePhoneNative(status: cleanupStatus(state: 'pending', canRetry: false));
     await pumpPhone(tester, const PhoneDndPage(), native: native);
+    expect(native.methods, ['status', 'getPolicies', 'actionLog']);
+    native.calls.clear();
     expect(tester.widget<TextButton>(find.byKey(const ValueKey('phone-gate-cleanup-retry'))).onPressed, isNull);
     native.push(cleanupStatus(canRetry: false));
     await settlePhone(tester);
     expect(tester.widget<TextButton>(find.byKey(const ValueKey('phone-gate-cleanup-retry'))).onPressed, isNull);
     expect(tester.widget<FilledButton>(find.byType(FilledButton).first).onPressed, isNull);
-    expect(native.methods.where((m) => m != 'status'), isEmpty);
+    expect(native.methods, isEmpty);
   });
 
   testWidgets('failed cleanup keeps the card and does not show a successful mode', (tester) async {
