@@ -2727,6 +2727,63 @@ class L10nEn extends L10n {
   String get botsPetSource => 'From DSH-TUI';
 
   @override
+  String get botsPetImport => 'Import';
+
+  @override
+  String get botsPetImportHint =>
+      'Bring your own pixel pet: a zip with pack.json and PNG frame sheets; the format is in docs/design/pets.md in the repository. Long-press an imported pet to delete it.';
+
+  @override
+  String botsPetImportDone(String name) {
+    return '$name is here';
+  }
+
+  @override
+  String botsPetImportReplaced(String name) {
+    return '$name was updated';
+  }
+
+  @override
+  String get botsPetImportNotZip => 'That isn\'t a zip file';
+
+  @override
+  String get botsPetImportNoPack => 'There\'s no pack.json in the zip';
+
+  @override
+  String botsPetImportBadPack(String detail) {
+    return 'pack.json has a problem: $detail';
+  }
+
+  @override
+  String botsPetImportMissingSheet(String name) {
+    return 'The zip is missing the sheet $name';
+  }
+
+  @override
+  String botsPetImportBadSheet(String name) {
+    return 'A sheet isn\'t right: $name (a complete PNG, at most 4096 pixels a side, every frame inside it)';
+  }
+
+  @override
+  String get botsPetImportTooLarge => 'This pet pack is too big';
+
+  @override
+  String get botsPetImportStorage => 'Couldn\'t save it on the phone. Try again';
+
+  @override
+  String botsPetRemoveTitle(String name) {
+    return 'Delete $name?';
+  }
+
+  @override
+  String get botsPetRemoveBody => 'You can import it again later.';
+
+  @override
+  String botsPetRemoveFailed(String name) {
+    return 'Couldn\'t delete $name. Try again';
+  }
+
+  @override
   String get botsPetSize => 'Size';
 
   @override
@@ -4800,7 +4857,19 @@ class L10nEn extends L10n {
   String get companionSendFailed => 'That didn\'t get through. Say it again?';
 
   @override
-  String get companionNeedsAttention => 'Something needs your confirmation. Tap to see it';
+  String get companionLogTitle => 'Log';
+
+  @override
+  String get companionLogEmpty => 'Nothing said yet.';
+
+  @override
+  String get companionLogYou => 'You';
+
+  @override
+  String get companionLogOpenChat => 'Open in chat';
+
+  @override
+  String get companionLogOlder => 'Load earlier messages';
 
   @override
   String get companionMenuHistory => 'View chat history';
@@ -4856,7 +4925,8 @@ class L10nEn extends L10n {
       'This pack only has a character and there\'s no runtime on this phone yet. Import a full asset pack first.';
 
   @override
-  String get companionPackNoModel => 'No Live2D model (.model3.json) found in the pack.';
+  String get companionPackNoModel =>
+      'No Live2D model (.model3.json) found in the pack. Zip the model\'s whole folder and try again.';
 
   @override
   String get companionPackUnsafe => 'The pack has files or paths that aren\'t allowed, so it wasn\'t imported.';
@@ -5135,7 +5205,7 @@ class L10nEn extends L10n {
 
   @override
   String get companionSetupBodyBundled =>
-      'She comes with the app: one tap and she\'s here, unpacked only on this phone. You can also import another asset pack (zip).';
+      'She comes with the app: one tap and she\'s here, unpacked only on this phone. You can also import another asset pack, or zip up a Live2D model\'s folder and import that.';
 
   @override
   String get companionSetupImportOther => 'Import another pack';
@@ -5456,6 +5526,96 @@ class L10nEn extends L10n {
   @override
   String get companionPersonaFooter =>
       'Light mode uses it from her next reply; full mode tells her with your next message.';
+
+  @override
+  String get companionMenuMoves => 'Moves and faces';
+
+  @override
+  String get companionMovesHint =>
+      'These come with the model. The ones switched on are offered to the AI (up to 24 expressions and 24 motions, in list order) and she uses them in her replies; tap a name to give it a clearer one, tap ▶ to try it on her.';
+
+  @override
+  String get companionMovesNone =>
+      'This model brings no expressions or motions of its own; she uses her built-in ones.';
+
+  @override
+  String get companionMovesRename => 'Rename';
+
+  @override
+  String get companionMovesTry => 'Try it';
+
+  @override
+  String get companionPackLegacyModel =>
+      'This is an old Cubism 2 model (.moc and model.json); the runtime on the phone only reads .moc3 from Cubism 3 on. Open it in Cubism Editor, export it as moc3 and import that.';
+
+  @override
+  String companionFailedMocVersion(String version, String latest) {
+    return 'This model was exported by a newer Cubism (moc version $version); the runtime on the phone reads up to $latest. Export it for an older version in Cubism Editor and import that.';
+  }
+
+  @override
+  String get companionMenuAdapt => 'Fit this model';
+
+  @override
+  String get companionAdaptHint =>
+      'Your own model (your key, billed per request) reads this character and matches up her head, eyes, expressions and where she can be touched. Sent: the model\'s name, its parameter list, the names of its expressions, motions and parts, what you write below and the current fitting. Never the model files or textures.';
+
+  @override
+  String get companionAdaptOffer =>
+      'This model needs fitting: your own model reads its parameter list and the names of its expressions and motions (never the model files), using your key once. New models after this are fitted on their own; you can turn that off in the menu.';
+
+  @override
+  String get companionAdaptOfferYes => 'Fit it';
+
+  @override
+  String get companionAdaptOfferNo => 'Not now';
+
+  @override
+  String get companionAdaptNote => 'What\'s off? (optional)';
+
+  @override
+  String get companionAdaptNoteHint =>
+      'For example: patting her head does nothing, her face goes dark when she\'s happy';
+
+  @override
+  String get companionAdaptRun => 'Let the AI fit it';
+
+  @override
+  String get companionAdaptUndo => 'Undo the fitting';
+
+  @override
+  String get companionAdaptAuto => 'Fit new models when they\'re imported';
+
+  @override
+  String get companionAdaptStart => 'Let me get used to this new body…';
+
+  @override
+  String get companionAdaptDone => 'There, I\'ve got the hang of this body.';
+
+  @override
+  String companionAdaptDoneNote(String note) {
+    return 'There, I\'ve got the hang of this body. $note';
+  }
+
+  @override
+  String get companionAdaptUndone => 'OK, back to how I was.';
+
+  @override
+  String get companionAdaptNoKey => 'To fit me with your model, add an API key in Settings first.';
+
+  @override
+  String companionAdaptFailed(String reason) {
+    return 'That didn\'t work ($reason). You can try again from Fit this model in the menu.';
+  }
+
+  @override
+  String get companionAdaptUnreadable => 'the model\'s answer made no sense';
+
+  @override
+  String get companionAdaptEmpty => 'the model found nothing to match';
+
+  @override
+  String get companionAdaptNetwork => 'no connection';
 
   @override
   String get systemImeTitle => 'System input-method diagnostics';

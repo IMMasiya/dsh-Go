@@ -2574,6 +2574,62 @@ class L10nZh extends L10n {
   String get botsPetSource => '来自 DSH-TUI';
 
   @override
+  String get botsPetImport => '导入';
+
+  @override
+  String get botsPetImportHint => '导入你自己的像素宠物：一个 zip，里面是 pack.json 和序列帧 PNG，格式见仓库里的 docs/design/pets.md。长按导入的宠物可以删除。';
+
+  @override
+  String botsPetImportDone(String name) {
+    return '「$name」来了';
+  }
+
+  @override
+  String botsPetImportReplaced(String name) {
+    return '「$name」换成了新的';
+  }
+
+  @override
+  String get botsPetImportNotZip => '这不是 zip 文件';
+
+  @override
+  String get botsPetImportNoPack => 'zip 里没有 pack.json';
+
+  @override
+  String botsPetImportBadPack(String detail) {
+    return 'pack.json 有问题：$detail';
+  }
+
+  @override
+  String botsPetImportMissingSheet(String name) {
+    return 'zip 里少了序列帧图 $name';
+  }
+
+  @override
+  String botsPetImportBadSheet(String name) {
+    return '序列帧图不对：$name（要完整的 PNG，每边不超过 4096 像素，每一帧都在图内）';
+  }
+
+  @override
+  String get botsPetImportTooLarge => '这个宠物包太大了';
+
+  @override
+  String get botsPetImportStorage => '没能存到手机上，再试一次';
+
+  @override
+  String botsPetRemoveTitle(String name) {
+    return '删除「$name」？';
+  }
+
+  @override
+  String get botsPetRemoveBody => '删除后可以再导入。';
+
+  @override
+  String botsPetRemoveFailed(String name) {
+    return '没能删除「$name」，再试一次';
+  }
+
+  @override
   String get botsPetSize => '大小';
 
   @override
@@ -4509,7 +4565,19 @@ class L10nZh extends L10n {
   String get companionSendFailed => '这句话没送出去，要不要再说一次？';
 
   @override
-  String get companionNeedsAttention => '有件事要你确认，点这里去看';
+  String get companionLogTitle => '聊天记录';
+
+  @override
+  String get companionLogEmpty => '还没有说过话。';
+
+  @override
+  String get companionLogYou => '你';
+
+  @override
+  String get companionLogOpenChat => '在主对话里看';
+
+  @override
+  String get companionLogOlder => '加载更早的记录';
 
   @override
   String get companionMenuHistory => '查看聊天记录';
@@ -4561,7 +4629,7 @@ class L10nZh extends L10n {
   String get companionPackNoRuntime => '这个包只有角色，手机上还没有运行库。先导入完整的素材包。';
 
   @override
-  String get companionPackNoModel => '包里没有找到 Live2D 模型（.model3.json）。';
+  String get companionPackNoModel => '包里没有找到 Live2D 模型（.model3.json）。把模型的整个文件夹打成 zip 再试。';
 
   @override
   String get companionPackUnsafe => '包里有不允许的文件或路径，没有导入。';
@@ -4835,7 +4903,7 @@ class L10nZh extends L10n {
   String get companionSetupBundled => '接她回家';
 
   @override
-  String get companionSetupBodyBundled => '她就在 App 里，点一下就到，素材只解压到这台手机上。也可以导入别的素材包（zip）。';
+  String get companionSetupBodyBundled => '她就在 App 里，点一下就到，素材只解压到这台手机上。也可以导入别的素材包，或者把 Live2D 模型的文件夹打成 zip 直接导入。';
 
   @override
   String get companionSetupImportOther => '导入别的素材包';
@@ -5148,6 +5216,92 @@ class L10nZh extends L10n {
 
   @override
   String get companionPersonaFooter => '轻量模式下一句就生效；完整模式会在你下一条消息里把新设定告诉她。';
+
+  @override
+  String get companionMenuMoves => '动作和表情';
+
+  @override
+  String get companionMovesHint => '这些是模型自带的。开着的会交给 AI（表情、动作各最多 24 个，按列表顺序），她回复时会自己用；点名字改个好懂的叫法，点 ▶ 先在她身上试试。';
+
+  @override
+  String get companionMovesNone => '这个模型没有自带的表情和动作，她用的是内置的那些。';
+
+  @override
+  String get companionMovesRename => '改个叫法';
+
+  @override
+  String get companionMovesTry => '试一下';
+
+  @override
+  String get companionPackLegacyModel =>
+      '这是 Cubism 2 的旧模型（.moc 和 model.json），手机上的运行库只认 Cubism 3 以后的 .moc3。用 Cubism Editor 打开后导出成 moc3 再导入就行。';
+
+  @override
+  String companionFailedMocVersion(String version, String latest) {
+    return '这个模型是用更新版本的 Cubism 导出的（moc 版本 $version），手机上的运行库最高只认到 $latest。在 Cubism Editor 里导出成旧一点的版本再导入就行。';
+  }
+
+  @override
+  String get companionMenuAdapt => '适配这个模型';
+
+  @override
+  String get companionAdaptHint =>
+      '用你配好的模型（你的 Key，按次计费）看一遍这个角色，把转头、眨眼、表情和摸哪里对上。会发出去的：模型名、参数名单、表情动作和部件的名字、你下面写的话和现在的适配表；模型文件和贴图不发。';
+
+  @override
+  String get companionAdaptOffer => '这个模型要适配一下：用你配好的模型看一遍它的参数名单和表情动作的名字（不发模型文件），会用你的 Key 调用一次。以后的新模型就自动来，菜单里能关。';
+
+  @override
+  String get companionAdaptOfferYes => '适配';
+
+  @override
+  String get companionAdaptOfferNo => '不用了';
+
+  @override
+  String get companionAdaptNote => '哪里不对？（可以不填）';
+
+  @override
+  String get companionAdaptNoteHint => '比如：摸头没反应，开心的时候脸是黑的';
+
+  @override
+  String get companionAdaptRun => '让 AI 适配';
+
+  @override
+  String get companionAdaptUndo => '撤销适配';
+
+  @override
+  String get companionAdaptAuto => '导入新模型时自动适配';
+
+  @override
+  String get companionAdaptStart => '让我适应一下这个新身体……';
+
+  @override
+  String get companionAdaptDone => '好啦，这个身体我会用了。';
+
+  @override
+  String companionAdaptDoneNote(String note) {
+    return '好啦，这个身体我会用了。$note';
+  }
+
+  @override
+  String get companionAdaptUndone => '好，换回原来的样子了。';
+
+  @override
+  String get companionAdaptNoKey => '要用你的模型帮我适配，先在设置里填上 API Key。';
+
+  @override
+  String companionAdaptFailed(String reason) {
+    return '这次没适应好（$reason），可以在菜单的「适配这个模型」里再试一次。';
+  }
+
+  @override
+  String get companionAdaptUnreadable => '模型的回答看不懂';
+
+  @override
+  String get companionAdaptEmpty => '模型没找到能用的对应';
+
+  @override
+  String get companionAdaptNetwork => '网络不通';
 
   @override
   String get systemImeTitle => '系统输入法诊断';

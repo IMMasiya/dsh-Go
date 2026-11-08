@@ -94,6 +94,22 @@ object LiveActivity {
         refresh(ctx)
     }
 
+    /**
+     * A brought pet's files changed (imported again, removed): its cached portrait is stale though
+     * its id isn't. Drawn again from the files, and a post showing it is redone. Any thread.
+     */
+    fun forgetPack(context: Context, pack: String) {
+        val ctx = attach(context)
+        handler.post {
+            if (portraitKey?.startsWith("$pack/") != true) return@post
+            portraitKey = null
+            portrait = null
+            // The post carries the old picture; the same content would not be posted again.
+            shown = null
+            refresh(ctx)
+        }
+    }
+
     /** Something it shows changed: post the latest within [MIN_GAP_MS] of the last post. Any thread. */
     fun refresh(context: Context) {
         attach(context)
