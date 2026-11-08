@@ -15717,6 +15717,177 @@ class L10nEn extends L10n {
   String get searchKwRemoteCompactHistory => 'compact slim lite history tools transfer bandwidth remote';
 
   @override
+  String get remotePairEntry => 'Pair a computer by scanning';
+
+  @override
+  String get remotePairEntryHint =>
+      'Scan the code the Remote plugin shows on your computer. No Remote account needed; sign in to DeepSeek first.';
+
+  @override
+  String get remotePairAddComputer => 'Add a computer by scanning';
+
+  @override
+  String get remotePairTitle => 'Pair a computer';
+
+  @override
+  String get remotePairSubtitle =>
+      'No Remote account needed. Your DeepSeek password and sign-in tokens are never sent.';
+
+  @override
+  String get remotePairNeedsDeepSeek => 'Sign in to DeepSeek first';
+
+  @override
+  String get remotePairNeedsDeepSeekBody =>
+      'Pairing needs the DeepSeek account signed in on DSH Go. Only its account ID goes along, to label this phone; no password, cookie or token.';
+
+  @override
+  String get remotePairScanHint => 'Point the camera at the pairing code the Remote plugin shows on your computer';
+
+  @override
+  String get remotePairPasteLink => 'Paste pairing link';
+
+  @override
+  String get remotePairPasteEmpty => 'No pairing link on the clipboard';
+
+  @override
+  String get remotePairFromImage => 'From photos';
+
+  @override
+  String get remotePairImageNoCode => 'No QR code found in that image';
+
+  @override
+  String get remotePairCameraDenied =>
+      'No camera access. Turn it on in system settings, or use From photos or Paste pairing link.';
+
+  @override
+  String get remotePairCameraFailed => 'The camera didn’t open. Use From photos or Paste pairing link.';
+
+  @override
+  String get remotePairReading => 'Reading the pairing code…';
+
+  @override
+  String get remotePairConfirmTitle => 'Connect to this computer?';
+
+  @override
+  String get remotePairComputer => 'Computer';
+
+  @override
+  String get remotePairServer => 'Server';
+
+  @override
+  String get remotePairFingerprint => 'Computer fingerprint';
+
+  @override
+  String get remotePairFingerprintHint =>
+      'Check that it matches the fingerprint in the Remote plugin on your computer before you continue.';
+
+  @override
+  String get remotePairConfirm => 'It’s this computer, pair';
+
+  @override
+  String get remotePairNotThis => 'Not this one, scan again';
+
+  @override
+  String get remotePairClaiming => 'Getting a verification code…';
+
+  @override
+  String get remotePairCodeTitle => 'Enter this 8-digit code on the computer';
+
+  @override
+  String remotePairCodeSemantics(String digits) {
+    return 'Verification code $digits';
+  }
+
+  @override
+  String get remotePairCodeHint =>
+      'Type it into the Remote plugin on your computer, then click Confirm binding. Nothing more to do on the phone.';
+
+  @override
+  String get remotePairOneAttempt =>
+      'One attempt only: a wrong code ends this pairing, and you’ll need a new code on the computer.';
+
+  @override
+  String remotePairWaiting(String countdown) {
+    return 'Waiting for the computer · $countdown left';
+  }
+
+  @override
+  String get remotePairApproved => 'The computer confirmed. Finishing…';
+
+  @override
+  String get remotePairCodeExpired => 'The code expired. Show a new pairing code on the computer.';
+
+  @override
+  String remotePairConnecting(String name) {
+    return 'Paired. Connecting to $name…';
+  }
+
+  @override
+  String get remotePairFailedTitle => 'Couldn’t pair';
+
+  @override
+  String remotePairOtherServerBody(String server) {
+    return 'This code is from $server, not the Remote server DSH Go uses now. Switch to it and continue? Each server keeps its own sign-in.';
+  }
+
+  @override
+  String get remotePairSwitchServer => 'Switch server and continue';
+
+  @override
+  String get remotePairScanAgain => 'Scan again';
+
+  @override
+  String get remotePairErrInvalidCode => 'That isn’t a DSH Go pairing code';
+
+  @override
+  String get remotePairErrOtherServer => 'This code is from another Remote server';
+
+  @override
+  String get remotePairErrUnsupported => 'This Remote server doesn’t support pairing by scanning yet';
+
+  @override
+  String get remotePairErrExpired => 'The code expired or was already used. Show a new pairing code on the computer.';
+
+  @override
+  String get remotePairErrCodeRejected =>
+      'The computer entered a wrong code, so this pairing is over. Show a new pairing code on the computer and scan again.';
+
+  @override
+  String get remotePairErrCancelled => 'Pairing cancelled';
+
+  @override
+  String get remotePairErrAccountConflict =>
+      'This phone is signed in to another Remote account than the computer’s. That sign-in is kept; to switch, sign out of Remote first.';
+
+  @override
+  String get remotePairErrIdentity =>
+      'The pairing no longer matches this computer or this phone, so it stopped. Show a new pairing code on the computer.';
+
+  @override
+  String get remotePairErrHostLimit => 'This account already has the maximum number of computers';
+
+  @override
+  String get remotePairErrNetwork => 'Can’t reach the Remote server. Check your network and try again.';
+
+  @override
+  String get remotePairErrFailed => 'Pairing didn’t finish. Scan again.';
+
+  @override
+  String remotePairSwitchFailedTitle(String name) {
+    return 'Paired with $name';
+  }
+
+  @override
+  String get remotePairSwitchFailedBody => 'But switching to it didn’t work. Try again, or pick it under Remote hosts.';
+
+  @override
+  String get remotePairDone => 'Done';
+
+  @override
+  String get remotePairErrPinSave =>
+      'Paired, but this phone couldn’t store the computer’s fingerprint. Show a new pairing code on the computer and scan it again.';
+
+  @override
   String get stateWorkspaceFilesHint => 'Files uploaded to the current workspace:';
 
   @override

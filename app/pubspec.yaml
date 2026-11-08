@@ -84,6 +84,7 @@ dependencies:
   # logic lives in packages/dsh_remote. MIT, bundles libwebrtc (BSD-3).
   flutter_webrtc: ^1.6.3
   archive: ^4.6.0
+  mobile_scanner: ^7.5.0
 
 dev_dependencies:
   flutter_test:

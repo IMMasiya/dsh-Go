@@ -14951,6 +14951,166 @@ class L10nZh extends L10n {
   String get searchKwRemoteCompactHistory => '精简 简洁 历史 工具 传输 流量 远程 compact slim lite';
 
   @override
+  String get remotePairEntry => '扫码配对电脑';
+
+  @override
+  String get remotePairEntryHint => '扫电脑上 Remote 插件显示的二维码，不用注册 Remote 账号（需要先登录 DeepSeek）';
+
+  @override
+  String get remotePairAddComputer => '扫码添加电脑';
+
+  @override
+  String get remotePairTitle => '扫码配对电脑';
+
+  @override
+  String get remotePairSubtitle => '不用注册 Remote 账号，也不会传 DeepSeek 密码或登录凭据';
+
+  @override
+  String get remotePairNeedsDeepSeek => '先登录 DeepSeek 账号';
+
+  @override
+  String get remotePairNeedsDeepSeekBody => '扫码配对要先在 DSH Go 里登录 DeepSeek 账号。配对时只附带账号 ID 用来标记这台手机，不传密码、Cookie 或 Token。';
+
+  @override
+  String get remotePairScanHint => '对准电脑上 Remote 插件显示的配对二维码';
+
+  @override
+  String get remotePairPasteLink => '粘贴配对链接';
+
+  @override
+  String get remotePairPasteEmpty => '剪贴板里没有配对链接';
+
+  @override
+  String get remotePairFromImage => '从相册识别';
+
+  @override
+  String get remotePairImageNoCode => '这张图里没找到二维码';
+
+  @override
+  String get remotePairCameraDenied => '没有相机权限。可以在系统设置里打开，或者用「从相册识别」「粘贴配对链接」';
+
+  @override
+  String get remotePairCameraFailed => '相机打不开。可以用「从相册识别」或「粘贴配对链接」';
+
+  @override
+  String get remotePairReading => '正在读取配对信息…';
+
+  @override
+  String get remotePairConfirmTitle => '要连接这台电脑吗？';
+
+  @override
+  String get remotePairComputer => '电脑';
+
+  @override
+  String get remotePairServer => '服务器';
+
+  @override
+  String get remotePairFingerprint => '电脑指纹';
+
+  @override
+  String get remotePairFingerprintHint => '和电脑 Remote 插件上显示的指纹核对一致再继续。';
+
+  @override
+  String get remotePairConfirm => '确认是这台电脑，开始配对';
+
+  @override
+  String get remotePairNotThis => '不是这台，重新扫';
+
+  @override
+  String get remotePairClaiming => '正在生成验证码…';
+
+  @override
+  String get remotePairCodeTitle => '在电脑上输入这 8 位验证码';
+
+  @override
+  String remotePairCodeSemantics(String digits) {
+    return '验证码 $digits';
+  }
+
+  @override
+  String get remotePairCodeHint => '在电脑的 Remote 插件里输入，点「确认绑定」。手机不用再操作。';
+
+  @override
+  String get remotePairOneAttempt => '只有一次机会：输错后这次配对作废，要在电脑上重新生成二维码再扫。';
+
+  @override
+  String remotePairWaiting(String countdown) {
+    return '等电脑确认 · 剩余 $countdown';
+  }
+
+  @override
+  String get remotePairApproved => '电脑已确认，正在完成绑定…';
+
+  @override
+  String get remotePairCodeExpired => '验证码已过期，请在电脑上重新生成二维码';
+
+  @override
+  String remotePairConnecting(String name) {
+    return '配对完成，正在连接 $name…';
+  }
+
+  @override
+  String get remotePairFailedTitle => '没能配对';
+
+  @override
+  String remotePairOtherServerBody(String server) {
+    return '这个二维码来自 $server，和 DSH Go 现在用的 Remote 服务器不同。切换过去继续吗？两个服务器的登录各自保留。';
+  }
+
+  @override
+  String get remotePairSwitchServer => '切换服务器并继续';
+
+  @override
+  String get remotePairScanAgain => '重新扫码';
+
+  @override
+  String get remotePairErrInvalidCode => '这不是 DSH Go 的配对二维码';
+
+  @override
+  String get remotePairErrOtherServer => '这个二维码来自另一个 Remote 服务器';
+
+  @override
+  String get remotePairErrUnsupported => '这个 Remote 服务器还不支持扫码配对';
+
+  @override
+  String get remotePairErrExpired => '二维码已过期或已经用过了。请在电脑上重新生成二维码';
+
+  @override
+  String get remotePairErrCodeRejected => '电脑上输入的验证码不对，这次配对已作废。请在电脑上重新生成二维码再扫';
+
+  @override
+  String get remotePairErrCancelled => '配对已取消';
+
+  @override
+  String get remotePairErrAccountConflict => '这台手机已经登录了另一个 Remote 账号，和这台电脑的账号不一致。原来的登录保持不变；要换绑请先在 Remote 里退出登录';
+
+  @override
+  String get remotePairErrIdentity => '配对信息和这台电脑或这台手机对不上，已经停止。请在电脑上重新生成二维码';
+
+  @override
+  String get remotePairErrHostLimit => '这个账号绑定的电脑已经到上限了';
+
+  @override
+  String get remotePairErrNetwork => '连不上 Remote 服务器，检查网络后重试';
+
+  @override
+  String get remotePairErrFailed => '配对没有完成，请重新扫码';
+
+  @override
+  String remotePairSwitchFailedTitle(String name) {
+    return '已和 $name 配对';
+  }
+
+  @override
+  String get remotePairSwitchFailedBody => '但没能切换到这台电脑。可以重试，或者回到「远程主机」里点这台电脑。';
+
+  @override
+  String get remotePairDone => '完成';
+
+  @override
+  String get remotePairErrPinSave => '已经配对，但没能在手机上保存这台电脑的指纹。请在电脑上重新生成二维码，再扫一次';
+
+  @override
   String get stateWorkspaceFilesHint => '已上传到当前工作区的文件：';
 
   @override
