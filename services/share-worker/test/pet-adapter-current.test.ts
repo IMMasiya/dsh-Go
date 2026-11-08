@@ -16,7 +16,7 @@ it('preserves current stage id lists, pose and horizontal touch zones', () => {
 });
 
 it('accepts exactly the semantic vocabularies already checked by the c76 App', () => {
-  const source = readFileSync(new URL('../../../app/lib/companion/companion_adapt.dart', import.meta.url), 'utf8');
+  const source = readFileSync(new URL('../../../app/lib/companion/companion_adapt_contract.dart', import.meta.url), 'utf8');
   const block = (name: string) => source.split(`const ${name} = `)[1]!.split(';')[0]!;
   const names = (name: string) => [...block(name).matchAll(name === 'companionAdaptParams' ? /'([^']+)'\s*:/g : /'([^']+)'/g)].map(m => m[1]!);
   expect(['companionAdaptParams', 'companionAdaptEmotions', 'companionAdaptActions', 'companionAdaptZones'].map(name => names(name).length)).toEqual([18, 10, 12, 5]);

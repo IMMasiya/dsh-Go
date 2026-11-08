@@ -43,20 +43,22 @@ class CompanionSignalConsentSettings extends Notifier<CompanionSignalConsent?> {
     }
   }
 
+  /// Null only when nothing was ever saved. A damaged record lets nothing
+  /// in: the defaults must not undo an earlier no.
   static CompanionSignalConsent? _read(String? raw) {
     if (raw == null) return null;
     try {
       final map = jsonDecode(raw);
-      if (map is! Map) return null;
-      bool flag(String key, bool fallback) => map[key] is bool ? map[key] as bool : fallback;
+      if (map is! Map) return const CompanionSignalConsent();
+      bool flag(String key) => map[key] == true;
       return CompanionSignalConsent(
-        state: flag('state', defaults.state),
-        optionalSpeech: flag('optionalSpeech', defaults.optionalSpeech),
-        voice: flag('voice', defaults.voice),
-        nightCare: flag('nightCare', defaults.nightCare),
+        state: flag('state'),
+        optionalSpeech: flag('optionalSpeech'),
+        voice: flag('voice'),
+        nightCare: flag('nightCare'),
       );
     } on FormatException {
-      return null;
+      return const CompanionSignalConsent();
     }
   }
 

@@ -105,7 +105,7 @@ class _Chat extends ChatController {
     List<DraftAttachment> attachments = const [],
     SendMode mode = SendMode.now,
     bool verbatim = false,
-    Future<void> Function(String requestId)? beforeDeliver,
+    Future<bool> Function(String requestId)? beforeDeliver,
   }) async {
     sent.add(text);
     return true;

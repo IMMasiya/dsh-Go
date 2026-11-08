@@ -166,7 +166,10 @@ List<CompanionContextEvent> companionRecentEvents(
         final order = a.at.compareTo(b.at);
         return order == 0 ? a.id.compareTo(b.id) : order;
       });
-  return List.unmodifiable(eligible.where((e) => seen.add(e.id)).take(8));
+  // The newest eight, still oldest first: a full backlog must not keep out
+  // what just happened.
+  final unique = eligible.where((e) => seen.add(e.id)).toList();
+  return List.unmodifiable(unique.length <= 8 ? unique : unique.sublist(unique.length - 8));
 }
 
 /// Remove only ids whose delivery was established for the matching snapshot.

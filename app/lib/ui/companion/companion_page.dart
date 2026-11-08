@@ -163,11 +163,12 @@ class _CompanionPageState extends ConsumerState<CompanionPage> implements Compan
   /// Full mode: one plan per request id (a retried send reuses it, never a
   /// fresh one under the same id); its events are spent once the person's
   /// own message with that id is in the session.
-  final Map<String, CompanionFullContextPlan> _fullPlans = {};
+  final Map<String, ({CompanionFullContextPlan plan, String profile})> _fullPlans = {};
 
   /// The profile this host last acknowledged, and for which connection,
-  /// instance and session: anything else changing sends it again.
-  ({Object client, String instanceId, String sessionId, String profile})? _ackProfile;
+  /// instance, session and host revision: anything else changing (another
+  /// client writing its own, too) sends it again.
+  ({Object client, String instanceId, String sessionId, int revision, String profile})? _ackProfile;
 
   /// This host can't take her context: said once per visit.
   bool _contextUnsupportedSaid = false;
@@ -1733,7 +1734,8 @@ class _CompanionPageState extends ConsumerState<CompanionPage> implements Compan
       // Her name, persona and moves go to the host as context (C905), sent
       // only when they change; the time and what just happened go beside the
       // message under its own id. A host without that gets the text alone.
-      final capability = firstInline || client == null
+      // Nor does a conversation without her preset take context later on.
+      final capability = binding.inlinePersona || client == null
           ? null
           : await client.companionPromptCapability(binding.sessionId);
       if (!current()) return;
@@ -1744,7 +1746,7 @@ class _CompanionPageState extends ConsumerState<CompanionPage> implements Compan
         verbatim: true,
         beforeDeliver: capability == null || client == null
             ? null
-            : (requestId) => _prepareContext(client, capability, binding.sessionId, requestId, raw, profile),
+            : (requestId) => _prepareContext(client, capability, binding.sessionId, requestId, raw, profile, current),
       );
       if (!current()) return;
       if (!sent) throw StateError(ref.read(chatProvider(binding.sessionId)).error ?? 'send');
@@ -1782,44 +1784,59 @@ class _CompanionPageState extends ConsumerState<CompanionPage> implements Compan
   }
 
   /// Runs inside the send, once its request id is chosen: the plan for that
-  /// id (kept for a retry), and the host told what changed.
-  Future<void> _prepareContext(
+  /// id (kept for a retry), and the host told what changed. False: the room
+  /// left this conversation meanwhile, so the line is not sent there.
+  Future<bool> _prepareContext(
     DshClient client,
     CompanionPromptCapability capability,
     String sessionId,
     String requestId,
     String raw,
     CompanionContextProfile profile,
+    bool Function() current,
   ) async {
+    if (!current()) return false;
     final ack = _ackProfile;
-    final plan = _fullPlans[requestId] ??= companionFullContextPlan(
-      text: raw,
-      sessionId: sessionId,
-      requestId: requestId,
-      profile: profile,
-      supported: true,
-      now: DateTime.now(),
-      instanceId: capability.instanceId,
-      profileRevision: capability.profileRevision,
-      acknowledgedProfile:
-          ack != null &&
-              identical(ack.client, client) &&
-              ack.instanceId == capability.instanceId &&
-              ack.sessionId == sessionId
-          ? ack.profile
-          : null,
-      events: _contextEvents,
-      memoryMode: capability.memoryMode,
+    // A retry sends the plan it made first, and the profile in it.
+    final entry = _fullPlans[requestId] ??= (
+      plan: companionFullContextPlan(
+        text: raw,
+        sessionId: sessionId,
+        requestId: requestId,
+        profile: profile,
+        supported: true,
+        now: DateTime.now(),
+        instanceId: capability.instanceId,
+        profileRevision: capability.profileRevision,
+        acknowledgedProfile:
+            ack != null &&
+                identical(ack.client, client) &&
+                ack.instanceId == capability.instanceId &&
+                ack.sessionId == sessionId &&
+                ack.revision == capability.profileRevision
+            ? ack.profile
+            : null,
+        events: _contextEvents,
+        memoryMode: capability.memoryMode,
+      ),
+      profile: profile.fingerprint,
     );
     while (_fullPlans.length > 8) {
       _fullPlans.remove(_fullPlans.keys.first);
     }
-    final update = plan.update;
-    if (update == null) return;
+    final update = entry.plan.update;
+    if (update == null) return true;
     final answer = await client.prepareCompanionPromptContext(update);
     if (answer.profileAccepted == true && update.containsKey('profile')) {
-      _ackProfile = (client: client, instanceId: answer.instanceId, sessionId: sessionId, profile: profile.fingerprint);
+      _ackProfile = (
+        client: client,
+        instanceId: answer.instanceId,
+        sessionId: sessionId,
+        revision: answer.profileRevision,
+        profile: entry.profile,
+      );
     }
+    return current();
   }
 
   /// The person's own message with a plan's id is in the session: what that
@@ -1832,7 +1849,7 @@ class _CompanionPageState extends ConsumerState<CompanionPage> implements Compan
     };
     for (final id in [..._fullPlans.keys]) {
       if (!committed.contains(id)) continue;
-      _contextEvents = companionConsumeEvents(_contextEvents, _fullPlans.remove(id)!.eventIds);
+      _contextEvents = companionConsumeEvents(_contextEvents, _fullPlans.remove(id)!.plan.eventIds);
     }
   }
 
@@ -1891,6 +1908,9 @@ class _CompanionPageState extends ConsumerState<CompanionPage> implements Compan
       return;
     }
     if (stored.sessionId != sessionId) {
+      // Only about the conversation she is in now: a late check about an
+      // older one must not touch a binding made since.
+      if (ref.read(companionSessionsProvider.notifier).of(ref.read(activeHostProvider))?.sessionId != sessionId) return;
       // Made for a conversation she has left since (started over): let it go.
       await companionRecallClear(hostKey, stored.bindingId);
       unawaited(_revokeQuietly(client, stored.bindingId));
@@ -1911,13 +1931,17 @@ class _CompanionPageState extends ConsumerState<CompanionPage> implements Compan
       }
     }
     if (!current() || _recallWorking || ready == null) return;
+    // A check that took longer than another one (which may have opened a new
+    // conversation since) has nothing more to say.
+    final sessions = ref.read(companionSessionsProvider.notifier);
+    if (sessions.of(ref.read(activeHostProvider))?.sessionId != sessionId) return;
     if (ready) {
       if (!_recallOn) _recallUpdate(() => _recallOn = true);
       return;
     }
     // The bound conversation goes first; only then is the record dropped, so
     // a page that moved on meanwhile finds it again on its next visit here.
-    final forgetting = ref.read(companionSessionsProvider.notifier).forget();
+    final forgetting = sessions.forget();
     await companionRecallClear(hostKey, stored.bindingId);
     await forgetting;
     if (!mounted || !current()) return;
@@ -2797,6 +2821,9 @@ class _CompanionPageState extends ConsumerState<CompanionPage> implements Compan
     // Changing host while here: her conversation is per host.
     ref.listen(activeHostProvider, (_, _) => _bindingChanged());
     ref.listen(activeConnectionProvider.select((value) => value.value?.client), (_, _) => _bindingChanged());
+    // A refreshed host (name, folder) keeps its client but not the wrapper
+    // her signals are tied to.
+    ref.listen(activeConnectionProvider.select((value) => value.value), (_, _) => _syncSignals());
     ref.listen(companionModeProvider, (before, now) {
       // The saved pick arriving after the page opened changes nothing if it is what she already does.
       bool light(CompanionMode? mode) =>

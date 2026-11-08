@@ -1241,13 +1241,13 @@ class ChatController extends Notifier<ChatState> {
   /// [beforeDeliver] runs once this send has chosen its request id (a retry of
   /// an unsettled send keeps the old one) and before anything goes out, for a
   /// side channel keyed by that id (伙伴小屋's context). Its failure fails the
-  /// send like any other.
+  /// send like any other; false drops the send quietly.
   Future<bool> send(
     String text, {
     List<DraftAttachment> attachments = const [],
     SendMode mode = SendMode.now,
     bool verbatim = false,
-    Future<void> Function(String requestId)? beforeDeliver,
+    Future<bool> Function(String requestId)? beforeDeliver,
   }) async {
     final client = _client;
     final trimmed = text.trim();
@@ -1284,8 +1284,15 @@ class ChatController extends Notifier<ChatState> {
     );
     try {
       if (beforeDeliver != null) {
-        await beforeDeliver(requestId);
+        final go = await beforeDeliver(requestId);
         if (!_currentOperation(operation)) return false;
+        if (!go) {
+          // The caller let it go (伙伴小屋 left this conversation meanwhile):
+          // nothing went out, so nothing waits and nothing failed.
+          _pending = List.unmodifiable(_pending.where((p) => p.requestId != requestId));
+          state = state.copyWith(pending: _placePending());
+          return false;
+        }
       }
       final receipts = await _stageFiles(operation, attachments);
       if (!_currentOperation(operation)) return false;
