@@ -30,9 +30,14 @@ internal class Shot(
     /** When the system took the frame (device clock, ms), from [AccessibilityService.ScreenshotResult.getTimestamp]. */
     val takenAtMillis: Long? = null,
     val observation: ImageObservation? = null,
+    val localText: LocalOcrResult = LocalOcrResult.Unavailable(LocalOcrResult.Reason.NO_FRAME),
 )
 
-internal class ScreenShooter(private val service: AccessibilityService, private val overlay: ControlOverlay) {
+internal class ScreenShooter(private val service: AccessibilityService, private val overlay: ControlOverlay,
+    private val localOcr: LocalOcr = NoLocalOcr) {
+    /** Querying an absent backend must not capture a frame just to report its absence. */
+    fun localTextWithoutFrame(): LocalOcrResult = LocalOcrResult.Unavailable(
+        localOcr.unavailableReason ?: LocalOcrResult.Reason.NO_FRAME)
     private val captureLock = Any()
     private var closed = false
     private val executor = Executors.newSingleThreadExecutor { r -> Thread(r, "dsh-a11y-shot") }
@@ -57,7 +62,10 @@ internal class ScreenShooter(private val service: AccessibilityService, private 
      * (API 30–33, overlay hidden for the moment of capture), then greys out [secrets] (see
      * [sensitiveBounds]) and draws [marks].
      */
-    fun shoot(window: UiWindow?, screen: Box, marks: List<ScreenElement>, secrets: List<Box>, timeoutMs: Long, image: Boolean = true): Shot {
+    fun shoot(window: UiWindow?, screen: Box, marks: List<ScreenElement>, secrets: List<Box>, timeoutMs: Long, image: Boolean = true,
+        readLocalText: Boolean = false, localTextPrivacyAllowed: Boolean = false,
+        localTextCancelled: () -> Boolean = { false }): Shot {
+        val deadline = SystemClock.uptimeMillis() + timeoutMs
         // l10n:keep agent screenshot result
         if (Build.VERSION.SDK_INT < 30) return Shot(null, null, null, false, "本机系统低于 Android 11，不支持无障碍截图")
         val useWindow = Build.VERSION.SDK_INT >= 34 && window != null
@@ -74,6 +82,12 @@ internal class ScreenShooter(private val service: AccessibilityService, private 
         try {
             // l10n:keep agent screenshot result
             if (looksBlack(bitmap)) return Shot(null, null, null, true, "截图全黑，可能是禁止截图的页面")
+            val cancelled = { Thread.currentThread().isInterrupted || localTextCancelled() ||
+                synchronized(captureLock) { closed } }
+            val localText = LocalOcrBoundary.read(readLocalText && image, localTextPrivacyAllowed,
+                bitmap.width, bitmap.height, deadline, SystemClock::uptimeMillis, cancelled) {
+                localOcr.recognize(bitmap, deadline, cancelled)
+            }
             val takenAt = raw.takenAtMillis
             val origin = if (useWindow) window.bounds else screen
             val frame = VisualFrame.capture(bitmap.width, bitmap.height) { y, row ->
@@ -98,7 +112,7 @@ internal class ScreenShooter(private val service: AccessibilityService, private 
                 val out = ByteArrayOutputStream()
                 scaled.compress(Bitmap.CompressFormat.JPEG, 80, out)
                 return Shot(out.toByteArray(), "image/jpeg", geometry, false, null, takenAt,
-                    observation)
+                    observation, localText)
             } finally { scaled.recycle() }
         } finally { bitmap.recycle() }
     }

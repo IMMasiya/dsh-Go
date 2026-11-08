@@ -11,6 +11,7 @@ import android.app.KeyguardManager
 import android.content.Intent
 import android.graphics.Point
 import android.hardware.display.DisplayManager
+import android.os.Build
 import android.os.Looper
 import android.os.PowerManager
 import android.os.SystemClock
@@ -20,6 +21,7 @@ import android.view.accessibility.AccessibilityNodeInfo
 import io.github.ccch1mneyyy.dsh_app.phone.ActionResult
 import io.github.ccch1mneyyy.dsh_app.phone.Availability
 import io.github.ccch1mneyyy.dsh_app.phone.CollectResult
+import io.github.ccch1mneyyy.dsh_app.phone.PhoneControl
 import io.github.ccch1mneyyy.dsh_app.phone.PhoneAction
 import io.github.ccch1mneyyy.dsh_app.phone.PhoneDriver
 import io.github.ccch1mneyyy.dsh_app.phone.PhoneRegistry
@@ -104,6 +106,7 @@ internal class MainScreenDriver(private val service: PhoneA11yService, private v
 
     override fun observe(detail: Boolean, image: Boolean): ScreenSnapshot = synchronized(lock) {
         val start = SystemClock.uptimeMillis()
+        val generation = abortGen
         availability().let { if (!it.ok) return blank(it.reason!!) }
         val cap = capture()
         try {
@@ -112,6 +115,7 @@ internal class MainScreenDriver(private val service: PhoneA11yService, private v
             var bytes: ByteArray? = null
             var mime: String? = null
             var secure = false
+            var localText = shooter.localTextWithoutFrame()
             if (image) {
                 val left = OBSERVE_MS - (SystemClock.uptimeMillis() - start)
                 when {
@@ -126,7 +130,16 @@ internal class MainScreenDriver(private val service: PhoneA11yService, private v
                     else -> {
                         val window = if (cap.windows.size == 1) cap.windows[0] else null
                         val secrets = ScreenShooter.sensitiveBounds(cap.windows)
-                        val shot = shooter.shoot(window, cap.screen, snap.screen.elements, secrets, minOf(left - 300, 3_000))
+                        val shot = shooter.shoot(window, cap.screen, snap.screen.elements, secrets, minOf(left - 300, 3_000),
+                            readLocalText = snap.screen.poorTree,
+                            localTextPrivacyAllowed = Build.VERSION.SDK_INT >= 34 && cap.windows.size == 1 &&
+                                !cap.keyboardShown && !snap.ownApp && !snap.protectedPage && !snap.hidden &&
+                                !cap.truncated && !cap.partial && !unavailable(cap) && secrets.isEmpty() &&
+                                PhoneControl.peek()?.policies()?.denyPackages?.let { denied ->
+                                    snap.packageName != null && snap.packageName !in denied
+                                } == true,
+                            localTextCancelled = { generation != abortGen })
+                        localText = shot.localText
                         secure = shot.secure
                         if (shot.bytes != null) {
                             bytes = shot.bytes
@@ -141,6 +154,7 @@ internal class MainScreenDriver(private val service: PhoneA11yService, private v
                     }
                 }
             }
+            if (snap.screen.poorTree) text.append("\n").append(LocalOcrBoundary.message(localText))
             ScreenSnapshot(snap.id, text.toString(), snap.appLabel, snap.packageName, secure || snap.hidden, snap.screen.poorTree, bytes, mime)
         } finally { cap.recycle() }
     }
