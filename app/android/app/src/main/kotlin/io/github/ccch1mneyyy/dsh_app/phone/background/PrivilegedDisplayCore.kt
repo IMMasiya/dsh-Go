@@ -140,6 +140,8 @@ class PrivilegedDisplayCore internal constructor(
         var targetReply = SelfCheckTargetRequest.Step.entries.any { it.op == op } || request.containsKey(Proto.SELF_CHECK_TARGET_C2_VERSION)
         var selfCheckReply = op == Proto.OP_SELF_CHECK_PROBE
         try {
+            if (!BackgroundAfterVisual.validRequest(op, request.containsKey(Proto.AFTER_LOCAL_VISUAL),
+                    request.get(Proto.AFTER_LOCAL_VISUAL))) throw Fault("invalidArguments")
             if ((request.containsKey(Proto.TARGET_IDENTITY_VERSION) || request.containsKey(Proto.TARGET_UID)) &&
                 op !in setOf(Proto.OP_CREATE, Proto.OP_LAUNCH, Proto.OP_OBSERVE, Proto.OP_TAP, Proto.OP_SCROLL,
                     Proto.OP_KEY, Proto.OP_TEXT, Proto.OP_COORDINATE, Proto.OP_RELEASE)) throw Fault("invalidArguments")
@@ -151,6 +153,7 @@ class PrivilegedDisplayCore internal constructor(
                 response.putInt(Proto.VIEWPORT_VERSION, 1)
                 response.putInt(Proto.TARGET_IDENTITY_VERSION, 1)
                 response.putInt(Proto.BACKGROUND_COORDINATES, 1)
+                response.putInt(Proto.AFTER_LOCAL_VISUAL, 1)
                 // A real successful full query is required; finding the reflective method is insufficient.
                 if (runCatching { rootTasksEmpty(Display.DEFAULT_DISPLAY) }.isSuccess) {
                     response.putInt(Proto.RELEASE_RECEIPT, 1)
@@ -354,7 +357,7 @@ class PrivilegedDisplayCore internal constructor(
                 requireForeground(pkg)
                 tap(pkg, request)
                 sleepChecked(250)
-                observe(pkg, false, response, localVisual = localVisual)
+                observeAfterAction(pkg, request, response, localVisual = localVisual)
                 if (localVisual) response.putString(Proto.VISUAL_CHANGE,
                     visualObservation?.changeFrom(previousVisual, SystemClock.uptimeMillis()) ?: "unavailable")
             }
@@ -362,7 +365,7 @@ class PrivilegedDisplayCore internal constructor(
                 requireForeground(pkg)
                 scroll(pkg, request)
                 sleepChecked(250)
-                observe(pkg, false, response, localVisual = localVisual)
+                observeAfterAction(pkg, request, response, localVisual = localVisual)
                 if (localVisual) response.putString(Proto.VISUAL_CHANGE,
                     visualObservation?.changeFrom(previousVisual, SystemClock.uptimeMillis()) ?: "unavailable")
             }
@@ -370,13 +373,13 @@ class PrivilegedDisplayCore internal constructor(
                 requireForeground(pkg)
                 globalKey(request.getString(Proto.DIR))
                 sleepChecked(250)
-                observe(pkg, false, response)
+                observeAfterAction(pkg, request, response)
             }
             Proto.OP_TEXT -> {
                 requireForeground(pkg)
                 typeText(pkg, request, response)
                 sleepChecked(200)
-                observe(pkg, false, response)
+                observeAfterAction(pkg, request, response)
             }
             else -> throw Fault("invalidArguments")
         }
@@ -1023,6 +1026,38 @@ class PrivilegedDisplayCore internal constructor(
     }
 
     // ---- observation (tree + optional screenshot) --------------------------
+
+    /** Exactly the original post-action read; a diagnostic attachment cannot rewrite the action ACK. */
+    private fun observeAfterAction(pkg: String, request: Bundle, response: Bundle,
+                                   localVisual: Boolean = false,
+                                   coordinatePost: BackgroundCoordinateObservation? = null) {
+        if (!request.containsKey(Proto.AFTER_LOCAL_VISUAL)) {
+            observe(pkg, false, response, localVisual = localVisual, coordinatePost = coordinatePost)
+            return
+        }
+        val after = Bundle()
+        try {
+            observe(pkg, true, after, localVisual = localVisual, coordinates = true, coordinatePost = coordinatePost)
+            val expected = targetIdentity.current ?: throw Fault("targetIdentityUnavailable")
+            val actual = requireActualTarget(expected)
+            after.putInt(Proto.TARGET_IDENTITY_VERSION, 1)
+            after.putInt(Proto.TARGET_UID, actual.uid)
+            after.putString(Proto.PKG, actual.packageName)
+            after.putBoolean(Proto.OK, after.containsKey(Proto.COUNT) && !after.getBoolean(Proto.FRAME_NOT_READY))
+        } catch (error: Exception) {
+            coordinateObservation = null
+            visualObservation = null
+            if (error is InterruptedException || error is Fault && error.code == "cancelled") throw error
+            after.clear()
+            after.putBoolean(Proto.OK, false)
+            after.putString(Proto.ERROR, failureCode(error))
+        }
+        val legacy = Bundle(after)
+        for (key in legacy.keySet().toList()) if (key !in BackgroundAfterVisual.legacyKeys) legacy.remove(key)
+        response.putAll(legacy)
+        response.putInt(Proto.AFTER_LOCAL_VISUAL, 1)
+        response.putBundle(Proto.AFTER_VISUAL, after)
+    }
 
     private fun observe(pkg: String, wantImage: Boolean, response: Bundle, requireTree: Boolean = false, detail: Boolean = false,
                         localVisual: Boolean = false, coordinates: Boolean = false,
@@ -1757,7 +1792,7 @@ class PrivilegedDisplayCore internal constructor(
             "swipe" -> injectSwipe(action.x, action.y, checkNotNull(action.x2), checkNotNull(action.y2), action.durationMs)
         }
         sleepChecked(250)
-        observe(pkg, false, response, coordinatePost = observed)
+        observeAfterAction(pkg, request, response, coordinatePost = observed)
     }
 
     private fun tap(pkg: String, request: Bundle) {

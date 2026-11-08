@@ -1,6 +1,9 @@
 package io.github.ccch1mneyyy.dsh_app.phone
 
 import java.time.ZoneId
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 import org.junit.After
 import org.junit.Assert.*
 import org.junit.Test
@@ -10,6 +13,9 @@ class PhoneCorePromptOwnerTest {
     private val tasks = PhoneTasks()
     private var confirm: () -> Decision = { Decision.ALLOW_ONCE }
     private var handoff: () -> HandoffResult = { HandoffResult.CONTINUE }
+    private val handoffCauses = mutableListOf<HandoffCause?>()
+    private var gateAvailable = true
+    private var reviewRequired = false
     private var beforeHandoff: (PhoneTasks.Owner) -> Unit = {}
     private var asked = 0
     private val statuses = mutableListOf<String?>()
@@ -20,6 +26,7 @@ class PhoneCorePromptOwnerTest {
     private var beforeResolve: () -> Unit = {}
     private var freshApp: Either<String, AppEntry> = Either.Right(AppEntry("Example", PhoneAppIdentity("example.app", 10123)))
     private var prepareSystem: () -> Unit = {}
+    private var afterRejectedStart: () -> Unit = {}
     private var afterStart: () -> Unit = {}
     private var settle: () -> Unit = {}
     private var launchResult = SysResult(true, "launched")
@@ -27,6 +34,7 @@ class PhoneCorePromptOwnerTest {
     private var preparedPlan: SystemLaunch? = null
     private var startedPlan: SystemLaunch? = null
     private var policies = PhonePolicies()
+    private var policyRead: (() -> PhonePolicies)? = null
     private var launches = 0
     private var urls = 0
     private var intents = 0
@@ -34,11 +42,15 @@ class PhoneCorePromptOwnerTest {
     private val background = Driver(PhoneScreen.BACKGROUND)
     private val core = PhoneCore(object : PhoneEnv {
         override fun enabled() = true
-        override fun policies() = policies
+        override fun policies() = policyRead?.invoke() ?: policies
         override fun isLocked() = false
-        override fun gate() = object : UserGate {
+        override fun gate() = if (!gateAvailable) null else object : UserGate {
             override fun confirm(request: ConfirmRequest): Decision { asked++; return confirm() }
             override fun handoff(reason: String, timeoutMs: Long): HandoffResult { asked++; return handoff() }
+            override fun handoff(reason: String, timeoutMs: Long, cause: HandoffCause?): HandoffResult {
+                handoffCauses += cause
+                return handoff(reason, timeoutMs)
+            }
             override fun status(text: String?) { statuses += text }
             override fun status(text: String?, ifCurrent: (() -> Unit) -> Boolean) {
                 beforeStatus()
@@ -76,7 +88,8 @@ class PhoneCorePromptOwnerTest {
                 when (fake.kind) { "app" -> launches++; "url" -> urls++; "intent" -> intents++ }
                 afterStart()
                 val result = if (fake.kind == "app") launchResult else SysResult(true, "attempted")
-                return SysResult(result.ok, result.message, plan.target)
+                val needsReview = reviewRequired && result.ok && dispatch.commitNotice()
+                return SysResult(result.ok, result.message, plan.target, requiresReview = needsReview)
             }
             override fun notify(title: String, text: String) = error("unexpected notification")
             override fun clipboardSet(text: String) = error("unexpected clipboard")
@@ -96,6 +109,10 @@ class PhoneCorePromptOwnerTest {
         var collects = 0
         var collecting: () -> Unit = {}
         var collectScreen = true
+        var collectReadPackages: Set<String> = emptySet()
+        var collectStopReason = "pageLimit"
+        var collectAllowed: (() -> Boolean)? = null
+        var collectSnapshot: ScreenSnapshot? = null
         val actions = mutableListOf<PhoneAction>()
         override fun availability() = Availability(true)
         override fun foregroundPackage() = "example.app"
@@ -107,9 +124,13 @@ class PhoneCorePromptOwnerTest {
         override fun collect(screenId: String, listElementId: Int, maxPages: Int, until: String?): CollectResult {
             collects++
             collecting()
-            val snapshot = if (collectScreen) ScreenSnapshot("${screen.prefix}2", "late collected screen",
+            val snapshot = if (collectScreen) collectSnapshot ?: ScreenSnapshot("${screen.prefix}2", "late collected screen",
                 "Example", "example.app", image = byteArrayOf(1, 2, 3), imageMime = "image/png") else null
-            return CollectResult(listOf("late collected item"), 1, "pageLimit", snapshot)
+            return CollectResult(listOf("late collected item"), 1, collectStopReason, snapshot, readPackages = collectReadPackages)
+        }
+        override fun collect(screenId: String, listElementId: Int, maxPages: Int, until: String?, allowed: () -> Boolean): CollectResult {
+            collectAllowed = allowed
+            return collect(screenId, listElementId, maxPages, until)
         }
         override fun target(screenId: String, elementId: Int) = TargetInfo(screenId, elementId,
             "按钮", "发送", "example.app", "Example", false, false, false)
@@ -120,7 +141,10 @@ class PhoneCorePromptOwnerTest {
     // Models the mandatory SystemApi ticket contract, not Android PM or Binder execution.
     private fun commit(dispatch: PhoneTasks.SystemDispatch) {
         prepareSystem()
-        if (!dispatch.commitStart()) throw InterruptedException(PhoneTasks.STOPPED_MESSAGE)
+        if (!dispatch.commitStart()) {
+            afterRejectedStart()
+            throw InterruptedException(PhoneTasks.STOPPED_MESSAGE)
+        }
     }
 
     private fun replace() { tasks.endTask(); tasks.begin() }
@@ -132,6 +156,144 @@ class PhoneCorePromptOwnerTest {
     private fun openUrl() = core.call(PhoneToolCatalog.OPEN, mapOf("url" to "https://example.com"))
     private fun shareIntent() = core.call(PhoneToolCatalog.INTENT,
         mapOf("kind" to "share", "app" to "example.app", "text" to "example"))
+
+    @Test fun everySystemEntryUsesOneManualReviewAndNeverRepeatsTheLaunch() {
+        reviewRequired = true
+        for (call in listOf(::openApp, ::openUrl, ::shareIntent)) {
+            val before = launches + urls + intents
+            val beforeRead = main.reads
+            handoff = {
+                assertEquals(before + 1, launches + urls + intents)
+                assertEquals(beforeRead, main.reads)
+                HandoffResult.CONTINUE
+            }
+            val result = call()
+            assertFalse(result.text, result.isError)
+            assertEquals(before + 1, asked)
+            assertEquals(before + 1, launches + urls + intents)
+            assertEquals(beforeRead + 1, main.reads)
+            assertTrue(result.text.contains(if (before == 0) "launched" else "attempted"))
+        }
+    }
+
+    @Test fun manualReviewStopPreservesAttemptAndDoesNotReadOrRetry() {
+        reviewRequired = true
+        handoff = { HandoffResult.STOP }
+        val result = openApp()
+        assertTrue(result.isError)
+        assertTrue(result.text.contains("launched"))
+        assertEquals(1, launches)
+        assertEquals(1, asked)
+        assertEquals(0, main.reads)
+        assertTrue(tasks.isStopped())
+    }
+
+    @Test fun manualReviewTimeoutPreservesAttemptAndDoesNotReadOrRetry() {
+        reviewRequired = true
+        handoff = { HandoffResult.TIMEOUT }
+        val result = openApp()
+        assertTrue(result.isError)
+        assertTrue(result.text.contains("launched"))
+        assertEquals(1, launches)
+        assertEquals(1, asked)
+        assertEquals(0, main.reads)
+    }
+
+    @Test fun interruptedManualReviewPreservesTheAttempt() {
+        reviewRequired = true
+        handoff = { throw InterruptedException("manual review interrupted") }
+        val result = openApp()
+        assertTrue(result.isError)
+        assertTrue(result.text.contains("launched"))
+        assertEquals(1, launches)
+        assertEquals(1, asked)
+        assertEquals(0, main.reads)
+    }
+
+    @Test fun anExemptOrFailedLaunchDoesNotAskForReview() {
+        assertFalse(openApp().isError)
+        reviewRequired = true
+        launchResult = SysResult(false, "attempt failed")
+        val result = openApp()
+        assertTrue(result.isError)
+        assertTrue(result.text.contains("attempt failed"))
+        assertEquals(0, asked)
+        assertEquals(2, launches)
+        assertEquals(1, main.reads)
+    }
+
+    @Test fun unavailableManualReviewPreservesAttempt() {
+        reviewRequired = true
+        gateAvailable = false
+        val result = openApp()
+        assertTrue(result.isError)
+        assertTrue(result.text.contains("launched"))
+        assertEquals(1, launches)
+        assertEquals(0, asked)
+        assertEquals(0, main.reads)
+    }
+
+    @Test fun strictCleanupFailurePreservesAttemptWithoutOpeningAnotherPrompt() {
+        reviewRequired = true
+        beforeHandoff = { throw IllegalStateException("strict background release unconfirmed") }
+        val result = openApp()
+        assertTrue(result.isError)
+        assertTrue(result.text.contains("launched"))
+        assertFalse(result.text.contains("strict background release unconfirmed"))
+        assertEquals(1, launches)
+        assertEquals(0, asked)
+        assertEquals(0, main.reads)
+    }
+
+    @Test fun replacementDuringManualReviewCannotReadOrStopTheSuccessor() {
+        reviewRequired = true
+        handoff = { replace(); HandoffResult.STOP }
+        val result = openApp()
+        assertTrue(result.isError)
+        assertTrue(result.text.contains("launched"))
+        assertEquals(1, launches)
+        assertEquals(0, main.reads)
+        assertTrue(tasks.isActive)
+        assertFalse(tasks.isStopped())
+    }
+
+    @Test fun manualReviewStillFiltersTheFreshObservedScreen() {
+        reviewRequired = true
+        policies = PhonePolicies(denyPackages = listOf("blocked.screen"))
+        main.observedPackage = "blocked.screen"
+        main.observedText = "PRIVATE_BLOCKED_SCREEN"
+        val result = openApp()
+        assertFalse(result.text.contains("PRIVATE_BLOCKED_SCREEN"))
+        assertTrue(result.text.contains("launched"))
+        assertEquals(1, asked)
+        assertEquals(1, launches)
+        assertEquals(1, main.reads)
+    }
+
+    @Test fun stoppedWhileWaitingForManualReviewNeverReadsTheNextScreen() {
+        reviewRequired = true
+        val entered = CountDownLatch(1)
+        val release = CountDownLatch(1)
+        val caller = Executors.newSingleThreadExecutor()
+        handoff = {
+            entered.countDown()
+            assertTrue(release.await(5, TimeUnit.SECONDS))
+            HandoffResult.CONTINUE
+        }
+        try {
+            val reply = caller.submit<ToolOutput> { openApp() }
+            assertTrue(entered.await(5, TimeUnit.SECONDS))
+            assertEquals(1, launches)
+            assertEquals(0, main.reads)
+            tasks.stop("stopped during review")
+            release.countDown()
+            val result = reply.get(5, TimeUnit.SECONDS)
+            assertTrue(result.isError)
+            assertTrue(result.text.contains("launched"))
+            assertEquals(1, launches)
+            assertEquals(0, main.reads)
+        } finally { release.countDown(); caller.shutdownNow() }
+    }
 
     private fun collectCall(screen: String) = core.call(PhoneToolCatalog.COLLECT,
         mapOf("screen" to screen, "list" to 1, "max_pages" to 3))
@@ -596,4 +758,351 @@ class PhoneCorePromptOwnerTest {
         assertEquals("example.app", (startedPlan!!.target as SystemTarget.Known).app.packageName)
     }
 
+
+    @Test fun lateHandlerDenyBeforeSystemCommitBlocksEveryEntryWithoutStoppingItsOwner() {
+        for (call in listOf(::openApp, ::openUrl, ::shareIntent)) {
+            policies = PhonePolicies()
+            prepareSystem = { policies = PhonePolicies(denyPackages = listOf("example.app")) }
+            val result = call()
+            assertTrue(result.text, result.isError)
+            assertEquals(0, launches + urls + intents)
+            assertNull(startedPlan)
+            assertTrue(tasks.isActive)
+            assertFalse(tasks.isStopped())
+            assertFalse(result.text.startsWith(PhoneTasks.STOPPED_MESSAGE))
+            assertNotEquals("stopped", core.log.last()!!.decision)
+        }
+    }
+
+    @Test fun lateShareSubjectDenyStillBlocksWhenItsHandlerIsDifferent() {
+        preparedTarget = SystemTarget.Known(AppEntry("Other handler", PhoneAppIdentity("other.handler", 20234)))
+        prepareSystem = { policies = PhonePolicies(denyPackages = listOf("example.app")) }
+        val result = shareIntent()
+        assertTrue(result.text, result.isError)
+        assertEquals(0, intents)
+        assertNull(startedPlan)
+        assertTrue(tasks.isActive)
+        assertFalse(tasks.isStopped())
+        assertFalse(result.text.startsWith(PhoneTasks.STOPPED_MESSAGE))
+        assertNotEquals("stopped", core.log.last()!!.decision)
+    }
+
+    @Test fun lateSystemDenyNamesTheFollowingHandoffWithoutChangingFailedDispatchFacts() {
+        for (call in listOf(::openApp, ::openUrl, ::shareIntent)) {
+            policies = PhonePolicies()
+            prepareSystem = { policies = PhonePolicies(denyPackages = listOf("example.app")) }
+            val result = call()
+            assertTrue(result.text, result.isError)
+            assertEquals("failed", core.log.last()!!.decision)
+            assertEquals(0, launches + urls + intents)
+            assertNull(startedPlan)
+            assertTrue(tasks.isActive)
+            assertFalse(tasks.isStopped())
+            policies = PhonePolicies()
+            assertFalse(handoffCall().isError)
+            assertEquals(HandoffCause.DENY_LIST, handoffCauses.last())
+        }
+        assertEquals(3, handoffCauses.size)
+    }
+
+    @Test fun anUnclassifiedLateSystemRefusalClearsTheSameOwnersEarlierCause() {
+        policies = PhonePolicies(denyPackages = listOf("example.app"))
+        assertTrue(openApp().isError)
+        assertEquals("refused:deny-list", core.log.last()!!.decision)
+        val owner = checkNotNull(tasks.activeOwner())
+        policies = PhonePolicies(unlocks = PhoneUnlocks(ownApp = true))
+        preparedTarget = SystemTarget.Known(AppEntry("DSH", PhoneAppIdentity(SafetyRules.OWN_PACKAGE, 10123)))
+        prepareSystem = { policies = PhonePolicies() }
+        val result = openUrl()
+        assertTrue(result.text, result.isError)
+        assertEquals("failed", core.log.last()!!.decision)
+        assertTrue(tasks.isCurrent(owner))
+        assertEquals(0, launches + urls + intents)
+        assertNull(startedPlan)
+        assertFalse(handoffCall().isError)
+        assertEquals(listOf<HandoffCause?>(null), handoffCauses)
+    }
+
+    @Test fun aLateRefusalFromAnOldOwnerCannotClearTheSuccessorsOwnCause() {
+        val successorWorker = SerialWorker("successor-refusal")
+        try {
+            policies = PhonePolicies(unlocks = PhoneUnlocks(ownApp = true))
+            preparedTarget = SystemTarget.Known(AppEntry("DSH", PhoneAppIdentity(SafetyRules.OWN_PACKAGE, 10123)))
+            prepareSystem = { policies = PhonePolicies() }
+            afterRejectedStart = {
+                // The old platform start was denied; before its exception reaches Core,
+                // another owner establishes its own refusal on the real prepared-call API.
+                replace()
+                afterRejectedStart = {}
+                policies = PhonePolicies(denyPackages = listOf("example.app"))
+                val successor = checkNotNull(tasks.activeOwner())
+                tasks.callStarted()
+                try {
+                    val prepared = when (val next = core.prepareCall(PhoneToolCatalog.OPEN,
+                        mapOf("app" to "example.app"), successor)) {
+                        is Either.Left -> error("Expected a prepared successor: ${next.value.text}")
+                        is Either.Right -> next.value
+                    }
+                    assertTrue(core.call(prepared, successorWorker).isError)
+                    assertEquals("refused:deny-list", core.log.last()!!.decision)
+                } finally { tasks.callEnded(successor) }
+            }
+            assertTrue(openUrl().isError)
+            assertEquals("stopped", core.log.last()!!.decision)
+            assertEquals(0, launches + urls + intents)
+            assertNull(startedPlan)
+            assertTrue(tasks.isActive)
+            assertFalse(tasks.isStopped())
+            policies = PhonePolicies()
+            assertFalse(handoffCall().isError)
+            assertEquals(listOf(HandoffCause.DENY_LIST), handoffCauses)
+        } finally { successorWorker.shutdown() }
+    }
+
+    @Test fun unrelatedLateDenyDoesNotCancelAnySystemEntry() {
+        for (call in listOf(::openApp, ::openUrl, ::shareIntent)) {
+            policies = PhonePolicies()
+            prepareSystem = { policies = PhonePolicies(denyPackages = listOf("unrelated.app")) }
+            val before = launches + urls + intents
+            val result = call()
+            assertFalse(result.text, result.isError)
+            assertEquals(before + 1, launches + urls + intents)
+            assertSame(preparedPlan, startedPlan)
+            assertTrue(tasks.isActive)
+            assertFalse(tasks.isStopped())
+        }
+        assertEquals(1, launches)
+        assertEquals(1, urls)
+        assertEquals(1, intents)
+    }
+
+    @Test fun policyTighteningAfterSystemStartPreservesAttemptWithoutRedispatch() {
+        for (call in listOf(::openApp, ::openUrl, ::shareIntent)) {
+            policies = PhonePolicies()
+            afterStart = { policies = PhonePolicies(denyPackages = listOf("example.app")) }
+            val before = launches + urls + intents
+            val result = call()
+            assertEquals(before + 1, launches + urls + intents)
+            assertSame(preparedPlan, startedPlan)
+            assertTrue(result.text, result.text.contains(if (before == 0) "launched" else "attempted"))
+            assertFalse(result.text.startsWith(PhoneTasks.STOPPED_MESSAGE))
+            assertNotEquals("stopped", core.log.last()!!.decision)
+            assertTrue(tasks.isActive)
+            assertFalse(tasks.isStopped())
+        }
+        assertEquals(1, launches)
+        assertEquals(1, urls)
+        assertEquals(1, intents)
+    }
+
+    @Test fun lateCollectTargetDenialDiscardsItemsAndOptionalScreenWithoutStoppingOwner() {
+        for (driver in listOf(main, background)) for (withScreen in listOf(true, false)) {
+            policies = PhonePolicies()
+            driver.collectScreen = withScreen
+            val before = driver.collects
+            var original: PhoneTasks.Owner? = null
+            driver.collecting = {
+                original = checkNotNull(tasks.activeOwner())
+                policies = PhonePolicies(denyPackages = listOf("example.app"))
+            }
+            val result = collectCall("${driver.screen.prefix}1")
+            assertTrue(result.text, result.isError)
+            assertFalse(result.text.contains("late collected item"))
+            assertFalse(result.text.contains("late collected screen"))
+            assertNull(result.image)
+            assertEquals("refused:deny-list", core.log.last()!!.decision)
+            assertFalse(tasks.isStopped())
+            assertTrue(tasks.isCurrent(checkNotNull(original)))
+            assertEquals(before + 1, driver.collects)
+        }
+    }
+
+    @Test fun unrelatedCollectDenialKeepsItemsAndOptionalScreenForOriginalOwner() {
+        for (driver in listOf(main, background)) for (withScreen in listOf(true, false)) {
+            policies = PhonePolicies()
+            driver.collectScreen = withScreen
+            val before = driver.collects
+            var original: PhoneTasks.Owner? = null
+            driver.collecting = {
+                original = checkNotNull(tasks.activeOwner())
+                policies = PhonePolicies(denyPackages = listOf("unrelated.app"))
+            }
+            val result = collectCall("${driver.screen.prefix}1")
+            assertFalse(result.text, result.isError)
+            assertTrue(result.text.contains("late collected item"))
+            assertEquals(withScreen, result.text.contains("late collected screen"))
+            if (withScreen) assertArrayEquals(byteArrayOf(1, 2, 3), result.image)
+            else assertNull(result.image)
+            assertEquals("ok", core.log.last()!!.decision)
+            assertFalse(tasks.isStopped())
+            assertTrue(tasks.isCurrent(checkNotNull(original)))
+            assertEquals(before + 1, driver.collects)
+        }
+    }
+    @Test fun observedCollectDenialRemainsRefusedAfterThePolicyIsRestored() {
+        for (driver in listOf(main, background)) {
+            policies = PhonePolicies()
+            driver.collecting = {
+                val allowed = checkNotNull(driver.collectAllowed)
+                assertTrue(allowed())
+                policies = PhonePolicies(denyPackages = listOf("example.app"))
+                assertFalse(allowed())
+                policies = PhonePolicies()
+                assertFalse(allowed())
+            }
+            val result = collectCall("${driver.screen.prefix}1")
+            assertTrue(result.isError)
+            assertFalse(result.text.contains("late collected item"))
+            assertFalse(result.text.contains("late collected screen"))
+            assertNull(result.image)
+            assertEquals("refused:deny-list", core.log.last()!!.decision)
+            assertFalse(tasks.isStopped())
+            assertEquals(1, driver.collects)
+        }
+    }
+
+    @Test fun collectChecksBothItsOriginalPackageAndTheReturnedPackage() {
+        for (driver in listOf(main, background)) for (denied in listOf("example.app", "other.app")) {
+            policies = PhonePolicies()
+            driver.collectSnapshot = ScreenSnapshot("${driver.screen.prefix}2", "late collected screen",
+                "Other", "other.app", image = byteArrayOf(1), imageMime = "image/png")
+            driver.collecting = { policies = PhonePolicies(denyPackages = listOf(denied)) }
+            val before = driver.collects
+            val result = collectCall("${driver.screen.prefix}1")
+            assertTrue(result.isError)
+            assertFalse(result.text.contains("late collected item"))
+            assertFalse(result.text.contains("late collected screen"))
+            assertNull(result.image)
+            assertEquals("refused:deny-list", core.log.last()!!.decision)
+            assertFalse(tasks.isStopped())
+            assertEquals(before + 1, driver.collects)
+        }
+    }
+
+    @Test fun secureCollectedScreenCannotExposeTheSeparatelyReturnedItems() {
+        for (driver in listOf(main, background)) {
+            driver.collectSnapshot = ScreenSnapshot("${driver.screen.prefix}2", "late collected screen",
+                "Example", "example.app", secure = true, image = byteArrayOf(1), imageMime = "image/png")
+            val result = collectCall("${driver.screen.prefix}1")
+            assertTrue(result.isError)
+            assertFalse(result.text.contains("late collected item"))
+            assertFalse(result.text.contains("late collected screen"))
+            assertNull(result.image)
+            assertNotEquals("stopped", core.log.last()!!.decision)
+            assertFalse(tasks.isStopped())
+            assertEquals(1, driver.collects)
+        }
+    }
+
+    @Test fun imageOnlyCollectionFilteringKeepsTheReadablePartialText() {
+        for (driver in listOf(main, background)) {
+            driver.collectStopReason = "页面只读了一部分，无法确认列表是否到底"
+            driver.collectSnapshot = ScreenSnapshot("${driver.screen.prefix}2", "late collected screen «银行卡 ****1234»",
+                "Example", "example.app", image = byteArrayOf(1), imageMime = "image/png")
+            val result = collectCall("${driver.screen.prefix}1")
+            assertFalse(result.text, result.isError)
+            assertTrue(result.text.contains("late collected item"))
+            assertTrue(result.text.contains("late collected screen"))
+            assertTrue(result.text.contains("«银行卡 ****1234»"))
+            assertTrue(result.text.contains(driver.collectStopReason))
+            assertNull(result.image)
+            assertEquals("ok", core.log.last()!!.decision)
+            assertFalse(tasks.isStopped())
+            assertEquals(1, driver.collects)
+        }
+    }
+    @Test fun accumulatedCollectionSourcesCannotBeHiddenByTheFinalScreenOrItsAbsence() {
+        for (driver in listOf(main, background)) for (withScreen in listOf(true, false)) {
+            policies = PhonePolicies(denyPackages = listOf("other.app"))
+            driver.collectReadPackages = setOf("example.app", "other.app")
+            driver.collectScreen = withScreen
+            var original: PhoneTasks.Owner? = null
+            driver.collecting = { original = checkNotNull(tasks.activeOwner()) }
+            val before = driver.collects
+            val result = collectCall("${driver.screen.prefix}1")
+            assertTrue(result.isError)
+            assertFalse(result.text.contains("late collected item"))
+            assertFalse(result.text.contains("late collected screen"))
+            assertNull(result.image)
+            assertEquals("refused:deny-list", core.log.last()!!.decision)
+            assertTrue(tasks.isCurrent(checkNotNull(original)))
+            assertFalse(tasks.isStopped())
+            assertEquals(before + 1, driver.collects)
+        }
+    }
+
+    @Test fun allowedAccumulatedCollectionSourcesKeepTheOriginalPartialResult() {
+        for (driver in listOf(main, background)) for (withScreen in listOf(true, false)) {
+            policies = PhonePolicies(denyPackages = listOf("unrelated.app"))
+            driver.collectReadPackages = setOf("example.app", "other.app")
+            driver.collectScreen = withScreen
+            val before = driver.collects
+            val result = collectCall("${driver.screen.prefix}1")
+            assertFalse(result.text, result.isError)
+            assertTrue(result.text.contains("late collected item"))
+            assertEquals(withScreen, result.text.contains("late collected screen"))
+            if (withScreen) assertArrayEquals(byteArrayOf(1, 2, 3), result.image)
+            else assertNull(result.image)
+            assertEquals("ok", core.log.last()!!.decision)
+            assertFalse(tasks.isStopped())
+            assertEquals(before + 1, driver.collects)
+        }
+    }
+    @Test fun finalCollectionSourcesCannotCombinePermissionsFromDifferentPolicySnapshots() {
+        for (driver in listOf(main, background)) {
+            policyRead = null
+            policies = PhonePolicies()
+            driver.collectScreen = false
+            driver.collectReadPackages = linkedSetOf("example.app", "other.app")
+            var finalReads = 0
+            var original: PhoneTasks.Owner? = null
+            driver.collecting = {
+                original = checkNotNull(tasks.activeOwner())
+                // All entry/live checks have already happened. Arm only the final result check.
+                policyRead = {
+                    finalReads++
+                    PhonePolicies(denyPackages = listOf(if (finalReads <= 2) "other.app" else "example.app"))
+                }
+            }
+            val result = collectCall("${driver.screen.prefix}1")
+            assertTrue(result.isError)
+            assertFalse(result.text.contains("late collected item"))
+            assertNull(result.image)
+            assertEquals("refused:deny-list", core.log.last()!!.decision)
+            assertEquals(1, finalReads)
+            assertTrue(tasks.isCurrent(checkNotNull(original)))
+            assertFalse(tasks.isStopped())
+            assertEquals(1, driver.collects)
+        }
+    }
+    @Test fun finalCollectionBatchAndAttachedScreenUseTheSamePolicySnapshot() {
+        for (driver in listOf(main, background)) {
+            policyRead = null
+            policies = PhonePolicies()
+            driver.collectReadPackages = linkedSetOf("example.app", "other.app")
+            driver.collectSnapshot = ScreenSnapshot("${driver.screen.prefix}2", "late collected screen",
+                "Example", "example.app", image = byteArrayOf(1, 2, 3), imageMime = "image/png",
+                readPackages = linkedSetOf("example.app", "other.app"))
+            var finalReads = 0
+            var original: PhoneTasks.Owner? = null
+            driver.collecting = {
+                original = checkNotNull(tasks.activeOwner())
+                policyRead = {
+                    finalReads++
+                    if (finalReads == 1) PhonePolicies()
+                    else PhonePolicies(denyPackages = listOf("other.app"))
+                }
+            }
+            val result = collectCall("${driver.screen.prefix}1")
+            assertFalse(result.text, result.isError)
+            assertTrue(result.text.contains("late collected item"))
+            assertTrue(result.text.contains("late collected screen"))
+            assertArrayEquals(byteArrayOf(1, 2, 3), result.image)
+            assertEquals("ok", core.log.last()!!.decision)
+            assertEquals(1, finalReads)
+            assertTrue(tasks.isCurrent(checkNotNull(original)))
+            assertFalse(tasks.isStopped())
+            assertEquals(1, driver.collects)
+        }
+    }
 }

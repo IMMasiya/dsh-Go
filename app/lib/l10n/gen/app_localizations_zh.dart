@@ -11179,7 +11179,7 @@ class L10nZh extends L10n {
       'main_changed': '主屏采样点发生变化，也可能包含用户操作；请完成清理，不能据此判定原因。',
       'main_unchanged': '这些有限采样点未见变化，采样之间是否受扰仍未知。',
       'main_incomplete': '主屏样本不完整，不能据此证明没有受扰。',
-      'not_installed': '未安装本机 OCR 识别器，未执行 OCR 测试。',
+      'not_installed': '本自检未接入 OCR，未执行识别测试。',
       'other': '收到无法识别的结果。',
     });
     return '$_temp0';
@@ -11216,7 +11216,7 @@ class L10nZh extends L10n {
 
   @override
   String get phoneSelfCheckTargetC2Scope =>
-      '使用固定本机目标核验启动、控件树、单次按钮点按、ASCII／中文 ACTION_SET_TEXT 整框替换与回读、本地图样截图和有限受控刷新；不衡量 FPS 或流畅度。有限主屏样本不能证明采样间全程无扰。OCR 未安装；触摸接收探针、滚动和返回不在本次范围。仅清理完成也不证明曾创建展示屏。';
+      '使用固定本机目标核验启动、控件树、单次按钮点按、ASCII／中文 ACTION_SET_TEXT 整框替换与回读、本地图样截图和有限受控刷新；不衡量 FPS 或流畅度。有限主屏样本不能证明采样间全程无扰。OCR、触摸接收探针、滚动和返回不在本次范围。仅清理完成也不证明曾创建展示屏。';
 
   @override
   String phoneTaskWaiting(int taskId) {
@@ -11266,6 +11266,19 @@ class L10nZh extends L10n {
 
   @override
   String get phoneInterruptionActionFailed => '任务记录尚未确认，请重试';
+
+  @override
+  String get phoneLocalOcrTitle => '本机文字识别（ML Kit）';
+
+  @override
+  String get phoneLocalOcrUnknown => '暂时无法读取本机文字识别设置，请刷新后再试。';
+
+  @override
+  String get phoneLocalOcrDisclosure => '识别在本机进行，截图和文字不会发给 Google；Google 的 SDK 会收集机型、应用版本、耗时等使用统计。';
+
+  @override
+  String get phoneLocalOcrDetails =>
+      '默认开启。关闭时，识别请求不会触发 SDK 加载或初始化。截图和识别文字可能发送给你配置的模型。关闭后不再开始新的本机文字识别；已经开始的识别可能仍在收尾。关闭不会卸载 SDK，也不承诺清除或停止发送此前积累的 SDK 统计。';
 
   @override
   String get phoneTaskResultReady => '任务完成 · 查看结果';
@@ -18228,7 +18241,7 @@ class L10nZh extends L10n {
   String get usageStatsSection => '改进 DSH Go';
 
   @override
-  String get usageStatsFooter => '只含使用次数、版本和手机品牌，不含对话、文件和账号。';
+  String get usageStatsFooter => '这个开关只控制 dsh-go 自身的使用次数、版本和手机品牌统计，不含对话、文件和账号；它不控制 Google ML Kit SDK 的统计。';
 
   @override
   String get usageNoticeBody => '不含对话和个人信息，可随时关闭';

@@ -23,6 +23,7 @@ import io.github.ccch1mneyyy.dsh_app.MainActivity
 import io.github.ccch1mneyyy.dsh_app.R
 import io.github.ccch1mneyyy.dsh_app.notify.LiveActivity
 import io.github.ccch1mneyyy.dsh_app.phone.a11y.A11yKeeper
+import io.github.ccch1mneyyy.dsh_app.phone.a11y.MlKitLocalOcr
 import io.github.ccch1mneyyy.dsh_app.phone.a11y.PhoneA11yService
 import io.github.ccch1mneyyy.dsh_app.phone.background.BackgroundControl
 import io.github.ccch1mneyyy.dsh_app.phone.background.BackgroundPreview
@@ -49,6 +50,7 @@ import java.util.concurrent.TimeUnit
  */
 class PhoneControl private constructor(private val app: Context) : PhoneEnv, ControlListener {
     private val prefs = app.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+    @Volatile private var policiesCache: PhonePolicies = readPolicies()
     private val main = Handler(Looper.getMainLooper())
     private val nm = app.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
     private val ticker = Executors.newSingleThreadScheduledExecutor { r -> Thread(r, "dsh-phone-status").apply { isDaemon = true } }
@@ -78,6 +80,10 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
             "phone_reading_screen" -> R.string.phone_reading_screen
             "phone_system_handler_unconfirmed" -> R.string.phone_system_handler_unconfirmed
             "phone_system_attempt_stopped" -> R.string.phone_system_attempt_stopped
+            "phone_system_review_notice" -> R.string.phone_system_review_notice
+            "phone_system_review_unavailable" -> R.string.phone_system_review_unavailable
+            "phone_system_review_timeout" -> R.string.phone_system_review_timeout
+            "phone_system_review_continued" -> R.string.phone_system_review_continued
             "phone_reading_list" -> R.string.phone_reading_list
             "phone_acting" -> R.string.phone_acting
             "phone_status_tap" -> R.string.phone_status_tap
@@ -180,8 +186,11 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
     private val server = McpServer(PhoneToolCatalog.listJson(), { name, args, _ -> sessions.run(sessions.admit(null), name, args) }, SERVER_VERSION)
     private val bridge = PhoneBridge(server, { line -> logger(line) }, { call ->
         val admission = sessions.admit(call.caller)
-        val invoke: () -> String = { call.run { name, args, _ -> sessions.run(admission, name, args) } }
-        invoke
+        PhoneCallWork(
+            invoke = { call.run { name, args, _ -> sessions.run(admission, name, args) } },
+            remainingMs = { sessions.remainingMs(admission) },
+            expiredReply = { call.run { _, _, _ -> sessions.expire(admission) } },
+        )
     }, { end ->
         try {
             val task = sessions.admitEnd(end.sessionId, end.runId, end.completion)
@@ -223,8 +232,9 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
 
     @Volatile private var logger: (String) -> Unit = {}
     @Volatile private var rootfs: File? = null
-    @Volatile private var policiesCache: PhonePolicies? = null
     @Volatile private var lastStatus: Map<String, Any?>? = null
+    // Only the process-lifetime ticker capture lane reads or increments this value.
+    private var statusRevision = 0L
     @Volatile private var keptTask = 0L
     private var screenReceiver: BroadcastReceiver? = null
     private val sinks = CopyOnWriteArraySet<(Map<String, Any?>) -> Unit>()
@@ -252,6 +262,10 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
         PhoneRegistry.unlocks = { policies().unlocks }
         background.onStatusChanged = { emitStatus() }
         background.onPreviewChanged = { main.post { preview.refresh() } }
+        background.localOcrAllowed = { target ->
+            isEnabled() && !isLocked() && target.packageName != app.packageName &&
+                target.packageName !in policies().denyPackages
+        }
         (app as? Application)?.let { AppVisibility.register(it) }
         tasks.addListener { onTask(it) }
         ticker.scheduleWithFixedDelay({ tick() }, 2, 2, TimeUnit.SECONDS)
@@ -284,23 +298,29 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
         return true
     }
 
-    override fun policies(): PhonePolicies = policiesCache ?: run {
+    override fun policies(): PhonePolicies = policiesCache
+
+    /** Construction only, before any registry/worker can read the published cache. */
+    private fun readPolicies(): PhonePolicies {
         val stored = prefs.getString(K_POLICIES, null)
-        val p = try {
+        return try {
             PhonePolicies.fromMap(stored?.let { Json.parse(it) as? Map<*, *> })
         } catch (_: Exception) {
             PhonePolicies()
         }
-        policiesCache = p
-        p
     }
 
     fun setPolicies(map: Map<*, *>?): Boolean {
+        applyLocalOcrPolicyUpdate(map,
+            publish = { MlKitLocalOcr.get(app).setEnabled(it) },
+            commit = { app.getSharedPreferences(MlKitLocalOcr.PREFS, Context.MODE_PRIVATE)
+                .edit().putBoolean(MlKitLocalOcr.KEY, it).commit() },
+        )?.let { return it }
         // Partial updates keep what they don't mention (the 免确认 switch sends only its flag).
         // 解除限制 is refused while any task, selected or not, may still act; restoring never is.
-        val p = PhonePolicies.update(map, base = policies(), busy = sessions::anyActive) ?: return false
+        val p = sessions.updatePolicies(map, { policiesCache }, { policiesCache = it }) ?: return false
+        // The plugin serializes setters on its IO executor; never hold admission over preferences IO.
         prefs.edit().putString(K_POLICIES, Json.write(p.toMap())).apply()
-        policiesCache = p
         return true
     }
 
@@ -311,7 +331,8 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
         for (pkg in (p.denyPackages + p.confirmEveryWritePackages + PhonePolicies().denyPackages + PhonePolicies().confirmEveryWritePackages).distinct()) {
             label(pkg)?.let { labels[pkg] = it }
         }
-        return p.toMap() + mapOf("labels" to labels, "defaults" to PhonePolicies().toMap())
+        return p.toMap() + mapOf("labels" to labels, "defaults" to PhonePolicies().toMap(),
+            LOCAL_OCR_POLICY_FIELD to MlKitLocalOcr.get(app).enabled)
     }
 
     private fun label(pkg: String): String? = try {
@@ -332,6 +353,7 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
         tasks.invalidateOwners()
         skillLifecycle.retired()
         stopBridge()
+        sessions.beginCallerLaunch()
         this.rootfs = rootfs
         if (!isEnabled() || safe) {
             PhoneGuest.clearConfig(rootfs)
@@ -667,29 +689,44 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
         return null
     }
 
-    fun status(): Map<String, Any?> = linkedMapOf(
-        "enabled" to isEnabled(),
-        "skills" to skillsStatus(),
-        "bridgeListening" to bridge.listening,
-        "a11y" to linkedMapOf("enabled" to a11yEnabledInSettings(), "serviceConnected" to (PhoneRegistry.mainDriver != null)),
-        "overlay" to (PhoneRegistry.overlayGate != null),
-        "notifications" to nm.areNotificationsEnabled(),
-        "confirmationNotifications" to notificationGate.available(),
-        "background" to backgroundStatus(),
-        "a11yKeeper" to keeperStatus(),
-        "task" to tasks.snapshot().toMap(),
-        "taskInterruption" to taskJournal.status(),
-        "taskProtocol" to 1,
-        "tasks" to sessions.snapshot(),
-        "selectedTaskId" to (displaySelection.ticket()?.owner?.taskId ?: 0L),
-        "parallelLimit" to 1,
-        "device" to linkedMapOf(
-            "manufacturer" to Build.MANUFACTURER,
-            "sdkInt" to Build.VERSION.SDK_INT,
-            "sideloaded" to sideloaded(),
-            "restricted" to RestrictedSettings.read(app),
-        ),
-    )
+    /** Capture on the same lane as events; never occupy the plugin control queue while waiting. */
+    fun status(done: (Result<Map<String, Any?>>) -> Unit) {
+        ticker.execute {
+            val value = try { Result.success(captureStatus()) }
+                catch (failure: Throwable) { Result.failure(failure) }
+            done(value)
+        }
+    }
+
+    /** Called only on ticker: complete sampling and revision assignment cannot interleave. */
+    private fun captureStatus(): Map<String, Any?> {
+        val value = linkedMapOf<String, Any?>(
+            "enabled" to isEnabled(),
+            "skills" to skillsStatus(),
+            "bridgeListening" to bridge.listening,
+            "a11y" to linkedMapOf("enabled" to a11yEnabledInSettings(), "serviceConnected" to (PhoneRegistry.mainDriver != null)),
+            "overlay" to (PhoneRegistry.overlayGate != null),
+            "notifications" to nm.areNotificationsEnabled(),
+            "confirmationNotifications" to notificationGate.available(),
+            "background" to backgroundStatus(),
+            "a11yKeeper" to keeperStatus(),
+            "task" to tasks.snapshot().toMap(),
+            "taskInterruption" to taskJournal.status(),
+            "taskProtocol" to 1,
+            "callerCapability" to sessions.callerCapability(),
+            "tasks" to sessions.snapshot(),
+            "selectedTaskId" to (displaySelection.ticket()?.owner?.taskId ?: 0L),
+            "parallelLimit" to 1,
+            "device" to linkedMapOf(
+                "manufacturer" to Build.MANUFACTURER,
+                "sdkInt" to Build.VERSION.SDK_INT,
+                "sideloaded" to sideloaded(),
+                "restricted" to RestrictedSettings.read(app),
+            ),
+        )
+        value["statusRevision"] = ++statusRevision
+        return value
+    }
 
     private fun backgroundStatus(): Map<String, Any?> = try {
         background.status() + ("preview" to mapOf("v" to 1, "enabled" to preview.enabled))
@@ -769,12 +806,13 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
     private fun pushIfChanged(force: Boolean) {
         if (sinks.isEmpty()) return
         val s = try {
-            status()
+            captureStatus()
         } catch (_: Exception) {
             return
         }
-        if (!force && s == lastStatus) return
-        lastStatus = s
+        val report = s - "statusRevision"
+        if (!force && report == lastStatus) return
+        lastStatus = report
         main.post { sinks.forEach { runCatching { it(s) } } }
     }
 
@@ -915,4 +953,20 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
         fun switchedOn(context: Context): Boolean =
             context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getBoolean(K_ENABLED, false)
     }
+}
+
+private const val LOCAL_OCR_POLICY_FIELD = "localOcrEnabled"
+
+/** Null leaves the existing policy update untouched. OCR uses its own single-key transaction. */
+internal fun applyLocalOcrPolicyUpdate(map: Map<*, *>?, publish: (Boolean) -> Unit,
+    commit: (Boolean) -> Boolean): Boolean? {
+    if (map?.containsKey(LOCAL_OCR_POLICY_FIELD) != true) return null
+    if (map.size != 1) return false
+    val enabled = map[LOCAL_OCR_POLICY_FIELD] as? Boolean ?: return false
+    // OFF revokes admission even if storage fails. ON waits for a confirmed save.
+    if (!enabled) publish(false)
+    val saved = try { commit(enabled) } catch (_: Exception) { false }
+    if (!saved) return false
+    if (enabled) publish(true)
+    return true
 }

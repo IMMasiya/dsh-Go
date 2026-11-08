@@ -276,33 +276,13 @@ class SystemActions(private val app: Context) : SystemApi {
         val attempted = AppStrings.get(app, R.string.phone_system_start_attempted, native.noticeWhat)
         val exempt = AppVisibility.visible || PhoneRegistry.mainDriver != null || Build.VERSION.SDK_INT < Build.VERSION_CODES.Q
         if (exempt) return SysResult(true, attempted, native.target)
-        // Notification failure/stop cannot erase a platform call that already returned.
-        val notice = try { postOpen(dispatch, native.noticeWhat) } catch (_: InterruptedException) {
+        // A separate commitment: a stop during startActivity must not start a new review.
+        // The Core uses its existing task-owned handoff; this never replays the original Intent.
+        if (!dispatch.commitNotice()) {
             Thread.currentThread().interrupt()
             return SysResult(true, attempted, native.target)
-        } catch (_: Exception) { false }
-        return SysResult(true, attempted + " " + AppStrings.get(app,
-            if (notice) R.string.phone_system_review_notice else R.string.phone_system_review_unavailable), native.target)
-    }
-
-    private fun postOpen(dispatch: PhoneTasks.SystemDispatch, what: String): Boolean {
-        ensureChannel(CHANNEL_OPEN, AppStrings.get(app, R.string.phone_open_channel), NotificationManager.IMPORTANCE_HIGH)
-        val available = nm.areNotificationsEnabled() &&
-            (Build.VERSION.SDK_INT < Build.VERSION_CODES.O ||
-                nm.getNotificationChannel(CHANNEL_OPEN)?.importance != NotificationManager.IMPORTANCE_NONE)
-        val notification = builder(CHANNEL_OPEN)
-            .setContentTitle(AppStrings.get(app, R.string.phone_open_notice, what))
-            .setContentText(AppStrings.get(app, R.string.phone_tap_open)).setAutoCancel(true)
-        // A separate commitment: a stop during startActivity must not publish a new notice.
-        // Create the PendingIntent only after commitment; never cancel a potentially reused one.
-        if (!dispatch.commitNotice()) throw InterruptedException(PhoneTasks.STOPPED_MESSAGE)
-        if (!available) return false
-        val id = ids.incrementAndGet()
-        val review = Intent(app, MainActivity::class.java)
-            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
-        val pi = PendingIntent.getActivity(app, id, review, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
-        nm.notify(TAG, id, notification.setContentIntent(pi).build())
-        return true
+        }
+        return SysResult(true, attempted, native.target, requiresReview = true)
     }
 
     override fun notify(title: String, text: String): SysResult {
@@ -405,6 +385,5 @@ class SystemActions(private val app: Context) : SystemApi {
     companion object {
         private const val TAG = "dsh-phone-sys"
         const val CHANNEL_NOTIFY = "dsh-phone-notify"
-        const val CHANNEL_OPEN = "dsh-phone-open"
     }
 }

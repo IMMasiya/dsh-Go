@@ -184,6 +184,7 @@ internal class ControlOverlay(private val service: AccessibilityService) : UserG
             // over WindowManager work or enqueue a second, unguarded status runnable.
             // The pill's 暂停 / 停止 / 插话 are bound to this status's own task, captured inside its guard.
             if (!statusOwnership.publish(ifCurrent) { PhoneRegistry.controlListener?.shownControls() }) return@post
+            if (editing && statusOwnership.editingControls == null) endEditing()
             statusText = text
             paused = statusOwnership.controls?.isPaused() == true
             setStopped(false)
@@ -675,29 +676,32 @@ internal class ControlOverlay(private val service: AccessibilityService) : UserG
 
     private fun togglePause() {
         if (stoppedNote) return
-        val controls = statusOwnership.controls
-        paused = !(controls?.isPaused() ?: paused)
+        val controls = statusOwnership.controls ?: return
+        val next = !controls.isPaused()
+        if (!controls.setPaused(next)) {
+            announce(s(R.string.overlay_control_rejected))
+            return
+        }
+        paused = next
         renderPill()
-        controls?.setPaused(paused)
         announce(s(if (paused) R.string.overlay_paused_short else R.string.overlay_resume_description))
     }
 
-    /** 停止 on the capsule or the card, or the ball held: everything pending answers STOP. */
+    /** Stop only the displayed task; its native owner chain cancels its own prompt tickets. */
     private fun stopFromPill() {
         if (stoppedNote) return
-        sharedPrompt?.ticket?.stop()
-        pendingConfirm?.resolve(Decision.STOP)
-        pendingHandoff?.resolve(HandoffResult.STOP)
-        dismissConfirm()
-        dismissHandoff()
+        val controls = statusOwnership.controls ?: return
+        // l10n:keep agent stop reason
+        if (!controls.stop("你在悬浮条上点了停止")) {
+            announce(s(R.string.overlay_control_rejected))
+            return
+        }
         paused = false
         endEditing()
         setStopped(true)
         renderPill()
         clearStoppedLater()
         announce(s(R.string.overlay_stopped))
-        // l10n:keep agent stop reason
-        statusOwnership.controls?.stop("你在悬浮条上点了停止")
     }
 
     private fun announce(text: String) {
@@ -723,7 +727,7 @@ internal class ControlOverlay(private val service: AccessibilityService) : UserG
     /** The steer field in the card: the window takes the keyboard until the text goes or is sent. */
     private fun startSteer() {
         val p = pill ?: return
-        if (stoppedNote || !fold.expanded || editing) return
+        if (stoppedNote || !fold.expanded || editing || !statusOwnership.beginEditing()) return
         editing = true
         holdFold(FoldClock.Hold.EDITING)
         p.params.flags = p.params.flags and WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE.inv()
@@ -733,7 +737,10 @@ internal class ControlOverlay(private val service: AccessibilityService) : UserG
     }
 
     private fun endEditing() {
+        statusOwnership.endEditing()
         val p = pill
+        p?.input?.setText("")
+        p?.input?.error = null
         if (p != null && (editing || p.editing)) {
             ime.hideSoftInputFromWindow(p.input.windowToken, 0)
             p.stopEditing()
@@ -750,9 +757,15 @@ internal class ControlOverlay(private val service: AccessibilityService) : UserG
         val p = pill ?: return
         val text = p.input.text?.toString()?.trim().orEmpty()
         if (text.isEmpty()) return
-        p.input.setText("")
+        val controls = statusOwnership.editingControls
+        if (controls == null || !controls.interject(text)) {
+            val failure = s(R.string.overlay_steer_rejected)
+            p.input.error = failure
+            announce(failure)
+            return
+        }
+        p.input.error = null
         endEditing()
-        statusOwnership.controls?.interject(text)
         val note = s(R.string.overlay_steer_sent, text)
         steerNote = note
         // Back to the capsule: the note shows where the line is.
@@ -1324,6 +1337,13 @@ internal class ControlOverlay(private val service: AccessibilityService) : UserG
         pill?.let { it.root to it.params }, ball?.let { it.root to it.params },
         confirmCard?.let { it.root to it.params }, handoffCard?.let { it.root to it.params },
     )
+
+    /** Main-thread identity check, including invisible roots during a display capture. */
+    internal fun ownsWindow(windowId: Int): Boolean = windowId >= 0 && windows().any { (root, _) ->
+        if (!root.isAttachedToWindow) return@any false
+        val node = root.createAccessibilityNodeInfo() ?: return@any false
+        try { node.windowId == windowId } finally { node.recycle() }
+    }
 
     private fun add(view: View, params: WindowManager.LayoutParams): Boolean = try {
         wm.addView(view, params); true

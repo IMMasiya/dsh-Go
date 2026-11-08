@@ -86,10 +86,11 @@ class PhoneA11yService : AccessibilityService() {
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         clock.tick(event?.packageName)
-        // A window shown or refocused retires coordinate starts verified before it. Our own overlay
-        // re-shows itself after each full-display capture: that is not a transition of the target.
-        if (event != null && event.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED &&
-            event.packageName?.toString() != packageName) driver?.windowChanged()
+        // Window changes retire both coordinates and screenshot authorization. Only an identified
+        // window of this service's controls is exempt; switching to DSH itself is still a transition.
+        if (event != null && invalidatesVisual(event.eventType) {
+            overlay?.ownsWindow(event.windowId) == true
+        }) driver?.windowChanged()
     }
 
     /**
@@ -148,6 +149,10 @@ class PhoneA11yService : AccessibilityService() {
 
     companion object {
         private const val TAG = "DshA11y"
+
+        internal fun invalidatesVisual(eventType: Int, ownOverlay: () -> Boolean): Boolean =
+            (eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED ||
+                eventType == AccessibilityEvent.TYPE_WINDOWS_CHANGED) && !ownOverlay()
 
         /** The connected service, if any. */
         @Volatile var instance: PhoneA11yService? = null

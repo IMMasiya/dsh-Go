@@ -30,7 +30,17 @@ internal class Shot(
     val takenAtMillis: Long? = null,
     val observation: ImageObservation? = null,
     val localText: LocalOcrResult = LocalOcrResult.Unavailable(LocalOcrResult.Reason.NO_FRAME),
-)
+    val rawWidth: Int = 0,
+    val rawHeight: Int = 0,
+    val viewport: io.github.ccch1mneyyy.dsh_app.phone.VisualBounds? = null,
+) {
+    /** Geometry and raw dimensions travel together even when no JPEG was requested. */
+    fun visualText(): LocalOcrVisual.Output? {
+        val imageGeometry = geometry ?: return null
+        val rawViewport = viewport ?: return null
+        return LocalOcrVisual.format(localText, rawWidth, rawHeight, rawViewport, imageGeometry)
+    }
+}
 
 internal class ScreenShooter(private val service: AccessibilityService, private val overlay: ControlOverlay,
     private val localOcr: LocalOcr = NoLocalOcr) {
@@ -83,7 +93,7 @@ internal class ScreenShooter(private val service: AccessibilityService, private 
             if (looksBlack(bitmap)) return Shot(null, null, null, true, "截图全黑，可能是禁止截图的页面")
             val cancelled = { Thread.currentThread().isInterrupted || localTextCancelled() ||
                 synchronized(captureLock) { closed } }
-            val localText = LocalOcrBoundary.read(readLocalText && image, localTextPrivacyAllowed,
+            val localText = LocalOcrBoundary.read(readLocalText, localTextPrivacyAllowed,
                 bitmap.width, bitmap.height, deadline, SystemClock::uptimeMillis, cancelled) {
                 localOcr.recognize(bitmap, deadline, cancelled)
             }
@@ -99,7 +109,9 @@ internal class ScreenShooter(private val service: AccessibilityService, private 
             val sy = h.toFloat() / origin.height.coerceAtLeast(1)
             val geometry = ImageGeometry(origin.left, origin.top, sx, sy, w, h)
             val observation = ImageObservation(geometry, raw.capturedUptimeMs, frame)
-            if (!image) return Shot(null, null, geometry, false, null, takenAt, observation)
+            val viewport = io.github.ccch1mneyyy.dsh_app.phone.VisualBounds(origin.left, origin.top, origin.right, origin.bottom)
+            if (!image) return Shot(null, null, geometry, false, null, takenAt, observation,
+                localText, bitmap.width, bitmap.height, viewport)
             var scaled = if (factor < 1f) Bitmap.createScaledBitmap(bitmap, w, h, true) else bitmap
             if (scaled === bitmap || !scaled.isMutable) {
                 val mutable = scaled.copy(Bitmap.Config.ARGB_8888, true)
@@ -111,7 +123,7 @@ internal class ScreenShooter(private val service: AccessibilityService, private 
                 val out = ByteArrayOutputStream()
                 scaled.compress(Bitmap.CompressFormat.JPEG, 80, out)
                 return Shot(out.toByteArray(), "image/jpeg", geometry, false, null, takenAt,
-                    observation, localText)
+                    observation, localText, bitmap.width, bitmap.height, viewport)
             } finally { scaled.recycle() }
         } finally { bitmap.recycle() }
     }

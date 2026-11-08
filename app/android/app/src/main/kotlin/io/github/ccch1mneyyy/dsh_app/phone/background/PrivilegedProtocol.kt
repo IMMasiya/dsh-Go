@@ -106,6 +106,8 @@ object Proto {
     const val OP_OBSERVE = "observe"
     // Optional local summary only; independent of image delivery.
     const val LOCAL_VISUAL = "localVisual"
+    const val AFTER_LOCAL_VISUAL = "afterLocalVisual"
+    const val AFTER_VISUAL = "afterVisual"
     const val VISUAL_CHANGE = "visualChange"
     const val COORDINATE_SCOPE_VERSION = "coordinateScopeVersion"
     const val COORDINATE_SCOPE_KNOWN = "coordinateScopeKnown"

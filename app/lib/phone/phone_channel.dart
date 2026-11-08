@@ -571,9 +571,26 @@ class PhoneTaskInterruption {
   }
 }
 
+/// Native launch history; this counter is not an execution token.
+class PhoneCallerCapability {
+  const PhoneCallerCapability(this.launch, this.modernSeen);
+  final int launch;
+  final bool modernSeen;
+
+  static PhoneCallerCapability? parse(Object? value) {
+    if (value is! Map) return null;
+    final launch = value['launch'];
+    final modern = value['modernSeen'];
+    return launch is int && launch >= 0 && modern is bool ? PhoneCallerCapability(launch, modern) : null;
+  }
+}
+
 class PhoneStatus {
+  static const _keepError = Object();
   const PhoneStatus({
     this.ready = true,
+    this.statusRevision,
+    this.statusRevisionPresent = false,
     this.error,
     this.enabled = false,
     this.bridgeListening = false,
@@ -585,6 +602,7 @@ class PhoneStatus {
     this.background = const PhoneBackgroundStatus(),
     this.task = const PhoneTaskStatus(),
     this.taskProtocol = 0,
+    this.callerCapability,
     this.tasks = const [],
     this.parallelLimit = 1,
     this.device = const PhoneDevice(),
@@ -595,6 +613,8 @@ class PhoneStatus {
   /// The native module isn't there (or failed to answer): "未就绪".
   const PhoneStatus.notReady([this.error])
     : ready = false,
+      statusRevision = null,
+      statusRevisionPresent = false,
       enabled = false,
       bridgeListening = false,
       a11y = const PhoneA11yStatus(),
@@ -605,6 +625,7 @@ class PhoneStatus {
       background = const PhoneBackgroundStatus(),
       task = const PhoneTaskStatus(),
       taskProtocol = 0,
+      callerCapability = null,
       tasks = const [],
       parallelLimit = 1,
       device = const PhoneDevice(),
@@ -612,6 +633,9 @@ class PhoneStatus {
       taskInterruption = const PhoneTaskInterruption();
 
   factory PhoneStatus.fromMap(Map<Object?, Object?> m) => PhoneStatus(
+    statusRevision: m['statusRevision'] is int && (m['statusRevision'] as int) > 0
+        ? m['statusRevision'] as int : null,
+    statusRevisionPresent: m.containsKey('statusRevision'),
     enabled: _flag(m['enabled']),
     bridgeListening: _flag(m['bridgeListening']),
     a11y: PhoneA11yStatus.fromMap(_map(m['a11y'])),
@@ -622,6 +646,7 @@ class PhoneStatus {
     background: PhoneBackgroundStatus.fromMap(_map(m['background'])),
     task: _selectedPhoneTask(m),
     taskProtocol: m['taskProtocol'] == 1 ? 1 : 0,
+    callerCapability: PhoneCallerCapability.parse(m['callerCapability']),
     tasks: _phoneTasks(m),
     parallelLimit: _int(m['parallelLimit']) ?? 1,
     device: PhoneDevice.fromMap(_map(m['device'])),
@@ -629,8 +654,13 @@ class PhoneStatus {
     taskInterruption: PhoneTaskInterruption.parse(m['taskInterruption']),
   );
 
-  /// The native side answered. False → everything else is a default.
+  /// Whether native status is currently available. On transport failure the
+  /// other fields may retain the last trusted snapshot.
   final bool ready;
+
+  /// Process-lifetime native snapshot order; absent only on older native modules.
+  final int? statusRevision;
+  final bool statusRevisionPresent;
 
   /// Why it didn't, when it said.
   final String? error;
@@ -651,6 +681,7 @@ class PhoneStatus {
   final PhoneBackgroundStatus background;
   final PhoneTaskStatus task;
   final int taskProtocol;
+  final PhoneCallerCapability? callerCapability;
   final List<PhoneTaskStatus> tasks;
   final int parallelLimit;
   final PhoneDevice device;
@@ -661,9 +692,11 @@ class PhoneStatus {
   /// waiting to start, or one still draining. Mirrors the native refusal of 解除限制.
   bool get anyTaskBusy => task.active || tasks.any((t) => t.active || t.pendingCalls > 0 || t.draining);
 
-  PhoneStatus copyWith({bool? enabled}) => PhoneStatus(
-    ready: ready,
-    error: error,
+  PhoneStatus copyWith({bool? enabled, bool? ready, Object? error = _keepError}) => PhoneStatus(
+    ready: ready ?? this.ready,
+    error: identical(error, _keepError) ? this.error : error as String?,
+    statusRevision: statusRevision,
+    statusRevisionPresent: statusRevisionPresent,
     enabled: enabled ?? this.enabled,
     bridgeListening: bridgeListening,
     a11y: a11y,
@@ -674,6 +707,7 @@ class PhoneStatus {
     background: background,
     task: task,
     taskProtocol: taskProtocol,
+    callerCapability: callerCapability,
     tasks: tasks,
     parallelLimit: parallelLimit,
     device: device,
@@ -937,6 +971,7 @@ class PhonePolicies {
     this.defaultConfirm = const [],
     this.confirmMode = PhoneConfirmMode.ask,
     this.unlocks = const {},
+    this.localOcrEnabled,
   });
 
   factory PhonePolicies.fromMap(Map<Object?, Object?> m) {
@@ -952,6 +987,7 @@ class PhonePolicies {
       defaultDeny: _strings(defaults['denyPackages']),
       defaultConfirm: _strings(defaults['confirmEveryWritePackages']),
       confirmMode: PhoneConfirmMode.parse(m['confirmMode']),
+      localOcrEnabled: _maybeFlag(m['localOcrEnabled']),
       // Only an explicit true lifts a rule.
       unlocks: {
         for (final u in PhoneUnlock.values)
@@ -975,6 +1011,9 @@ class PhonePolicies {
   /// The hard rules the person lifted; empty by default.
   final Set<PhoneUnlock> unlocks;
 
+  /// Missing, malformed or unread native settings remain unknown.
+  final bool? localOcrEnabled;
+
   Map<String, Object?> toWire() => {
     'denyPackages': denyPackages,
     'confirmEveryWritePackages': confirmEveryWritePackages,
@@ -989,6 +1028,7 @@ class PhonePolicies {
     defaultConfirm: defaultConfirm,
     confirmMode: mode,
     unlocks: unlocks,
+    localOcrEnabled: localOcrEnabled,
   );
 
   PhonePolicies withUnlock(PhoneUnlock unlock, bool on) => PhonePolicies(
@@ -999,6 +1039,18 @@ class PhonePolicies {
     defaultConfirm: defaultConfirm,
     confirmMode: confirmMode,
     unlocks: on ? {...unlocks, unlock} : ({...unlocks}..remove(unlock)),
+    localOcrEnabled: localOcrEnabled,
+  );
+
+  PhonePolicies withLocalOcrEnabled(bool? enabled) => PhonePolicies(
+    denyPackages: denyPackages,
+    confirmEveryWritePackages: confirmEveryWritePackages,
+    labels: labels,
+    defaultDeny: defaultDeny,
+    defaultConfirm: defaultConfirm,
+    confirmMode: confirmMode,
+    unlocks: unlocks,
+    localOcrEnabled: enabled,
   );
 
   AppRule ruleFor(String package) {
@@ -1038,6 +1090,7 @@ class PhonePolicies {
       defaultConfirm: defaultConfirm,
       confirmMode: confirmMode,
       unlocks: unlocks,
+      localOcrEnabled: localOcrEnabled,
     );
   }
 }
@@ -1356,6 +1409,9 @@ class PhoneChannel {
   }
 
   Future<bool> setPolicies(PhonePolicies policies) => _bool('setPolicies', policies.toWire());
+
+  Future<bool> setLocalOcrEnabled(bool enabled) =>
+      _bool('setPolicies', {'localOcrEnabled': enabled});
 
   /// Lifts or restores one hard rule, and nothing else (`setPolicies` keeps
   /// what it isn't sent).

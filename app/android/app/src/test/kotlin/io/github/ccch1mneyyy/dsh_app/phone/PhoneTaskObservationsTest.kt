@@ -16,6 +16,7 @@ class PhoneTaskObservationsTest {
         val opens = mutableListOf<PhoneAppIdentity>()
         var duringOpen: () -> Unit = {}
         var collectGate: (() -> Boolean)? = null
+        var collectSourceGate: ((String?) -> Boolean)? = null
         var duringCollect: () -> Unit = {}
         var collected = CollectResult(emptyList(), 0, "done", null)
         override fun visualScope(screenId: String): VisualScope? = scope.takeIf { screenId == "s1" }
@@ -39,6 +40,11 @@ class PhoneTaskObservationsTest {
             collectGate = allowed
             duringCollect()
             return collected
+        }
+        override fun collect(screenId: String, listElementId: Int, maxPages: Int, until: String?,
+                             allowed: () -> Boolean, canRead: (String?) -> Boolean): CollectResult {
+            collectSourceGate = canRead
+            return collect(screenId, listElementId, maxPages, until, allowed)
         }
         override fun foregroundPackage() = "app"
     }
@@ -181,4 +187,91 @@ class PhoneTaskObservationsTest {
         assertFalse(tasks.hasVisualGrant(owner, a))
     }
 
+    @Test fun additionalPolicyGateCannotBypassTheOriginalObservationOwner() {
+        val physical = Driver(); val firstTasks = PhoneTasks(); val otherTasks = PhoneTasks()
+        val first = PhoneTaskObservations(firstTasks).bind(physical, owner(firstTasks))
+        val other = PhoneTaskObservations(otherTasks).bind(physical, owner(otherTasks))
+        first.observe(false, false)
+        assertFalse(other.perform(PhoneAction.Tap("s1", 1)) { true }.ok)
+        assertEquals(0, physical.actions)
+        var permitted = true
+        assertTrue(first.perform(PhoneAction.Tap("s1", 1)) { permitted }.ok)
+        val allowed = checkNotNull(physical.capturedAllowed)
+        val claim = checkNotNull(physical.capturedAdmission)
+        permitted = false
+        assertFalse(allowed())
+        var claimed = 0
+        assertFalse(claim { claimed++; true }); assertEquals(0, claimed)
+        permitted = true; firstTasks.setPaused(true)
+        assertFalse(allowed()); assertFalse(claim { claimed++; true })
+        assertEquals(1, physical.actions)
+    }
+
+    @Test fun fiveArgumentCollectionForwardsLiveCallerPermissionTogetherWithTaskPermission() {
+        val tasks = PhoneTasks(); val physical = Driver()
+        val original = owner(tasks)
+        val bound = PhoneTaskObservations(tasks).bind(physical, original)
+        bound.observe(false, false)
+        var callerAllowed = true
+        var entered = 0
+        physical.duringCollect = {
+            entered++
+            val allowed = checkNotNull(physical.collectGate)
+            assertTrue(allowed())
+            callerAllowed = false
+            assertFalse(allowed()) // Must remain live inside the real physical call.
+        }
+        bound.collect("s1", 1, 3, null) { callerAllowed }
+        assertEquals(1, entered)
+        val allowed = checkNotNull(physical.collectGate)
+        assertFalse(allowed())
+        callerAllowed = true
+        assertTrue(allowed())
+        tasks.setPaused(true); assertFalse(allowed())
+        tasks.setPaused(false); assertTrue(allowed())
+        tasks.stop("replacement"); tasks.clearStop(); tasks.begin()
+        assertFalse(allowed())
+        assertFalse(tasks.isCurrent(original))
+    }
+    @Test fun sixArgumentCollectionCarriesLiveSourceChecksAndTheOriginalTaskGate() {
+        val tasks = PhoneTasks(); val physical = Driver()
+        val original = owner(tasks)
+        val bound = PhoneTaskObservations(tasks).bind(physical, original)
+        bound.observe(false, false)
+        var denied: String? = null
+        val checked = mutableListOf<String?>()
+        var entered = 0
+        physical.collected = CollectResult(listOf("public"), 1, "partial", null,
+            readPackages = setOf("app", "other.app"))
+        physical.duringCollect = {
+            entered++
+            val source = checkNotNull(physical.collectSourceGate)
+            assertTrue(checkNotNull(physical.collectGate)())
+            assertTrue(source("other.app"))
+            denied = "other.app"
+            assertFalse(source("other.app"))
+            assertTrue(source("app"))
+        }
+        val result = bound.collect("s1", 1, 3, null, { true }) { pkg ->
+            checked += pkg
+            pkg != denied
+        }
+        assertEquals(1, entered)
+        assertEquals(listOf("other.app", "other.app", "app"), checked)
+        assertEquals(setOf("app", "other.app"), result.readPackages)
+        assertEquals(result.readPackages, result.copy(stopReason = "copied").readPackages)
+        val allowed = checkNotNull(physical.collectGate)
+        val source = checkNotNull(physical.collectSourceGate)
+        val beforeBlocked = checked.size
+        tasks.setPaused(true); assertFalse(allowed()); assertFalse(source("app"))
+        assertEquals(beforeBlocked, checked.size)
+        tasks.setPaused(false); assertTrue(allowed())
+        tasks.stop("replacement"); tasks.clearStop(); tasks.begin()
+        assertFalse(allowed()); assertFalse(source("app"))
+        assertEquals(beforeBlocked, checked.size)
+        assertThrows(InterruptedException::class.java) {
+            bound.collect("s1", 1, 3, null, { true }) { true }
+        }
+        assertEquals(1, entered)
+    }
 }

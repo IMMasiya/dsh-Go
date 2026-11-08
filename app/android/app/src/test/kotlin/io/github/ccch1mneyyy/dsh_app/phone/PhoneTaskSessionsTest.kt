@@ -77,7 +77,8 @@ class PhoneTaskSessionsTest {
     @Volatile private var journalCommit: (String) -> Boolean = { journalBytes = it; true }
     @Volatile private var recoveryAdmission: () -> String? = { null }
     private val journal = PhoneTaskJournal({ journalBytes }, { journalCommit(it) })
-    private val sessions = PhoneTaskSessions(::taskClock, ids::incrementAndGet,
+    // Deadline reads must not trip the Tasks.begin barrier used by the reserved-successor test.
+    private val sessions = PhoneTaskSessions(time::get, ids::incrementAndGet,
         { tasks, _ -> PhoneCore(env, tasks, ActionLog(), worker) }, legacy, legacyCore, { changed() }, settleResources = { cleanup(it) }, dispatchCleanup = { cleanupDispatch(it) }, cancelScope = { task, state -> cancelScope(task, state) },
         journal = journal, recoveryAdmission = { recoveryAdmission() },
         createBackgroundWorker = { SerialWorker("session-background", time::get) { false }.also { backgroundWorkers += it } })
@@ -89,6 +90,27 @@ class PhoneTaskSessionsTest {
     @After fun close() { pool.shutdownNow(); worker.shutdown(); backgroundWorkers.toList().forEach { it.shutdown() } }
 
     private fun journalCount(): Int = journalBytes?.let { ((Json.parse(it) as Map<*, *>)["records"] as List<*>).size } ?: 0
+
+    @Test fun callerCapabilitySurvivesRetirementAndOnlyANewLaunchResetsIt() {
+        sessions.beginCallerLaunch()
+        assertEquals(mapOf("launch" to 1L, "modernSeen" to false), sessions.callerCapability())
+        assertFalse(invoke(null).isError)
+        assertEquals(false, sessions.callerCapability()["modernSeen"])
+        assertFalse(invoke("A").isError)
+        sessions.retire()
+        assertEquals(mapOf("launch" to 1L, "modernSeen" to true), sessions.callerCapability())
+        sessions.beginCallerLaunch()
+        assertEquals(mapOf("launch" to 2L, "modernSeen" to false), sessions.callerCapability())
+    }
+
+    @Test fun evenARejectedModernAdmissionProvesThisLaunchIsNotLegacyOnly() {
+        sessions.beginCallerLaunch()
+        val lease = checkNotNull(sessions.tryReserveSelfCheck())
+        try {
+            assertTrue(sessions.run(admit("A"), PhoneToolCatalog.APPS, emptyMap()).isError)
+            assertEquals(true, sessions.callerCapability()["modernSeen"])
+        } finally { sessions.releaseSelfCheck(lease) }
+    }
 
     @Test fun durableMarkMustFinishBeforeAnyPreparationAndStopDuringItCannotAct() {
         val entered = CountDownLatch(1); val release = CountDownLatch(1); val lookups = AtomicLong()
@@ -556,6 +578,162 @@ class PhoneTaskSessionsTest {
         assertTrue(task("A", "2").tasks.isActive)
         assertNull(sessions.completed(receipt.taskId, "1", receipt.lifecycle))
     }
+    @Test fun policyPublicationExcludesANewAdmissionUntilTheValueIsVisible() {
+        val published = AtomicReference(PhonePolicies())
+        val insidePublish = CountDownLatch(1)
+        val releasePublish = CountDownLatch(1)
+        val attempting = CountDownLatch(1)
+        val admitted = CountDownLatch(1)
+        val failure = AtomicReference<Throwable?>()
+        val caller = Thread {
+            attempting.countDown()
+            try {
+                val admission = admit("policy-race")
+                admitted.countDown()
+                assertTrue(published.get().unlocks.secretFields)
+                sessions.run(admission, PhoneToolCatalog.APPS, emptyMap())
+            } catch (e: Throwable) { failure.set(e); admitted.countDown() }
+        }
+        val writer = pool.submit<PhonePolicies?> {
+            sessions.updatePolicies(mapOf("unlocks" to mapOf("secretFields" to true)), published::get) { next ->
+                insidePublish.countDown()
+                check(releasePublish.await(5, TimeUnit.SECONDS))
+                published.set(next)
+            }
+        }
+        try {
+            assertTrue(insidePublish.await(5, TimeUnit.SECONDS))
+            caller.start()
+            assertTrue(attempting.await(5, TimeUnit.SECONDS))
+            // Observe the actual monitor barrier, not a sleep or assumed scheduler delay.
+            val until = System.nanoTime() + TimeUnit.SECONDS.toNanos(5)
+            while (caller.state != Thread.State.BLOCKED && admitted.count != 0L && System.nanoTime() < until) {
+                Thread.yield()
+            }
+            assertEquals(Thread.State.BLOCKED, caller.state)
+            assertTrue(caller.stackTrace.any {
+                it.className == PhoneTaskSessions::class.java.name && it.methodName == "admit"
+            })
+            assertEquals(1L, admitted.count)
+            releasePublish.countDown()
+            assertNotNull(writer.get(5, TimeUnit.SECONDS))
+            assertTrue(admitted.await(5, TimeUnit.SECONDS))
+            caller.join(5_000)
+            assertFalse(caller.isAlive)
+            assertNull(failure.get())
+        } finally { releasePublish.countDown(); caller.join(5_000) }
+    }
+
+    @Test fun anAlreadyAdmittedTaskRejectsUnlockButStillAllowsRestoringRestrictions() {
+        val current = AtomicReference(PhonePolicies(unlocks = PhoneUnlocks(ownApp = true)))
+        val admitted = admit("active")
+        var writes = 0
+        assertNull(sessions.updatePolicies(mapOf("unlocks" to mapOf("secretFields" to true)), current::get) {
+            writes++; current.set(it)
+        })
+        assertEquals(0, writes)
+        assertFalse(current.get().unlocks.secretFields)
+        assertNotNull(sessions.updatePolicies(mapOf("unlocks" to mapOf("ownApp" to false)), current::get) {
+            writes++; current.set(it)
+        })
+        assertEquals(1, writes)
+        assertFalse(current.get().unlocks.ownApp)
+        assertFalse(sessions.run(admitted, PhoneToolCatalog.APPS, emptyMap()).isError)
+    }
+
+    @Test fun explicitCleanupRetryDuringClosingIsNotLostBeforeFailureIsPublished() {
+        assertFalse(invoke("A", tool = PhoneToolCatalog.SCREEN).isError)
+        val record = task("A")
+        val id = record.tasks.snapshot().id
+        val entered = CountDownLatch(1)
+        val release = CountDownLatch(1)
+        val attempts = AtomicLong()
+        cleanup = {
+            if (attempts.incrementAndGet() == 1L) {
+                entered.countDown()
+                check(release.await(5, TimeUnit.SECONDS))
+                error("original release raced with verified recovery")
+            }
+        }
+        val ending = pool.submit { end("A") }
+        try {
+            assertTrue(entered.await(5, TimeUnit.SECONDS))
+            assertFalse(record.cleanupFailed)
+            assertTrue(record.closing)
+            assertFalse(sessions.retryCleanup(id))
+            assertFalse(sessions.retryCleanup(id)) // Same in-flight close: one owed retry.
+            release.countDown()
+            ending.get(5, TimeUnit.SECONDS)
+            assertEquals(2L, attempts.get())
+            assertTrue(record.resourcesReleased)
+            assertFalse(record.cleanupFailed)
+            assertFalse(record.closing)
+        } finally { release.countDown() }
+    }
+
+    @Test fun anOwedCleanupRetryDoesNotRepeatAfterSuccessOrRetryItsOwnFailure() {
+        for (firstSucceeds in listOf(true, false)) {
+            val session = if (firstSucceeds) "success" else "failure"
+            assertFalse(invoke(session, tool = PhoneToolCatalog.SCREEN).isError)
+            val record = task(session)
+            val id = record.tasks.snapshot().id
+            val entered = CountDownLatch(1)
+            val release = CountDownLatch(1)
+            val attempts = AtomicLong()
+            cleanup = {
+                if (attempts.incrementAndGet() == 1L) {
+                    entered.countDown()
+                    check(release.await(5, TimeUnit.SECONDS))
+                }
+                if (!firstSucceeds) error("release still unknown")
+            }
+            val ending = pool.submit { end(session) }
+            try {
+                assertTrue(entered.await(5, TimeUnit.SECONDS))
+                assertFalse(sessions.retryCleanup(id))
+                release.countDown()
+                ending.get(5, TimeUnit.SECONDS)
+                assertEquals(if (firstSucceeds) 1L else 2L, attempts.get())
+                assertEquals(firstSucceeds, record.resourcesReleased)
+                assertEquals(!firstSucceeds, record.cleanupFailed)
+            } finally { release.countDown() }
+        }
+    }
+
+    @Test fun journalOnlyClosingDoesNotRetainAPhysicalCleanupRetry() {
+        val releases = AtomicLong()
+        cleanup = { releases.incrementAndGet() }
+        assertFalse(invoke("journal-only", tool = PhoneToolCatalog.SCREEN).isError)
+        val record = task("journal-only")
+        val id = record.tasks.snapshot().id
+        journalCommit = { false }
+        end("journal-only")
+        assertTrue(record.resourcesReleased)
+        assertTrue(record.journalFailed)
+        val clearing = CountDownLatch(1)
+        val finish = CountDownLatch(1)
+        val writes = AtomicLong()
+        journalCommit = { bytes ->
+            if (writes.incrementAndGet() == 2L) {
+                clearing.countDown()
+                check(finish.await(5, TimeUnit.SECONDS))
+            }
+            journalBytes = bytes
+            true
+        }
+        val retry = pool.submit<Boolean> { sessions.retryJournalStorage() }
+        try {
+            assertTrue(clearing.await(5, TimeUnit.SECONDS))
+            assertTrue(record.closing)
+            assertFalse(sessions.retryCleanup(id))
+            assertNull(record.cleanupRetryTaskId)
+            finish.countDown()
+            assertTrue(retry.get(5, TimeUnit.SECONDS))
+            assertNull(record.cleanupRetryTaskId)
+            assertEquals(1L, releases.get())
+        } finally { finish.countDown() }
+    }
+
     @Test fun anyStillActiveSessionCountsNotJustTheLastOne() {
         assertFalse(sessions.anyActive())
         val queued = admit("C") // Admitted, not begun: it would act under whatever policy it finds.
@@ -1033,6 +1211,113 @@ class PhoneTaskSessionsTest {
 
     private fun openApp(session: String, pkg: String, background: Boolean = true): ToolOutput =
         sessions.run(admit(session), PhoneToolCatalog.OPEN, mapOf("app" to pkg, "background" to background))
+
+    @Test fun admissionTimeCountsBeforePreparationStarts() {
+        val lookups = AtomicLong(); lookup = { lookups.incrementAndGet() }
+        val admitted = admit("expired")
+        time.addAndGet(PhoneCore.MAX_TOTAL_MS)
+        assertTrue(sessions.run(admitted, PhoneToolCatalog.OPEN, mapOf("app" to "example.app")).isError)
+        assertEquals(0L, lookups.get())
+        assertEquals(0, task("expired").pending)
+        assertFalse(task("expired").running)
+        assertTrue(task("expired").heldApps.isEmpty())
+    }
+
+    @Test fun preparationConsumesTheSameDeadlineAndCannotAcquireOrOpenLate() {
+        val opens = AtomicLong(); open = { opens.incrementAndGet(); ActionResult(true, "opened") }
+        prepareLaunch = { app -> time.addAndGet(PhoneCore.MAX_TOTAL_MS); TestSystemLaunch(SystemTarget.Known(app)) }
+        val output = openApp("expired", "example.app")
+        assertTrue(output.isError)
+        assertEquals(0L, opens.get())
+        assertTrue(task("expired").heldApps.isEmpty())
+        assertTrue(task("expired").resourcesReleased)
+    }
+
+    @Test fun releasingAResourceDoesNotAdmitAWaiterWhoseOverallDeadlineExpired() {
+        assertFalse(screen("holder").isError)
+        val admission = admit("waiter")
+        time.addAndGet(PhoneCore.MAX_TOTAL_MS - 1_000)
+        val waiting = CountDownLatch(1); val reads = AtomicLong()
+        observe = { reads.incrementAndGet() }
+        changed = { if (sessions.snapshot().any { it["sessionId"] == "waiter" && it["waitingForScreen"] == "main" }) waiting.countDown() }
+        val result = pool.submit<ToolOutput> { sessions.run(admission, PhoneToolCatalog.SCREEN, emptyMap()) }
+        try {
+            assertTrue(waiting.await(5, TimeUnit.SECONDS))
+            time.addAndGet(1_000)
+            end("holder")
+            assertTrue(result.get(5, TimeUnit.SECONDS).isError)
+            assertEquals(0L, reads.get())
+            assertTrue(task("waiter").resourcesReleased)
+            assertTrue(task("waiter").heldApps.isEmpty())
+        } finally { end("holder"); end("waiter") }
+    }
+
+    @Test fun deadlineReplyDoesNotReleaseANonReturningPreparationOrPublishItsLateResult() {
+        assertFalse(invoke("A", tool = PhoneToolCatalog.SCREEN).isError)
+        val entered = CountDownLatch(1); val exit = CountDownLatch(1); val interrupted = CountDownLatch(1)
+        val opens = AtomicLong(); open = { opens.incrementAndGet(); ActionResult(true, "opened") }
+        prepareLaunch = { app ->
+            entered.countDown()
+            var done = false
+            while (!done) {
+                try { check(exit.await(5, TimeUnit.SECONDS)); done = true }
+                catch (_: InterruptedException) { interrupted.countDown() }
+            }
+            TestSystemLaunch(SystemTarget.Known(app))
+        }
+        val admission = admit("A")
+        val work = PhoneCallWork(
+            { sessions.run(admission, PhoneToolCatalog.OPEN, mapOf("app" to "example.app", "background" to true)).text },
+            { sessions.remainingMs(admission) }, { sessions.expire(admission).text },
+        )
+        val response = pool.submit<String?> { work.run() }
+        try {
+            assertTrue(entered.await(5, TimeUnit.SECONDS))
+            val a = task("A")
+            time.addAndGet(PhoneCore.MAX_TOTAL_MS)
+            assertNotNull(work.expire()) // Same method as the timer; no real deadline wait.
+            assertTrue(interrupted.await(5, TimeUnit.SECONDS))
+            assertFalse(response.isDone)
+            assertTrue(a.running); assertEquals(1, a.pending)
+            assertFalse(a.resourcesReleased); assertNull(sessions.tryReserveSelfCheck())
+            assertNull(work.expire()) // Exactly one reply commitment.
+            exit.countDown()
+            assertNull(response.get(5, TimeUnit.SECONDS)) // Late completion cannot become another reply.
+            assertEquals(0L, opens.get()); assertEquals(0, a.pending); assertFalse(a.running)
+            assertFalse(a.resourcesReleased) // The existing scope still owns its earlier MAIN lease.
+            end("A")
+            assertTrue(a.resourcesReleased)
+        } finally { exit.countDown() }
+    }
+
+    @Test fun timeoutBeforeTheCallPoolStartsStillDrainsAdmissionWithoutPreparing() {
+        val calls = AtomicLong(); lookup = { calls.incrementAndGet() }
+        val admission = admit("A")
+        val work = PhoneCallWork(
+            { sessions.run(admission, PhoneToolCatalog.APPS, emptyMap()).text },
+            { sessions.remainingMs(admission) }, { sessions.expire(admission).text },
+        )
+        time.addAndGet(PhoneCore.MAX_TOTAL_MS)
+        assertNotNull(work.expire())
+        assertEquals(1, task("A").pending) // Reply cancellation is not physical drain.
+        assertNull(work.run())
+        assertEquals(0L, calls.get()); assertEquals(0, task("A").pending)
+        assertFalse(task("A").running)
+    }
+
+    @Test fun completedBodyCannotCommitSuccessAfterTheOriginalDeadline() {
+        val admission = admit("A")
+        val work = PhoneCallWork({
+            val result = sessions.run(admission, PhoneToolCatalog.APPS, emptyMap())
+            assertFalse(result.isError)
+            time.addAndGet(PhoneCore.MAX_TOTAL_MS)
+            "LATE_SUCCESS"
+        }, { sessions.remainingMs(admission) }, { sessions.expire(admission).text })
+        val reply = checkNotNull(work.run())
+        assertFalse(reply.contains("LATE_SUCCESS"))
+        assertNull(work.expire())
+        assertEquals(0, task("A").pending)
+    }
 
     @Test fun nativePlanPreparationDoesNotOccupyTheSharedWorkerAndStopRejectsItsLateResult() {
         val entered = CountDownLatch(1); val exit = CountDownLatch(1)

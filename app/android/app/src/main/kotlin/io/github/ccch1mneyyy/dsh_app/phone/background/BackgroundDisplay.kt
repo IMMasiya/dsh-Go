@@ -2,6 +2,7 @@ package io.github.ccch1mneyyy.dsh_app.phone.background
 
 import android.os.Build
 import android.os.Bundle
+import android.os.SystemClock
 import io.github.ccch1mneyyy.dsh_app.phone.ActionResult
 import io.github.ccch1mneyyy.dsh_app.phone.Availability
 import io.github.ccch1mneyyy.dsh_app.phone.CollectResult
@@ -14,6 +15,12 @@ import io.github.ccch1mneyyy.dsh_app.phone.PhoneTasks
 import io.github.ccch1mneyyy.dsh_app.phone.ScreenSnapshot
 import io.github.ccch1mneyyy.dsh_app.phone.TargetInfo
 import io.github.ccch1mneyyy.dsh_app.phone.VisualScope
+import io.github.ccch1mneyyy.dsh_app.phone.VisualBounds
+import io.github.ccch1mneyyy.dsh_app.phone.a11y.ImageGeometry
+import io.github.ccch1mneyyy.dsh_app.phone.a11y.LocalOcrBoundary
+import io.github.ccch1mneyyy.dsh_app.phone.a11y.LocalOcrResult
+import io.github.ccch1mneyyy.dsh_app.phone.a11y.LocalOcrVisual
+import io.github.ccch1mneyyy.dsh_app.phone.a11y.MlKitLocalOcr
 import io.github.ccch1mneyyy.dsh_app.phone.VisualTarget
 
 /**
@@ -29,6 +36,8 @@ class BackgroundDisplay internal constructor(
     private val admitUse: ((() -> Unit) -> Boolean),
     private val viewport: BackgroundPolicy.Viewport = BackgroundPolicy.Viewport.PORTRAIT,
     private val onResourceReady: (PrivilegedChannel) -> Unit = {},
+    private val localOcr: MlKitLocalOcr? = null,
+    private val localOcrAllowed: (PhoneAppIdentity) -> Boolean = { false },
 ) : PhoneDriver {
 
     private val resourceIo = BackgroundDisplayIo<PrivilegedChannel>()
@@ -39,7 +48,7 @@ class BackgroundDisplay internal constructor(
     /** Never a RELEASE on another peer: only that peer's exact absence receipt completes this drained scope. */
     internal fun recoverLostPeer(verify: (BackgroundResourceJournal.Record) -> Boolean): Boolean =
         try { resourceScope.recover({ !it.alive() }, verify) } catch (_: Exception) { false }
-    internal fun seal() { coordinateImage.invalidateScope(); resourceIo.seal() }
+    internal fun seal() { resourceIo.seal(); coordinateImage.invalidateScope() }
     internal fun previewAvailable(peer: PrivilegedChannel): Boolean =
         resourceScope.allocationReady && resourceIo.previewAvailable(peer)
     internal fun previewClosed(): Boolean = resourceIo.previewClosed()
@@ -54,7 +63,9 @@ class BackgroundDisplay internal constructor(
     @Volatile private var currentTarget: PhoneAppIdentity? = null
     private var targetReady = false
     private var coordinateSupported = false
+    private var afterVisualSupported = false
     private val coordinateImage = BackgroundCoordinateImage()
+    private var coordinateOcrEpoch: Long? = null
     private var counter = 0
     private var lastScreenId: String? = null
     private var lastElements: List<Element> = emptyList()
@@ -75,8 +86,11 @@ class BackgroundDisplay internal constructor(
         // l10n:keep agent screen protocol
         resourceIo.peer() ?: channelProvider() ?: throw IllegalStateException("背景屏通道未就绪")
 
-    override fun open(target: PhoneAppIdentity): ActionResult = try {
+    override fun open(target: PhoneAppIdentity): ActionResult = open(target) { true }
+
+    override fun open(target: PhoneAppIdentity, allowed: () -> Boolean): ActionResult = try {
         resourceIo.call {
+            if (!allowed()) throw NotAdmitted()
             clearSnapshot()
             targetReady = false
             currentTarget = target
@@ -98,10 +112,16 @@ class BackgroundDisplay internal constructor(
                     ?: error("所选后台服务不支持资源恢复，请更新并重新连接该通道。") // l10n:keep agent resource result
                 coordinateSupported = probe.get(Proto.BACKGROUND_COORDINATES) is Int &&
                     probe.getInt(Proto.BACKGROUND_COORDINATES) == 1
+                afterVisualSupported = BackgroundAfterVisual.supported(probe.get(Proto.AFTER_LOCAL_VISUAL))
                 check(mayUse() && !resourceIo.previewClosed()) { Reasons.of("deviceUnavailable") }
                 check(resourceScope.begin(birth)) { BackgroundResourceJournal.REFUSAL }
                 val allocated = OwnerScopeProtocol.first(resourceIo, active,
-                    BackgroundRecoveryProtocol.allocate(ownerToken, "task", viewport.preset), admitUse)
+                    BackgroundRecoveryProtocol.allocate(ownerToken, "task", viewport.preset)) { commit ->
+                    admitUse {
+                        if (!allowed()) throw NotAdmitted()
+                        commit()
+                    }
+                }
                 val actualId = BackgroundRecoveryProtocol.allocationId(allocated::get)
                     ?: error("后台屏分配未确认，本次启动未执行；请先清理原后台资源。") // l10n:keep agent resource result
                 check(resourceScope.allocated(actualId) { mayUse() && !resourceIo.previewClosed() }) {
@@ -122,14 +142,20 @@ class BackgroundDisplay internal constructor(
             }
             val response = OwnerScopeProtocol.execute(active, ownerToken, request) {
                 check(admitUse {
+                    if (!allowed()) throw NotAdmitted()
                     check(resourceScope.allocationReady)
                     resourceIo.checkDispatch()
                 }) { Reasons.of("deviceUnavailable") }
             }
             // Empty allocation never publishes the preview or lends MAIN back.
             onResourceReady(active)
-            val result = toResult(response, "已在后台屏打开") // l10n:keep agent screen protocol
-            targetReady = result.ok
+            val result = toResult(response, target, "已在后台屏打开") // l10n:keep agent screen protocol
+            try {
+                resourceIo.commitObservation {
+                    check(currentTarget == target) { Reasons.of("targetIdentityChanged") }
+                    targetReady = result.ok
+                }
+            } catch (_: Exception) { targetReady = false } // A sealed postread cannot erase the original launch ACK.
             result.copy(backgroundOpenConfirmed = result.ok && TargetIdentity.backgroundOpenConfirmed(target,
                 response.get(Proto.OK), response.get(Proto.BACKGROUND_OPEN_EVIDENCE), response.get(Proto.DISPLAY_ID),
                 response.get(Proto.TARGET_IDENTITY_VERSION), response.get(Proto.PKG), response.get(Proto.TARGET_UID)))
@@ -138,20 +164,28 @@ class BackgroundDisplay internal constructor(
         clearSnapshot()
         targetReady = false
         if (resourceIo.peer() == null) resourceIo.seal()
-        throw error
+        if (error is NotAdmitted) ActionResult(false, PhoneTasks.STOPPED_MESSAGE) else throw error
     }
 
-    override fun observe(detail: Boolean, image: Boolean): ScreenSnapshot {
+    override fun observe(detail: Boolean, image: Boolean): ScreenSnapshot = observeFrame(detail, image, true)
+
+    override fun observe(detail: Boolean, image: Boolean, automaticImage: Boolean): ScreenSnapshot =
+        observeFrame(detail, image, true, automaticImage)
+
+    private fun observeFrame(detail: Boolean, image: Boolean, requestLocalText: Boolean, automaticImage: Boolean = false): ScreenSnapshot {
         coordinateImage.clear()
+        val started = SystemClock.uptimeMillis()
+        val ocrEpoch = if (requestLocalText) localOcr?.enabledEpoch() else null
         val target = currentTarget ?: return idleSnapshot()
+        val pixels = image || automaticImage || (ocrEpoch != null && coordinateSupported && localReadAllowed(target))
         check(targetReady) { Reasons.of("targetIdentityUnavailable") }
         val request = Bundle().apply {
             putString(Proto.OP, Proto.OP_OBSERVE)
             putString(Proto.OWNER, ownerToken)
             putTarget(this, target)
             putBoolean(Proto.DETAIL, detail)
-            putBoolean(Proto.WANT_IMAGE, image)
-            if (image && coordinateSupported) putInt(Proto.BACKGROUND_COORDINATES, 1)
+            putBoolean(Proto.WANT_IMAGE, pixels)
+            if (pixels && coordinateSupported) putInt(Proto.BACKGROUND_COORDINATES, 1)
             putBoolean(Proto.LOCAL_VISUAL, true)
         }
         val response = try {
@@ -162,13 +196,82 @@ class BackgroundDisplay internal constructor(
         }
         requireObservation(response.getBoolean(Proto.OK), response.getString(Proto.ERROR), response.getString(Proto.ERROR_DETAIL))
         requireIdentity(response)
-        return snapshot(response, markNew = false)
+        val local = if (requestLocalText) readLocalText(response, target, ocrEpoch, started) else null
+        return ocrSnapshot(response, target, false, image || (automaticImage && response.get(Proto.POOR) == true), local, ocrEpoch)
     }
 
-    override fun acceptVisualObservation(screenId: String) = coordinateImage.accept(screenId)
+    private fun ocrSnapshot(response: Bundle, target: PhoneAppIdentity, markNew: Boolean, image: Boolean,
+                            result: LocalOcrVisual.Output?, ocrEpoch: Long?): ScreenSnapshot {
+        var local = result
+        val epochCurrent = ocrEpoch == null || localOcr?.enabledEpoch() == ocrEpoch
+        if (!epochCurrent && local != null) local = LocalOcrVisual.Output(
+            LocalOcrBoundary.message(LocalOcrResult.Unavailable(
+                if (localOcr?.enabled == false) LocalOcrResult.Reason.DISABLED else LocalOcrResult.Reason.CANCELLED)),
+            local.sensitiveText, false)
+        // Public images retain their original eligibility. The OCR-only token is committed
+        // together with its exact observation, never after the resource publication gate.
+        val onlyOcr = ocrEpoch.takeIf { !image && epochCurrent && local?.hasPoints == true && local?.sensitiveText != true }
+        return snapshot(response, target, markNew = markNew, publishImage = image && local?.sensitiveText != true,
+            localText = local, coordinatesAllowed = local?.sensitiveText != true && (image || (epochCurrent && local?.hasPoints == true)),
+            ocrOnlyEpoch = onlyOcr)
+    }
+
+    private fun localReadAllowed(target: PhoneAppIdentity): Boolean = !Thread.currentThread().isInterrupted &&
+        targetReady && currentTarget == target && mayUse() && !resourceIo.previewClosed() && localOcrAllowed(target)
+
+    /** The receipt is input evidence, never a claim that every pixel has no sensitive content. */
+    private fun readLocalText(response: Bundle, target: PhoneAppIdentity, expectedEpoch: Long?,
+                              started: Long): LocalOcrVisual.Output? {
+        if (response.get(Proto.POOR) != true) return null
+        fun diagnostic(reason: LocalOcrResult.Reason) = LocalOcrVisual.Output(
+            LocalOcrBoundary.message(LocalOcrResult.Unavailable(reason)), false, false)
+        if (!localReadAllowed(target)) return diagnostic(LocalOcrResult.Reason.PRIVACY_UNVERIFIED)
+        val host = localOcr ?: return diagnostic(LocalOcrResult.Reason.NOT_INSTALLED)
+        if (expectedEpoch == null || host.enabledEpoch() != expectedEpoch)
+            return diagnostic(if (!host.enabled) LocalOcrResult.Reason.DISABLED else LocalOcrResult.Reason.CANCELLED)
+        val receipt = if (coordinateSupported && response.get(Proto.OK) == true &&
+            response.get(Proto.SECURE) == false && response.get(Proto.FRAME_NOT_READY) != true &&
+            response.get(Proto.IMAGE_OMITTED) != true && response.get(Proto.COORDINATE_SCOPE_VERSION) is Int &&
+            response.getInt(Proto.COORDINATE_SCOPE_VERSION) == 1 && response.get(Proto.COORDINATE_SCOPE_KNOWN) == true &&
+            (response.get(Proto.DISPLAY_ID) as? Int)?.let { it >= 0 } == true &&
+            TargetIdentity.receipt(target, response.get(Proto.TARGET_IDENTITY_VERSION), response.get(Proto.PKG), response.get(Proto.TARGET_UID))) {
+            BackgroundCoordinateImage.Receipt.parse(response.get(Proto.BACKGROUND_COORDINATES),
+                response.get(Proto.COORDINATE_OBSERVATION), response.get(Proto.COORDINATE_WIDTH), response.get(Proto.COORDINATE_HEIGHT))
+        } else null
+        val jpeg = response.getByteArray("imageBytes")
+        if (receipt == null || jpeg == null || jpeg.isEmpty() || response.getString("imageMime") != "image/jpeg")
+            return diagnostic(LocalOcrResult.Reason.PRIVACY_UNVERIFIED)
+        val deadline = minOf(started + 4_800L, SystemClock.uptimeMillis() + 2_500L)
+        val cancelled = { !localReadAllowed(target) || host.enabledEpoch() != expectedEpoch }
+        val result = try { BackgroundLocalOcr.read(jpeg, receipt, host, deadline, cancelled) }
+        catch (_: InterruptedException) {
+            Thread.currentThread().interrupt()
+            return diagnostic(LocalOcrResult.Reason.CANCELLED)
+        } catch (_: Exception) { LocalOcrResult.Failed(LocalOcrResult.Failure.ENGINE) }
+        // An already returned result can contain a same-frame privacy fact. Preserve that
+        // fact even if OFF/deadline now suppresses its text and points; no further SDK work.
+        val output = LocalOcrVisual.format(result, receipt.width, receipt.height,
+            VisualBounds(0, 0, receipt.width, receipt.height), ImageGeometry(0, 0, 1f, 1f, receipt.width, receipt.height))
+        if (cancelled()) return diagnostic(if (!host.enabled) LocalOcrResult.Reason.DISABLED else LocalOcrResult.Reason.CANCELLED)
+            .copy(sensitiveText = output.sensitiveText)
+        if (SystemClock.uptimeMillis() >= deadline) return diagnostic(LocalOcrResult.Reason.DEADLINE)
+            .copy(sensitiveText = output.sensitiveText)
+        return output
+    }
+
+    private fun coordinateEpochCurrent(): Boolean {
+        val token = coordinateOcrEpoch ?: return true
+        if (localOcr?.enabledEpoch() == token) return true
+        coordinateImage.clear()
+        return false
+    }
+
+    override fun acceptVisualObservation(screenId: String) {
+        if (coordinateEpochCurrent()) coordinateImage.accept(screenId)
+    }
     override fun visualScope(screenId: String): VisualScope? = coordinateImage.scope(screenId)
     override fun coordinateTarget(action: PhoneAction.TapXY): VisualTarget? {
-        if (action.gesture != PhoneAction.CoordinateGesture.TAP) return null
+        if (!coordinateEpochCurrent() || action.gesture != PhoneAction.CoordinateGesture.TAP) return null
         val index = coordinateImage.targetAt(action.screenId, action.x, action.y) ?: return null
         val scope = coordinateImage.scope(action.screenId) ?: return null
         val target = target(action.screenId, index) ?: return null
@@ -186,9 +289,15 @@ class BackgroundDisplay internal constructor(
     override fun collect(screenId: String, listElementId: Int, maxPages: Int, until: String?): CollectResult =
         collect(screenId, listElementId, maxPages, until) { true }
 
-    override fun collect(screenId: String, listElementId: Int, maxPages: Int, until: String?, allowed: () -> Boolean): CollectResult {
+    override fun collect(screenId: String, listElementId: Int, maxPages: Int, until: String?, allowed: () -> Boolean): CollectResult =
+        collect(screenId, listElementId, maxPages, until, allowed) { true }
+
+    override fun collect(screenId: String, listElementId: Int, maxPages: Int, until: String?,
+                         allowed: () -> Boolean, canRead: (String?) -> Boolean): CollectResult {
         if (!allowed()) return CollectResult(emptyList(), 0, PhoneTasks.STOPPED_MESSAGE, null)
         check(screenId == lastScreenId) { Reasons.of("staleSnapshot") }
+        val source = currentTarget?.packageName
+        if (!canRead(source)) return CollectResult(emptyList(), 0, "本页内容不允许读取", null) // l10n:keep agent screen result
         if (maxPages.coerceIn(1, 30) == 1) {
             val selected = lastElements.getOrNull(listElementId - 1)
                 ?: throw IllegalStateException(Reasons.of("elementMissing"))
@@ -197,16 +306,20 @@ class BackgroundDisplay internal constructor(
                 .takeWhile { it.indent > selected.indent }
                 .map { it.label }.filter { it.isNotEmpty() }.distinct()
             val stop = if (until != null && labels.any { it.contains(until) }) "untilMatched" else "pageLimit"
-            return CollectResult(labels, 1, stop, null)
+            return CollectResult(labels, 1, stop, null, setOfNotNull(source))
         }
         val seen = LinkedHashSet<String>()
         var pages = 0
         var stop = "listEnd"
         var last: ScreenSnapshot? = null
+        val readPackages = LinkedHashSet<String>()
         while (pages < maxPages.coerceIn(1, 30)) {
             if (!allowed()) { stop = PhoneTasks.STOPPED_MESSAGE; break }
-            val snap = observe(detail = false, image = false)
+            if (!canRead(source)) { stop = "本页内容不允许读取"; break } // l10n:keep agent screen result
+            val snap = observeFrame(detail = false, image = false, requestLocalText = false)
             last = snap
+            if (!canRead(source)) { stop = "本页内容不允许读取"; break } // l10n:keep agent screen result
+            source?.let(readPackages::add)
             val before = seen.size
             for (e in lastElements) if (e.label.isNotEmpty()) seen.add(e.label)
             pages++
@@ -214,10 +327,10 @@ class BackgroundDisplay internal constructor(
             if (seen.size == before) { stop = "listEnd"; break }
             if (pages >= maxPages) { stop = "pageLimit"; break }
             // Preserve the legacy whole-page collect path; explicit list tracking is separate.
-            val result = perform(PhoneAction.Scroll(snap.id, null, PhoneAction.Direction.DOWN), allowed)
+            val result = perform(PhoneAction.Scroll(snap.id, null, PhoneAction.Direction.DOWN)) { allowed() && canRead(source) }
             if (!result.ok) { stop = result.message; break }
         }
-        return CollectResult(seen.toList(), pages, stop, last)
+        return CollectResult(seen.toList(), pages, stop, last, readPackages.toSet())
     }
 
     override fun target(screenId: String, elementId: Int): TargetInfo? {
@@ -240,6 +353,8 @@ class BackgroundDisplay internal constructor(
     override fun perform(action: PhoneAction): ActionResult = perform(action) { true }
 
     override fun perform(action: PhoneAction, allowed: () -> Boolean): ActionResult {
+        val started = if (afterVisualSupported) SystemClock.uptimeMillis() else 0L
+        val epoch = localOcr?.enabledEpoch()
         // l10n:keep agent screen protocol
         val target = currentTarget ?: return ActionResult(false, "后台屏还没有打开应用")
         if (!targetReady) return ActionResult(false, Reasons.of("targetIdentityUnavailable"))
@@ -251,7 +366,9 @@ class BackgroundDisplay internal constructor(
         if (action is PhoneAction.Scroll && action.elementId == null && action.screenId != lastScreenId) {
             return ActionResult(false, Reasons.of("staleSnapshot"), staleSnapshot = true)
         }
+        val after = AfterRead(started, epoch, target, afterVisualSupported && epoch != null && localReadAllowed(target))
         val request = Bundle().apply {
+            if (after.requested) putInt(Proto.AFTER_LOCAL_VISUAL, 1)
             putString(Proto.OWNER, ownerToken)
             putTarget(this, target)
         }
@@ -285,14 +402,14 @@ class BackgroundDisplay internal constructor(
                 request.putString(Proto.OP, Proto.OP_KEY)
                 request.putString(Proto.DIR, "back")
             }
-            is PhoneAction.TapXY -> return performCoordinates(action, target, allowed)
+            is PhoneAction.TapXY -> return performCoordinates(action, target, allowed, after)
         }
         // l10n:keep agent screen protocol
         val response = try {
             dispatch(allowed) { OwnerScopeProtocol.execute(channel(), ownerToken, request, it) }
         } catch (error: Exception) { clearSnapshot(); throw error }
             ?: return ActionResult(false, PhoneTasks.STOPPED_MESSAGE)
-        return toResult(response, "已在后台屏执行", textAction = action is PhoneAction.Type)
+        return toResult(response, target, "已在后台屏执行", textAction = action is PhoneAction.Type, after = after)
     }
 
     /**
@@ -311,10 +428,11 @@ class BackgroundDisplay internal constructor(
 
     private class NotAdmitted : RuntimeException()
 
-    private fun performCoordinates(action: PhoneAction.TapXY, target: PhoneAppIdentity, allowed: () -> Boolean): ActionResult {
+    private fun performCoordinates(action: PhoneAction.TapXY, target: PhoneAppIdentity, allowed: () -> Boolean, after: AfterRead): ActionResult {
         // l10n:keep agent coordinate protocol
         if (!coordinateSupported) return ActionResult(false, "当前后台通道不支持截图坐标，请更新并重新连接；未执行，也不会转到主屏。")
         if (!allowed()) return ActionResult(false, PhoneTasks.STOPPED_MESSAGE)
+        if (!coordinateEpochCurrent()) return ActionResult(false, Reasons.of("staleSnapshot"), staleSnapshot = true)
         val image = coordinateImage.take(action.screenId)
             // l10n:keep agent coordinate protocol
             ?: return ActionResult(false, "没有本任务最近一次已返回图片的后台坐标凭据。请显式 screen(image:true, background:true) 后核对；仍无凭据请用元素操作或交给用户，不要盲点。")
@@ -323,6 +441,7 @@ class BackgroundDisplay internal constructor(
         // l10n:keep agent coordinate protocol
         if (!points.fits(image.width, image.height)) return ActionResult(false, "坐标超出原截图范围；未执行，请重新读屏。")
         val request = Bundle().apply {
+            if (after.requested) putInt(Proto.AFTER_LOCAL_VISUAL, 1)
             putString(Proto.OP, Proto.OP_COORDINATE)
             putString(Proto.OWNER, ownerToken)
             putTarget(this, target)
@@ -336,7 +455,7 @@ class BackgroundDisplay internal constructor(
             }
         }
         val response = try {
-            dispatch(allowed) { OwnerScopeProtocol.execute(channel(), ownerToken, request, it) }
+            dispatch({ allowed() && coordinateEpochCurrent() }) { OwnerScopeProtocol.execute(channel(), ownerToken, request, it) }
         } catch (_: Exception) {
             clearSnapshot()
             // The original lane never replays a request after a missing/throwing reply.
@@ -352,7 +471,7 @@ class BackgroundDisplay internal constructor(
             return ActionResult(false, message)
         }
         val snap = try {
-            if (response.containsKey(Proto.COUNT) || response.getBoolean(Proto.SECURE)) snapshot(response, markNew = true) else null
+            afterSnapshot(response, after)
         } catch (_: Exception) { clearSnapshot(); null } // The gesture acknowledgement already exists.
         if (snap == null) coordinateImage.invalidateScope()
         // l10n:keep agent coordinate protocol
@@ -408,6 +527,7 @@ class BackgroundDisplay internal constructor(
     }
 
     private fun clearSnapshot() {
+        coordinateOcrEpoch = null
         coordinateImage.invalidateScope()
         coordinateImage.clear()
         lastScreenId = null
@@ -415,7 +535,32 @@ class BackgroundDisplay internal constructor(
         previousLabels = emptySet()
     }
 
-    private fun toResult(response: Bundle, okMessage: String, textAction: Boolean = false): ActionResult {
+    private data class AfterRead(val started: Long, val epoch: Long?, val target: PhoneAppIdentity, val requested: Boolean)
+
+    /** Never combine the old action receipt with a partial new observation. */
+    private fun afterSnapshot(response: Bundle, read: AfterRead): ScreenSnapshot? {
+        // A completed action consumes the old observation even when its postread is absent.
+        coordinateImage.clear()
+        coordinateOcrEpoch = null
+        val after = if (read.requested && BackgroundAfterVisual.supported(response.get(Proto.AFTER_LOCAL_VISUAL)))
+            response.get(Proto.AFTER_VISUAL) as? Bundle else null
+        val valid = after != null && after.get(Proto.OK) == true && currentTarget == read.target &&
+            TargetIdentity.receipt(read.target, after.get(Proto.TARGET_IDENTITY_VERSION),
+                after.get(Proto.PKG), after.get(Proto.TARGET_UID))
+        if (valid) {
+            val observed = checkNotNull(after)
+            val local = readLocalText(observed, read.target, read.epoch, read.started)
+            return ocrSnapshot(observed, read.target, true, false, local, read.epoch)
+        }
+        // Legacy text remains readable; missing/unknown attachment never grants new coordinates.
+        val reason = if (localOcr?.enabled == false) LocalOcrResult.Reason.DISABLED
+            else LocalOcrResult.Reason.PRIVACY_UNVERIFIED
+        val diagnostic = LocalOcrVisual.Output(LocalOcrBoundary.message(LocalOcrResult.Unavailable(reason)), false, false)
+        return if (response.containsKey(Proto.COUNT) || response.getBoolean(Proto.SECURE))
+            snapshot(response, read.target, true, publishImage = false, localText = diagnostic, coordinatesAllowed = false) else null
+    }
+
+    private fun toResult(response: Bundle, target: PhoneAppIdentity, okMessage: String, textAction: Boolean = false, after: AfterRead? = null): ActionResult {
         val ok = response.getBoolean(Proto.OK)
         val message = if (ok) okMessage + backgroundVisualNote(response.get(Proto.VISUAL_CHANGE)) else Reasons.of(
             response.getString(Proto.ERROR), response.getString(Proto.ERROR_DETAIL),
@@ -428,9 +573,9 @@ class BackgroundDisplay internal constructor(
             clearSnapshot()
             return ActionResult(false, message, staleSnapshot = true)
         }
-        val identityMatches = currentTarget?.let {
-            TargetIdentity.receipt(it, response.get(Proto.TARGET_IDENTITY_VERSION), response.get(Proto.PKG), response.get(Proto.TARGET_UID))
-        } == true
+        // The original request's ACK is independent of whether its postread may still publish.
+        val identityMatches = TargetIdentity.receipt(target, response.get(Proto.TARGET_IDENTITY_VERSION),
+            response.get(Proto.PKG), response.get(Proto.TARGET_UID))
         if (!identityMatches) {
             clearSnapshot()
             if (ok) {
@@ -441,34 +586,39 @@ class BackgroundDisplay internal constructor(
             if (response.getString(Proto.ERROR) in setOf("targetIdentityChanged", "targetIdentityUnavailable")) targetReady = false
             return ActionResult(false, message)
         }
-        val snap = if (response.containsKey(Proto.COUNT) || response.getBoolean(Proto.SECURE))
-            snapshot(response, markNew = true) else null
+        val snap = try {
+            if (after != null) afterSnapshot(response, after)
+            else if (response.containsKey(Proto.COUNT) || response.getBoolean(Proto.SECURE)) snapshot(response, target, markNew = true) else null
+        } catch (_: Exception) { clearSnapshot(); null } // Optional postread cannot rewrite the action ACK.
         if (snap == null) coordinateImage.invalidateScope()
         return ActionResult(ok, message, snap)
     }
 
-    private fun snapshot(response: Bundle, markNew: Boolean): ScreenSnapshot {
+    private fun snapshot(response: Bundle, target: PhoneAppIdentity, markNew: Boolean, publishImage: Boolean = true,
+                         localText: LocalOcrVisual.Output? = null, coordinatesAllowed: Boolean = true,
+                         ocrOnlyEpoch: Long? = null): ScreenSnapshot = resourceIo.commitObservation {
+        check(currentTarget == target) { Reasons.of("targetIdentityChanged") }
+        coordinateOcrEpoch = null
         coordinateImage.clear()
         val id = "b${++counter}"
-        val target = currentTarget
         val knownScope = response.get(Proto.COORDINATE_SCOPE_VERSION) == 1 &&
             response.get(Proto.COORDINATE_SCOPE_VERSION) is Int && response.get(Proto.COORDINATE_SCOPE_KNOWN) == true &&
-            response.get(Proto.OK) == true && target != null && TargetIdentity.receipt(target,
+            response.get(Proto.OK) == true && TargetIdentity.receipt(target,
                 response.get(Proto.TARGET_IDENTITY_VERSION), response.get(Proto.PKG), response.get(Proto.TARGET_UID))
         coordinateImage.publishScope(id, knownScope, ownerToken, target)
-        val pkg = target?.packageName
+        val pkg = target.packageName
         val appLabel = response.getString(Proto.APP_LABEL)
         if (response.getBoolean(Proto.SECURE)) {
             lastScreenId = id; lastElements = emptyList(); previousLabels = emptySet()
             // l10n:keep agent screen protocol
             val text = "屏幕 $id · 后台屏 · 受保护页面（支付或密码），已交还用户"
-            return ScreenSnapshot(id, text, appLabel, pkg, secure = true)
+            return@commitObservation ScreenSnapshot(id, text, appLabel, pkg, secure = true, readPackages = setOf(pkg))
         }
         if (response.getBoolean(Proto.FRAME_NOT_READY)) {
             lastScreenId = id; lastElements = emptyList(); previousLabels = emptySet()
             // l10n:keep agent screen protocol
             val text = "屏幕 $id · 后台屏\n" + Reasons.of("frameNotReady")
-            return ScreenSnapshot(id, text, appLabel, pkg, secure = false, poorTree = true)
+            return@commitObservation ScreenSnapshot(id, text, appLabel, pkg, secure = false, poorTree = true, readPackages = setOf(pkg))
         }
         val elements = buildElements(response, markNew)
         lastElements = elements
@@ -487,22 +637,26 @@ class BackgroundDisplay internal constructor(
         }
         previousLabels = elements.map { it.label }.filter { it.isNotEmpty() }.toSet()
         val image = if (response.getBoolean(Proto.IMAGE_OMITTED)) null else response.getByteArray("imageBytes")
-        val coordinate = if (image != null && coordinateSupported) BackgroundCoordinateImage.Receipt.parse(
+        val coordinate = if (coordinatesAllowed && image != null && coordinateSupported) BackgroundCoordinateImage.Receipt.parse(
             response.get(Proto.BACKGROUND_COORDINATES), response.get(Proto.COORDINATE_OBSERVATION),
             response.get(Proto.COORDINATE_WIDTH), response.get(Proto.COORDINATE_HEIGHT)) else null
         val eligible = if (coordinate == null) emptyMap() else BackgroundCoordinateImage.targets(
             response.get(Proto.COORDINATE_TARGETS_VERSION), response.get(Proto.COORDINATE_TARGET_INDICES),
             response.get(Proto.COORDINATE_TARGET_BOUNDS), elements.size, coordinate.width, coordinate.height)
         coordinateImage.candidate(id, coordinate, eligible)
+        coordinateOcrEpoch = ocrOnlyEpoch
         if (coordinate != null) {
             // l10n:keep agent coordinate protocol
-            text += "\n截图坐标范围：${coordinate.width}×${coordinate.height}像素；30秒内可单次使用；只有明确普通目标可使用独立的本任务视觉许可，未知目标及长按/滑动仍逐次确认。本机文字识别未安装，未证明画布敏感内容或目标像素未变。"
+            text += "\n截图坐标范围：${coordinate.width}×${coordinate.height}像素；30秒内可单次使用；只有明确普通目标可使用独立的本任务视觉许可，未知目标及长按/滑动仍逐次确认。未证明画布没有敏感内容或目标像素未变。"
         } else if (image != null && coordinateSupported) {
             // l10n:keep agent coordinate protocol
             text += "\n本次截图没有可用坐标凭据（窗口、隐私、几何或帧条件未满足）。请用元素操作或交给用户。"
         }
-        return ScreenSnapshot(id, text, appLabel, pkg, secure = false, poorTree = poor,
-            image = image, imageMime = if (image == null) null else response.getString("imageMime"))
+        if (localText != null) text += "\n" + localText.text
+        val shownImage = image.takeIf { publishImage }
+        return@commitObservation ScreenSnapshot(id, text, appLabel, pkg, secure = false, poorTree = poor,
+            image = shownImage, imageMime = if (shownImage == null) null else response.getString("imageMime"),
+            readPackages = setOf(pkg))
     }
 
     private fun buildElements(response: Bundle, markNew: Boolean): List<Element> {

@@ -141,6 +141,40 @@ void main() {
     await tester.pump();
   });
 
+  for (final code in ['io', 'no_home', 'conflict', 'busy', 'cannot_cancel', 'unavailable', 'stale']) {
+    testWidgets('checking a pending write handles $code without another write', (tester) async {
+      var writes = 0;
+      messenger.setMockMethodCallHandler(_methods, (call) async {
+        if (call.method == 'saveSkillDraft') {
+          writes++;
+          return {'kind': 'saving', 'phase': 'committing'};
+        }
+        if (call.method == 'discardSkillDraft') return {'kind': 'discarded'};
+        if ((call.arguments as Map)['action'] == 'view') return {'kind': 'rejected', 'code': code};
+        return _view();
+      });
+      await tester.pumpWidget(MaterialApp(home: PhoneSkillEditor(channel: PhoneChannel(), candidate: _candidate)));
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(find.byType(CheckboxListTile));
+      await tester.tap(find.byType(CheckboxListTile));
+      await tester.pump();
+      await tester.tap(find.widgetWithText(FilledButton, appL10n.commonSave));
+      await tester.pumpAndSettle();
+      expect(tester.widget<TextField>(find.byType(TextField).first).enabled, isFalse);
+      await tester.tap(find.text(appL10n.phoneSkillCheckWrite));
+      await tester.pumpAndSettle();
+      final terminal = ['io', 'no_home', 'conflict'].contains(code);
+      expect(find.text(appL10n.phoneSkillCheckWrite), terminal ? findsNothing : findsOneWidget);
+      expect(tester.widget<TextField>(find.byType(TextField).first).enabled, terminal);
+      expect(find.text('# Safe parameterized template\n'), findsOneWidget);
+      expect(find.text(appL10n.phoneSkillSavedBody), findsNothing);
+      expect(tester.widget<CheckboxListTile>(find.byType(CheckboxListTile)).value, isFalse);
+      expect(writes, 1);
+      await tester.pumpWidget(const SizedBox());
+      await tester.pump();
+    });
+  }
+
   testWidgets('a shown draft for another task never enables saving', (tester) async {
     messenger.setMockMethodCallHandler(_methods, (_) async => _view(taskId: 8));
     await tester.pumpWidget(MaterialApp(home: PhoneSkillEditor(channel: PhoneChannel(), candidate: _candidate)));

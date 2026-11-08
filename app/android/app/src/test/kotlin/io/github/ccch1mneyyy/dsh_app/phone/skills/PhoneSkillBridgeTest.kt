@@ -53,6 +53,21 @@ class PhoneSkillBridgeTest {
         assertEquals(1, f.notifications); assertEquals(1, f.writes.size)
     }
 
+    @Test fun asynchronousIoNotificationRemainsVisibleToTheEditorsViewRequest() {
+        val f = Fixture(); val view = f.open()
+        assertEquals("saving", f.save(view)["kind"])
+        val write = f.writes.single(); assertTrue(write.beginCommit())
+        write.finish(PhoneSkillInstallResult.Refused.IO)
+        f.done.single()(PhoneSkillInstallResult.Refused.IO)
+        assertEquals(1, f.notifications)
+        repeat(2) {
+            assertEquals(mapOf("kind" to "rejected", "code" to "io"),
+                f.call("skillDraft", f.identity(view) + ("action" to "view")))
+            assertEquals("io", f.save(view)["code"])
+        }
+        assertEquals(1, f.writes.size)
+    }
+
     @Test fun finalEditPreviewContainsNoRawValuesAndOldRevisionCannotSave() {
         val f = Fixture(); val old = f.open()
         val edited = f.call("skillDraft", f.identity(old) + mapOf("action" to "edit", "revision" to 1,

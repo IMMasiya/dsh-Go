@@ -870,3 +870,26 @@ of the date such litigation is filed.
 - SIL Open Font License 1.1：`app/assets/fonts/OFL.txt`
 - GNU LGPL-3.0（spake2-android、libtalloc）：https://www.gnu.org/licenses/lgpl-3.0.txt ；它以 GNU GPL-3.0 为基础，两份全文一并附在 App 内许可页的 spake2-android 条目里：https://www.gnu.org/licenses/gpl-3.0.txt
 - GNU GPL-2.0（proot）：随 APK 附带于 `assets/runtime/licenses/proot-COPYING.txt`
+
+## Google ML Kit Text Recognition (Chinese)
+
+Google ML Kit Text Recognition (Chinese)
+com.google.mlkit:text-recognition-chinese:16.0.1
+
+This bundled Google SDK is subject to the Google ML Kit terms:
+https://developers.google.com/ml-kit/terms
+Android SDK data disclosure:
+https://developers.google.com/ml-kit/android-data-disclosure
+
+Recognition runs on-device. Screenshots and recognized text are not sent to
+Google by this SDK. The SDK collects usage statistics such as device model,
+app version and processing time. Phone control may send screenshots and
+recognized text to the user's configured model.
+
+Local recognition is enabled by default. While off, recognition requests do not
+trigger SDK loading or initialization. Turning it off prevents new recognition,
+but does not uninstall
+the SDK or promise to clear or stop sending previously accumulated SDK statistics.
+The dsh-go anonymous usage statistics switch does not control this SDK.
+The Apache 2.0 license for documentation sample code is not the license for
+this SDK binary. This notice does not replace Google's SDK terms.

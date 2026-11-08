@@ -28,4 +28,6 @@
     <string name="overlay_preview_waiting">等待后台屏画面…</string>
     <string name="overlay_preview_protected">受保护的画面，已隐藏预览</string>
     <string name="overlay_preview_unavailable">暂时无法预览后台屏</string>
+    <string name="overlay_control_rejected">任务未接受这次操作。</string>
+    <string name="overlay_steer_rejected">未发送。任务已不能接受这条插话，文字已保留。</string>
 </resources>

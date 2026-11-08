@@ -11,6 +11,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 /// Package name → a line its entry must carry, also found in THIRD_PARTY_NOTICES.md.
 const _expected = <String, String>{
+  'Google ML Kit Text Recognition (Chinese)': 'com.google.mlkit:text-recognition-chinese:16.0.1',
   'PiPilot': 'Copyright (c) 2026 CikeSeven',
   'Unicode Character Database (15.0.0)': 'Copyright © 1991-2026 Unicode, Inc.',
   'DeepSeek Harness': 'Copyright (c) 2026 DeepSeek',
@@ -66,6 +67,14 @@ void main() {
     expect(bundle, contains('# zlib'));
   });
 
+  test('ML Kit carries its SDK terms rather than sample-code Apache terms', () {
+    final notice = textOf('Google ML Kit Text Recognition (Chinese)');
+    expect(notice, contains('https://developers.google.com/ml-kit/terms'));
+    expect(notice, contains('https://developers.google.com/ml-kit/android-data-disclosure'));
+    expect(notice, contains('previously accumulated SDK statistics'));
+    expect(notice, isNot(contains(_apache)));
+  });
+
   test('each package is registered exactly once', () {
     final names = [for (final entry in entries) ...entry.packages];
     final repeated = {
@@ -80,7 +89,7 @@ void main() {
     expect(names, _expected.keys.toSet());
   });
 
-  test('copyright lines agree with THIRD_PARTY_NOTICES.md', () {
+  test('attribution and identity lines agree with THIRD_PARTY_NOTICES.md', () {
     final notices = File('../THIRD_PARTY_NOTICES.md').readAsStringSync();
     for (final MapEntry(key: package, value: line) in _expected.entries) {
       expect(textOf(package), contains(line), reason: package);

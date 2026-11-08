@@ -8,6 +8,111 @@ import '../../state/phone_state.dart';
 import '../common/list_page_row.dart';
 import '../theme/app_icons.dart';
 
+/// Asks once a new local candidate completes while the phone page is in front.
+///
+/// Wraps the whole page, so the question does not depend on the lazily built
+/// skill card having been scrolled into view. Existing candidates never cause a
+/// burst of prompts on entering the page or enabling the setting.
+class PhoneSkillAutoPrompt extends ConsumerStatefulWidget {
+  const PhoneSkillAutoPrompt({
+    super.key,
+    required this.status,
+    required this.enabled,
+    required this.autoPromptReady,
+    required this.promptBaseline,
+    required this.child,
+  });
+  final PhoneSkillStatus status;
+  /// The skill card is part of the page (status ready and skills available).
+  final bool enabled;
+  final bool autoPromptReady;
+  final int promptBaseline;
+  final Widget child;
+
+  @override
+  ConsumerState<PhoneSkillAutoPrompt> createState() => _PhoneSkillAutoPromptState();
+}
+
+class _PhoneSkillAutoPromptState extends ConsumerState<PhoneSkillAutoPrompt> {
+  bool _presenting = false;
+  late final AppLifecycleListener _lifecycle;
+  int _visibilityEpoch = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _lifecycle = AppLifecycleListener(onStateChange: (_) { _visibilityEpoch++; });
+  }
+
+  @override
+  void dispose() {
+    _lifecycle.dispose();
+    super.dispose();
+  }
+
+  @override
+  void didUpdateWidget(PhoneSkillAutoPrompt oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // A new completion can ask while this page is visible; candidates already
+    // present when the card appeared, or when the setting was turned on, cannot.
+    if (_presenting || !oldWidget.enabled || !widget.enabled || !widget.autoPromptReady ||
+        oldWidget.promptBaseline != widget.promptBaseline ||
+        WidgetsBinding.instance.lifecycleState != AppLifecycleState.resumed ||
+        !oldWidget.status.askAfterSuccess || !widget.status.askAfterSuccess) {
+      return;
+    }
+    final previous = {for (final c in oldWidget.status.candidates) (c.taskId, c.generation)};
+    for (final candidate in widget.status.candidates) {
+      if (previous.contains((candidate.taskId, candidate.generation))) continue;
+      _presenting = true;
+      final epoch = _visibilityEpoch;
+      final baseline = widget.promptBaseline;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        if (_visibilityEpoch != epoch || widget.promptBaseline != baseline || !widget.autoPromptReady ||
+            !widget.enabled || WidgetsBinding.instance.lifecycleState != AppLifecycleState.resumed ||
+            ModalRoute.of(context)?.isCurrent != true) {
+          _presenting = false;
+          return;
+        }
+        unawaited(_ask(candidate));
+      });
+      break;
+    }
+  }
+
+  Future<void> _ask(PhoneSkillCandidate candidate) async {
+    await openPhoneSkillCandidate(context, ref, candidate);
+    if (mounted) _presenting = false;
+  }
+
+  @override
+  Widget build(BuildContext context) => widget.child;
+}
+
+/// Confirms the goal first; only a confirmed candidate opens the draft editor.
+Future<void> openPhoneSkillCandidate(BuildContext context, WidgetRef ref, PhoneSkillCandidate candidate) async {
+  final confirmed = await showDialog<bool>(
+    context: context,
+    builder: (context) => AlertDialog(
+      title: Text(context.l10n.phoneSkillConfirmGoal),
+      content: Text(context.l10n.phoneSkillConfirmGoalBody),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(context, false), child: Text(context.l10n.commonCancel)),
+        FilledButton(onPressed: () => Navigator.pop(context, true), child: Text(context.l10n.phoneSkillGoalDone)),
+      ],
+    ),
+  );
+  if (!context.mounted || confirmed != true) return;
+  await showDialog<void>(
+    context: context,
+    barrierDismissible: false,
+    builder: (_) => PhoneSkillEditor(channel: ref.read(phoneChannelProvider), candidate: candidate),
+  );
+  if (!context.mounted) return;
+  unawaited(ref.read(phoneProvider.notifier).refreshStatus());
+}
+
 /// Only offers local, completed native candidates; opening and saving are separate decisions.
 class PhoneSkillSection extends ConsumerStatefulWidget {
   const PhoneSkillSection({super.key, required this.status});
@@ -21,53 +126,11 @@ class _PhoneSkillSectionState extends ConsumerState<PhoneSkillSection> {
   bool _presenting = false;
   bool _setting = false;
 
-  @override
-  void didUpdateWidget(PhoneSkillSection oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    // Existing candidates do not produce a burst of prompts on entering the page
-    // or enabling the setting. A new completion can ask while this page is visible.
-    if (_presenting || !oldWidget.status.askAfterSuccess || !widget.status.askAfterSuccess) return;
-    final previous = {for (final c in oldWidget.status.candidates) (c.taskId, c.generation)};
-    for (final candidate in widget.status.candidates) {
-      if (previous.contains((candidate.taskId, candidate.generation))) continue;
-      _presenting = true;
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!mounted) return;
-        if (ModalRoute.of(context)?.isCurrent != true) {
-          setState(() => _presenting = false);
-          return;
-        }
-        _presenting = false;
-        unawaited(_open(candidate));
-      });
-      break;
-    }
-  }
-
   Future<void> _open(PhoneSkillCandidate candidate) async {
     if (_presenting) return;
     setState(() => _presenting = true);
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: Text(context.l10n.phoneSkillConfirmGoal),
-        content: Text(context.l10n.phoneSkillConfirmGoalBody),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(context, false), child: Text(context.l10n.commonCancel)),
-          FilledButton(onPressed: () => Navigator.pop(context, true), child: Text(context.l10n.phoneSkillGoalDone)),
-        ],
-      ),
-    );
+    await openPhoneSkillCandidate(context, ref, candidate);
     if (!mounted) return;
-    if (confirmed == true) {
-      await showDialog<void>(
-        context: context,
-        barrierDismissible: false,
-        builder: (_) => PhoneSkillEditor(channel: ref.read(phoneChannelProvider), candidate: candidate),
-      );
-      if (!mounted) return;
-      unawaited(ref.read(phoneProvider.notifier).refreshStatus());
-    }
     setState(() => _presenting = false);
   }
 
@@ -178,6 +241,11 @@ class _PhoneSkillEditorState extends State<PhoneSkillEditor> {
           _pendingWrite = true;
           _confirmed = false;
         case PhoneSkillReplyKind.rejected:
+          // Only definite installer failures end a pending write. A transport/stale/busy
+          // reply cannot establish whether the write has finished.
+          if (reply.code == 'io' || reply.code == 'no_home' || reply.code == 'conflict') {
+            _pendingWrite = false;
+          }
           _error = reply.code;
           _confirmed = false;
         case PhoneSkillReplyKind.discarded:

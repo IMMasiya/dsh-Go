@@ -26,7 +26,9 @@ sealed interface SystemTarget {
 interface SystemLaunch { val target: SystemTarget }
 
 /** target is present only once a platform start was attempted, including a throwing start. */
-class SysResult(val ok: Boolean, val message: String, val target: SystemTarget? = null) {
+class SysResult(val ok: Boolean, val message: String, val target: SystemTarget? = null,
+    /** A returned platform start still needs the person to check its actual effect. */
+    val requiresReview: Boolean = false) {
     val appLabel: String? get() = (target as? SystemTarget.Known)?.app?.label
 }
 
@@ -310,6 +312,10 @@ sealed interface Either<out L, out R> {
 /** Lenient typed access to tool arguments (models send "7" for 7 and 7.0 for 7). */
 class Args(private val map: Map<String, Any?>) {
     fun has(key: String) = map[key] != null
+    /** Presence differs from the existing non-null has(): explicit null must not request AUTO. */
+    fun provided(key: String) = map.containsKey(key)
+    /** Disclosure choices require an actual JSON boolean, not a coerced string or number. */
+    fun strictBool(key: String) = map[key] as? Boolean
 
     fun str(key: String): String? = when (val v = map[key]) {
         is String -> v.trim().takeIf { it.isNotEmpty() }

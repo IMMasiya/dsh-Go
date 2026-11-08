@@ -45,6 +45,7 @@ class PhoneTaskSessions(
         @Volatile internal var resourcesReleased = true
         @Volatile internal var resourceTaskId = 0L
         internal var cleanupFailed = false
+        internal var cleanupRetryTaskId: Long? = null
         // Full requested set while waiting; holders can change before this waiter wakes.
         internal var waitingScreens: List<PhoneScreen> = emptyList()
         internal var waitingApp: PhoneAppIdentity? = null
@@ -66,10 +67,44 @@ class PhoneTaskSessions(
         var completion: String = "unknown"
             internal set
     }
-    class Admission internal constructor(internal val task: Task?, internal val epoch: Long, internal val refusal: String? = null, internal val scopeEpoch: Long? = task?.tasks?.admissionEpoch())
+    class Admission internal constructor(internal val task: Task?, internal val epoch: Long, internal val refusal: String? = null,
+        internal val scopeEpoch: Long? = task?.tasks?.admissionEpoch(), internal val startedAt: Long) {
+        @Volatile internal var expired = false
+        internal var runner: Thread? = null // Protected by this Admission, including interrupt and detach.
+    }
+
+    internal fun remainingMs(a: Admission): Long = if (a.expired) 0L else
+        (PhoneCore.MAX_TOTAL_MS - (clock() - a.startedAt).coerceAtLeast(0)).coerceAtLeast(0)
+
+    internal fun expire(a: Admission): ToolOutput {
+        synchronized(a) {
+            a.expired = true
+            // Do not take a Thread out of this lock: it could return to the pool before interrupt.
+            a.runner?.interrupt()
+        }
+        return deadlineOutput()
+    }
+
+    private fun deadlineOutput() = ToolOutput(
+        "本次手机调用总期限已到，可能执行了也可能没有。不要自动重试同一个动作；待原操作结束后先查看屏幕。", // l10n:keep agent deadline result
+        isError = true,
+    )
     private val mainWorker = legacyCore.worker
     private val lock = Object()
     private var epoch = 0L
+    private var callerLaunch = 0L
+    private var modernCallerSeen = false
+
+    /** Only the real runtime launch entry resets capability, never bridge retirement. */
+    fun beginCallerLaunch() = synchronized(lock) {
+        callerLaunch++
+        modernCallerSeen = false
+    }
+
+    fun callerCapability(): Map<String, Any> = synchronized(lock) {
+        mapOf("launch" to callerLaunch, "modernSeen" to modernCallerSeen)
+    }
+
     private var resetting = false
     private val retiring = linkedSetOf<Task>()
     private data class Key(val sessionId: String?, val runId: String?)
@@ -126,27 +161,43 @@ class PhoneTaskSessions(
     }
 
     /** Called while PhoneBridge still holds its launch lock, before dispatch enters its pool. */
-    fun admit(attribution: PhoneCaller?): Admission = synchronized(lock) {
-        // l10n:keep agent resource admission
-        if (selfCheck != null) return Admission(null, epoch, "本地自检正在占用手机，请稍后重试。")
-        if (resetting || retiring.any { it.cancelling }) return Admission(null, epoch, PhoneTasks.STOPPED_MESSAGE)
-        // B1 attribution alone does not prove the client can deliver an exact run end.
-        val caller = attribution?.takeIf { it.runLifecycle == 1 }
-        val key = Key(caller?.sessionId, caller?.runId)
-        if (caller != null) {
-            if (key in endedRuns || caller.sessionId in stoppedSessions) return Admission(null, epoch, PhoneTasks.STOPPED_MESSAGE)
-            if (!reserve(key)) return Admission(null, epoch, CAPACITY_MESSAGE)
+    fun admit(attribution: PhoneCaller?): Admission {
+        val startedAt = clock()
+        return synchronized(lock) {
+            if (attribution?.runLifecycle == 1) modernCallerSeen = true
+            // l10n:keep agent resource admission
+            if (selfCheck != null) return Admission(null, epoch, "本地自检正在占用手机，请稍后重试。", startedAt = startedAt)
+            if (resetting || retiring.any { it.cancelling }) return Admission(null, epoch, PhoneTasks.STOPPED_MESSAGE, startedAt = startedAt)
+            // B1 attribution alone does not prove the client can deliver an exact run end.
+            val caller = attribution?.takeIf { it.runLifecycle == 1 }
+            val key = Key(caller?.sessionId, caller?.runId)
+            if (caller != null) {
+                if (key in endedRuns || caller.sessionId in stoppedSessions) return Admission(null, epoch, PhoneTasks.STOPPED_MESSAGE, startedAt = startedAt)
+                if (!reserve(key)) return Admission(null, epoch, CAPACITY_MESSAGE, startedAt = startedAt)
+            }
+            val task = entries.getOrPut(key) {
+                val tasks = PhoneTasks(clock = clock, idleMs = Long.MAX_VALUE, idSource = idSource)
+                Task(caller!!.sessionId, caller.runId, tasks, create(tasks, caller.sessionId))
+            }
+            if (!blocked(task) && !task.closing) lastAdmitted[task.sessionId] = task
+            task.pending++
+            Admission(task, epoch, startedAt = startedAt)
         }
-        val task = entries.getOrPut(key) {
-            val tasks = PhoneTasks(clock = clock, idleMs = Long.MAX_VALUE, idSource = idSource)
-            Task(caller!!.sessionId, caller.runId, tasks, create(tasks, caller.sessionId))
-        }
-        if (!blocked(task) && !task.closing) lastAdmitted[task.sessionId] = task
-        task.pending++
-        Admission(task, epoch)
     }
 
     fun run(admission: Admission, name: String, args: Map<String, Any?>): ToolOutput {
+        synchronized(admission) { admission.runner = Thread.currentThread() }
+        try {
+            return runAdmitted(admission, name, args)
+        } finally {
+            synchronized(admission) {
+                admission.runner = null
+                if (admission.expired) Thread.interrupted()
+            }
+        }
+    }
+
+    private fun runAdmitted(admission: Admission, name: String, args: Map<String, Any?>): ToolOutput {
         val task = admission.task ?: return ToolOutput(checkNotNull(admission.refusal), isError = true)
         var owner: PhoneTasks.Owner? = null
         var prepared: PhoneCore.PreparedCall? = null
@@ -154,11 +205,17 @@ class PhoneTaskSessions(
         var executionWorker: SerialWorker? = null
         task.tasks.callStarted()
         try {
+            if (remainingMs(admission) <= 0) return deadlineOutput()
             recoveryAdmission()?.let { return ToolOutput(it, isError = true) }
             journal?.refusal()?.let { return ToolOutput(it, isError = true) }
             task.core.rejection(name)?.let { return it }
             synchronized(lock) {
-                while (task.running && live(admission) && !blocked(task) && !task.closing) lock.wait(1_000)
+                while (task.running && live(admission) && !blocked(task) && !task.closing) {
+                    val left = remainingMs(admission)
+                    if (left <= 0) return deadlineOutput()
+                    lock.wait(minOf(left, 1_000))
+                }
+                if (remainingMs(admission) <= 0) return deadlineOutput()
                 if (!live(admission) || blocked(task) || task.closing) return stopped()
                 task.running = true
                 running = true
@@ -171,6 +228,7 @@ class PhoneTaskSessions(
                     return stopped()
                 }
             }
+            if (remainingMs(admission) <= 0) return deadlineOutput()
             owner = when (val b = task.tasks.begin(admission.scopeEpoch)) {
                 is PhoneTasks.Begin.Go -> {
                     if (b.newTask) {
@@ -225,15 +283,21 @@ class PhoneTaskSessions(
                     if (!live(admission) || blocked(task) || !task.tasks.isCurrent(owner)) return stopped()
                 }
             }
-            if (task.tasks.isPaused && !task.tasks.awaitResume(PhoneCore.PAUSE_WAIT_MS)) return stopped()
+            if (remainingMs(admission) <= 0) return deadlineOutput()
+            if (task.tasks.isPaused && !task.tasks.awaitResume(minOf(PhoneCore.PAUSE_WAIT_MS, remainingMs(admission)))) {
+                return if (remainingMs(admission) <= 0) deadlineOutput() else stopped()
+            }
+            if (remainingMs(admission) <= 0) return deadlineOutput()
             val call = when (val result = task.core.prepareCall(name, args, owner)) {
                 is Either.Left -> return result.value
                 is Either.Right -> result.value
             }
             prepared = call
+            if (remainingMs(admission) <= 0) return deadlineOutput()
             val failure = awaitResources(admission, call)
             if (failure != null) return ToolOutput(failure, isError = true)
             val selected = synchronized(lock) {
+                if (remainingMs(admission) <= 0) return deadlineOutput()
                 if (!live(admission) || blocked(task) || !task.tasks.isCurrent(owner)) return stopped()
                 val lane = if (PhoneScreen.BACKGROUND in call.screens) {
                     check(screens[PhoneScreen.BACKGROUND] === task)
@@ -243,7 +307,7 @@ class PhoneTaskSessions(
                 executionWorker = lane
                 lane
             }
-            return task.core.call(call, selected)
+            return task.core.call(call, selected, { remainingMs(admission) })
         } catch (_: InterruptedException) {
             Thread.currentThread().interrupt()
             return stopped()
@@ -312,7 +376,10 @@ class PhoneTaskSessions(
         val until = started + 30_000
         val task = checkNotNull(a.task)
         fun current() = live(a) && !blocked(task) && task.tasks.isCurrent(call.owner)
-        fun acquire() {
+        // Registry -> Admission; expiry never acquires registry. Claim and expiry are ordered
+        // without holding either monitor across platform work.
+        fun acquire(): String? = synchronized(a) {
+            if (remainingMs(a) <= 0) return@synchronized deadlineOutput().text
             call.borrowedMainForBackgroundOpen = call.name == PhoneToolCatalog.OPEN &&
                 call.args.bool("background") == true && PhoneScreen.MAIN in needed && screens[PhoneScreen.MAIN] == null
             needed.forEach { screens[it] = task }
@@ -321,12 +388,14 @@ class PhoneTaskSessions(
             if (known != null || unknown) appHolders += task
             task.resourcesReleased = false
             task.resourceTaskId = call.owner.taskId
+            null
         }
         synchronized(lock) {
+            if (remainingMs(a) <= 0) return deadlineOutput().text
             if (!current()) return PhoneTasks.STOPPED_MESSAGE
             if (known != null && known !in task.heldApps && task.heldApps.size >= MAX_APPS_PER_SCOPE)
                 return "本任务已保留 16 个应用身份，请结束并清理本任务后再打开其他应用。" // l10n:keep agent resource result
-            if (blockers(task, needed, known, unknown).isEmpty()) { acquire(); return null }
+            if (blockers(task, needed, known, unknown).isEmpty()) { return acquire() }
             // Whole request, not the first blocker: another holder can appear before wakeup.
             task.waitingScreens = needed
             task.waitingApp = known
@@ -337,9 +406,10 @@ class PhoneTaskSessions(
         try {
             synchronized(lock) {
                 while (true) {
+                    if (remainingMs(a) <= 0) return deadlineOutput().text
                     if (!current()) return PhoneTasks.STOPPED_MESSAGE
                     val missing = blockers(task, needed, known, unknown)
-                    if (missing.isEmpty()) { acquire(); return null }
+                    if (missing.isEmpty()) { return acquire() }
                     val pending = java.util.ArrayDeque<Task>(missing)
                     val seen = HashSet<Task>()
                     while (pending.isNotEmpty()) {
@@ -350,7 +420,7 @@ class PhoneTaskSessions(
                     }
                     val left = until - clock()
                     if (left <= 0) return "屏幕或应用资源正被另一个对话使用，已等待 30 秒，本次没有操作。请稍后再试或结束占用任务。" // l10n:keep agent resource result
-                    lock.wait(minOf(left, 1_000))
+                    lock.wait(minOf(left, remainingMs(a), 1_000).coerceAtLeast(1))
                 }
             }
         } finally {
@@ -363,6 +433,14 @@ class PhoneTaskSessions(
     fun all(): List<Task> = synchronized(lock) { entries.values.toList() }
     fun isBusy(task: Task): Boolean = synchronized(lock) { task.pending > 0 || task.running || task.closing || task.cancelling || task.cleanupFailed }
 
+    /** Policy validation and in-memory publication share admission's linearization point.
+     * Callbacks must only read/publish memory; persistence and notifications belong outside. */
+    fun updatePolicies(map: Map<*, *>?, current: () -> PhonePolicies, publish: (PhonePolicies) -> Unit): PhonePolicies? = synchronized(lock) {
+        val next = PhonePolicies.update(map, current(), ::anyActive) ?: return@synchronized null
+        publish(next)
+        next
+    }
+
     /** Any record, selected or not, that may still act: active, an admitted call, or a draining body. */
     fun anyActive(): Boolean = synchronized(lock) {
         (entries.values + retiring).any { it.pending > 0 || it.running || it.retired == null && it.tasks.snapshot().active }
@@ -371,11 +449,20 @@ class PhoneTaskSessions(
     /** End/stop/idle/retirement all keep physical leases until body AND resource cleanup drain. */
     fun settleInactive(task: Task) { settle(task, explicitFinish = false) }
 
-    private fun settle(task: Task, explicitFinish: Boolean, retry: Boolean = false, expected: PhoneTasks.Snapshot? = null): PhoneTasks.Owner? {
+    private fun settle(task: Task, explicitFinish: Boolean, retryTaskId: Long? = null, expected: PhoneTasks.Snapshot? = null): PhoneTasks.Owner? {
+        val retry = retryTaskId != null
         val state: PhoneTasks.Snapshot
         val shouldFinish: Boolean
         val drainWorker: SerialWorker
         synchronized(lock) {
+            if (retryTaskId != null) {
+                if ((task.retired ?: task.tasks.snapshot()).id != retryTaskId) return null
+                if (task.closing) {
+                    // Journal-only closing has already released physical resources.
+                    if (!task.resourcesReleased) task.cleanupRetryTaskId = retryTaskId
+                    return null
+                }
+            }
             if (task.pending > 0 || task.running || task.closing || task.cancelling || task.ending || task.cleanupFailed && !retry || task.journalFailed) return null
             // Capture only after excluding a new registry run, in registry -> Tasks lock order.
             state = task.retired ?: task.tasks.snapshot()
@@ -419,7 +506,16 @@ class PhoneTaskSessions(
                     // A failed release does not prove the display/body is gone. Keep its physical fence.
                     synchronized(lock) { task.cleanupFailed = true }
                 } finally {
-                    synchronized(lock) { task.closing = false; lock.notifyAll() }
+                    val retryTaskId = synchronized(lock) {
+                        task.closing = false
+                        val requested = task.cleanupRetryTaskId
+                        task.cleanupRetryTaskId = null
+                        lock.notifyAll()
+                        requested?.takeIf { task.cleanupFailed }
+                    }
+                    // Consume this explicit request once, before optional status observers.
+                    // The original settle eligibility still protects an active failed handoff.
+                    if (retryTaskId != null) retryCleanup(retryTaskId)
                     onSettled(task)
                     changed()
                 }
@@ -476,10 +572,11 @@ class PhoneTaskSessions(
     fun retryCleanup(taskId: Long): Boolean {
         val task = synchronized(lock) {
             (entries.values + retiring).firstOrNull {
-                it.cleanupFailed && (it.retired ?: it.tasks.snapshot()).id == taskId
+                (it.cleanupFailed || it.closing && !it.resourcesReleased) &&
+                    (it.retired ?: it.tasks.snapshot()).id == taskId
             }
         } ?: return false
-        settle(task, explicitFinish = false, retry = true)
+        settle(task, explicitFinish = false, retryTaskId = taskId)
         return synchronized(lock) { task.resourcesReleased && !task.cleanupFailed && !task.closing }
     }
 

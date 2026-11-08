@@ -14,6 +14,8 @@ import android.net.NetworkCapabilities
 import android.net.NetworkRequest
 import android.provider.Settings
 import io.github.ccch1mneyyy.dsh_app.phone.PhoneControl
+import io.github.ccch1mneyyy.dsh_app.phone.PhoneAppIdentity
+import io.github.ccch1mneyyy.dsh_app.phone.a11y.MlKitLocalOcr
 import java.util.concurrent.Executors
 import java.util.concurrent.Future
 import java.util.concurrent.FutureTask
@@ -140,6 +142,7 @@ class BackgroundControl private constructor(context: Context) {
     private val previewGuard = Any()
     @Volatile private var previewTarget: BackgroundPreviewTarget? = null
     @Volatile var onPreviewChanged: () -> Unit = {}
+    @Volatile internal var localOcrAllowed: (PhoneAppIdentity) -> Boolean = { false }
 
     fun previewTarget(): BackgroundPreviewTarget? = previewTarget
 
@@ -198,11 +201,8 @@ class BackgroundControl private constructor(context: Context) {
     private fun resourceRecoveryStatus(): Map<String, Any?> {
         val saved = resourceJournal.status()
         val running = resourceMaintenance != null
-        val state = if (running) "recovering" else if (retiredResourcePeer != null && saved.state == "clear") "pending" else saved.state
-        val canRetry = !running && (saved.storageRetry || retiredResourcePeer != null ||
-            state == "pending" && mode in PrivilegedKeepState.MODES && (channel?.alive() == true || keep.enabled))
-        return mapOf("v" to 1, "state" to state, "count" to saved.count, "canRetry" to canRetry,
-            "reason" to (saved.reason ?: if (retiredResourcePeer != null) "reconnectRequired" else null))
+        return resourceRecoveryStatus(saved, running, retiredResourcePeer != null, lostTaskId() != null,
+            mode in PrivilegedKeepState.MODES && (channel?.alive() == true || keep.enabled))
     }
 
     /** This ID comes from the still-retained original driver, never from a journal string. */
@@ -224,7 +224,8 @@ class BackgroundControl private constructor(context: Context) {
 
     internal fun retryStoredGateCleanup(): Boolean {
         val old = gateCall ?: return true
-        if (!old.resource.physicalComplete) return false
+        // A drained dead pin needs the following explicit recovery stage, not a storage-only retry.
+        if (!old.resource.physicalComplete) return old.recoveryPending() && !old.peer.alive()
         return retryGateCleanup(old.handle)["ok"] == true
     }
 
@@ -249,8 +250,10 @@ class BackgroundControl private constructor(context: Context) {
 
     private fun retryResourceRecoveryNow(): String? {
         val records = resourceJournal.oldRecords() ?: return "storageUnavailable"
-        val lost = lostTaskResource()?.driver
-        if (records.isEmpty() && retiredResourcePeer == null && lost == null) return null // Storage retry only; never retires a live current peer.
+        val lost = lostTaskResource()
+        val lostGate = gateCall?.takeIf { it.recoveryPending() && !it.peer.alive() && !it.resource.physicalComplete }
+        if (lost != null || lostGate != null) return recoverOriginalResource(lost, lostGate)
+        if (records.isEmpty() && retiredResourcePeer == null) return null // Storage retry only; never retires a live current peer.
         if (!beginTransportUse(recoveryUse = true)) return "busy"
         try {
             val selection = synchronized(keepGuard) { keep.selectionTicket() }
@@ -259,8 +262,6 @@ class BackgroundControl private constructor(context: Context) {
             // A retained completed peer can be disconnected without reviving the old user's consent.
             val peer = pending?.peer ?: activeChannel(allowed, explicit = true, transportReserved = true)
                 ?: return "connectionRequired"
-            // Its occupied slot makes old-record recovery busy, so the lost original goes first.
-            if (lost != null && pending == null) return recoverLostTask(lost, peer, allowed)
             return recoverResourceRecords(peer, selection, allowed, settingsUse = false)
         } finally {
             endTransportUse()
@@ -268,23 +269,65 @@ class BackgroundControl private constructor(context: Context) {
         }
     }
 
-    /** The sealed slot stays the fence. Only a different peer's exact absence receipt completes the
-     * drained original scope; endTask then returns the slot and registry leases by the normal path.
-     */
-    private fun recoverLostTask(lost: BackgroundDisplay, peer: PrivilegedChannel, mayStart: () -> Boolean): String? = try {
+    /** This reservation only admits a check of the retained original. It never reopens dispatch. */
+    private fun recoverOriginalResource(
+        lost: BackgroundTaskSlot.TaskResource<BackgroundDisplay>?,
+        lostGate: BackgroundGateCall<PrivilegedChannel>?,
+    ): String? {
+        val selection: PrivilegedKeepState.Ticket
+        val ticket = synchronized(this) {
+            synchronized(keepGuard) {
+                if (resourceMaintenance != null || retiredResourcePeer != null || selfCheckBorrow != null ||
+                    transportUsers != 0 || restoring != null || selectionChange != null ||
+                    selectingResource || interruptFinishing) return "busy"
+                if (lost != null) {
+                    if (taskResource.cleanupCandidate() !== lost || gateCall != null) return "busy"
+                } else {
+                    if (lostGate == null || gateCall !== lostGate || !lostGate.recoveryPending() || taskResource.occupied) return "busy"
+                }
+                selection = keep.selectionTicket()
+                Any().also { resourceMaintenance = it }
+            }
+        }
+        // Starter/transport admission callbacks must not acquire ownership locks.
+        val allowed = {
+            resourceMaintenance === ticket && selectionChange == null && keep.selectionCurrent(selection) &&
+                (lost == null || !lost.driver.physicalComplete) &&
+                (lostGate == null || gateCall === lostGate && !lostGate.resource.physicalComplete)
+        }
+        notifyChanged()
+        try {
+            val peer = activeChannel(allowed, explicit = true, transportReserved = true, recoveryOnly = true)
+                ?: return "connectionRequired"
+            if (lost != null) return recoverLostTask(lost.driver, peer, allowed)
+            val call = checkNotNull(lostGate)
+            val released = call.retryRecovery({ !it.alive() }) { saved -> verifyLostResource(saved, peer, allowed) }
+            return if (finishGateCall(call, released)) null else "recoveryUnknown"
+        } finally {
+            synchronized(keepGuard) { if (resourceMaintenance === ticket) resourceMaintenance = null }
+            notifyChanged()
+            finishInterrupt()
+        }
+    }
+
+    private fun verifyLostResource(saved: BackgroundResourceJournal.Record, peer: PrivilegedChannel,
+                                   mayStart: () -> Boolean): Boolean {
         val cap = peer.execute(Bundle().apply { putString(Proto.OP, Proto.OP_PROBE) }) {
             check(mayStart()) { "selectionChanged" }
         }
         val birth = if ((cap.get(Proto.OK) as? Boolean) == true) BackgroundRecoveryProtocol.birth(cap::get) else null
-        val verified = birth != null && lost.recoverLostPeer { saved ->
-            if (saved.birth.peer == birth.peer || !mayStart()) false
-            else {
-                val reply = peer.execute(BackgroundRecoveryProtocol.check(saved)) { check(mayStart()) { "selectionChanged" } }
-                BackgroundRecoveryProtocol.recovered(saved, reply::get, reply::containsKey)
-            }
-        }
+        if (birth == null || saved.birth.peer == birth.peer || !mayStart()) return false
+        val reply = peer.execute(BackgroundRecoveryProtocol.check(saved)) { check(mayStart()) { "selectionChanged" } }
+        return BackgroundRecoveryProtocol.recovered(saved, reply::get, reply::containsKey)
+    }
+
+    /** The sealed slot stays the fence. Only a different peer's exact absence receipt completes the
+     * drained original scope; endTask then returns the slot and registry leases by the normal path.
+     */
+    private fun recoverLostTask(lost: BackgroundDisplay, peer: PrivilegedChannel, mayStart: () -> Boolean): String? = try {
+        val verified = lost.recoverLostPeer { saved -> verifyLostResource(saved, peer, mayStart) }
         // A completed physical proof whose durable clear failed is retried by endTask.
-        if (birth == null) "connectionRequired" else if (verified || lost.physicalComplete) null else "recoveryUnknown"
+        if (verified || lost.physicalComplete) null else "recoveryUnknown"
     } catch (_: Exception) { "recoveryUnknown" }
 
     private fun recoverResourceRecords(peer: PrivilegedChannel, selection: PrivilegedKeepState.Ticket,
@@ -426,7 +469,7 @@ class BackgroundControl private constructor(context: Context) {
 
     private fun gateCleanupStatus(): Map<String, Any?> {
         val current = gateCall ?: return mapOf("v" to 1, "state" to "idle", "canRetry" to false, "handle" to null)
-        return current.status(current.peer.alive())
+        return current.status()
     }
 
     private fun readiness(): String? = when {
@@ -771,6 +814,7 @@ class BackgroundControl private constructor(context: Context) {
             } catch (_: Exception) { return null }
         }
         if (!allowed() || activeChannel(mayStart = ::allowed) == null) return null
+        val ocr = MlKitLocalOcr.get(app) // First preference read stays outside resource monitors.
         val acquired = synchronized(this) {
             if (resourceMaintenance != null || retiredResourcePeer != null || selfCheckBorrow != null || gateCall != null || gate.needsRetest || selectingResource || interruptRequested || mode == "off") return null
             lateinit var record: BackgroundTaskSlot.TaskResource<BackgroundDisplay>
@@ -786,6 +830,8 @@ class BackgroundControl private constructor(context: Context) {
                         action()
                     } },
                     viewport = viewport,
+                    localOcr = ocr,
+                    localOcrAllowed = { target -> localOcrAllowed(target) },
                     onResourceReady = { publishPreviewTarget(record, it) },
                 )
             } ?: return null
@@ -852,16 +898,16 @@ class BackgroundControl private constructor(context: Context) {
     // ---- channel plumbing --------------------------------------------------
 
     private fun activeChannel(mayStart: () -> Boolean = { true }, explicit: Boolean = false,
-                              transportReserved: Boolean = false): PrivilegedChannel? {
+                              transportReserved: Boolean = false, recoveryOnly: Boolean = false): PrivilegedChannel? {
         if (!transportReserved && !beginTransportUse()) return null
         try {
-            if (!mayStart() || interruptRequested) return null
+            if (!mayStart() || !recoveryOnly && interruptRequested) return null
             val (selection, cached) = synchronized(keepGuard) {
                 if (selectionChange != null) return null
                 keep.selectionTicket() to channel
             }
             // Starter guards may call this; only volatile reads, never keepGuard acquisition.
-            val allowed = { mayStart() && !interruptRequested && selectionChange == null && keep.selectionCurrent(selection) }
+            val allowed = { mayStart() && (recoveryOnly || !interruptRequested) && selectionChange == null && keep.selectionCurrent(selection) }
             val selected = selection.mode
             // Disabling keep does not authorize a different shared-API provider.
             if ((selected == "shizuku" || selected == "sui") && shizuku.status().provider != selected) return null
@@ -873,7 +919,7 @@ class BackgroundControl private constructor(context: Context) {
             if (!allowed() || (keep.enabled && !explicit)) return null
             val connected = when (selected) {
                 "shizuku", "sui" -> shizuku.connect(mayStart = allowed)
-                "root" -> root.connect()
+                "root" -> root.connect() ?: if (recoveryOnly) root.start(allowed) else null
                 "adb" -> adb.connect(mayStart = allowed)
                 else -> null
             } ?: return null
@@ -1000,12 +1046,15 @@ class BackgroundControl private constructor(context: Context) {
         return if (accepted != null) reason else reason ?: AppStrings.get(app, R.string.background_no_response)
     }
 
-    /** Retry has no new admission/connect/probe and does not require the old UI to remain attached. */
+    /** Retry retains the exact handle. A dead pin only permits strict original-scope recovery. */
     fun retryGateCleanup(handle: String): Map<String, Any?> {
         val call = synchronized(keepGuard) {
             gateCall?.takeIf { it.handle == handle }
         } ?: return mapOf("ok" to false, "reason" to AppStrings.get(app, R.string.background_gate_cleanup_stale))
-        if (!call.peer.alive() && !call.resource.physicalComplete) return mapOf("ok" to false, "reason" to AppStrings.get(app, R.string.background_gate_cleanup_pending))
+        if (!call.peer.alive() && !call.resource.physicalComplete) {
+            val reason = recoverOriginalResource(null, call)
+            return mapOf("ok" to (reason == null), "reason" to reason)
+        }
         val released = finishGateCall(call, call.retryCleanup(::releaseGate))
         return mapOf("ok" to released, "reason" to if (released) null else AppStrings.get(app, R.string.background_gate_cleanup_pending))
     }
@@ -1255,6 +1304,16 @@ class BackgroundControl private constructor(context: Context) {
     }
 
     companion object {
+        /** Pure publication of journal state plus the controller's actual retained resource facts. */
+        internal fun resourceRecoveryStatus(saved: BackgroundResourceJournal.Snapshot, running: Boolean,
+            retiredPeer: Boolean, lostTask: Boolean, connectionReady: Boolean): Map<String, Any?> {
+            val needsRecovery = retiredPeer || lostTask
+            val state = if (running) "recovering" else if (needsRecovery && saved.state == "clear") "pending" else saved.state
+            val canRetry = !running && (saved.storageRetry || needsRecovery || state == "pending" && connectionReady)
+            return mapOf("v" to 1, "state" to state, "count" to saved.count, "canRetry" to canRetry,
+                "reason" to (saved.reason ?: if (needsRecovery) "reconnectRequired" else null))
+        }
+
         /** UserHandle.PER_USER_RANGE: a uid's user is uid / this. */
         private const val PER_USER_RANGE = 100_000
 

@@ -9,7 +9,7 @@ class PhoneTaskObservations(private val tasks: PhoneTasks) {
         private fun current() {
             if (!tasks.isCurrent(owner) || Thread.currentThread().isInterrupted) throw InterruptedException()
         }
-        private fun allowed(): Boolean {
+        private fun taskAllowed(): Boolean {
             var accepted = false
             tasks.runIfCurrent(owner) { accepted = !tasks.isPaused }
             return accepted
@@ -44,6 +44,10 @@ class PhoneTaskObservations(private val tasks: PhoneTasks) {
         override fun observe(detail: Boolean, image: Boolean): ScreenSnapshot {
             current()
             return try { remember(driver.observe(detail, image)) } finally { syncCurrentScope() }
+        }
+        override fun observe(detail: Boolean, image: Boolean, automaticImage: Boolean): ScreenSnapshot {
+            current()
+            return try { remember(driver.observe(detail, image, automaticImage)) } finally { syncCurrentScope() }
         }
         override fun acceptVisualObservation(screenId: String) {
             current()
@@ -83,33 +87,41 @@ class PhoneTaskObservations(private val tasks: PhoneTasks) {
             current()
             return try { if (owns(screenId)) driver.target(screenId, elementId) else null } finally { syncCurrentScope() }
         }
-        override fun perform(action: PhoneAction): ActionResult {
+        override fun perform(action: PhoneAction): ActionResult = perform(action) { true }
+        override fun perform(action: PhoneAction, allowed: () -> Boolean): ActionResult {
             current()
             if (action !is PhoneAction.Key && !owns(action.screenId)) {
                 // l10n:keep agent observation ownership result
                 return ActionResult(false, "这个屏幕编号不属于本任务的当前观察。请本任务重新 screen，不要使用另一对话的编号。")
             }
             return try {
-                result(driver.perform(action, ::allowed) { claim ->
+                result(driver.perform(action, { taskAllowed() && allowed() }) { claim ->
                     var committed = false
-                    tasks.runIfCurrent(owner) { if (!tasks.isPaused) committed = claim() }
+                    tasks.runIfCurrent(owner) { if (!tasks.isPaused && allowed()) committed = claim() }
                     committed
                 })
             } finally { syncCurrentScope() }
         }
-        override fun collect(screenId: String, listElementId: Int, maxPages: Int, until: String?): CollectResult {
+        override fun collect(screenId: String, listElementId: Int, maxPages: Int, until: String?): CollectResult =
+            collect(screenId, listElementId, maxPages, until) { true }
+        override fun collect(screenId: String, listElementId: Int, maxPages: Int, until: String?, allowed: () -> Boolean): CollectResult =
+            collect(screenId, listElementId, maxPages, until, allowed) { true }
+        override fun collect(screenId: String, listElementId: Int, maxPages: Int, until: String?,
+                             allowed: () -> Boolean, canRead: (String?) -> Boolean): CollectResult {
             current()
             if (!owns(screenId)) return CollectResult(emptyList(), 0, "屏幕编号不属于本任务，请重新 screen", null) // l10n:keep agent observation ownership result
             return try {
-                val result = driver.collect(screenId, listElementId, maxPages, until, ::allowed)
+                val result = driver.collect(screenId, listElementId, maxPages, until,
+                    { taskAllowed() && allowed() }, { pkg -> taskAllowed() && canRead(pkg) })
                 current()
                 result.screen?.let(::remember)
                 result
             } finally { syncCurrentScope() }
         }
-        override fun open(target: PhoneAppIdentity): ActionResult {
+        override fun open(target: PhoneAppIdentity): ActionResult = open(target) { true }
+        override fun open(target: PhoneAppIdentity, allowed: () -> Boolean): ActionResult {
             current()
-            return try { result(driver.open(target)) } finally { syncCurrentScope() }
+            return try { result(driver.open(target) { taskAllowed() && allowed() }) } finally { syncCurrentScope() }
         }
         override fun foregroundPackage(): String? {
             current()

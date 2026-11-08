@@ -109,8 +109,8 @@ class PhoneCore(
         }
     }
 
-    internal fun call(prepared: PreparedCall, executionWorker: SerialWorker): ToolOutput =
-        runCall(prepared.name, prepared.args, AtomicReference<PhoneTasks.Owner?>(prepared.owner), prepared, executionWorker)
+    internal fun call(prepared: PreparedCall, executionWorker: SerialWorker, remainingMs: () -> Long = { MAX_TOTAL_MS }): ToolOutput =
+        runCall(prepared.name, prepared.args, AtomicReference<PhoneTasks.Owner?>(prepared.owner), prepared, executionWorker, remainingMs)
 
     fun call(name: String, args: Map<String, Any?>, admittedOwner: PhoneTasks.Owner? = null): ToolOutput {
         // In flight from here until the result goes back: no turn ends while a call runs (PhoneTasks.finish).
@@ -137,9 +137,14 @@ class PhoneCore(
     }
 
     private fun runCall(name: String, args: Args, callOwner: AtomicReference<PhoneTasks.Owner?>, prepared: PreparedCall? = null,
-                        executionWorker: SerialWorker = worker): ToolOutput {
+                        executionWorker: SerialWorker = worker, remainingMs: () -> Long = { MAX_TOTAL_MS }): ToolOutput {
         rejection(name)?.let { return it }
-        val outcome = executionWorker.run(budgetMs(name), MAX_TOTAL_MS, owner = tasks) { scope -> execute(name, args, scope, callOwner, prepared) }
+        val remaining = remainingMs()
+        val outcome = if (remaining <= 0) SerialWorker.Outcome.TimedOut(queued = true) else
+            executionWorker.run(budgetMs(name), remaining, owner = tasks) { scope ->
+                if (remainingMs() <= 0) throw InterruptedException()
+                execute(name, args, scope, callOwner, prepared)
+            }
         val owner = callOwner.get()
         if (owner != null && name in TRACE_ACTIONS && outcome !is SerialWorker.Outcome.Done) {
             skillTrace.markIncomplete(owner, PhoneTaskTrace.Gap.UNCERTAIN_RESULT)
@@ -235,7 +240,7 @@ class PhoneCore(
             return when (name) {
                 PhoneToolCatalog.APPS -> apps(a, owner)
                 PhoneToolCatalog.OPEN -> open(call, scope, owner)
-                PhoneToolCatalog.INTENT -> intent(call, owner)
+                PhoneToolCatalog.INTENT -> intent(call, scope, owner)
                 PhoneToolCatalog.NOTIFY -> notify(a, owner)
                 PhoneToolCatalog.CLIPBOARD -> clipboard(a, owner)
                 PhoneToolCatalog.SCREEN -> screen(a, owner)
@@ -369,8 +374,8 @@ class PhoneCore(
             }
             if (!current(owner)) return stoppedOut("open")
             skillTrace.markIncomplete(owner)
-            val r = env.system().launch(plan, tasks.systemDispatch(owner))
-            return afterSystem(owner, r, ui.get("phone_log_open_url_scheme", "打开链接 %1\$s:", url.substringBefore(':'))) // l10n:keep test default
+            val r = launchSystem(plan, owner)
+            return afterSystem(owner, scope, r, ui.get("phone_log_open_url_scheme", "打开链接 %1\$s:", url.substringBefore(':'))) // l10n:keep test default
         }
         val app = (plan.target as? SystemTarget.Known)?.app
             ?: return Out(Reasons.of("targetIdentityUnavailable"), error = true)
@@ -381,11 +386,11 @@ class PhoneCore(
             if (!tasks.isCurrent(owner) || Thread.currentThread().isInterrupted) return stoppedOut("open")
             val ticket = skillTrace.beginOpen(owner, PhoneScreen.MAIN)
             val result = try {
-                env.system().launch(plan, tasks.systemDispatch(owner)).also {
+                launchSystem(plan, owner).also {
                     skillTrace.finish(ticket, it.ok, false, false)
                 }
             } catch (e: Throwable) { skillTrace.fail(ticket); throw e }
-            return afterSystem(owner, result, ui.get("phone_log_open_app", "打开 %1\$s", app.packageName)) // l10n:keep test default
+            return afterSystem(owner, scope, result, ui.get("phone_log_open_app", "打开 %1\$s", app.packageName)) // l10n:keep test default
         }
         val driver = env.driver(PhoneScreen.BACKGROUND, owner)
             ?: return Out(env.backgroundUnavailable(), error = true, app = app.label, summary = ui.get("phone_log_open_background", "后台屏打开 %1\$s", app.packageName), decision = "unavailable") // l10n:keep test default
@@ -403,19 +408,73 @@ class PhoneCore(
         lastScreen = PhoneScreen.BACKGROUND
         say(owner, ui.get("phone_opening_background", "DSH 正在后台屏打开「%1\$s」", app.label)) // l10n:keep test default
         if (!current(owner)) return stoppedOut("open")
+        // The user may tighten the app list while the original move confirmation is waiting.
+        safety.checkOpen(app.packageName, app.label)?.let {
+            return Out(it.message, error = true, app = app.label,
+                summary = ui.get("phone_log_open_background", "后台屏打开 %1\$s", app.packageName), decision = "refused:${it.rule}") // l10n:keep test default
+        }
+        val openRefusal = AtomicReference<SafetyGate.Verdict.Refuse?>(null)
         val ticket = skillTrace.beginOpen(owner, PhoneScreen.BACKGROUND)
-        val res = traceResult(ticket) { driver.open(app.identity) }
+        val res = traceResult(ticket) {
+            driver.open(app.identity) {
+                if (!current(owner) || openRefusal.get() != null) false else {
+                    safety.checkOpen(app.packageName, app.label)?.let { openRefusal.compareAndSet(null, it) }
+                    openRefusal.get() == null
+                }
+            }
+        }
+        openRefusal.get()?.let { refused ->
+            if (!current(owner)) return stoppedOut("open")
+            return Out(refused.message, error = true, app = app.label,
+                summary = ui.get("phone_log_open_background", "后台屏打开 %1\$s", app.packageName),
+                decision = "refused:${refused.rule}") // l10n:keep test default
+        }
         call.backgroundOpenConfirmed = res.backgroundOpenConfirmed
         if (!current(owner) || !tasks.setAppIfCurrent(owner, app.label)) return stoppedOut("open")
         if (!current(owner)) return stoppedOut("open")
-        return Out(res.message, error = !res.ok, screen = res.screen?.let { safety.filterScreen(it) }, app = app.label,
+        return Out(res.message, error = !res.ok, screen = res.screen?.let { returnedScreen(driver, it, owner) }, app = app.label,
             summary = ui.get("phone_log_open_background", "后台屏打开 %1\$s", app.packageName), decision = if (res.ok) decision else "failed") // l10n:keep test default
     }
 
     /** The handler is a dispatch fact. Only the following read describes the actual foreground UI. */
-    private fun afterSystem(owner: PhoneTasks.Owner, r: SysResult, summary: String): Out {
+    private fun afterSystem(owner: PhoneTasks.Owner, scope: SerialWorker.Scope, r: SysResult, summary: String): Out {
         if (!current(owner)) return stoppedAfterSystem(r, summary)
         if (r.ok && !tasks.setAppIfCurrent(owner, r.appLabel)) return stoppedAfterSystem(r, summary)
+        var reviewNote = ""
+        if (r.requiresReview) {
+            skillTrace.markIncomplete(owner)
+            val unavailable = ui.get("phone_system_review_unavailable", "无法提供人工核对入口。原请求已尝试，不会重复派发；请直接查看目标界面。") // l10n:keep test default
+            val gate = env.gate() ?: return Out(r.message + "\n" + unavailable,
+                error = true, app = r.appLabel, summary = summary, decision = "review-unavailable")
+            val result = try {
+                val note = env.beforeHandoff(lastScreen, owner)
+                if (!current(owner)) return stoppedAfterSystem(r, summary)
+                val reason = r.message + "\n" + (note?.let { "$it\n" } ?: "") + ui.get("phone_system_review_notice",
+                    "请先核对原操作是否已完成；如未完成，请自行完成后点「继续」。DSH 不会再次发送原请求。") // l10n:keep test default
+                scope.userWait { gate.handoff(reason, HANDOFF_MS, null, owner) }
+            } catch (_: InterruptedException) {
+                Thread.currentThread().interrupt()
+                return stoppedAfterSystem(r, summary)
+            } catch (_: IllegalStateException) {
+                // beforeHandoff refuses when strict background release is not confirmed.
+                return Out(r.message + "\n" + unavailable,
+                    error = true, app = r.appLabel, summary = summary, decision = "review-unavailable")
+            }
+            if (!current(owner)) return stoppedAfterSystem(r, summary)
+            when (result) {
+                HandoffResult.CONTINUE -> {
+                    lastScreen = PhoneScreen.MAIN
+                    reviewNote = "\n" + ui.get("phone_system_review_continued", "用户已点「继续」；后续以当前读屏为准，未重复派发原请求。") // l10n:keep test default
+                }
+                HandoffResult.STOP -> {
+                    tasks.stopIfCurrent(owner, "用户在启动核对时选择了停止") // l10n:keep agent stop reason
+                    return stoppedAfterSystem(r, summary)
+                }
+                HandoffResult.TIMEOUT -> return Out(r.message + "\n" + ui.get("phone_system_review_timeout",
+                    "等待核对超时，原操作的实际结果仍未知；请先人工核对，不要重复派发。"), // l10n:keep test default
+                    error = true, app = r.appLabel, summary = summary, decision = "review-timeout")
+            }
+        }
         val screen = try {
             if (r.ok) {
                 if (!current(owner)) return stoppedAfterSystem(r, summary)
@@ -431,7 +490,7 @@ class PhoneCore(
         val observation = if (r.ok && expected != null && screen?.packageName != expected.packageName)
             ui.get("phone_system_handler_unconfirmed", "后续读屏未确认原处理应用位于前台；不会重复启动。") // l10n:keep test default
         else ""
-        return Out(r.message + if (observation.isEmpty()) "" else "\n$observation", error = !r.ok,
+        return Out(r.message + reviewNote + if (observation.isEmpty()) "" else "\n$observation", error = !r.ok,
             screen = screen, app = screen?.appLabel ?: r.appLabel, summary = summary, decision = if (r.ok) "ok" else "failed")
     }
 
@@ -454,7 +513,7 @@ class PhoneCore(
             if (!current(owner)) return null
             val snap = d.observe(detail = false, image = false)
             if (!current(owner)) return null
-            safety.filterScreen(snap)
+            returnedScreen(d, snap, owner)
         } catch (e: InterruptedException) {
             throw e
         } catch (_: Exception) {
@@ -462,7 +521,7 @@ class PhoneCore(
         }
     }
 
-    private fun intent(call: PreparedCall, owner: PhoneTasks.Owner): Out {
+    private fun intent(call: PreparedCall, scope: SerialWorker.Scope, owner: PhoneTasks.Owner): Out {
         if (!current(owner)) return stoppedOut("intent")
         val kind = call.args.str("kind") ?: ""
         if (env.isLocked()) return locked("intent $kind")
@@ -479,8 +538,31 @@ class PhoneCore(
         }
         if (!current(owner)) return stoppedOut("intent $kind")
         skillTrace.markIncomplete(owner)
-        val r = env.system().launch(plan, tasks.systemDispatch(owner))
-        return afterSystem(owner, r, "intent $kind")
+        val r = launchSystem(plan, owner, call.shareSubject)
+        return afterSystem(owner, scope, r, "intent $kind")
+    }
+
+    /** PM may block after Core's first check. Recheck only this original target at start admission. */
+    private fun launchSystem(plan: SystemLaunch, owner: PhoneTasks.Owner, subject: AppEntry? = null): SysResult {
+        val handler = (plan.target as? SystemTarget.Known)?.app
+        val denied = AtomicReference<SafetyGate.Verdict.Refuse?>(null)
+        val dispatch = tasks.systemDispatch(owner) {
+            val refusal = subject?.let { safety.checkOpen(it.packageName, it.label) }
+                ?: handler?.let { safety.checkOpen(it.packageName, it.label) }
+            if (refusal != null) denied.compareAndSet(null, refusal)
+            denied.get() == null
+        }
+        return try {
+            env.system().launch(plan, dispatch)
+        } catch (e: InterruptedException) {
+            // Only this call's explicit policy refusal means no start was committed. Owner
+            // cancellation keeps its original exception; an already committed start is not recalled.
+            val refusal = denied.get() ?: throw e
+            tasks.runIfCurrent(owner) {
+                this.refusal = HandoffCause.ofDecision("refused:${refusal.rule}")?.let { owner to it }
+            }
+            SysResult(false, refusal.message)
+        }
     }
 
     private fun notify(a: Args, owner: PhoneTasks.Owner): Out {
@@ -586,6 +668,16 @@ class PhoneCore(
         // l10n:keep agent tool result
         Out("手机锁着屏，DSH 不在锁屏状态下操作。请用户解锁后再说一声。", error = true, summary = summary, decision = "refused:locked")
 
+    /** Every returned observation passes the final read policy before a driver candidate is
+     * committed. This also covers post-action and stale-refresh frames, not just screen(). */
+    private fun returnedScreen(driver: PhoneDriver, snapshot: ScreenSnapshot, owner: PhoneTasks.Owner,
+                               policy: PhonePolicies = env.policies()): ScreenSnapshot {
+        val shown = safety.filterScreen(snapshot, policy)
+        if (!current(owner)) throw InterruptedException()
+        if (shown === snapshot) driver.acceptVisualObservation(shown.id)
+        return shown
+    }
+
     private fun screen(a: Args, owner: PhoneTasks.Owner): Out {
         if (!current(owner)) return stoppedOut("screen")
         val which = if (a.bool("background") == true) PhoneScreen.BACKGROUND else PhoneScreen.MAIN
@@ -598,12 +690,11 @@ class PhoneCore(
         lastScreen = which
         say(owner, if (which == PhoneScreen.BACKGROUND) ui.get("phone_reading_background", "DSH 正在看后台屏") else ui.get("phone_reading_screen", "DSH 正在看屏幕")) // l10n:keep test default
         if (!current(owner)) return stoppedOut(summary)
-        val snap = driver.observe(detail = a.bool("detail") == true, image = a.bool("image") == true)
+        val snap = driver.observe(detail = a.bool("detail") == true, image = a.strictBool("image") == true,
+            automaticImage = !a.provided("image"))
         if (!current(owner) || !tasks.setAppIfCurrent(owner, snap.appLabel)) return stoppedOut(summary)
-        val shown = safety.filterScreen(snap)
-        if (!current(owner)) return stoppedOut(summary)
+        val shown = returnedScreen(driver, snap, owner)
         val refused = shown !== snap
-        if (!refused && shown.image != null) driver.acceptVisualObservation(shown.id)
         return Out(
             // l10n:keep agent tool result
             if (refused) "没有读取这个屏幕的内容。" else "",
@@ -637,9 +728,32 @@ class PhoneCore(
         say(owner, ui.get("phone_reading_list", "DSH 正在滚动读取列表")) // l10n:keep test default
         if (!current(owner)) return stoppedOut(summary)
         skillTrace.markIncomplete(owner)
-        val r = driver.collect(sid!!, list, pages, a.str("until"))
+        val readRefusal = AtomicReference<SafetyGate.Verdict.Refuse?>(null)
+        fun canRead(source: String?): Boolean {
+            safety.checkRead(source, null)?.let { readRefusal.compareAndSet(null, it) }
+            return readRefusal.get() == null
+        }
+        fun readAllowed(): Boolean = canRead(pkg)
+        val r = driver.collect(sid!!, list, pages, a.str("until"), ::readAllowed, ::canRead)
         if (!current(owner)) return stoppedOut(summary)
-        val screen = r.screen?.let { safety.filterScreen(it) }
+        val collectedScreen = r.screen
+        val sources = buildSet<String?> {
+            add(pkg)
+            addAll(r.readPackages)
+            collectedScreen?.let { snap ->
+                add(snap.packageName)
+                addAll(snap.readPackages)
+            }
+        }
+        val readPolicy = env.policies()
+        safety.checkReadSources(readPolicy, sources)?.let { readRefusal.compareAndSet(null, it) }
+        readRefusal.get()?.let {
+            return Out(it.message, error = true, app = pkg, summary = summary, decision = "refused:${it.rule}")
+        }
+        if (collectedScreen?.secure == true) {
+            return Out(safety.filterScreen(collectedScreen, readPolicy).text, error = true, app = pkg, summary = summary, decision = "refused:read")
+        }
+        val screen = collectedScreen?.let { returnedScreen(driver, it, owner, readPolicy) }
         val text = buildString {
             // l10n:keep agent tool result
             append("收集到 ${r.items.size} 条（翻了 ${r.pages} 页，停下原因：${r.stopReason}）：\n")
@@ -751,32 +865,67 @@ class PhoneCore(
         val pkg = target?.packageName ?: driver.foregroundPackage()
         val appLabel = target?.appLabel
         val app = appLabel ?: pkg
-        val verdict = safety.checkWrite(kind, target, pkg, appLabel, typed, submit, point, action as? PhoneAction.TapXY, which, visual)
+        fun writeVerdict() = safety.checkWrite(kind, target, pkg, appLabel, typed, submit, point, action as? PhoneAction.TapXY, which, visual)
+        val verdict = writeVerdict()
+        var ordinaryConfirmed = verdict is SafetyGate.Verdict.Confirm
         var decision = when (val r = safety.resolve(verdict, scope, owner)) {
             is SafetyGate.Result.No -> return Out(r.message, error = true, app = app, summary = summary, decision = r.decision)
             is SafetyGate.Result.Go -> r.decision
         }
         if (action is PhoneAction.TapXY && visual != null &&
             !(verdict is SafetyGate.Verdict.Confirm && verdict.reason == "tap_xy")) {
-            when (val r = safety.resolve(safety.checkVisual(action, visual, owner), scope, owner)) {
+            val visualVerdict = safety.checkVisual(action, visual, owner)
+            when (val r = safety.resolve(visualVerdict, scope, owner)) {
                 is SafetyGate.Result.No -> return Out(r.message, error = true, app = app, summary = summary, decision = r.decision)
-                is SafetyGate.Result.Go -> if (r.decision != "allowed") decision = r.decision
+                is SafetyGate.Result.Go -> {
+                    if (r.decision != "allowed") decision = r.decision
+                    // checkVisual can require an ordinary once for a newly ineligible coordinate.
+                    if (visualVerdict is SafetyGate.Verdict.Confirm && visualVerdict.request.visualScope == null)
+                        ordinaryConfirmed = true
+                }
             }
+        }
+        // Re-read at the existing physical admission gates too: waiting for confirmation, target
+        // resolution or channel capacity must not preserve an obsolete allow/waiver. This is a
+        // memory-only check; no policy/Tasks lock is held across platform IO. An already admitted
+        // physical step cannot be recalled by a later policy publication.
+        val policyFailure = AtomicReference<SafetyGate.Result.No?>(null)
+        fun policyAllowed(): Boolean {
+            if (policyFailure.get() != null) return false
+            val refusal = when (val latest = writeVerdict()) {
+                is SafetyGate.Verdict.Refuse -> SafetyGate.Result.No(latest.message, "refused:${latest.rule}")
+                is SafetyGate.Verdict.Confirm -> if (ordinaryConfirmed) null else SafetyGate.Result.No(
+                    "手机操作策略已变化，本次原授权不足。请重新观察并征得用户确认，不要自动重试。", "refused:policy-changed") // l10n:keep agent safety result
+                SafetyGate.Verdict.Allow -> null
+            }
+            if (refusal != null) policyFailure.compareAndSet(null, refusal)
+            return policyFailure.get() == null
+        }
+        if (!policyAllowed()) {
+            val refusal = checkNotNull(policyFailure.get())
+            return Out(refusal.message, error = true, app = app, summary = summary, decision = refusal.decision)
         }
         if (!tasks.isCurrent(owner) || Thread.currentThread().isInterrupted) return stoppedOut(summary)
         if (!tasks.setAppIfCurrent(owner, appLabel ?: pkg)) return stoppedOut(summary)
         say(owner, ui.get("phone_acting", "DSH 正在操作 · %1\$s", statusLine(kind, target, if (secret) SafetyRules.MASK else typed))) // l10n:keep test default
         if (!current(owner)) return stoppedOut(summary)
         val ticket = skillTrace.beginAction(owner, action, target)
-        val res = traceResult(ticket) { driver.perform(action) }
+        val res = traceResult(ticket) {
+            val result = driver.perform(action, ::policyAllowed)
+            policyFailure.get()?.let {
+                // A later gate (e.g. submit after text entry) can refuse after a prior side effect.
+                result.copy(ok = false, staleSnapshot = false,
+                    message = "手机操作策略已变化，已停止继续操作；已开始的步骤可能已有部分效果，请先核对，不要自动重试。\n${it.message}") // l10n:keep agent safety result
+            } ?: result
+        }
         if (!res.ok && res.staleSnapshot) return stale(driver, sid, summary, owner, res.message)
         return Out(
             res.message,
             error = !res.ok,
-            screen = res.screen?.let { safety.filterScreen(it) },
+            screen = res.screen?.let { returnedScreen(driver, it, owner) },
             app = app,
             summary = summary,
-            decision = if (res.ok) decision else "failed",
+            decision = if (res.ok) decision else policyFailure.get()?.decision ?: "failed",
         )
     }
 
@@ -807,7 +956,7 @@ class PhoneCore(
                 else {
                     val observed = driver.observe(detail = false, image = false)
                     if (!tasks.isCurrent(owner) || Thread.currentThread().isInterrupted || env.isLocked()) null
-                    else safety.filterScreen(observed)
+                    else returnedScreen(driver, observed, owner)
                 }
             }
         } catch (e: InterruptedException) {
@@ -863,7 +1012,7 @@ class PhoneCore(
         val action = PhoneAction.Key(sid ?: "${which.prefix}0", key)
         val ticket = skillTrace.beginAction(owner, action, null)
         val res = traceResult(ticket) { driver.perform(action) }
-        return Out(res.message, error = !res.ok, screen = res.screen?.let { safety.filterScreen(it) }, summary = summary,
+        return Out(res.message, error = !res.ok, screen = res.screen?.let { returnedScreen(driver, it, owner) }, summary = summary,
             decision = if (res.ok) "ok" else "failed")
     }
 

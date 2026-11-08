@@ -203,8 +203,13 @@ class SafetyGate(
     fun labelOf(pkg: String?, appLabel: String?) = appLabel ?: pkg ?: "当前应用"
 
     /** Reads (screen, collect, the screen attached to results): own app and deny list refuse. */
-    fun checkRead(pkg: String?, appLabel: String?): Verdict.Refuse? {
-        val p = policies()
+    fun checkRead(pkg: String?, appLabel: String?): Verdict.Refuse? = checkRead(policies(), pkg, appLabel)
+
+    /** Shares the caller's final result snapshot with screen filtering; per-page gates stay live. */
+    internal fun checkReadSources(p: PhonePolicies, packages: Iterable<String?>): Verdict.Refuse? =
+        packages.firstNotNullOfOrNull { checkRead(p, it, null) }
+
+    private fun checkRead(p: PhonePolicies, pkg: String?, appLabel: String?): Verdict.Refuse? {
         if (pkg == ownPackage && !p.unlocks.ownApp) return Verdict.Refuse(OWN_APP, "own-app")
         if (pkg != null && pkg in p.denyPackages) return Verdict.Refuse(denied(labelOf(pkg, appLabel)), "deny-list")
         return null
@@ -261,7 +266,7 @@ class SafetyGate(
         val actionApp = appLabel ?: pkg ?: uiText.get("phone_current_app", "当前应用") // l10n:keep test default
         val action = describe(kind, target, actionApp, if (secret) SafetyRules.MASK else typed, submit, point, coordinate) +
             if (kind == WriteKind.TAP_XY && screen == PhoneScreen.BACKGROUND)
-                uiText.get("phone_confirm_background_coordinate", "。这是最近后台截图的位置；本机文字识别未安装，请核对目标。此确认卡不含原截图。") else "" // l10n:keep test default
+                uiText.get("phone_confirm_background_coordinate", "。这是最近后台截图的位置，请核对目标。此确认卡不含原截图。") else "" // l10n:keep test default
         val reason = when {
             kind == WriteKind.TAP_XY && !eligibleVisual -> "tap_xy"
             kind == WriteKind.TYPE && submit -> "submit"
@@ -370,11 +375,14 @@ class SafetyGate(
      * apps and secure windows. Images go with the text they belong to; a screen with a bank card or
      * ID number (masked in the text) keeps its text but loses the image.
      */
-    fun filterScreen(s: ScreenSnapshot): ScreenSnapshot {
-        val p = policies()
+    fun filterScreen(s: ScreenSnapshot): ScreenSnapshot = filterScreen(s, policies())
+
+    internal fun filterScreen(s: ScreenSnapshot, p: PhonePolicies): ScreenSnapshot {
+        val sourceRefusal = s.readPackages.firstNotNullOfOrNull { checkRead(p, it, null) }
         val refusal = when {
             s.packageName == ownPackage && !p.unlocks.ownApp -> OWN_APP
             s.packageName != null && s.packageName in p.denyPackages -> denied(labelOf(s.packageName, s.appLabel))
+            sourceRefusal != null -> sourceRefusal.message
             // l10n:keep agent safety result
             s.secure -> "安全窗口（禁止截屏 / 读取）。要操作请 handoff。"
             // l10n:keep agent safety result

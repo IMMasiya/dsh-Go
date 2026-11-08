@@ -45,6 +45,8 @@ data class ScreenSnapshot(
     /** Optional numbered screenshot (same element ids drawn on it), PNG or JPEG bytes. */
     val image: ByteArray? = null,
     val imageMime: String? = null,
+    /** Known root packages contributing to this local observation; not pixel/UID attestation. */
+    internal val readPackages: Set<String> = emptySet(),
 )
 
 /** What an element looks like to the safety rules, resolved from a snapshot id + element id. */
@@ -118,6 +120,8 @@ data class CollectResult(
     /** Stopped because: end of list / `until` matched / page limit / list lost. */
     val stopReason: String,
     val screen: ScreenSnapshot?,
+    /** Union of known packages whose pages contributed items, independent of the last screen. */
+    internal val readPackages: Set<String> = emptySet(),
 )
 
 /** Whether a driver can work right now, and if not, a sentence the model can relay. */
@@ -135,7 +139,12 @@ interface PhoneDriver {
 
     fun observe(detail: Boolean, image: Boolean): ScreenSnapshot
 
-    /** Pure local commit after the current task's final image filter; not model-delivery evidence. */
+    /** An omitted image argument may return an image only for this observation's poor tree.
+     * Old drivers and explicit two-argument callers keep their original image behavior. */
+    fun observe(detail: Boolean, image: Boolean, automaticImage: Boolean): ScreenSnapshot = observe(detail, image)
+
+    /** Accepts only a driver-recorded candidate after the task's final screen filter, including
+     * text-only visual observations. A missing candidate is a no-op; not model-delivery evidence. */
     fun acceptVisualObservation(screenId: String) {}
 
     fun collect(screenId: String, listElementId: Int, maxPages: Int, until: String?): CollectResult
@@ -144,6 +153,11 @@ interface PhoneDriver {
     fun collect(screenId: String, listElementId: Int, maxPages: Int, until: String?, allowed: () -> Boolean): CollectResult =
         if (allowed()) collect(screenId, listElementId, maxPages, until)
         else CollectResult(emptyList(), 0, PhoneTasks.STOPPED_MESSAGE, null)
+
+    /** Local source gate. Legacy drivers retain their existing behavior without guessing a package. */
+    fun collect(screenId: String, listElementId: Int, maxPages: Int, until: String?,
+                allowed: () -> Boolean, canRead: (String?) -> Boolean): CollectResult =
+        collect(screenId, listElementId, maxPages, until, allowed)
 
     /**
      * Resolves an element of a recent snapshot for the safety rules. Null when the
@@ -170,6 +184,10 @@ interface PhoneDriver {
 
     /** Launches the native-resolved [target] on this screen (BACKGROUND moves the task to the virtual display). */
     fun open(target: PhoneAppIdentity): ActionResult
+
+    /** Original-call admission; asynchronous drivers recheck at their physical launch gate. */
+    fun open(target: PhoneAppIdentity, allowed: () -> Boolean): ActionResult =
+        if (allowed()) open(target) else ActionResult(false, PhoneTasks.STOPPED_MESSAGE)
 
     /** Package of the app in front on this screen, if known (for per-app approval and deny lists). */
     fun foregroundPackage(): String?
@@ -261,16 +279,19 @@ interface UserGate {
  * it never reaches a task selected later. Main thread; must return quickly.
  */
 interface TaskControls {
+    val taskId: Long
+    val lifecycle: Long
+
     fun isPaused(): Boolean
 
     /** 暂停 (true) / 继续 (false). While paused, MAIN actions are refused by the driver as well. */
-    fun setPaused(paused: Boolean)
+    fun setPaused(paused: Boolean): Boolean
 
     /** [reason] is Chinese (for the agent). */
-    fun stop(reason: String)
+    fun stop(reason: String): Boolean
 
     /** Text the person typed into 插话 and sent; meant for the agent as a user message. */
-    fun interject(text: String)
+    fun interject(text: String): Boolean
 }
 
 /**
