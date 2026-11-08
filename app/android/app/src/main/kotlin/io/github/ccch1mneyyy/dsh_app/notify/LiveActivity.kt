@@ -175,6 +175,7 @@ object LiveActivity {
             sinceMs = phoneSince,
             packId = packId,
             mood = "working",
+            phoneTaskId = task.id,
         )
     }
 
@@ -215,9 +216,9 @@ object LiveActivity {
         } else {
             builder.setStyle(Notification.BigTextStyle().bigText(c.text))
         }
-        if (c.kind == LiveContent.Kind.PHONE) {
+        if (c.kind == LiveContent.Kind.PHONE && c.phoneTaskId != null) {
             val stop = PendingIntent.getService(
-                ctx, ID, Intent(ctx, DshService::class.java).setAction(DshService.ACTION_PHONE_STOP),
+                ctx, ID, DshService.phoneStopIntent(ctx, c.phoneTaskId),
                 PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
             )
             builder.addAction(Notification.Action.Builder(null, AppStrings.get(ctx, R.string.service_stop_phone), stop).build())

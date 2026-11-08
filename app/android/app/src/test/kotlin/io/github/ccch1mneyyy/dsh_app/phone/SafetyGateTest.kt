@@ -93,6 +93,20 @@ class SafetyGateTest {
         assertEquals(both, PhonePolicies.fromMap(stored))
     }
 
+    @Test fun liftingARuleIsRefusedWhileAnyTaskMayActButTighteningNeverIs() {
+        val base = PhonePolicies(unlocks = PhoneUnlocks(ownApp = true))
+        val lift = mapOf("unlocks" to mapOf("secretFields" to true))
+        assertNull(PhonePolicies.update(lift, base) { true })
+        assertEquals(PhoneUnlocks(secretFields = true, ownApp = true), PhonePolicies.update(lift, base) { false }!!.unlocks)
+        assertNull(PhonePolicies.update(mapOf("unlocks" to mapOf("ownApp" to false, "systemPages" to true)), base) { true })
+        var asked = false
+        val busy = { asked = true; true }
+        assertEquals(PhoneUnlocks(), PhonePolicies.update(mapOf("unlocks" to mapOf("ownApp" to false)), base, busy)!!.unlocks)
+        assertEquals(base.unlocks, PhonePolicies.update(mapOf("unlocks" to mapOf("ownApp" to true)), base, busy)!!.unlocks)
+        assertEquals(listOf("a.b"), PhonePolicies.update(mapOf("denyPackages" to listOf("a.b")), base, busy)!!.denyPackages)
+        assertFalse(asked)
+    }
+
     @Test fun handoffCauseComesOnlyFromHardRefusals() {
         assertEquals(HandoffCause.SECRET, HandoffCause.ofDecision("refused:secret-field"))
         assertEquals(HandoffCause.SYSTEM, HandoffCause.ofDecision("refused:system-page"))

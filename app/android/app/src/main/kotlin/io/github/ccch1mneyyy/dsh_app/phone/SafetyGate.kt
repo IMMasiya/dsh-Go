@@ -33,6 +33,10 @@ data class PhonePolicies(
             )
         }
 
+        /** `setPolicies`: null when it would lift a hard rule while [busy] (some task may still act). */
+        fun update(map: Map<*, *>?, base: PhonePolicies, busy: () -> Boolean): PhonePolicies? =
+            fromMap(map, base).takeUnless { it.unlocks.lifts(base.unlocks) && busy() }
+
         private val PACKAGE = Regex("[A-Za-z][A-Za-z0-9_]*(\\.[A-Za-z0-9_]+)+")
     }
 }
@@ -52,6 +56,10 @@ data class PhoneUnlocks(
     val ownApp: Boolean = false,
 ) {
     val any: Boolean get() = systemPages || secretFields || ownApp
+
+    /** Lifts some rule [before] kept; turning rules back on never counts. */
+    fun lifts(before: PhoneUnlocks): Boolean =
+        systemPages && !before.systemPages || secretFields && !before.secretFields || ownApp && !before.ownApp
 
     fun toMap(): Map<String, Any?> = linkedMapOf(
         "systemPages" to systemPages,

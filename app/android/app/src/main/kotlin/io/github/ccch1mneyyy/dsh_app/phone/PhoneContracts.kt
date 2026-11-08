@@ -256,27 +256,34 @@ interface UserGate {
 }
 
 /**
- * What the person does on the overlay outside a confirm / handoff, and the stops the
- * accessibility service itself sees. Implemented by the core (task owner), set in
- * [PhoneRegistry.controlListener]. Called on the main thread; must return quickly.
- *
- * The status bar's 暂停 / 停止 / 插话 and the stop on screen off, lock or service loss
- * reach whoever owns the task through here. While paused, MAIN actions are refused by the
- * driver as well (defence in depth).
+ * The status bar's 暂停 / 停止 / 插话 for the one task whose status they are shown with. Each acts
+ * on that task's owner only: once it stopped, ended or was replaced, an action does nothing, and
+ * it never reaches a task selected later. Main thread; must return quickly.
  */
-interface ControlListener {
-    fun isTaskPaused(): Boolean = false
-    /** 暂停 (true) / 继续 (false) on the status bar. */
-    fun onPauseChanged(paused: Boolean) {}
+interface TaskControls {
+    fun isPaused(): Boolean
 
-    /** 停止 on the status bar, screen off, keyguard, or the service going away. [reason] is Chinese. */
-    fun onStopRequested(reason: String) {}
+    /** 暂停 (true) / 继续 (false). While paused, MAIN actions are refused by the driver as well. */
+    fun setPaused(paused: Boolean)
 
-    /** Device-wide boundary: screen off, lock, or loss of the accessibility service. */
-    fun onStopAllRequested(reason: String) = onStopRequested(reason)
+    /** [reason] is Chinese (for the agent). */
+    fun stop(reason: String)
 
     /** Text the person typed into 插话 and sent; meant for the agent as a user message. */
-    fun onInterject(text: String) {}
+    fun interject(text: String)
+}
+
+/**
+ * The overlay's way to its task's controls, and the stops the accessibility service itself
+ * sees. Implemented by the core (task owner), set in [PhoneRegistry.controlListener].
+ * Called on the main thread; must return quickly.
+ */
+interface ControlListener {
+    /** Called only inside a displayed status's own guard: the controls of the task it belongs to. */
+    fun shownControls(): TaskControls? = null
+
+    /** Device-wide boundary: screen off, lock, or loss of the accessibility service. [reason] is Chinese. */
+    fun onStopAllRequested(reason: String) {}
 
     /** The accessibility service connected or went away (for the `status` event). */
     fun onAccessibilityChanged(connected: Boolean) {}

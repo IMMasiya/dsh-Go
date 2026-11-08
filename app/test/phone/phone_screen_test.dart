@@ -306,6 +306,25 @@ void main() {
     expect(find.text('正在操作「美团」'), findsNothing);
   });
 
+  testWidgets('停止 stops the task it was shown for, even after another one is selected', (tester) async {
+    Map<String, Object?> selected(int id) => {
+      ...phoneStatus(a11y: true), 'taskProtocol': 1, 'selectedTaskId': id,
+      'tasks': [
+        {'id': 12, 'sessionId': 'A', 'runId': '1', 'active': true, 'app': '美团'},
+        {'id': 13, 'sessionId': 'B', 'runId': '1', 'active': true, 'app': '京东'},
+      ],
+    };
+    final h = await pumpPhone(tester, const PhoneControlScreen(), native: FakePhoneNative(status: selected(12)));
+    // A tap already on its way when B became the selected task.
+    final shownForA = tester.widget<FixButton>(inTile('正在操作「美团」', find.byType(FixButton))).onPressed!;
+    h.native!.push(selected(13));
+    await settlePhone(tester);
+    expect(find.text('正在操作「京东」'), findsOneWidget);
+    shownForA();
+    await tester.pump();
+    expect(h.native!.callsOf('stopTask').single.arguments, {'taskId': 12});
+  });
+
   testWidgets('resource wait rows consume native targets and elapsed snapshots without exposing holders', (tester) async {
     Map<String, Object?> status(List<Map<String, Object?>> tasks) => {
       ...phoneStatus(a11y: true), 'taskProtocol': 1, 'tasks': tasks,

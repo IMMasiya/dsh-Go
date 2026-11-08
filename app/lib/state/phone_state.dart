@@ -365,14 +365,15 @@ class PhoneController extends Notifier<PhoneState> {
     } catch (_) {}
   }
 
-  /// 解除限制: lifts or restores one hard rule. Lifting is refused while a task
-  /// runs (read afresh): the agent driving the phone must not widen its own
-  /// reach. False when refused or the native side said no (nothing changes).
+  /// 解除限制: lifts or restores one hard rule. Lifting is refused while any
+  /// task may act (read afresh; native refuses it too): the agent driving the
+  /// phone must not widen its own reach. False when refused or the native side
+  /// said no (nothing changes).
   Future<bool> setUnlock(PhoneUnlock unlock, bool on) async {
     if (state.policies == null) return false;
     if (on) {
       await refreshStatus();
-      if (!ref.mounted || state.status.task.active) return false;
+      if (!ref.mounted || state.status.anyTaskBusy) return false;
     }
     final ok = await _channel.setUnlock(unlock, on);
     if (!ok || !ref.mounted) return false;

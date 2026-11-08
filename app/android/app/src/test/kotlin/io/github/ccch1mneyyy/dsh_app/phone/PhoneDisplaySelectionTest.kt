@@ -89,6 +89,45 @@ class PhoneDisplaySelectionTest {
         assertEquals("line B", selection.view()!!.line); assertEquals("App B", selection.view()!!.state.app)
     }
 
+    private val stop = { task: PhoneTasks, owner: PhoneTasks.Owner, reason: String -> task.stopIfCurrent(owner, reason); Unit }
+
+    @Test fun shownControlsActOnTheTaskTheyWereShownForAfterAnotherIsSelected() {
+        val selection = PhoneDisplaySelection(); val shown = StatusOwnership()
+        val a = PhoneTasks(); val b = PhoneTasks()
+        val oa = start(a); val ob = start(b)
+        val ta = selection.select(a, oa)!!
+        assertTrue(shown.publish(selection.guard(ta)) { selection.controls(stop) })
+        selection.select(b, ob) // B selected while A's pill (or a tap queued on it) is still there.
+        val controls = shown.controls!!
+        controls.setPaused(true)
+        assertTrue(a.isPaused); assertFalse(b.isPaused); assertTrue(controls.isPaused())
+        controls.interject("for A")
+        assertEquals(listOf("for A"), a.drainInterjections()); assertTrue(b.drainInterjections().isEmpty())
+        controls.stop("stop A")
+        assertFalse(a.isCurrent(oa)); assertTrue(b.isCurrent(ob))
+    }
+
+    @Test fun staleShownControlsReachNothing() {
+        val selection = PhoneDisplaySelection(); val shown = StatusOwnership()
+        val a = PhoneTasks(); val b = PhoneTasks()
+        val oa = start(a); val ob = start(b)
+        val ta = selection.select(a, oa)!!
+        assertTrue(shown.publish(selection.guard(ta)) { selection.controls(stop) })
+        val controls = shown.controls!!
+        a.stop("stop"); a.clearStop(); val next = start(a) // The displayed owner is gone; A runs anew.
+        controls.setPaused(true); controls.interject("late"); controls.stop("late")
+        assertFalse(a.isPaused); assertFalse(controls.isPaused()); assertTrue(a.drainInterjections().isEmpty())
+        assertTrue(a.isCurrent(next))
+        // A late status of the old ticket cannot hand its controls to the pill shown for B.
+        val tb = selection.select(b, ob)!!
+        assertTrue(shown.publish(selection.guard(tb)) { selection.controls(stop) })
+        val forB = shown.controls
+        assertFalse(shown.publish(selection.guard(ta)) { selection.controls(stop) })
+        assertSame(forB, shown.controls)
+        selection.clear()
+        assertTrue(shown.takeStale()); assertNull(shown.controls)
+    }
+
     @Test fun ownerAwareControlsRejectReusedTasksAndNotifyWithoutHoldingTaskLock() {
         val task = PhoneTasks(); val old = start(task)
         task.stop("stop"); task.clearStop(); val current = start(task)

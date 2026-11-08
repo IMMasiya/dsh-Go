@@ -556,6 +556,24 @@ class PhoneTaskSessionsTest {
         assertTrue(task("A", "2").tasks.isActive)
         assertNull(sessions.completed(receipt.taskId, "1", receipt.lifecycle))
     }
+    @Test fun anyStillActiveSessionCountsNotJustTheLastOne() {
+        assertFalse(sessions.anyActive())
+        val queued = admit("C") // Admitted, not begun: it would act under whatever policy it finds.
+        assertTrue(sessions.anyActive())
+        end("C"); assertTrue(sessions.run(queued, PhoneToolCatalog.APPS, emptyMap()).isError)
+        assertFalse(sessions.anyActive())
+        assertFalse(invoke("A").isError); assertFalse(invoke("B").isError)
+        end("B") // The newest (displayed) task ended; A still runs.
+        assertFalse(task("B").tasks.isActive)
+        assertTrue(sessions.anyActive())
+        end("A")
+        assertFalse(sessions.anyActive())
+        assertFalse(invoke(null).isError) // The legacy task counts too.
+        assertTrue(sessions.anyActive())
+        sessions.stopAll("stop")
+        assertFalse(sessions.anyActive())
+    }
+
     @Test fun aScreenWaitDoesNotOccupyTheWorkerNeededByItsHolder() {
         assertFalse(invoke("A", tool = PhoneToolCatalog.SCREEN).isError)
         val waiting = CountDownLatch(1)

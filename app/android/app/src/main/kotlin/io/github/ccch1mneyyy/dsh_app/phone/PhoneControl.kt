@@ -297,7 +297,8 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
 
     fun setPolicies(map: Map<*, *>?): Boolean {
         // Partial updates keep what they don't mention (the 免确认 switch sends only its flag).
-        val p = PhonePolicies.fromMap(map, base = policies())
+        // 解除限制 is refused while any task, selected or not, may still act; restoring never is.
+        val p = PhonePolicies.update(map, base = policies(), busy = sessions::anyActive) ?: return false
         prefs.edit().putString(K_POLICIES, Json.write(p.toMap())).apply()
         policiesCache = p
         return true
@@ -425,10 +426,16 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
         return sessions.stop(record, state, reason)
     }
 
-    fun stopSelectedTask(reason: String): Boolean {
-        val selected = displaySelection.view() ?: return false
-        val record = sessions.task(selected.owner.taskId)?.takeIf { it.tasks === selected.task } ?: return false
-        return sessions.stop(record, selected.owner, reason)
+    /** A notification's 停止操作: only the task it was shown for, and only while that task still runs. */
+    fun stopShownTask(reason: String, taskId: Long): Boolean {
+        val task = sessions.task(taskId)?.tasks ?: return false
+        return stopOwner(task, task.activeOwner(taskId) ?: return false, reason)
+    }
+
+    /** Exact owner only: a stopped, ended or replaced one is refused, never redirected to another task. */
+    private fun stopOwner(task: PhoneTasks, owner: PhoneTasks.Owner, reason: String): Boolean {
+        val record = sessions.task(owner.taskId)?.takeIf { it.tasks === task } ?: return false
+        return sessions.stop(record, owner, reason)
     }
     fun retryTaskCleanup(taskId: Long): Boolean {
         // A lost original peer cannot answer RELEASE; only the verified recovery receipt completes that driver.
@@ -540,9 +547,10 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
 
     data class LiveTask(val id: Long, val line: String?, val app: String?, val paused: Boolean)
 
-    fun foregroundLine(): String? = liveTask()?.let {
-        it.line ?: AppStrings.get(app, R.string.phone_running) + (it.app?.let { label -> " · $label" } ?: "")
-    }
+    fun foregroundLine(): String? = liveTask()?.let { foregroundLine(it) }
+
+    fun foregroundLine(task: LiveTask): String =
+        task.line ?: AppStrings.get(app, R.string.phone_running) + (task.app?.let { label -> " · $label" } ?: "")
 
     /** Receiver ownership stays on main; a pending selfcheck outlives an engine bridge. */
     private fun refreshScreenOff() {
@@ -782,18 +790,8 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
 
     // ── ControlListener (the overlay's 暂停 / 停止 / 插话, the service's own stops) ──
 
-    override fun isTaskPaused(): Boolean = displaySelection.view()?.state?.paused == true
-    override fun onPauseChanged(paused: Boolean) {
-        displaySelection.view()?.let { it.task.setPausedIfCurrent(it.owner, paused) }
-    }
-
-    override fun onStopRequested(reason: String) {
-        stopSelectedTask(reason)
-    }
-
-    override fun onInterject(text: String) {
-        displaySelection.view()?.let { it.task.interjectIfCurrent(it.owner, text) }
-    }
+    override fun shownControls(): TaskControls? =
+        displaySelection.controls { task, owner, reason -> stopOwner(task, owner, reason) }
 
     override fun onStopAllRequested(reason: String) { selfCheck.stop(); sessions.stopAll(reason) }
 

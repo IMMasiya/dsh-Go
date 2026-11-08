@@ -363,6 +363,11 @@ class PhoneTaskSessions(
     fun all(): List<Task> = synchronized(lock) { entries.values.toList() }
     fun isBusy(task: Task): Boolean = synchronized(lock) { task.pending > 0 || task.running || task.closing || task.cancelling || task.cleanupFailed }
 
+    /** Any record, selected or not, that may still act: active, an admitted call, or a draining body. */
+    fun anyActive(): Boolean = synchronized(lock) {
+        (entries.values + retiring).any { it.pending > 0 || it.running || it.retired == null && it.tasks.snapshot().active }
+    }
+
     /** End/stop/idle/retirement all keep physical leases until body AND resource cleanup drain. */
     fun settleInactive(task: Task) { settle(task, explicitFinish = false) }
 

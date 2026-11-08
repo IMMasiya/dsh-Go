@@ -657,6 +657,10 @@ class PhoneStatus {
   final PhoneSkillStatus skills;
   final PhoneTaskInterruption taskInterruption;
 
+  /// Some task may still act, the selected one or any other conversation's: active, a call
+  /// waiting to start, or one still draining. Mirrors the native refusal of 解除限制.
+  bool get anyTaskBusy => task.active || tasks.any((t) => t.active || t.pendingCalls > 0 || t.draining);
+
   PhoneStatus copyWith({bool? enabled}) => PhoneStatus(
     ready: ready,
     error: error,

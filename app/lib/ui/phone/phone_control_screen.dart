@@ -257,8 +257,10 @@ class _PhoneControlScreenState extends ConsumerState<PhoneControlScreen> {
     await showScreenTextSheet(context, result);
   }
 
-  Future<void> _stopTask() async {
-    final ok = await _phone.stopTask();
+  /// Bound to the task the row showed: a tap queued before another task was
+  /// selected still stops that one, never its successor.
+  Future<void> _stopTask(int? taskId) async {
+    final ok = await _phone.stopTask(taskId: taskId);
     if (!ok && mounted) _toast(context.l10n.phoneStopFailed);
   }
 
@@ -379,7 +381,7 @@ class _PhoneControlScreenState extends ConsumerState<PhoneControlScreen> {
                     : task.waived
                     ? l10n.phoneControlTaskNoConfirmHint
                     : l10n.phoneControlFloatingBarHint,
-                trailing: FixButton(label: l10n.commonStop, onPressed: _stopTask),
+                trailing: FixButton(label: l10n.commonStop, onPressed: () => _stopTask(task.id)),
               ),
             ],
           ),

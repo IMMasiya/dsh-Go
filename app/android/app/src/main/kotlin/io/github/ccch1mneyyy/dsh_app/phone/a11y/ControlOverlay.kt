@@ -182,9 +182,10 @@ internal class ControlOverlay(private val service: AccessibilityService) : UserG
         main.post {
             // This runnable and close apply on the same queue. Never hold the task lock
             // over WindowManager work or enqueue a second, unguarded status runnable.
-            if (!statusOwnership.publish(ifCurrent)) return@post
+            // The pill's 暂停 / 停止 / 插话 are bound to this status's own task, captured inside its guard.
+            if (!statusOwnership.publish(ifCurrent) { PhoneRegistry.controlListener?.shownControls() }) return@post
             statusText = text
-            paused = PhoneRegistry.controlListener?.isTaskPaused() == true
+            paused = statusOwnership.controls?.isPaused() == true
             setStopped(false)
             if (text == null) {
                 statusOwnership.clear()
@@ -674,9 +675,10 @@ internal class ControlOverlay(private val service: AccessibilityService) : UserG
 
     private fun togglePause() {
         if (stoppedNote) return
-        paused = !(PhoneRegistry.controlListener?.isTaskPaused() ?: paused)
+        val controls = statusOwnership.controls
+        paused = !(controls?.isPaused() ?: paused)
         renderPill()
-        PhoneRegistry.controlListener?.onPauseChanged(paused)
+        controls?.setPaused(paused)
         announce(s(if (paused) R.string.overlay_paused_short else R.string.overlay_resume_description))
     }
 
@@ -695,7 +697,7 @@ internal class ControlOverlay(private val service: AccessibilityService) : UserG
         clearStoppedLater()
         announce(s(R.string.overlay_stopped))
         // l10n:keep agent stop reason
-        PhoneRegistry.controlListener?.onStopRequested("你在悬浮条上点了停止")
+        statusOwnership.controls?.stop("你在悬浮条上点了停止")
     }
 
     private fun announce(text: String) {
@@ -750,7 +752,7 @@ internal class ControlOverlay(private val service: AccessibilityService) : UserG
         if (text.isEmpty()) return
         p.input.setText("")
         endEditing()
-        PhoneRegistry.controlListener?.onInterject(text)
+        statusOwnership.controls?.interject(text)
         val note = s(R.string.overlay_steer_sent, text)
         steerNote = note
         // Back to the capsule: the note shows where the line is.
