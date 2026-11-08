@@ -153,8 +153,8 @@ interface PhoneDriver {
     fun perform(action: PhoneAction, allowed: () -> Boolean): ActionResult =
         if (allowed()) perform(action) else ActionResult(false, PhoneTasks.STOPPED_MESSAGE)
 
-    /** Launches [packageName] on this screen (BACKGROUND moves the task to the virtual display). */
-    fun open(packageName: String): ActionResult
+    /** Launches the native-resolved [target] on this screen (BACKGROUND moves the task to the virtual display). */
+    fun open(target: PhoneAppIdentity): ActionResult
 
     /** Package of the app in front on this screen, if known (for per-app approval and deny lists). */
     fun foregroundPackage(): String?

@@ -23,6 +23,7 @@ import android.provider.CalendarContract
 import android.provider.Settings
 import io.github.ccch1mneyyy.dsh_app.MainActivity
 import io.github.ccch1mneyyy.dsh_app.R
+import io.github.ccch1mneyyy.dsh_app.phone.background.Reasons
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -75,7 +76,8 @@ class SystemActions(private val app: Context) : SystemApi {
         val list = pm.queryIntentActivities(launcher, 0)
             .mapNotNull { ri ->
                 val pkg = ri.activityInfo?.packageName ?: return@mapNotNull null
-                AppEntry(ri.loadLabel(pm).toString().trim().orEmpty().ifEmpty { pkg }, pkg)
+                AppEntry(ri.loadLabel(pm).toString().trim().orEmpty().ifEmpty { pkg },
+                    PhoneAppIdentity(pkg, ri.activityInfo.applicationInfo.uid))
             }
             .distinctBy { it.packageName }
         appsCache = System.currentTimeMillis() to list
@@ -97,10 +99,22 @@ class SystemActions(private val app: Context) : SystemApi {
         }
     }
 
+    override fun resolveLaunch(app: AppEntry): Either<String, AppEntry> = try {
+        val intent = pm.getLaunchIntentForPackage(app.packageName)
+        val info = intent?.let { pm.resolveActivity(it, 0)?.activityInfo }
+        if (info == null || info.packageName != app.packageName || info.applicationInfo.uid < 0)
+            Either.Left(Reasons.of("targetIdentityUnavailable"))
+        else Either.Right(AppEntry(info.loadLabel(pm).toString(), PhoneAppIdentity(info.packageName, info.applicationInfo.uid)))
+    } catch (_: Exception) { Either.Left(Reasons.of("targetIdentityUnavailable")) }
+
     override fun launch(app: AppEntry, dispatch: PhoneTasks.SystemDispatch): SysResult {
         val intent = pm.getLaunchIntentForPackage(app.packageName)
             // l10n:keep agent tool result
             ?: return SysResult(false, "「${app.label}」没有可以打开的界面。")
+        val actual = try { pm.resolveActivity(intent, 0)?.activityInfo } catch (_: Exception) { null }
+        if (actual == null) return SysResult(false, Reasons.of("targetIdentityUnavailable"))
+        if (actual.packageName != app.packageName || actual.applicationInfo.uid != app.identity.uid)
+            return SysResult(false, Reasons.of("targetIdentityChanged"))
         intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED)
         // l10n:keep agent tool result
         return start(dispatch, intent, "打开「${app.label}」", "已打开「${app.label}」。", app.packageName, app.label, AppStrings.get(this.app, R.string.phone_notice_open_app, app.label))

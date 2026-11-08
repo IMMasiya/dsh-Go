@@ -263,7 +263,12 @@ class PhoneCore(
             val r = env.system().openUrl(url, target, tasks.systemDispatch(owner))
             return afterSystem(owner, r, ui.get("phone_log_open_url_scheme", "打开链接 %1\$s:", url.substringBefore(':')), target.appLabel ?: target.packageName) // l10n:keep test default
         }
-        val app = when (val r = resolveApp(appQ!!)) {
+        val selected = when (val r = resolveApp(appQ!!)) {
+            is Either.Left -> return Out(r.value, error = true)
+            is Either.Right -> r.value
+        }
+        // The list may be cached; approvals and dispatch use a fresh native PM identity.
+        val app = when (val r = env.system().resolveLaunch(selected)) {
             is Either.Left -> return Out(r.value, error = true)
             is Either.Right -> r.value
         }
@@ -297,7 +302,7 @@ class PhoneCore(
         say(owner, ui.get("phone_opening_background", "DSH 正在后台屏打开「%1\$s」", app.label)) // l10n:keep test default
         if (!current(owner)) return stoppedOut("open")
         val ticket = skillTrace.beginOpen(owner, PhoneScreen.BACKGROUND)
-        val res = traceResult(ticket) { driver.open(app.packageName) }
+        val res = traceResult(ticket) { driver.open(app.identity) }
         if (!current(owner) || !tasks.setAppIfCurrent(owner, app.label)) return stoppedOut("open")
         if (!current(owner)) return stoppedOut("open")
         return Out(res.message, error = !res.ok, screen = res.screen?.let { safety.filterScreen(it) }, app = app.label,

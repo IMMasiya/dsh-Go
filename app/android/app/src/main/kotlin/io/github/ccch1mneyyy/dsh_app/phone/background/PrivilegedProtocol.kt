@@ -20,6 +20,8 @@ object Proto {
     const val OWNER = "owner"
     const val CALL = "call"
     const val PKG = "pkg"
+    const val TARGET_IDENTITY_VERSION = "targetIdentityVersion"
+    const val TARGET_UID = "targetUid"
     const val VIEWPORT_VERSION = "viewportVersion"
     const val VIEWPORT_PRESET = "viewportPreset"
     const val SHORT_SIDE = "shortSide"
@@ -186,6 +188,12 @@ object Reasons {
         "displayMissing" -> "本次任务还没有后台屏，请先启动目标应用"
         // l10n:keep privileged protocol
         "displayTargetChanged" -> "后台屏前台任务不属于目标应用，未继续操作"
+        // l10n:keep agent target identity
+        "targetIdentityUnsupported" -> "当前后台服务不支持目标应用身份核验，请更新并重新连接；未派发新的启动请求"
+        // l10n:keep agent target identity
+        "targetIdentityChanged" -> "目标应用身份已变化，已停止后续操作。先重新打开应用或结束任务；不要自动重复刚才的输入或动作"
+        // l10n:keep agent target identity
+        "targetIdentityUnavailable" -> "无法确认目标应用身份，已停止后续操作。先重新打开应用或结束任务；先前动作是否完成需核对，不要自动重试"
         // l10n:keep privileged protocol
         "secureWindow" -> "此页面受保护（支付或密码），请交还用户在主屏完成"
         // l10n:keep privileged protocol

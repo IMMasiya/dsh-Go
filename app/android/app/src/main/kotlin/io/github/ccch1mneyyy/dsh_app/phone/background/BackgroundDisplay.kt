@@ -5,6 +5,7 @@ import android.os.Bundle
 import io.github.ccch1mneyyy.dsh_app.phone.ActionResult
 import io.github.ccch1mneyyy.dsh_app.phone.Availability
 import io.github.ccch1mneyyy.dsh_app.phone.CollectResult
+import io.github.ccch1mneyyy.dsh_app.phone.PhoneAppIdentity
 import io.github.ccch1mneyyy.dsh_app.phone.PhoneAction
 import io.github.ccch1mneyyy.dsh_app.phone.PhoneDriver
 import io.github.ccch1mneyyy.dsh_app.phone.PhoneRegistry
@@ -34,7 +35,8 @@ class BackgroundDisplay(
 
     override val screen: PhoneScreen = PhoneScreen.BACKGROUND
 
-    @Volatile private var currentPackage: String? = null
+    @Volatile private var currentTarget: PhoneAppIdentity? = null
+    private var targetReady = false
     private var counter = 0
     private var lastScreenId: String? = null
     private var lastElements: List<Element> = emptyList()
@@ -55,13 +57,19 @@ class BackgroundDisplay(
         // l10n:keep agent screen protocol
         resourceIo.peer() ?: channelProvider() ?: throw IllegalStateException("背景屏通道未就绪")
 
-    override fun open(packageName: String): ActionResult = try {
+    override fun open(target: PhoneAppIdentity): ActionResult = try {
         resourceIo.call {
+            clearSnapshot()
+            targetReady = false
+            currentTarget = target // Retain the attempted identity, never old elements after unknown launch.
             val active = channel()
             if (resourceIo.peer() == null) {
                 val probe = active.execute(Bundle().apply { putString(Proto.OP, Proto.OP_PROBE) })
                 check(probe.get(Proto.OK) == true && probe.get(Proto.RELEASE_RECEIPT) is Int && probe.getInt(Proto.RELEASE_RECEIPT) == 1) {
                     "所选后台服务不支持安全收尾，请更新并重新连接该通道。" // l10n:keep agent resource result
+                }
+                check(TargetIdentity.supported(probe.get(Proto.TARGET_IDENTITY_VERSION))) {
+                    Reasons.of("targetIdentityUnsupported")
                 }
                 check(BackgroundPolicy.supportsViewport(viewport, probe.get(Proto.VIEWPORT_VERSION))) {
                     Reasons.of("viewportUnsupported")
@@ -73,29 +81,33 @@ class BackgroundDisplay(
                 putString(Proto.OP, Proto.OP_LAUNCH)
                 putInt(Proto.RELEASE_RECEIPT, 1)
                 putString(Proto.OWNER, ownerToken)
-                putString(Proto.PKG, packageName)
+                putTarget(this, target)
                 putInt(Proto.SHORT_SIDE, 720)
                 putString(Proto.VIEWPORT_PRESET, viewport.preset)
                 putBoolean(Proto.LOCAL_VISUAL, true)
                 putInt(Proto.WANT_IMAGE, 0)
             }
-            currentPackage = packageName
             val response = active.execute(request)
             // Publish only after the first resource request has actually returned on its pinned peer.
             onResourceReady(active)
-            toResult(response, "已在后台屏打开") // l10n:keep agent screen protocol
+            val result = toResult(response, "已在后台屏打开") // l10n:keep agent screen protocol
+            targetReady = result.ok
+            result
         }
     } catch (error: Throwable) {
+        clearSnapshot()
+        targetReady = false
         if (resourceIo.peer() == null) resourceIo.seal() // Failed preflight must not leave an idle I/O worker.
         throw error
     }
 
     override fun observe(detail: Boolean, image: Boolean): ScreenSnapshot {
-        val pkg = currentPackage ?: return idleSnapshot()
+        val target = currentTarget ?: return idleSnapshot()
+        check(targetReady) { Reasons.of("targetIdentityUnavailable") }
         val request = Bundle().apply {
             putString(Proto.OP, Proto.OP_OBSERVE)
             putString(Proto.OWNER, ownerToken)
-            putString(Proto.PKG, pkg)
+            putTarget(this, target)
             putBoolean(Proto.DETAIL, detail)
             putBoolean(Proto.WANT_IMAGE, image)
             putBoolean(Proto.LOCAL_VISUAL, true)
@@ -107,6 +119,7 @@ class BackgroundDisplay(
             throw e
         }
         requireObservation(response.getBoolean(Proto.OK), response.getString(Proto.ERROR), response.getString(Proto.ERROR_DETAIL))
+        requireIdentity(response)
         return snapshot(response, markNew = false)
     }
 
@@ -114,6 +127,7 @@ class BackgroundDisplay(
     internal fun requireObservation(ok: Boolean, code: String?, detail: String?) {
         if (ok) return
         clearSnapshot()
+        if (code == "targetIdentityChanged" || code == "targetIdentityUnavailable") targetReady = false
         throw IllegalStateException(Reasons.of(code, detail))
     }
 
@@ -175,7 +189,8 @@ class BackgroundDisplay(
 
     override fun perform(action: PhoneAction, allowed: () -> Boolean): ActionResult {
         // l10n:keep agent screen protocol
-        val pkg = currentPackage ?: return ActionResult(false, "后台屏还没有打开应用")
+        val target = currentTarget ?: return ActionResult(false, "后台屏还没有打开应用")
+        if (!targetReady) return ActionResult(false, Reasons.of("targetIdentityUnavailable"))
         if (action is PhoneAction.Key && action.key != PhoneAction.GlobalKey.BACK) {
             // l10n:keep agent screen protocol
             return ActionResult(false, "后台屏不支持该系统键，未执行；请用返回或打开指定应用")
@@ -186,7 +201,7 @@ class BackgroundDisplay(
         }
         val request = Bundle().apply {
             putString(Proto.OWNER, ownerToken)
-            putString(Proto.PKG, pkg)
+            putTarget(this, target)
         }
         when (action) {
             is PhoneAction.Tap -> {
@@ -222,14 +237,17 @@ class BackgroundDisplay(
             is PhoneAction.TapXY -> return ActionResult(false, "后台屏按元素编号操作，不用坐标")
         }
         // l10n:keep agent screen protocol
-        val response = resourceIo.call {
-            if (!allowed()) return@call null
-            channel().execute(request)
-        } ?: return ActionResult(false, PhoneTasks.STOPPED_MESSAGE)
+        val response = try {
+            resourceIo.call {
+                if (!allowed()) return@call null
+                channel().execute(request)
+            }
+        } catch (error: Exception) { clearSnapshot(); throw error }
+            ?: return ActionResult(false, PhoneTasks.STOPPED_MESSAGE)
         return toResult(response, "已在后台屏执行", textAction = action is PhoneAction.Type)
     }
 
-    override fun foregroundPackage(): String? = currentPackage
+    override fun foregroundPackage(): String? = currentTarget?.packageName
 
     fun release(): Boolean {
         val acknowledged = try {
@@ -244,7 +262,8 @@ class BackgroundDisplay(
             }
         } catch (_: Exception) { false }
         if (!acknowledged) return false
-        currentPackage = null
+        currentTarget = null
+        targetReady = false
         lastScreenId = null
         lastElements = emptyList()
         previousLabels = emptySet()
@@ -256,6 +275,22 @@ class BackgroundDisplay(
         request.putString(Proto.EXPECT_ROLE, e.role)
         request.putString(Proto.EXPECT_LABEL, e.label)
         e.viewId?.let { request.putString(Proto.EXPECT_VIEW_ID, it) }
+    }
+
+    private fun putTarget(request: Bundle, target: PhoneAppIdentity) {
+        request.putString(Proto.PKG, target.packageName)
+        request.putInt(Proto.TARGET_IDENTITY_VERSION, 1)
+        request.putInt(Proto.TARGET_UID, target.uid)
+    }
+
+    private fun requireIdentity(response: Bundle) {
+        val expected = currentTarget
+        if (expected == null || !TargetIdentity.receipt(expected, response.get(Proto.TARGET_IDENTITY_VERSION),
+                response.get(Proto.PKG), response.get(Proto.TARGET_UID))) {
+            clearSnapshot()
+            targetReady = false
+            throw IllegalStateException(Reasons.of("targetIdentityUnavailable"))
+        }
     }
 
     private fun clearSnapshot() {
@@ -277,6 +312,19 @@ class BackgroundDisplay(
             clearSnapshot()
             return ActionResult(false, message, staleSnapshot = true)
         }
+        val identityMatches = currentTarget?.let {
+            TargetIdentity.receipt(it, response.get(Proto.TARGET_IDENTITY_VERSION), response.get(Proto.PKG), response.get(Proto.TARGET_UID))
+        } == true
+        if (!identityMatches) {
+            clearSnapshot()
+            if (ok) {
+                targetReady = false
+                return ActionResult(false, Reasons.of("targetIdentityUnavailable", null,
+                    textAccepted = textAction && response.get(Proto.ACCEPTED) == true))
+            }
+            if (response.getString(Proto.ERROR) in setOf("targetIdentityChanged", "targetIdentityUnavailable")) targetReady = false
+            return ActionResult(false, message)
+        }
         val snap = if (response.containsKey(Proto.COUNT) || response.getBoolean(Proto.SECURE))
             snapshot(response, markNew = true) else null
         return ActionResult(ok, message, snap)
@@ -284,7 +332,7 @@ class BackgroundDisplay(
 
     private fun snapshot(response: Bundle, markNew: Boolean): ScreenSnapshot {
         val id = "b${++counter}"
-        val pkg = response.getString(Proto.FG_PKG) ?: currentPackage
+        val pkg = currentTarget?.packageName
         val appLabel = response.getString(Proto.APP_LABEL)
         if (response.getBoolean(Proto.SECURE)) {
             lastScreenId = id; lastElements = emptyList(); previousLabels = emptySet()

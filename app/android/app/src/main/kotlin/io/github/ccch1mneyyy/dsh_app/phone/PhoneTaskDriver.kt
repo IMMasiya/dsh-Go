@@ -62,7 +62,7 @@ class PhoneTaskObservations(private val tasks: PhoneTasks) {
             result.screen?.let(::remember)
             return result
         }
-        override fun open(packageName: String): ActionResult { current(); return result(driver.open(packageName)) }
+        override fun open(target: PhoneAppIdentity): ActionResult { current(); return result(driver.open(target)) }
         override fun foregroundPackage(): String? { current(); return driver.foregroundPackage() }
     }
 }

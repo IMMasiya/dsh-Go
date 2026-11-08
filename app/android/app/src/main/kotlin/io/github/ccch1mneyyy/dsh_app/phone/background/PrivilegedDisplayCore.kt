@@ -33,6 +33,8 @@ import android.os.IBinder
 import android.os.Process
 import android.os.SystemClock
 import android.os.Trace
+import android.os.UserHandle
+import io.github.ccch1mneyyy.dsh_app.phone.PhoneAppIdentity
 import android.text.InputType
 import android.util.SparseArray
 import android.view.Display
@@ -98,6 +100,7 @@ class PrivilegedDisplayCore(private val context: Context) {
     private var strictOwner = false
     private var targetSequence: SelfCheckTargetSequence? = null
     private var targetSnapshot: TargetSnapshot? = null
+    private val targetIdentity = TargetIdentity()
     private var selfCheckOwner = false
     private var selfCheckWindow: BackgroundInputProbe? = null
     private var releasingDisplayId: Int? = null
@@ -126,12 +129,16 @@ class PrivilegedDisplayCore(private val context: Context) {
         var targetReply = SelfCheckTargetRequest.Step.entries.any { it.op == op }
         var selfCheckReply = op == Proto.OP_SELF_CHECK_PROBE
         try {
+            if ((request.containsKey(Proto.TARGET_IDENTITY_VERSION) || request.containsKey(Proto.TARGET_UID)) &&
+                op !in setOf(Proto.OP_CREATE, Proto.OP_LAUNCH, Proto.OP_OBSERVE, Proto.OP_TAP, Proto.OP_SCROLL,
+                    Proto.OP_KEY, Proto.OP_TEXT, Proto.OP_RELEASE)) throw Fault("invalidArguments")
             if (op == Proto.OP_PROBE) {
                 response.putBoolean(Proto.OK, true)
                 response.putInt(Proto.UID, Process.myUid())
                 response.putString("revision", Proto.REVISION)
                 response.putInt(Proto.PREVIEW_VERSION, 1)
                 response.putInt(Proto.VIEWPORT_VERSION, 1)
+                response.putInt(Proto.TARGET_IDENTITY_VERSION, 1)
                 // A real successful full query is required; finding the reflective method is insufficient.
                 if (runCatching { rootTasksEmpty(Display.DEFAULT_DISPLAY) }.isSuccess) {
                     response.putInt(Proto.RELEASE_RECEIPT, 1)
@@ -188,7 +195,15 @@ class PrivilegedDisplayCore(private val context: Context) {
                 targetReply = targetReply || targetSequence != null
                 selfCheckReply = selfCheckReply || selfCheckOwner
                 try { dispatch(op, request, response) }
-                catch (e: Throwable) { visualObservation = null; throw e }
+                catch (e: Throwable) {
+                    visualObservation = null
+                    if (request.get(Proto.OWNER) == owner &&
+                        (op == Proto.OP_CREATE || op == Proto.OP_LAUNCH || e is TargetIdentity.Failure)) {
+                        targetIdentity.invalidate()
+                        preview.invalidate()
+                    }
+                    throw e
+                }
             }
             if (!response.containsKey(Proto.ERROR)) response.putBoolean(Proto.OK, true)
         } catch (e: Throwable) {
@@ -202,6 +217,7 @@ class PrivilegedDisplayCore(private val context: Context) {
 
     private fun failureCode(e: Throwable): String = when (e) {
         is Fault -> e.code
+        is TargetIdentity.Failure -> e.code
         is InputProbe.Failure -> e.code
         is InterruptedException -> "cancelled"
         is SecurityException -> "systemOperationDenied"
@@ -210,7 +226,7 @@ class PrivilegedDisplayCore(private val context: Context) {
 
     private fun failureDetail(e: Throwable): String? =
         if (e is InputProbe.Failure) e.observation?.encode()
-        else if (e is Fault || e is InterruptedException || e is SecurityException) null
+        else if (e is Fault || e is TargetIdentity.Failure || e is InterruptedException || e is SecurityException) null
         else e.javaClass.simpleName
 
     private fun dispatch(op: String?, request: Bundle, response: Bundle) {
@@ -259,6 +275,14 @@ class PrivilegedDisplayCore(private val context: Context) {
         if (keyguard?.isKeyguardLocked == true) throw Fault("locked")
         val pkg = request.getString(Proto.PKG).orEmpty()
         if (!PACKAGE.matches(pkg)) throw Fault("invalidArguments")
+        val opening = op == Proto.OP_CREATE || op == Proto.OP_LAUNCH
+        if (!opening) requireDisplay() else owner = ownerId
+        // Binding and all target changes share the resource owner lock. RELEASE never enters this gate.
+        val expected = targetIdentity.request(pkg, request.containsKey(Proto.TARGET_IDENTITY_VERSION),
+            request.get(Proto.TARGET_IDENTITY_VERSION), request.containsKey(Proto.TARGET_UID),
+            request.get(Proto.TARGET_UID), opening)
+        // Resolve the exact intent before VD/reader allocation, not again after approving its identity.
+        val launch = if (opening) resolveLaunch(pkg, expected) else null
 
         val localVisual = request.getBoolean(Proto.LOCAL_VISUAL) && when (op) {
             Proto.OP_CREATE, Proto.OP_LAUNCH, Proto.OP_OBSERVE, Proto.OP_TAP, Proto.OP_SCROLL -> true
@@ -268,22 +292,22 @@ class PrivilegedDisplayCore(private val context: Context) {
         visualObservation = null // Consume before any dispatch, including failed or non-opt-in operations.
         when (op) {
             Proto.OP_CREATE, Proto.OP_LAUNCH -> {
-                owner = ownerId
                 if (display == null) createDisplay(request)
                 else requestedViewport(request)?.let {
                     if (width != it.width || height != it.height) throw Fault("viewportConflict")
                 }
                 response.putInt(Proto.DISPLAY_ID, displayId())
-                launchPackage(pkg)
+                launchPackage(pkg, checkNotNull(launch), expected)
+                targetIdentity.opened(expected)
                 sleepChecked(300)
                 observe(pkg, request.getBoolean(Proto.WANT_IMAGE), response, localVisual = localVisual)
             }
             Proto.OP_OBSERVE -> {
-                requireDisplay(); requireForeground(pkg)
+                if (expected == null) requireForeground(pkg)
                 observe(pkg, request.getBoolean(Proto.WANT_IMAGE), response, requireTree = true, detail = request.getBoolean(Proto.DETAIL), localVisual = localVisual)
             }
             Proto.OP_TAP -> {
-                requireDisplay(); requireForeground(pkg)
+                requireForeground(pkg)
                 tap(pkg, request)
                 sleepChecked(250)
                 observe(pkg, false, response, localVisual = localVisual)
@@ -291,7 +315,7 @@ class PrivilegedDisplayCore(private val context: Context) {
                     visualObservation?.changeFrom(previousVisual, SystemClock.uptimeMillis()) ?: "unavailable")
             }
             Proto.OP_SCROLL -> {
-                requireDisplay(); requireForeground(pkg)
+                requireForeground(pkg)
                 scroll(pkg, request)
                 sleepChecked(250)
                 observe(pkg, false, response, localVisual = localVisual)
@@ -299,18 +323,24 @@ class PrivilegedDisplayCore(private val context: Context) {
                     visualObservation?.changeFrom(previousVisual, SystemClock.uptimeMillis()) ?: "unavailable")
             }
             Proto.OP_KEY -> {
-                requireDisplay(); requireForeground(pkg)
+                requireForeground(pkg)
                 globalKey(request.getString(Proto.DIR))
                 sleepChecked(250)
                 observe(pkg, false, response)
             }
             Proto.OP_TEXT -> {
-                requireDisplay(); requireForeground(pkg)
+                requireForeground(pkg)
                 typeText(pkg, request, response)
                 sleepChecked(200)
                 observe(pkg, false, response)
             }
             else -> throw Fault("invalidArguments")
+        }
+        if (expected != null) {
+            val actual = requireActualTarget(expected)
+            response.putInt(Proto.TARGET_IDENTITY_VERSION, 1)
+            response.putInt(Proto.TARGET_UID, actual.uid)
+            response.putString(Proto.PKG, actual.packageName)
         }
     }
 
@@ -587,9 +617,46 @@ class PrivilegedDisplayCore(private val context: Context) {
         }
     }
 
-    private fun launchPackage(pkg: String) {
+    private fun resolveLaunch(pkg: String, expected: PhoneAppIdentity?): Intent {
+        val pm = privileged.packageManager
+        val intent = try { pm.getLaunchIntentForPackage(pkg) } catch (_: Exception) {
+            throw TargetIdentity.Failure("targetIdentityUnavailable")
+        } ?: throw Fault("notLaunchable")
+        if (expected != null) {
+            val actual = try { pm.resolveActivity(intent, 0)?.activityInfo } catch (_: Exception) { null }
+                ?: throw TargetIdentity.Failure("targetIdentityUnavailable")
+            if (!TargetIdentity.matches(expected, actual.packageName, actual.applicationInfo.uid))
+                throw TargetIdentity.Failure("targetIdentityChanged")
+        }
+        return intent
+    }
+
+    private fun requirePackageIdentity(expected: PhoneAppIdentity) {
+        val actual = try { privileged.packageManager.getApplicationInfo(expected.packageName, 0) }
+            catch (_: Exception) { throw TargetIdentity.Failure("targetIdentityUnavailable") }
+        if (!TargetIdentity.matches(expected, actual.packageName, actual.uid))
+            throw TargetIdentity.Failure("targetIdentityChanged")
+    }
+
+    private fun requireActualTarget(expected: PhoneAppIdentity): PhoneAppIdentity {
+        requirePackageIdentity(expected)
+        val task = foregroundTask() ?: throw TargetIdentity.Failure("targetIdentityUnavailable")
+        val info = try { task.javaClass.getField("topActivityInfo").get(task) as? android.content.pm.ActivityInfo }
+            catch (_: Exception) { null } ?: throw TargetIdentity.Failure("targetIdentityUnavailable")
+        val user = try { task.javaClass.getField("userId").getInt(task) }
+            catch (_: Exception) { throw TargetIdentity.Failure("targetIdentityUnavailable") }
+        val expectedUser = try {
+            UserHandle::class.java.getMethod("getUserId", Int::class.javaPrimitiveType).invoke(null, expected.uid) as Int
+        } catch (_: Exception) { throw TargetIdentity.Failure("targetIdentityUnavailable") }
+        if (task.topActivity?.packageName != expected.packageName ||
+            !TargetIdentity.matchesTask(expected, info.packageName, info.applicationInfo.uid, user, expectedUser))
+            throw TargetIdentity.Failure("targetIdentityChanged")
+        return PhoneAppIdentity(info.packageName, info.applicationInfo.uid)
+    }
+
+    private fun launchPackage(pkg: String, intent: Intent, expected: PhoneAppIdentity?) {
         val display = this.display ?: throw Fault("displayMissing")
-        val intent = privileged.packageManager.getLaunchIntentForPackage(pkg) ?: throw Fault("notLaunchable")
+        if (expected != null) requirePackageIdentity(expected)
         intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_MULTIPLE_TASK)
         val options = ActivityOptions.makeBasic().apply { launchDisplayId = display.display.displayId }
         // A shell/UserService is not an ActivityManager-attached app process: a PendingIntent
@@ -607,23 +674,31 @@ class PrivilegedDisplayCore(private val context: Context) {
         // Poll for the target becoming foreground on the owned display.
         val deadline = SystemClock.uptimeMillis() + 4000
         while (true) {
-            if (foregroundPackage() == pkg) break
+            if (foregroundPackage() == pkg) {
+                if (expected != null) requireActualTarget(expected)
+                break
+            }
             if (SystemClock.uptimeMillis() >= deadline) throw Fault("displayTargetChanged")
             sleepChecked(120)
         }
     }
 
     private fun requireForeground(pkg: String) {
-        if (foregroundPackage() != pkg) throw Fault("displayTargetChanged")
+        if (targetIdentity.verified) {
+            val expected = targetIdentity.current ?: throw TargetIdentity.Failure("targetIdentityUnavailable")
+            if (expected.packageName != pkg) throw TargetIdentity.Failure("targetIdentityChanged")
+            requireActualTarget(expected)
+        } else if (foregroundPackage() != pkg) throw Fault("displayTargetChanged")
     }
 
-    private fun foregroundPackage(): String? {
+    private fun foregroundTask(): ActivityManager.RunningTaskInfo? {
         val id = display?.display?.displayId ?: return null
         val field = taskDisplayIdField ?: return null
         @Suppress("DEPRECATION")
-        val task = activities.getRunningTasks(50).firstOrNull { runCatching { field.getInt(it) }.getOrDefault(-1) == id }
-        return task?.topActivity?.packageName
+        return activities.getRunningTasks(50).firstOrNull { runCatching { field.getInt(it) }.getOrDefault(-1) == id }
     }
+
+    private fun foregroundPackage(): String? = foregroundTask()?.topActivity?.packageName
 
     /** Old callers keep their best-effort contract. Strict owners use releaseStrict instead. */
     private fun releaseAll() = lock.withLock {
@@ -635,6 +710,7 @@ class PrivilegedDisplayCore(private val context: Context) {
         runCatching { display?.release() }
         closeReaders(strict = false)
         display = null; owner = null
+        targetIdentity.clear()
         strictOwner = false; releasingDisplayId = null; displayCreationAttempted = false; displayApiReleased = false
         readerAllocationUncertain = false
     }
@@ -680,6 +756,7 @@ class PrivilegedDisplayCore(private val context: Context) {
             }
         }
         display = null; owner = null; strictOwner = false; selfCheckOwner = false
+        targetIdentity.clear()
         targetSequence = null; targetSnapshot = null
         releasingDisplayId = null; displayCreationAttempted = false; displayApiReleased = false
         lastReleasedOwner = ownerId
@@ -690,6 +767,7 @@ class PrivilegedDisplayCore(private val context: Context) {
     // ---- observation (tree + optional screenshot) --------------------------
 
     private fun observe(pkg: String, wantImage: Boolean, response: Bundle, requireTree: Boolean = false, detail: Boolean = false, localVisual: Boolean = false) {
+        if (targetIdentity.verified) requireForeground(pkg)
         visualObservation = null
         val id = displayId()
         response.putInt(Proto.DISPLAY_ID, id)
@@ -1290,6 +1368,7 @@ class PrivilegedDisplayCore(private val context: Context) {
         val cx = (e.bounds.left + e.bounds.right) / 2
         val cy = (e.bounds.top + e.bounds.bottom) / 2
         val long = request.getBoolean(Proto.LONG)
+        if (targetIdentity.verified) requireForeground(pkg)
         injectTap(cx, cy, long)
     }
 
@@ -1326,6 +1405,7 @@ class PrivilegedDisplayCore(private val context: Context) {
             if (maxOf(kotlin.math.abs(lastX - p[0]), kotlin.math.abs(lastY - p[1])) <= slop)
                 throw Fault("inputRejected")
         }
+        if (targetIdentity.verified) requireForeground(pkg)
         injectSwipe(p[0], p[1], p[2], p[3], duration)
     }
 
@@ -1356,11 +1436,13 @@ class PrivilegedDisplayCore(private val context: Context) {
                 if (isSecret(node) && !request.getBoolean(Proto.ALLOW_SECRET, false)) throw Fault("textRequiresManual")
                 if (!node.isEditable || node.actionList.none { it.id == AccessibilityNodeInfo.ACTION_SET_TEXT })
                     throw Fault("textUnsupported")
+                if (targetIdentity.verified) requireForeground(pkg)
                 val submit = request.getBoolean(Proto.SUBMIT)
                 if (submit) {
                     if (!node.isFocused && !node.performAction(AccessibilityNodeInfo.ACTION_FOCUS)) throw Fault("textFocusMissing")
                     if (!node.refresh() || !node.isFocused) throw Fault("textTargetChanged")
                 }
+                if (targetIdentity.verified) requireForeground(pkg)
                 // type(id, text) replaces the entire value, regardless of the old selection.
                 val accepted = node.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, Bundle().apply {
                     putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, text)
@@ -1379,6 +1461,7 @@ class PrivilegedDisplayCore(private val context: Context) {
                 response.putString(Proto.READBACK, BackgroundTree.cap(text))
                 if (submit) {
                     if (!node.isFocused) throw Fault("textTargetChanged")
+                    if (targetIdentity.verified) requireForeground(pkg)
                     globalKey("enter")
                 }
             } finally { node.recycle() }

@@ -8,7 +8,13 @@ import java.time.ZoneId
 import java.time.format.DateTimeParseException
 
 /** A launchable app. */
-data class AppEntry(val label: String, val packageName: String)
+data class PhoneAppIdentity(val packageName: String, val uid: Int) {
+    init { require(packageName.isNotBlank() && uid >= 0) }
+}
+
+data class AppEntry(val label: String, val identity: PhoneAppIdentity) {
+    val packageName: String get() = identity.packageName
+}
 
 /** Outcome of a system action, one sentence for the model. */
 class SysResult(val ok: Boolean, val message: String, val packageName: String? = null, val appLabel: String? = null)
@@ -23,6 +29,7 @@ class UrlTarget(val error: String? = null, val packageName: String? = null, val 
 interface SystemApi {
     fun apps(): List<AppEntry>
     fun isInstalled(pkg: String): Boolean
+    fun resolveLaunch(app: AppEntry): Either<String, AppEntry>
     fun launch(app: AppEntry, dispatch: PhoneTasks.SystemDispatch): SysResult
     fun urlTarget(url: String): UrlTarget
     fun openUrl(url: String, target: UrlTarget, dispatch: PhoneTasks.SystemDispatch): SysResult

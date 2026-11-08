@@ -5,6 +5,8 @@
 
 package io.github.ccch1mneyyy.dsh_app.phone.a11y
 
+import io.github.ccch1mneyyy.dsh_app.phone.background.Reasons
+import io.github.ccch1mneyyy.dsh_app.phone.PhoneAppIdentity
 import io.github.ccch1mneyyy.dsh_app.i18n.AppStrings
 import io.github.ccch1mneyyy.dsh_app.R
 import android.app.KeyguardManager
@@ -201,7 +203,8 @@ internal class MainScreenDriver(private val service: PhoneA11yService, private v
         }
     }
 
-    override fun open(packageName: String): ActionResult {
+    override fun open(target: PhoneAppIdentity): ActionResult {
+        val packageName = target.packageName
         // l10n:keep agent screen result
         if (Looper.myLooper() == Looper.getMainLooper()) return ActionResult(false, "内部错误：手机动作不能在主线程执行。")
         synchronized(lock) {
@@ -212,6 +215,10 @@ internal class MainScreenDriver(private val service: PhoneA11yService, private v
             val intent = service.packageManager.getLaunchIntentForPackage(packageName)
                 // l10n:keep agent screen result
                 ?: return ActionResult(false, "没找到「$name」，或它没有可以打开的界面。可以先用 apps 查一下包名。")
+            val actual = try { service.packageManager.resolveActivity(intent, 0)?.activityInfo } catch (_: Exception) { null }
+            if (actual == null) return ActionResult(false, Reasons.of("targetIdentityUnavailable"))
+            if (actual.packageName != packageName || actual.applicationInfo.uid != target.uid)
+                return ActionResult(false, Reasons.of("targetIdentityChanged"))
             intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED)
             val gen = abortGen
             try { service.startActivity(intent) } catch (e: Exception) {
