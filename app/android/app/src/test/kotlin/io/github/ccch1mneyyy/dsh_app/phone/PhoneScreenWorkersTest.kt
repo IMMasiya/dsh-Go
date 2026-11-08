@@ -233,7 +233,8 @@ class PhoneScreenWorkersTest {
             assertFalse(old.resourcesReleased); assertNotNull(old.backgroundWorker)
             assertNull(f.sessions.tryReserveSelfCheck())
             bgExit.countDown(); mainExit.countDown()
-            assertTrue(a.get(5, TimeUnit.SECONDS).isError); assertTrue(b.get(5, TimeUnit.SECONDS).isError)
+            assertTrue("Retired BACKGROUND screen read must return an error", a.get(5, TimeUnit.SECONDS).isError)
+            assertTrue("Retired MAIN apps read must return an error", b.get(5, TimeUnit.SECONDS).isError)
             // A cancelled call returns before its physical-drain settlement callback.
             waitFor(released)
             assertTrue(old.resourcesReleased); assertNull(old.backgroundWorker)

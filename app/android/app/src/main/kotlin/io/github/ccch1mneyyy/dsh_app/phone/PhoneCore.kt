@@ -259,7 +259,9 @@ class PhoneCore(
     private fun apps(a: Args, owner: PhoneTasks.Owner): Out {
         if (!current(owner)) return stoppedOut("apps")
         val q = a.str("query")
-        val all = env.system().apps().filter { it.packageName != SafetyRules.OWN_PACKAGE }.sortedBy { it.label }
+        val listed = env.system().apps()
+        if (!current(owner)) return stoppedOut("apps")
+        val all = listed.filter { it.packageName != SafetyRules.OWN_PACKAGE }.sortedBy { it.label }
         val hits = AppMatch.filter(all, q)
         if (hits.isEmpty()) return Out(if (q == null) "没读到应用列表。" else "没有找到名称或包名含「$q」的应用。", summary = ui.get("phone_log_apps", "列出应用")) // l10n:keep test default
         val shown = hits.take(MAX_APPS)
