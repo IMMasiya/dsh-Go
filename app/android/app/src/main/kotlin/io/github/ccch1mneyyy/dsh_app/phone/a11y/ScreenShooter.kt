@@ -195,6 +195,7 @@ internal class ScreenShooter(private val service: AccessibilityService, private 
             try {
                 // l10n:keep agent screenshot result
                 if (synchronized(captureLock) { closed }) return Raw(null, false, "截图失败")
+                if (Thread.currentThread().isInterrupted) throw InterruptedException()
                 start(callback)
                 // l10n:keep agent screenshot result
                 val remaining = deadline - SystemClock.uptimeMillis()
