@@ -19,3 +19,14 @@ interface SkillReplayPlan : AutoCloseable {
     fun perform(allowed: () -> Boolean): ActionResult
     override fun close()
 }
+
+/** Executable subset, not descriptor registration or current-page permission. */
+internal object SkillReplaySupport {
+    private val mainMore = PhoneSkillRoute.Step(PhoneSkillRoute.Op.SELECT_OPTION, "app1", PhoneScreen.MAIN,
+        "navigation", "bottom-tabs", PhoneSkillRoute.Value.OptionLiteral("more"), PhoneSkillRoute.Post.OptionSelected)
+
+    fun screen(route: PhoneSkillRoute.Route): PhoneScreen? =
+        if (route.descriptorId == "markor-navigation-v1" && route.slots == listOf("app1") &&
+            route.parameters.isEmpty() && route.steps.size in 1..16 && route.steps.all { it == mainMore })
+            PhoneScreen.MAIN else null
+}

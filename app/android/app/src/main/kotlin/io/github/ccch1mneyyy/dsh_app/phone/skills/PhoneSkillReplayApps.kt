@@ -1,6 +1,7 @@
 package io.github.ccch1mneyyy.dsh_app.phone.skills
 
 import android.content.Context
+import io.github.ccch1mneyyy.dsh_app.phone.SkillReplaySupport
 import io.github.ccch1mneyyy.dsh_app.phone.a11y.MarkorNavigation
 
 /** Static native registration only. 3255 requires device evidence before adding an active entry.
@@ -21,7 +22,7 @@ internal object PhoneSkillReplayApps {
         } catch (_: Exception) { emptyList() }
     }
     fun summary(route: PhoneSkillRoute.Route): String? {
-        if (route.descriptorId !in descriptors || route.descriptorId != "markor-navigation-v1") return null
+        if (route.descriptorId !in descriptors || SkillReplaySupport.screen(route) == null) return null
         return route.steps.indices.joinToString("\n") { index ->
             "${index + 1}. 核对当前所选应用、导航页面和唯一更多选项；已选中不再点击，否则只尝试一次，并核对实际选中状态。"
         }

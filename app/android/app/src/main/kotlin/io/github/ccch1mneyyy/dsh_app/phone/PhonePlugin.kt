@@ -425,6 +425,9 @@ class PhonePlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandle
                 read.skillSha256 != inspection.bundle.skillSha256 || read.draftRevision != inspection.bundle.draftRevision) {
                 result.success(replayRejected("stale")); return@readPhoneSkillBundle
             }
+            if (SkillReplaySupport.screen(read.route) == null) {
+                result.success(replayRejected("unsupported")); return@readPhoneSkillBundle
+            }
             controlIo.execute {
                 val now = PhoneSkillReplayApps.choices(appContext, read.route.descriptorId)
                     .singleOrNull { it.app == selected.app }

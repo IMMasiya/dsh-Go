@@ -109,10 +109,12 @@ class PhoneCore(
         owner: PhoneTasks.Owner): Either<ToolOutput, PreparedCall> {
         if (!env.enabled() || !selection.sourceCurrent() || !selections.current(selection))
             return Either.Left(ToolOutput("原手机路线来源已失效，未执行。", isError = true)) // l10n:keep replay result
+        val screen = SkillReplaySupport.screen(selection.bundle.route)
+            ?: return Either.Left(ToolOutput("当前执行器不支持这条完整路线，未执行。", isError = true)) // l10n:keep replay result
         val key = PhoneSkillOutcomes.Key(selection.request.name, selection.request.revision, selection.bundle.routeSha256)
         if (outcomes.begin(selection.invocation, key) !in setOf(PhoneSkillOutcomes.Result.SAVED, PhoneSkillOutcomes.Result.UNCHANGED))
             return Either.Left(ToolOutput("路线结果记录不可用，未执行。", isError = true)) // l10n:keep replay result
-        return Either.Right(PreparedCall(REPLAY, Args(emptyMap()), owner, listOf(PhoneScreen.MAIN),
+        return Either.Right(PreparedCall(REPLAY, Args(emptyMap()), owner, listOf(screen),
             replay = selection, replaySelections = selections, replayOutcomes = outcomes))
     }
 

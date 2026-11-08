@@ -1661,8 +1661,9 @@ class PhoneTaskSessionsTest {
     @Test fun nativeReplayUsesOriginalManagedAdmissionAndMainUnknownAppLease() {
         val registry = PhoneSkillReplaySelections { 0L }
         val app = PhoneSkillReplaySelections.App("example.app", 10123, 1, 1, "a".repeat(64))
-        val route = PhoneSkillRoute.Route("phone-task-" + "1".repeat(32), "2".repeat(32), "fixture", listOf("app1"), emptyList(),
-            listOf(PhoneSkillRoute.Step(PhoneSkillRoute.Op.OPEN_APP, "app1", PhoneScreen.MAIN, post = PhoneSkillRoute.Post.PageIs("home"))))
+        val route = PhoneSkillRoute.Route("phone-task-" + "1".repeat(32), "2".repeat(32), "markor-navigation-v1", listOf("app1"), emptyList(),
+            listOf(PhoneSkillRoute.Step(PhoneSkillRoute.Op.SELECT_OPTION, "app1", PhoneScreen.MAIN,
+                "navigation", "bottom-tabs", PhoneSkillRoute.Value.OptionLiteral("more"), PhoneSkillRoute.Post.OptionSelected)))
         val selection = registry.prepare(PhoneSkillDrafts().attachClient(), 1, { true },
             PhoneSkillReplaySelections.Request(route.skillName, route.revision, "A", app.packageName, app.uid),
             PhoneSkillBundleReader.Read.Accepted(route, 2, "b".repeat(64), "c".repeat(64)), app)!!

@@ -1532,10 +1532,10 @@ class PhoneCorePromptOwnerTest {
 
     /** Fake only the platform's typed step; real Core/worker/SafetyGate and outcomes are exercised. */
     private fun replayFixture(already: Boolean = false, witness: Boolean = true,
-        beforeAttempt: () -> Unit = {}): Triple<PhoneSkillReplaySelections, PhoneSkillReplaySelections.Selection, PhoneSkillOutcomes> {
+        beforeAttempt: () -> Unit = {}, preparedRoute: PhoneSkillRoute.Route? = null): Triple<PhoneSkillReplaySelections, PhoneSkillReplaySelections.Selection, PhoneSkillOutcomes> {
         val registry = PhoneSkillReplaySelections { 0L }
         val app = PhoneSkillReplaySelections.App("example.app", 10123, 1, 2, "c".repeat(64))
-        val route = PhoneSkillRoute.Route("phone-task-" + "1".repeat(32), "2".repeat(32), "fixture", listOf("app1"), emptyList(),
+        val route = preparedRoute ?: PhoneSkillRoute.Route("phone-task-" + "1".repeat(32), "2".repeat(32), "markor-navigation-v1", listOf("app1"), emptyList(),
             listOf(PhoneSkillRoute.Step(PhoneSkillRoute.Op.SELECT_OPTION, "app1", PhoneScreen.MAIN,
                 "navigation", "bottom-tabs", PhoneSkillRoute.Value.OptionLiteral("more"), PhoneSkillRoute.Post.OptionSelected)))
         val request = PhoneSkillReplaySelections.Request(route.skillName, route.revision, "session", app.packageName, app.uid)
@@ -1726,4 +1726,58 @@ class PhoneCorePromptOwnerTest {
         assertEquals(PhoneSkillOutcomes.Outcome.NOT_STARTED, fixture.first.finish(fixture.second, false, 1L))
     }
 
+
+    /** Parse an explicitly permitted test relation; never mutate the production registry. */
+    private fun extraReplayRelation(tail: String, extra: PhoneSkillRoute.Step,
+        slots: List<String> = listOf("app1"), parameters: List<PhoneSkillRoute.Parameter> = emptyList(),
+        parameterJson: String = "[]"): PhoneSkillRoute.Route {
+        val name = "phone-task-" + "1".repeat(32)
+        val revision = "2".repeat(32)
+        val more = PhoneSkillRoute.Step(PhoneSkillRoute.Op.SELECT_OPTION, "app1", PhoneScreen.MAIN,
+            "navigation", "bottom-tabs", PhoneSkillRoute.Value.OptionLiteral("more"), PhoneSkillRoute.Post.OptionSelected)
+        val slotJson = Json.write(slots.map { mapOf("key" to it, "kind" to "user_selected_app") })
+        val bytes = """{"schema":1,"skillName":"$name","bundleRevision":"$revision",
+            "descriptorSet":"markor-navigation-v1","appSlots":$slotJson,"parameters":$parameterJson,
+            "steps":[{"op":"select_option","appSlot":"app1","screen":"main","pageKey":"navigation",
+            "targetKey":"bottom-tabs","value":{"literal":"more"},"post":{"kind":"option_selected"}},$tail]}""".toByteArray()
+        val descriptor = PhoneSkillRoute.Descriptor("markor-navigation-v1", slots.toSet(), parameters, setOf(more, extra))
+        val parsed = PhoneSkillRoute.parse(bytes, name, revision, mapOf("markor-navigation-v1" to descriptor))
+        assertTrue("The fixture must pass the real complete-relation parser", parsed is PhoneSkillRoute.Read.Accepted)
+        return (parsed as PhoneSkillRoute.Read.Accepted).route.also { assertEquals(2, it.steps.size) }
+    }
+    private fun rejectsWholeReplay(route: PhoneSkillRoute.Route) {
+        val fixture = replayFixture(preparedRoute = route)
+        val owner = (tasks.begin() as PhoneTasks.Begin.Go).owner
+        val prepared = core.prepareReplayCall(fixture.second, fixture.first, fixture.third, owner)
+        assertTrue("Unsupported tail must be rejected before preparing any route", prepared is Either.Left)
+        assertTrue((prepared as Either.Left).value.isError)
+        assertEquals(0, main.writes)
+        assertEquals(0, fixture.first.snapshot(fixture.second)["completedSteps"])
+        assertFalse(tasks.isStopped())
+    }
+    @Test fun replayWholeRouteRejectsParsedUnsupportedOperationBeforeItsValidPrefix() {
+        rejectsWholeReplay(extraReplayRelation(
+            """{"op":"open_app","appSlot":"app1","screen":"main","post":{"kind":"page_is","pageKey":"home"}}""",
+            PhoneSkillRoute.Step(PhoneSkillRoute.Op.OPEN_APP, "app1", PhoneScreen.MAIN, post = PhoneSkillRoute.Post.PageIs("home"))))
+    }
+    @Test fun replayWholeRouteRejectsParsedSecondAppSlotBeforeItsValidPrefix() {
+        rejectsWholeReplay(extraReplayRelation(
+            """{"op":"select_option","appSlot":"app2","screen":"main","pageKey":"navigation","targetKey":"bottom-tabs","value":{"literal":"more"},"post":{"kind":"option_selected"}}""",
+            PhoneSkillRoute.Step(PhoneSkillRoute.Op.SELECT_OPTION, "app2", PhoneScreen.MAIN, "navigation", "bottom-tabs",
+                PhoneSkillRoute.Value.OptionLiteral("more"), PhoneSkillRoute.Post.OptionSelected), slots = listOf("app1", "app2")))
+    }
+    @Test fun replayWholeRouteRejectsParsedParametersBeforeItsValidPrefix() {
+        rejectsWholeReplay(extraReplayRelation(
+            """{"op":"set_checked","appSlot":"app1","screen":"main","pageKey":"settings","targetKey":"compact","value":{"parameter":"desired"},"post":{"kind":"checked_equals_value"}}""",
+            PhoneSkillRoute.Step(PhoneSkillRoute.Op.SET_CHECKED, "app1", PhoneScreen.MAIN, "settings", "compact",
+                PhoneSkillRoute.Value.Reference("desired"), PhoneSkillRoute.Post.CheckedEqualsValue),
+            parameters = listOf(PhoneSkillRoute.Parameter("desired", PhoneSkillRoute.ParameterKind.BOOLEAN)),
+            parameterJson = """[{"key":"desired","kind":"boolean","required":true}]"""))
+    }
+    @Test fun replayWholeRouteRejectsParsedMixedScreensBeforeItsValidPrefix() {
+        rejectsWholeReplay(extraReplayRelation(
+            """{"op":"select_option","appSlot":"app1","screen":"background","pageKey":"navigation","targetKey":"bottom-tabs","value":{"literal":"more"},"post":{"kind":"option_selected"}}""",
+            PhoneSkillRoute.Step(PhoneSkillRoute.Op.SELECT_OPTION, "app1", PhoneScreen.BACKGROUND, "navigation", "bottom-tabs",
+                PhoneSkillRoute.Value.OptionLiteral("more"), PhoneSkillRoute.Post.OptionSelected)))
+    }
 }
