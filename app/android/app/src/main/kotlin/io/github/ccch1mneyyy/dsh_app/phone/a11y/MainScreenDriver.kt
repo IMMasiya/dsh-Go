@@ -206,21 +206,21 @@ internal class MainScreenDriver(private val service: PhoneA11yService, private v
                         val privateText = decoded?.sensitiveText == true
                         secure = shot.secure
                         if (secure) visual.observed(null, null)
-                        if (shot.bytes != null && !privateText) {
+                        if (shot.bytes != null && !privateText &&
+                            visual.candidate(snap.id, capturedTransitions)) {
                             bytes = shot.bytes
                             mime = shot.mime
                             snap.ocrOnlyEpoch = null
                             snap.image = shot.observation
-                            if (shot.observation != null) visual.candidate(snap.id, capturedTransitions)
                             // l10n:keep agent screen result
                             text.append("\n截图上的数字是元素编号；tap_xy 用截图像素（${shot.geometry!!.width}×${shot.geometry.height}）。")
                             // l10n:keep agent screen result
                             shot.takenAtMillis?.let { text.append("\n截图时间：${shotClock.format(Date(it))}（系统截图时间戳，设备时钟）。") }
                         // l10n:keep agent screen result
-                        } else if (formatted?.hasPoints == true && !privateText && shot.observation != null) {
+                        } else if (formatted?.hasPoints == true && !privateText && shot.observation != null &&
+                            visual.candidate(snap.id, capturedTransitions)) {
                             snap.image = shot.observation
                             snap.ocrOnlyEpoch = epoch
-                            visual.candidate(snap.id, capturedTransitions)
                         } else if (publicImage && !privateText) text.append("\n提示：${shot.error ?: "截图失败"}。")
                     }
                 }
