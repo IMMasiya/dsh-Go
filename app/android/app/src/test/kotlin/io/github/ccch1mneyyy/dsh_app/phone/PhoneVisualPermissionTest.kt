@@ -17,6 +17,9 @@ class PhoneVisualPermissionTest {
         var image: ByteArray? = byteArrayOf(1)
         var textCoordinates = false
         var coordinateCandidate = false
+        var afterText: String? = null
+        var afterImage: ByteArray? = null
+        var afterCoordinates = false
         var screenText = "Details"
         var policy = PhonePolicies(confirmMode = ConfirmMode.ASK)
         var decision: (ConfirmRequest) -> Decision = { if (it.visualScope != null) Decision.ALLOW_VISUAL_FOR_TASK else Decision.ALLOW_APP_FOR_TASK }
@@ -40,7 +43,10 @@ class PhoneVisualPermissionTest {
             override fun perform(action: PhoneAction): ActionResult {
                 if (!accepted) return ActionResult(false, "no image")
                 accepted = false; actions++
-                return ActionResult(true, "test action")
+                val text = afterText ?: return ActionResult(true, "test action")
+                id = "b${++nextId}"
+                coordinateCandidate = afterCoordinates || afterImage != null
+                return ActionResult(true, "test action", ScreenSnapshot(id, text, "Example", "example.app", image = afterImage))
             }
             override fun foregroundPackage() = "example.app"
             override fun collect(screenId: String, listElementId: Int, maxPages: Int, until: String?) = error("unused")
@@ -122,6 +128,33 @@ class PhoneVisualPermissionTest {
             f.policy = PhonePolicies(denyPackages = listOf("example.app"))
             assertTrue(f.read(image = false).isError)
             assertFalse(f.accepted); assertEquals(0, f.actions)
+        }
+    }
+    @Test fun returnedTextCandidateIsAcceptedOnlyAfterTheActionAndNeedsItsOwnConfirmation() {
+        Fixture().use { f ->
+            f.image = null; f.textCoordinates = true; f.knownTarget = false
+            f.afterText = "V1 \"Next\" box=[20,30,50,60) point=(30,40)"; f.afterCoordinates = true
+            f.policy = PhonePolicies(confirmMode = ConfirmMode.ALWAYS)
+            f.decision = { Decision.ALLOW_ONCE }
+            f.read(image = false)
+            val before = f.id
+            assertFalse(f.tap().isError)
+            assertNotEquals(before, f.id); assertTrue(f.accepted)
+            assertFalse(f.tap().isError)
+            assertEquals(2, f.actions); assertEquals(2, f.asks.size)
+            assertTrue(f.asks.all { it.visualScope == null && !it.offerTaskWaiver })
+            assertFalse(f.tasks.hasVisualGrant(f.tasks.activeOwner()!!, f.scope!!))
+        }
+    }
+    @Test fun filteredPostActionImageKeepsTheActionFactButDoesNotAcceptItsCandidate() {
+        Fixture().use { f ->
+            f.knownTarget = false; f.decision = { Decision.ALLOW_ONCE }
+            f.afterText = "«银行卡 ****1234»"; f.afterImage = byteArrayOf(1); f.afterCoordinates = true
+            f.read()
+            val result = f.tap()
+            assertFalse(result.isError); assertEquals(1, f.actions)
+            assertNull(result.image); assertFalse(f.accepted)
+            assertTrue(f.tap().isError); assertEquals(1, f.actions)
         }
     }
     @Test fun unknownEveryWriteAndLongTapNeverOfferOrUseVisualGrant() {

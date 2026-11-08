@@ -418,7 +418,7 @@ class PhoneCore(
         call.backgroundOpenConfirmed = res.backgroundOpenConfirmed
         if (!current(owner) || !tasks.setAppIfCurrent(owner, app.label)) return stoppedOut("open")
         if (!current(owner)) return stoppedOut("open")
-        return Out(res.message, error = !res.ok, screen = res.screen?.let { safety.filterScreen(it) }, app = app.label,
+        return Out(res.message, error = !res.ok, screen = res.screen?.let { returnedScreen(driver, it, owner) }, app = app.label,
             summary = ui.get("phone_log_open_background", "后台屏打开 %1\$s", app.packageName), decision = if (res.ok) decision else "failed") // l10n:keep test default
     }
 
@@ -499,7 +499,7 @@ class PhoneCore(
             if (!current(owner)) return null
             val snap = d.observe(detail = false, image = false)
             if (!current(owner)) return null
-            safety.filterScreen(snap)
+            returnedScreen(d, snap, owner)
         } catch (e: InterruptedException) {
             throw e
         } catch (_: Exception) {
@@ -631,6 +631,15 @@ class PhoneCore(
         // l10n:keep agent tool result
         Out("手机锁着屏，DSH 不在锁屏状态下操作。请用户解锁后再说一声。", error = true, summary = summary, decision = "refused:locked")
 
+    /** Every returned observation passes the final read policy before a driver candidate is
+     * committed. This also covers post-action and stale-refresh frames, not just screen(). */
+    private fun returnedScreen(driver: PhoneDriver, snapshot: ScreenSnapshot, owner: PhoneTasks.Owner): ScreenSnapshot {
+        val shown = safety.filterScreen(snapshot)
+        if (!current(owner)) throw InterruptedException()
+        if (shown === snapshot) driver.acceptVisualObservation(shown.id)
+        return shown
+    }
+
     private fun screen(a: Args, owner: PhoneTasks.Owner): Out {
         if (!current(owner)) return stoppedOut("screen")
         val which = if (a.bool("background") == true) PhoneScreen.BACKGROUND else PhoneScreen.MAIN
@@ -645,10 +654,8 @@ class PhoneCore(
         if (!current(owner)) return stoppedOut(summary)
         val snap = driver.observe(detail = a.bool("detail") == true, image = a.bool("image") == true)
         if (!current(owner) || !tasks.setAppIfCurrent(owner, snap.appLabel)) return stoppedOut(summary)
-        val shown = safety.filterScreen(snap)
-        if (!current(owner)) return stoppedOut(summary)
+        val shown = returnedScreen(driver, snap, owner)
         val refused = shown !== snap
-        if (!refused) driver.acceptVisualObservation(shown.id)
         return Out(
             // l10n:keep agent tool result
             if (refused) "没有读取这个屏幕的内容。" else "",
@@ -684,7 +691,7 @@ class PhoneCore(
         skillTrace.markIncomplete(owner)
         val r = driver.collect(sid!!, list, pages, a.str("until"))
         if (!current(owner)) return stoppedOut(summary)
-        val screen = r.screen?.let { safety.filterScreen(it) }
+        val screen = r.screen?.let { returnedScreen(driver, it, owner) }
         val text = buildString {
             // l10n:keep agent tool result
             append("收集到 ${r.items.size} 条（翻了 ${r.pages} 页，停下原因：${r.stopReason}）：\n")
@@ -853,7 +860,7 @@ class PhoneCore(
         return Out(
             res.message,
             error = !res.ok,
-            screen = res.screen?.let { safety.filterScreen(it) },
+            screen = res.screen?.let { returnedScreen(driver, it, owner) },
             app = app,
             summary = summary,
             decision = if (res.ok) decision else policyFailure.get()?.decision ?: "failed",
@@ -887,7 +894,7 @@ class PhoneCore(
                 else {
                     val observed = driver.observe(detail = false, image = false)
                     if (!tasks.isCurrent(owner) || Thread.currentThread().isInterrupted || env.isLocked()) null
-                    else safety.filterScreen(observed)
+                    else returnedScreen(driver, observed, owner)
                 }
             }
         } catch (e: InterruptedException) {
@@ -943,7 +950,7 @@ class PhoneCore(
         val action = PhoneAction.Key(sid ?: "${which.prefix}0", key)
         val ticket = skillTrace.beginAction(owner, action, null)
         val res = traceResult(ticket) { driver.perform(action) }
-        return Out(res.message, error = !res.ok, screen = res.screen?.let { safety.filterScreen(it) }, summary = summary,
+        return Out(res.message, error = !res.ok, screen = res.screen?.let { returnedScreen(driver, it, owner) }, summary = summary,
             decision = if (res.ok) "ok" else "failed")
     }
 
