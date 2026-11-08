@@ -40,7 +40,8 @@ class PhoneTaskSessions(
         @Volatile internal var resourcesReleased = true
         @Volatile internal var resourceTaskId = 0L
         internal var cleanupFailed = false
-        internal var waiting: PhoneScreen? = null
+        // Full requested set while waiting; holders can change before this waiter wakes.
+        internal var waitingScreens: List<PhoneScreen> = emptyList()
         internal var endRequested = false
         internal var ending = false
         internal var endSettled = false
@@ -166,10 +167,8 @@ class PhoneTaskSessions(
                 is Either.Left -> return ToolOutput(route.value, isError = true)
                 is Either.Right -> route.value
             }
-            for (required in needed) {
-                val failure = awaitScreen(admission, required, owner.taskId)
-                if (failure != null) return ToolOutput(failure, isError = true)
-            }
+            val failure = awaitScreens(admission, needed, owner.taskId)
+            if (failure != null) return ToolOutput(failure, isError = true)
             synchronized(lock) { if (!live(admission) || blocked(task)) return stopped() }
             return task.core.call(name, args, owner)
         } catch (_: InterruptedException) {
@@ -182,7 +181,7 @@ class PhoneTaskSessions(
                 // A timed-out Future can return before its device body. Keep the task's
                 // execution slot and screen leases until that exact owner physically drains.
                 task.core.worker.afterDrained(task.tasks) {
-                    synchronized(lock) { task.running = false; task.waiting = null; lock.notifyAll() }
+                    synchronized(lock) { task.running = false; task.waitingScreens = emptyList(); lock.notifyAll() }
                     settled(task)
                 }
             } else settled(task)
@@ -200,26 +199,40 @@ class PhoneTaskSessions(
     private fun blocked(task: Task) = task.cancelling || task.retired != null || task.cleanupFailed || task.endRequested || task.sessionId != null && (task.stopped || task.sessionId in stoppedSessions)
     private fun stopped() = ToolOutput(PhoneTasks.STOPPED_MESSAGE + "。", isError = true)
 
-    private fun awaitScreen(a: Admission, screen: PhoneScreen, taskId: Long): String? {
+    private fun awaitScreens(a: Admission, needed: List<PhoneScreen>, taskId: Long): String? {
+        if (needed.isEmpty()) return null
         val until = clock() + 30_000
         val task = checkNotNull(a.task)
+        // This list comes from requiredScreens (MAIN/BACKGROUND only). Never acquire half
+        // an action's new leases while waiting; pre-existing physical leases remain held.
+        fun blockedScreens() = needed.filter { screens[it] != null && screens[it] !== task }
+        fun acquire() {
+            needed.forEach { screens[it] = task }
+            task.resourcesReleased = false
+            task.resourceTaskId = taskId
+        }
         synchronized(lock) {
             if (!live(a) || blocked(task)) return PhoneTasks.STOPPED_MESSAGE
-            if (screens[screen] == null || screens[screen] === task) { screens[screen] = task; task.resourcesReleased = false; task.resourceTaskId = taskId; return null }
-            task.waiting = screen
+            val missing = blockedScreens()
+            if (missing.isEmpty()) { acquire(); return null }
+            task.waitingScreens = needed
         }
         changed()
         try {
             synchronized(lock) {
                 while (true) {
                     if (!live(a) || blocked(task)) return PhoneTasks.STOPPED_MESSAGE
-                    val holder = screens[screen]
-                    if (holder == null || holder === task) { screens[screen] = task; task.resourcesReleased = false; task.resourceTaskId = taskId; return null }
-                    var cursor: Task? = holder
+                    val missing = blockedScreens()
+                    if (missing.isEmpty()) { acquire(); return null }
+                    val pending = java.util.ArrayDeque<Task>()
+                    missing.mapNotNullTo(pending) { screens[it] }
                     val seen = HashSet<Task>()
-                    while (cursor != null && seen.add(cursor)) {
+                    while (pending.isNotEmpty()) {
+                        val cursor = pending.removeFirst()
                         if (cursor === task) return "屏幕资源形成等待环，本次没有操作。请结束或交还另一任务占用的屏幕后重试。" // l10n:keep agent resource result
-                        cursor = cursor.waiting?.let(screens::get)
+                        if (seen.add(cursor)) cursor.waitingScreens.forEach { screen ->
+                            screens[screen]?.takeUnless { it === cursor }?.let(pending::addLast)
+                        }
                     }
                     val left = until - clock()
                     if (left <= 0) return "该屏幕正被另一个对话使用，已等待 30 秒，本次没有操作。请稍后再试或结束占用任务。" // l10n:keep agent resource result
@@ -227,7 +240,7 @@ class PhoneTaskSessions(
                 }
             }
         } finally {
-            synchronized(lock) { task.waiting = null }
+            synchronized(lock) { task.waitingScreens = emptyList() }
             changed()
         }
     }
@@ -328,7 +341,7 @@ class PhoneTaskSessions(
         val state = task.retired ?: task.tasks.snapshot()
         val extra = synchronized(lock) { mapOf("sessionId" to task.sessionId, "runId" to task.runId,
             "identity" to if (task.sessionId == null) "legacy" else "session",
-            "waitingForScreen" to task.waiting?.name?.lowercase(), "pendingCalls" to task.pending,
+            "waitingForScreen" to task.waitingScreens.firstOrNull { screens[it] != null && screens[it] !== task }?.name?.lowercase(), "pendingCalls" to task.pending,
             "retiring" to (task.retired != null), "settling" to task.closing, "cleanupFailed" to task.cleanupFailed,
             "finishing" to (task.closing || task.cleanupFailed || task.retired != null || task.endRequested && !task.endSettled), "draining" to (task.running && task.pending == 0),
             "stopped" to (task.retired != null || task.stopped || state.stopped || task.sessionId in stoppedSessions), "generation" to state.lifecycle,

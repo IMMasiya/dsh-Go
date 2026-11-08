@@ -19,6 +19,7 @@ class PhoneTaskSessionsTest {
     private val pool = Executors.newCachedThreadPool()
     @Volatile private var confirm: (ConfirmRequest) -> Decision = { Decision.UNAVAILABLE }
     private val actions = AtomicLong()
+    @Volatile private var open: (PhoneAppIdentity) -> ActionResult = { error("unexpected launch") }
     @Volatile private var changed: () -> Unit = {}
     @Volatile private var lookup: () -> Unit = {}
     @Volatile private var observe: () -> Unit = {}
@@ -44,7 +45,7 @@ class PhoneTaskSessionsTest {
             override fun collect(screenId: String, listElementId: Int, maxPages: Int, until: String?) = error("unexpected collect")
             override fun target(screenId: String, elementId: Int) = TargetInfo(screenId, elementId, "button", "Button", "example.app", "Example", false, false, false)
             override fun perform(action: PhoneAction): ActionResult { actions.incrementAndGet(); return ActionResult(true, "done") }
-            override fun open(target: PhoneAppIdentity) = error("unexpected launch")
+            override fun open(target: PhoneAppIdentity) = this@PhoneTaskSessionsTest.open(target)
         }
         override fun a11yState() = A11yState.CONNECTED
         override fun backgroundUnavailable() = "unavailable"
@@ -348,7 +349,7 @@ class PhoneTaskSessionsTest {
     @Test fun aScreenWaitDoesNotOccupyTheWorkerNeededByItsHolder() {
         assertFalse(invoke("A", tool = PhoneToolCatalog.SCREEN).isError)
         val waiting = CountDownLatch(1)
-        changed = { if (sessions.all().any { it.sessionId == "B" && it.waiting == PhoneScreen.MAIN }) waiting.countDown() }
+        changed = { if (sessions.all().any { it.sessionId == "B" && it.waitingScreens.firstOrNull() == PhoneScreen.MAIN }) waiting.countDown() }
         val b = pool.submit<ToolOutput> { invoke("B", tool = PhoneToolCatalog.SCREEN) }
         assertTrue(waiting.await(5, TimeUnit.SECONDS))
         // This call must execute while B waits. Placing lease waits inside SerialWorker deadlocks it.
@@ -356,6 +357,146 @@ class PhoneTaskSessionsTest {
         assertFalse(a.get(5, TimeUnit.SECONDS).isError)
         end("A")
         assertFalse(b.get(5, TimeUnit.SECONDS).isError)
+    }
+
+    private fun screen(session: String, background: Boolean = false) =
+        sessions.run(admit(session), PhoneToolCatalog.SCREEN, mapOf("background" to background))
+    private fun openBackground(session: String) = sessions.run(admit(session), PhoneToolCatalog.OPEN,
+        mapOf("background" to true, "app" to "example.app"))
+
+    @Test fun compoundOpenWaitsWithoutTakingMainAndThenDispatchesOnce() {
+        assertFalse(screen("A", background = true).isError)
+        val waiting = CountDownLatch(1)
+        changed = { if (sessions.snapshot().any { it["sessionId"] == "B" && it["waitingForScreen"] == "background" }) waiting.countDown() }
+        confirm = { Decision.ALLOW_ONCE }
+        val launches = AtomicLong()
+        open = { launches.incrementAndGet(); ActionResult(true, "opened") }
+        val b = pool.submit<ToolOutput> { openBackground("B") }
+        try {
+            assertTrue(waiting.await(5, TimeUnit.SECONDS))
+            assertFalse(pool.submit<ToolOutput> { screen("C") }.get(5, TimeUnit.SECONDS).isError)
+            assertFalse(invoke("metadata").isError)
+            assertTrue(task("metadata").resourcesReleased)
+            assertEquals(0L, launches.get())
+            end("C"); end("A")
+            assertFalse(b.get(5, TimeUnit.SECONDS).isError)
+            assertEquals(1L, launches.get())
+        } finally { end("A"); end("C"); end("B") }
+    }
+
+    @Test fun compoundOpenOwnsBothScreensBeforeItsDriverRuns() {
+        val entered = CountDownLatch(1); val release = CountDownLatch(1)
+        val mainWait = CountDownLatch(1); val backgroundWait = CountDownLatch(1)
+        confirm = { Decision.ALLOW_ONCE }
+        open = { entered.countDown(); assertTrue(release.await(5, TimeUnit.SECONDS)); ActionResult(true, "opened") }
+        val opening = pool.submit<ToolOutput> { openBackground("owner") }
+        try {
+            assertTrue(entered.await(5, TimeUnit.SECONDS))
+            changed = {
+                sessions.snapshot().forEach {
+                    if (it["sessionId"] == "main" && it["waitingForScreen"] == "main") mainWait.countDown()
+                    if (it["sessionId"] == "background" && it["waitingForScreen"] == "background") backgroundWait.countDown()
+                }
+            }
+            val main = pool.submit<ToolOutput> { screen("main") }
+            val background = pool.submit<ToolOutput> { screen("background", background = true) }
+            assertTrue(mainWait.await(5, TimeUnit.SECONDS))
+            assertTrue(backgroundWait.await(5, TimeUnit.SECONDS))
+            release.countDown()
+            assertFalse(opening.get(5, TimeUnit.SECONDS).isError)
+            end("owner")
+            assertFalse(main.get(5, TimeUnit.SECONDS).isError)
+            assertFalse(background.get(5, TimeUnit.SECONDS).isError)
+        } finally { release.countDown(); end("owner"); end("main"); end("background") }
+    }
+
+    @Test fun changingBlockerDoesNotRestartTheCompoundThirtySecondBudget() {
+        assertFalse(screen("main").isError)
+        assertFalse(screen("background", background = true).isError)
+        val waiting = CountDownLatch(1)
+        changed = { if (sessions.snapshot().any { it["sessionId"] == "open" && it["waitingForScreen"] == "main" }) waiting.countDown() }
+        val result = pool.submit<ToolOutput> { openBackground("open") }
+        try {
+            assertTrue(waiting.await(5, TimeUnit.SECONDS))
+            assertEquals(listOf(PhoneScreen.MAIN, PhoneScreen.BACKGROUND), task("open").waitingScreens)
+            time.addAndGet(30_001)
+            end("main") // notify the actual wait; BACKGROUND still belongs to its original task.
+            val timedOut = result.get(5, TimeUnit.SECONDS)
+            assertTrue(timedOut.isError)
+            assertTrue(timedOut.text.contains("30 秒"))
+            assertTrue(task("open").resourcesReleased)
+            assertTrue(task("open").waitingScreens.isEmpty())
+            // The expired compound request did not inherit the just-released MAIN.
+            assertFalse(pool.submit<ToolOutput> { screen("next-main") }.get(5, TimeUnit.SECONDS).isError)
+        } finally { end("main"); end("background"); end("open"); end("next-main") }
+    }
+
+    @Test fun timeoutPreservesTheRequestersPreexistingBackgroundLease() {
+        assertFalse(screen("A", background = true).isError)
+        val originalId = task("A").resourceTaskId
+        assertFalse(screen("B").isError)
+        val waiting = CountDownLatch(1)
+        changed = { if (sessions.snapshot().any { it["sessionId"] == "A" && it["waitingForScreen"] == "main" }) waiting.countDown() }
+        val result = pool.submit<ToolOutput> { openBackground("A") }
+        try {
+            assertTrue(waiting.await(5, TimeUnit.SECONDS))
+            time.addAndGet(30_001)
+            // A metadata run completes and notifies the registry without freeing either screen.
+            assertFalse(invoke("wake").isError)
+            assertTrue(result.get(5, TimeUnit.SECONDS).text.contains("30 秒"))
+            assertFalse(task("A").resourcesReleased)
+            assertEquals(originalId, task("A").resourceTaskId)
+            val cWaiting = CountDownLatch(1)
+            changed = { if (sessions.snapshot().any { it["sessionId"] == "C" && it["waitingForScreen"] == "background" }) cWaiting.countDown() }
+            val c = pool.submit<ToolOutput> { screen("C", background = true) }
+            assertTrue(cWaiting.await(5, TimeUnit.SECONDS))
+            assertFalse(c.isDone)
+            end("A")
+            assertFalse(c.get(5, TimeUnit.SECONDS).isError)
+        } finally { end("A"); end("B"); end("C") }
+    }
+
+    @Test fun existingOppositeLeasesStillDetectAWaitCycleWithoutDispatch() {
+        assertFalse(screen("A", background = true).isError)
+        assertFalse(screen("B").isError)
+        val waiting = CountDownLatch(1); val releaseA = CountDownLatch(1)
+        val firstWait = java.util.concurrent.atomic.AtomicBoolean(true)
+        changed = {
+            if (sessions.snapshot().any { it["sessionId"] == "A" && it["waitingForScreen"] == "main" } && firstWait.compareAndSet(true, false)) {
+                waiting.countDown()
+                assertTrue(releaseA.await(5, TimeUnit.SECONDS))
+            }
+        }
+        val a = pool.submit<ToolOutput> { openBackground("A") }
+        try {
+            assertTrue(waiting.await(5, TimeUnit.SECONDS))
+            val rejected = pool.submit<ToolOutput> { openBackground("B") }.get(5, TimeUnit.SECONDS)
+            assertTrue(rejected.isError)
+            assertTrue(rejected.text.contains("等待环"))
+            assertFalse(task("A").resourcesReleased)
+            assertFalse(task("B").resourcesReleased)
+            assertTrue(task("B").waitingScreens.isEmpty())
+            assertEquals(0L, actions.get())
+            releaseA.countDown()
+            assertTrue(sessions.stop(task("A"), "test stop"))
+            assertTrue(a.get(5, TimeUnit.SECONDS).isError)
+        } finally { releaseA.countDown(); end("A"); end("B") }
+    }
+
+    @Test fun stopRemovesCompoundWaitWithoutReleasingAnotherTasksScreen() {
+        assertFalse(screen("holder", background = true).isError)
+        val waiting = CountDownLatch(1)
+        changed = { if (sessions.snapshot().any { it["sessionId"] == "waiter" && it["waitingForScreen"] == "background" }) waiting.countDown() }
+        val pending = pool.submit<ToolOutput> { openBackground("waiter") }
+        try {
+            assertTrue(waiting.await(5, TimeUnit.SECONDS))
+            assertTrue(sessions.stop(task("waiter"), "test stop"))
+            assertTrue(pending.get(5, TimeUnit.SECONDS).isError)
+            assertTrue(task("waiter").waitingScreens.isEmpty())
+            assertTrue(task("waiter").resourcesReleased)
+            assertFalse(task("holder").resourcesReleased)
+            assertFalse(pool.submit<ToolOutput> { screen("main") }.get(5, TimeUnit.SECONDS).isError)
+        } finally { end("holder"); end("waiter"); end("main") }
     }
 
     @Test fun anOldRunEndCannotInterruptAnotherSessionsActiveWorker() {
@@ -388,7 +529,7 @@ class PhoneTaskSessionsTest {
     @Test fun backgroundCoordinatesWaitOnObservationScreenAndDoNotClaimMain() {
         assertFalse(sessions.run(admit("A"), PhoneToolCatalog.SCREEN, mapOf("background" to true)).isError)
         val waiting = CountDownLatch(1)
-        changed = { if (sessions.all().any { it.sessionId == "B" && it.waiting == PhoneScreen.BACKGROUND }) waiting.countDown() }
+        changed = { if (sessions.all().any { it.sessionId == "B" && it.waitingScreens.firstOrNull() == PhoneScreen.BACKGROUND }) waiting.countDown() }
         val coordinate = pool.submit<ToolOutput> {
             sessions.run(admit("B"), PhoneToolCatalog.TAP_XY, mapOf("observation" to "b1", "x" to 1, "y" to 1))
         }
