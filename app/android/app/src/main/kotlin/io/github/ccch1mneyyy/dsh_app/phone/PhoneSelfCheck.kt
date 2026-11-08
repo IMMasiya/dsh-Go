@@ -10,6 +10,7 @@ import io.github.ccch1mneyyy.dsh_app.phone.background.BackgroundControl
 import io.github.ccch1mneyyy.dsh_app.phone.background.BackgroundDisplayIo
 import io.github.ccch1mneyyy.dsh_app.phone.background.BackgroundReleaseReceipt
 import io.github.ccch1mneyyy.dsh_app.phone.background.PrivilegedChannel
+import io.github.ccch1mneyyy.dsh_app.phone.background.OwnerScopeProtocol
 import io.github.ccch1mneyyy.dsh_app.phone.background.Proto
 import io.github.ccch1mneyyy.dsh_app.phone.selfcheck.PhoneSelfCheckTarget
 import io.github.ccch1mneyyy.dsh_app.phone.selfcheck.TargetContract
@@ -163,7 +164,6 @@ internal class PhoneSelfCheck(
     private fun execute(run: Run) {
         if (run.profile != Profile.PROBE_B) { executeTarget(run); return }
         var channelReady = false
-        var beginAttempted = false
         val startedAt = clock()
         try {
             if (!mayStart(run)) { cancelFromWorker(run); return }
@@ -177,7 +177,7 @@ internal class PhoneSelfCheck(
                     update(run, Stage.CHANNEL, State.UNKNOWN, false, Reason.CHANNEL_UNAVAILABLE, clock() - probeStarted)
                     return@call
                 }
-                if ((cap.get(Proto.SELF_CHECK_PROBE_VERSION) as? Int) != 1 ||
+                if (!OwnerScopeProtocol.supported(cap) || (cap.get(Proto.SELF_CHECK_PROBE_VERSION) as? Int) != 1 ||
                     (cap.get(Proto.RELEASE_RECEIPT) as? Int) != 1) {
                     update(run, Stage.CHANNEL, State.FAIL, true, Reason.UNSUPPORTED_PEER, clock() - probeStarted)
                     return@call
@@ -196,9 +196,12 @@ internal class PhoneSelfCheck(
                 val beginStarted = clock()
                 if (!mayStart(run)) { cancelFromWorker(run); return@call }
                 // No UI callback, new call admission or cancellation check after this pin.
-                run.io.pin(peer)
-                beginAttempted = true
-                val reply = peer.execute(request)
+                val reply = OwnerScopeProtocol.first(run.io, peer, request)
+                if (run.io.wasNotAdmitted()) {
+                    update(run, Stage.DISPLAY, State.SKIPPED, false, Reason.UNAVAILABLE)
+                    update(run, Stage.INPUT_PROBE, State.NOT_RUN, false, Reason.UNAVAILABLE)
+                    return@call
+                }
                 synchronized(lock) {
                     // Keep actual late facts on this original run, even when cancellation was requested.
                     run.report.acceptProbe(run.io.owner, reply.get(Proto.OWNER),
@@ -210,7 +213,7 @@ internal class PhoneSelfCheck(
             }
         } catch (_: Exception) {
             synchronized(lock) {
-                if (beginAttempted) run.report.unknownProbe(Reason.DEVICE_UNAVAILABLE, clock() - startedAt)
+                if (run.io.peer() != null) run.report.unknownProbe(Reason.DEVICE_UNAVAILABLE, clock() - startedAt)
                 else if (!channelReady) run.report.update(Stage.CHANNEL, State.UNKNOWN, false,
                     Reason.CHANNEL_UNAVAILABLE, clock() - startedAt)
             }
@@ -236,7 +239,7 @@ internal class PhoneSelfCheck(
                         clock() - beganStageAt)
                     return@call null
                 }
-                if ((cap.get(run.targetVersionKey) as? Int) != 1 ||
+                if (!OwnerScopeProtocol.supported(cap) || (cap.get(run.targetVersionKey) as? Int) != 1 ||
                     (cap.get(Proto.RELEASE_RECEIPT) as? Int) != 1) {
                     update(run, Stage.CHANNEL, State.FAIL, true, Reason.UNSUPPORTED_PEER,
                         clock() - beganStageAt)
@@ -252,8 +255,11 @@ internal class PhoneSelfCheck(
                 }
                 if (!mayStart(run)) { cancelFromWorker(run); return@call null }
                 // Commit this exact request immediately after pin; cancellation cannot leave an unused pin.
-                run.io.pin(peer)
-                val reply = peer.execute(request)
+                val reply = OwnerScopeProtocol.first(run.io, peer, request)
+                if (run.io.wasNotAdmitted()) {
+                    update(run, Stage.DISPLAY, State.SKIPPED, false, Reason.UNAVAILABLE)
+                    return@call null
+                }
                 synchronized(lock) {
                     run.report.acceptTargetCreate(run.io.owner, targetRun, createNonce,
                         reply.get(Proto.OWNER), reply.get(Proto.TARGET_RUN), reply.get(Proto.STEP_NONCE),
@@ -285,7 +291,7 @@ internal class PhoneSelfCheck(
             val readRequest = targetRequest(run, Proto.OP_SELF_CHECK_TARGET_READ, readNonce)
             val readReply = run.io.call {
                 if (!mayStart(run)) { cancelFromWorker(run); return@call null }
-                run.borrow.channel.execute(readRequest)
+                OwnerScopeProtocol.execute(run.borrow.channel, run.io.owner, readRequest)
             } ?: return
             val ready = synchronized(lock) {
                 run.report.acceptTargetRead(run.io.owner, targetRun, readNonce,
@@ -306,7 +312,7 @@ internal class PhoneSelfCheck(
             val tapRequest = targetRequest(run, Proto.OP_SELF_CHECK_TARGET_TAP, tapNonce)
             val tapReply = run.io.call {
                 if (!mayStart(run)) { cancelFromWorker(run); return@call null }
-                run.borrow.channel.execute(tapRequest)
+                OwnerScopeProtocol.execute(run.borrow.channel, run.io.owner, tapRequest)
             } ?: return
             val tapped = synchronized(lock) {
                 run.report.acceptTargetTap(run.io.owner, targetRun, tapNonce,
@@ -328,7 +334,7 @@ internal class PhoneSelfCheck(
                 val request = targetRequest(run, op, nonce)
                 val reply = run.io.call {
                     if (!mayStart(run)) { cancelFromWorker(run); return@call null }
-                    run.borrow.channel.execute(request)
+                    OwnerScopeProtocol.execute(run.borrow.channel, run.io.owner, request)
                 } ?: return
                 val matched = synchronized(lock) {
                     run.report.acceptTargetText(stage, run.io.owner, targetRun, nonce,
@@ -373,7 +379,7 @@ internal class PhoneSelfCheck(
                             Reason.TARGET_CONTINUITY_UNCONFIRMED, clock() - beganStageAt)
                         return@call null
                     }
-                    run.borrow.channel.execute(request)
+                    OwnerScopeProtocol.execute(run.borrow.channel, run.io.owner, request)
                 } ?: return
                 val matched = synchronized(lock) {
                     run.report.acceptTargetFrame(frame, run.io.owner, targetRun, nonce,
@@ -430,7 +436,7 @@ internal class PhoneSelfCheck(
         } ?: true
         val physical = targetClosed && try {
             run.io.release { peer ->
-                val reply = peer.execute(Bundle().apply {
+                val reply = OwnerScopeProtocol.execute(peer, run.io.owner, Bundle().apply {
                     putString(Proto.OP, Proto.OP_RELEASE)
                     putString(Proto.OWNER, run.io.owner)
                     putInt(Proto.RELEASE_RECEIPT, 1)
@@ -470,7 +476,9 @@ internal class PhoneSelfCheck(
             if (completed) {
                 run.held = false
                 run.state = if (run.cancelled || !run.live()) "cancelled" else "done"
-                run.report.update(Stage.CLEANUP, State.PASS, true, durationMs = clock() - startedAt)
+                run.report.update(Stage.CLEANUP, if (run.io.wasNotAdmitted()) State.SKIPPED else State.PASS,
+                    !run.io.wasNotAdmitted(), if (run.io.wasNotAdmitted()) Reason.UNAVAILABLE else null,
+                    durationMs = clock() - startedAt)
             } else {
                 run.state = "cleanup_pending"
                 run.report.update(Stage.CLEANUP, State.UNKNOWN, false,

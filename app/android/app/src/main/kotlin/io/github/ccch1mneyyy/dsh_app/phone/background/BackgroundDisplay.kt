@@ -31,7 +31,10 @@ class BackgroundDisplay(
     internal fun seal() = resourceIo.seal()
     internal fun previewAvailable(peer: PrivilegedChannel): Boolean = resourceIo.previewAvailable(peer)
     internal fun previewClosed(): Boolean = resourceIo.previewClosed()
-    internal fun tryPreview(request: Bundle): Bundle? = resourceIo.tryPreview { it.tryExecute(request) }
+    internal fun tryPreview(request: Bundle): Bundle? = resourceIo.tryPreview { peer ->
+        if (request.get(Proto.OP) == Proto.OP_PROBE) peer.tryExecute(request)
+        else peer.tryExecute(OwnerScopeProtocol.request(request))?.let { OwnerScopeProtocol.response(ownerToken, it) }
+    }
 
     override val screen: PhoneScreen = PhoneScreen.BACKGROUND
 
@@ -70,6 +73,7 @@ class BackgroundDisplay(
                 check(probe.get(Proto.OK) == true && probe.get(Proto.RELEASE_RECEIPT) is Int && probe.getInt(Proto.RELEASE_RECEIPT) == 1) {
                     "所选后台服务不支持安全收尾，请更新并重新连接该通道。" // l10n:keep agent resource result
                 }
+                check(OwnerScopeProtocol.supported(probe)) { Reasons.of("scopeUnsupported") }
                 check(TargetIdentity.supported(probe.get(Proto.TARGET_IDENTITY_VERSION))) {
                     Reasons.of("targetIdentityUnsupported")
                 }
@@ -78,7 +82,7 @@ class BackgroundDisplay(
                 }
                 coordinateSupported = probe.get(Proto.BACKGROUND_COORDINATES) is Int && probe.getInt(Proto.BACKGROUND_COORDINATES) == 1
                 // A stop during probe seals this short admission check before CREATE can be sent.
-                resourceIo.pin(active)
+                // The first exact request pins in OwnerScopeProtocol.first immediately before exchange.
             }
             val request = Bundle().apply {
                 putString(Proto.OP, Proto.OP_LAUNCH)
@@ -90,9 +94,10 @@ class BackgroundDisplay(
                 putBoolean(Proto.LOCAL_VISUAL, true)
                 putInt(Proto.WANT_IMAGE, 0)
             }
-            val response = active.execute(request)
+            val response = if (resourceIo.peer() == null) OwnerScopeProtocol.first(resourceIo, active, request)
+                else OwnerScopeProtocol.execute(active, ownerToken, request)
             // Publish only after the first resource request has actually returned on its pinned peer.
-            onResourceReady(active)
+            if (!resourceIo.wasNotAdmitted()) onResourceReady(active)
             val result = toResult(response, "已在后台屏打开") // l10n:keep agent screen protocol
             targetReady = result.ok
             result
@@ -118,7 +123,7 @@ class BackgroundDisplay(
             putBoolean(Proto.LOCAL_VISUAL, true)
         }
         val response = try {
-            resourceIo.call { channel().execute(request) }
+            resourceIo.call { OwnerScopeProtocol.execute(channel(), ownerToken, request) }
         } catch (e: Exception) {
             clearSnapshot()
             throw e
@@ -246,7 +251,7 @@ class BackgroundDisplay(
         val response = try {
             resourceIo.call {
                 if (!allowed()) return@call null
-                channel().execute(request)
+                OwnerScopeProtocol.execute(channel(), ownerToken, request)
             }
         } catch (error: Exception) { clearSnapshot(); throw error }
             ?: return ActionResult(false, PhoneTasks.STOPPED_MESSAGE)
@@ -278,7 +283,7 @@ class BackgroundDisplay(
             }
         }
         val response = try {
-            resourceIo.call { if (allowed()) channel().execute(request) else null }
+            resourceIo.call { if (allowed()) OwnerScopeProtocol.execute(channel(), ownerToken, request) else null }
         } catch (_: Exception) {
             clearSnapshot()
             // The original lane never replays a request after a missing/throwing reply.
@@ -305,7 +310,7 @@ class BackgroundDisplay(
     fun release(): Boolean {
         val acknowledged = try {
             resourceIo.release { pinned ->
-                val response = pinned.execute(Bundle().apply {
+                val response = OwnerScopeProtocol.execute(pinned, ownerToken, Bundle().apply {
                     putString(Proto.OP, Proto.OP_RELEASE); putString(Proto.OWNER, ownerToken)
                     putInt(Proto.RELEASE_RECEIPT, 1)
                 })

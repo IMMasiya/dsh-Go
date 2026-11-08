@@ -6,7 +6,6 @@
 // from callers.
 package io.github.ccch1mneyyy.dsh_app.phone.background
 
-import android.accessibilityservice.AccessibilityServiceInfo
 import android.annotation.SuppressLint
 import android.app.ActivityManager
 import android.app.ActivityOptions
@@ -26,10 +25,9 @@ import android.hardware.display.DisplayManager
 import android.hardware.display.VirtualDisplay
 import android.hardware.input.InputManager
 import android.media.ImageReader
-import android.os.Binder
 import android.os.Build
-import android.os.Bundle
 import android.os.IBinder
+import android.os.Bundle
 import android.os.Process
 import android.os.SystemClock
 import android.os.Trace
@@ -44,7 +42,6 @@ import android.view.KeyCharacterMap
 import android.view.KeyEvent
 import android.view.MotionEvent
 import android.view.ViewConfiguration
-import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 import android.view.accessibility.AccessibilityWindowInfo
 import io.github.ccch1mneyyy.dsh_app.phone.SensitiveWords
@@ -52,13 +49,11 @@ import io.github.ccch1mneyyy.dsh_app.phone.selfcheck.TargetContract
 import io.github.ccch1mneyyy.dsh_app.phone.selfcheck.TargetFramePattern
 import java.io.ByteArrayOutputStream
 import java.lang.reflect.InvocationTargetException
-import java.lang.reflect.Proxy
 import java.nio.ByteBuffer
 import java.security.MessageDigest
 import java.util.UUID
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.ExecutorService
-import java.util.concurrent.Executors
 import java.util.concurrent.RejectedExecutionException
 import java.util.concurrent.locks.ReentrantLock
 import kotlin.concurrent.withLock
@@ -69,13 +64,15 @@ import kotlin.concurrent.withLock
  * privileged primitives against it. Thread-safe via a single lock; every op has its own
  * deadline. Never throws across the call boundary: faults become a stable [Proto.ERROR] code.
  */
-class PrivilegedDisplayCore(private val context: Context) {
+class PrivilegedDisplayCore internal constructor(
+    private val context: Context,
+    private val trees: PrivilegedTreeAccess,
+    private val hosted: HostedScope? = null,
+) {
 
     // Guarded by lock, one recent frame only; never a permission to drive coordinates.
     private var visualObservation: BackgroundVisualObservation? = null
     private var coordinateObservation: BackgroundCoordinateObservation? = null
-    // Same owner and Core lock; never replace an unconfirmed platform registration.
-    private var treeConnection: TreeConnection? = null
 
     private val privileged: Context by lazy {
         if (Process.myUid() == Process.SHELL_UID)
@@ -92,8 +89,8 @@ class PrivilegedDisplayCore(private val context: Context) {
     private val lock = ReentrantLock()
     private val preview = BackgroundPreviewState()
     // Only created after an explicit preview request; never creates a display or a channel.
-    private var previewWorker: ExecutorService? = null
-    @Volatile private var owner: String? = null
+    private val previewWorker = BackgroundPreviewWorker()
+    @Volatile private var owner: String? = hosted?.owner
     @Volatile private var display: VirtualDisplay? = null
     @Volatile private var reader: ImageReader? = null
     private var pendingReader: ImageReader? = null
@@ -101,13 +98,14 @@ class PrivilegedDisplayCore(private val context: Context) {
     private var width = 0
     private var height = 0
     private val released = AtomicBoolean(false)
-    private var strictOwner = false
-    private var targetSequence: SelfCheckTargetSequence? = null
+    private var strictOwner = hosted != null
+    private var targetSequence: SelfCheckTargetSequence? = hosted?.target?.let { SelfCheckTargetSequence(it.owner, it.run, it.c2) }
     private var targetSnapshot: TargetSnapshot? = null
     private val targetIdentity = TargetIdentity()
-    private var targetMain: SelfCheckMainSamples? = null
+    private var targetMain: SelfCheckMainSamples? = if (hosted?.target?.c2 == true) SelfCheckMainSamples(::readMainVector, ::readGlobalFocus) else null
     private var lastC2Release: SelfCheckTargetCompletion? = null
-    private var selfCheckOwner = false
+    private var selfCheckOwner = hosted?.probe == true
+    private var probeConsumed = false
     private var selfCheckWindow: BackgroundInputProbe? = null
     private var releasingDisplayId: Int? = null
     private var displayCreationAttempted = false
@@ -666,8 +664,8 @@ class PrivilegedDisplayCore(private val context: Context) {
         response.putString(Proto.OWNER, ownerId)
         response.putInt(Proto.SELF_CHECK_PROBE_VERSION, 1)
         response.putBoolean(Proto.SELF_CHECK_DISPLAY_READY, false)
-        if (owner == ownerId && selfCheckOwner) throw Fault("selfCheckAlreadyStarted")
-        if (owner != null || lastReleasedOwner == ownerId) throw Fault("identityChanged")
+        if (owner == ownerId && selfCheckOwner && (hosted == null || probeConsumed)) throw Fault("selfCheckAlreadyStarted")
+        if (owner != null && !(hosted?.probe == true && owner == ownerId) || lastReleasedOwner == ownerId) throw Fault("identityChanged")
         if (display != null || reader != null || pendingReader != null || readerAllocationUncertain ||
             selfCheckWindow != null) throw Fault("releaseUnconfirmed")
 
@@ -676,6 +674,7 @@ class PrivilegedDisplayCore(private val context: Context) {
         owner = ownerId
         strictOwner = true
         selfCheckOwner = true
+        probeConsumed = true
         releasingDisplayId = null
         displayCreationAttempted = false
         displayApiReleased = false
@@ -987,7 +986,7 @@ class PrivilegedDisplayCore(private val context: Context) {
             response.putBoolean(Proto.POOR, false); response.putInt(Proto.COUNT, 0); return
         }
         // Local preview never enters ScreenSnapshot / MCP. Publish only after the secure verdict.
-        if (treeConnection == null) {
+        if (trees.ready()) {
             if (shot != null) shot.raw?.let { preview.captured(it) }
             else preview.observationUnavailable(if (captureResult.isSuccess) null else "captureFailed")
         }
@@ -1219,9 +1218,11 @@ class PrivilegedDisplayCore(private val context: Context) {
                 preview.configure(true)
                 if (keyguard?.isKeyguardLocked == true) preview.protect()
                 else preview.begin(SystemClock.uptimeMillis())?.let { ticket ->
-                    val worker = previewWorker ?: Executors.newSingleThreadExecutor { job ->
-                        Thread(job, "dsh-preview").apply { isDaemon = true }
-                    }.also { previewWorker = it }
+                    val worker = previewWorker.acquire()
+                    if (worker == null) {
+                        preview.finish(ticket)
+                        return@let
+                    }
                     work = worker to ticket
                 }
             }
@@ -1257,9 +1258,17 @@ class PrivilegedDisplayCore(private val context: Context) {
     /** Caller owns the display lock. Shutdown never waits for an encoder; its ticket is retired. */
     private fun stopPreview() {
         preview.configure(false)
-        previewWorker?.shutdown()
-        previewWorker = null
+        previewWorker.stop()
     }
+
+    internal fun hasResources(): Boolean = lock.withLock { owner != null }
+    internal fun knowsOwner(value: String): Boolean = lock.withLock { owner == value || lastReleasedOwner == value }
+
+    internal fun completedRelease(): HostedRelease? = lock.withLock {
+        lastReleasedOwner?.let { HostedRelease(it, lastReleaseNeverCreated, lastC2Release) }
+    }
+
+    internal fun previewDrained(): Boolean = lock.withLock { previewWorker.drained() }
 
     private fun renderPreview(ticket: BackgroundPreviewState.Ticket) {
         var bitmap: Bitmap? = null
@@ -1337,34 +1346,30 @@ class PrivilegedDisplayCore(private val context: Context) {
     }
 
     private fun requireTreeReady() {
-        if (treeConnection != null) throw Fault("treeCleanupPending")
+        if (!trees.ready()) throw Fault("treeCleanupPending")
     }
 
     private fun closeTreeConnection() {
-        val original = treeConnection ?: return
-        if (tracePhase("dsh.bg.treeClose") { original.close() }) {
-            treeConnection = null
-        } else {
-            visualObservation = null
+        if (!trees.closeOwned(this)) {
             coordinateObservation = null
+            visualObservation = null
             stopPreview()
             preview.invalidate()
             throw Fault("treeCleanupPending")
         }
     }
 
-    /** Core lock covers open, every live node use/recycle, and this same connection's close. */
-    private fun <T> withTreeConnection(targetDisplay: Display, pkg: String, unavailable: String, read: (UiAutomation) -> T): T {
-        requireTreeReady()
-        val connection = TreeConnection(context, pkg)
-        treeConnection = connection
-        try {
-            val automation = try {
-                tracePhase("dsh.bg.treeConnect") { connection.open(targetDisplay) }
-            } catch (_: Throwable) { throw Fault(unavailable) }
-            return read(automation)
-        } finally { closeTreeConnection() }
-    }
+    private fun <T> withTreeConnection(targetDisplay: Display, pkg: String, unavailable: String, read: (UiAutomation) -> T): T =
+        try { trees.read(this, targetDisplay, pkg, unavailable, read) }
+        catch (e: PrivilegedTreeAccess.Failure) {
+            if (e.code == "treeCleanupPending") {
+                coordinateObservation = null
+                visualObservation = null
+                stopPreview()
+                preview.invalidate()
+            }
+            throw Fault(e.code)
+        }
 
     private fun readTree(displayId: Int, pkg: String, scanOtherWindows: Boolean = false, inspectVisual: Boolean = false, targetEvidence: SelfCheckTargetEvidence? = null, coordinates: Boolean = false): TreeRead {
         val vd = display ?: throw Fault("displayMissing")
@@ -1861,77 +1866,6 @@ class PrivilegedDisplayCore(private val context: Context) {
         if (ms <= 0) return
         if (released.get()) throw Fault("cancelled")
         try { Thread.sleep(ms) } catch (_: InterruptedException) { throw Fault("cancelled") }
-    }
-
-    /**
-     * A short-lived, node-only UiAutomation bound to the owned display (after Phase's
-     * DisplayTextConnection): FLAG_DONT_SUPPRESS_ACCESSIBILITY_SERVICES, so it does not evict the
-     * user's other services; a hand-rolled IUiAutomationConnection so disconnect never restores
-     * the main screen's rotation; only the node connection is exposed (no shell/input/permission).
-     */
-    private class TreeConnection(private val context: Context, private val target: String) {
-        private val clientType = Class.forName("android.accessibilityservice.IAccessibilityServiceClient")
-        private val managerType = Class.forName("android.view.accessibility.IAccessibilityManager")
-        private val manager = Class.forName("android.view.accessibility.IAccessibilityManager\$Stub")
-            .getMethod("asInterface", IBinder::class.java).invoke(null,
-                Class.forName("android.os.ServiceManager").getMethod("getService", String::class.java)
-                    .invoke(null, Context.ACCESSIBILITY_SERVICE))
-        private val token = Binder()
-        private val registration = TreeRegistration<Any> { original ->
-            managerType.getMethod("unregisterUiTestAutomationService", clientType).invoke(manager, original)
-        }
-        private var automation: UiAutomation? = null
-
-        fun open(display: Display): UiAutomation {
-            if (Build.VERSION.SDK_INT < 34) throw Fault("textConnectionUnavailable")
-            val connectionType = Class.forName("android.app.IUiAutomationConnection")
-            val connection = Proxy.newProxyInstance(connectionType.classLoader, arrayOf(connectionType)) { proxy, method, args ->
-                when (method.name) {
-                    "asBinder" -> token
-                    // Let UiAutomation reach its normal init/timeout state even if register's
-                    // reply fails. The registration retains the client independently of this wait.
-                    "connect" -> { runCatching { register(args!![0]!!) }; null }
-                    "disconnect" -> { registration.unregister(); null }
-                    "toString" -> "DshTreeConnection"
-                    "hashCode" -> System.identityHashCode(proxy)
-                    "equals" -> proxy === args?.get(0)
-                    else -> throw UnsupportedOperationException("node only")
-                }
-            }
-            val value = UiAutomation::class.java.getConstructor(Context::class.java, connectionType)
-                .newInstance(context.createDisplayContext(display), connection) as UiAutomation
-            automation = value
-            UiAutomation::class.java.getMethod("connectWithTimeout", Int::class.javaPrimitiveType, Long::class.javaPrimitiveType)
-                .invoke(value, UiAutomation.FLAG_DONT_SUPPRESS_ACCESSIBILITY_SERVICES, 3000L)
-            return value
-        }
-
-        private fun register(value: Any) {
-            val info = AccessibilityServiceInfo().apply {
-                packageNames = arrayOf(target)
-                eventTypes = AccessibilityEvent.TYPES_ALL_MASK
-                feedbackType = AccessibilityServiceInfo.FEEDBACK_GENERIC
-                flags = AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS or
-                    AccessibilityServiceInfo.FLAG_INCLUDE_NOT_IMPORTANT_VIEWS or AccessibilityServiceInfo.FLAG_REPORT_VIEW_IDS
-            }
-            AccessibilityServiceInfo::class.java.getMethod("setCapabilities", Int::class.javaPrimitiveType)
-                .invoke(info, AccessibilityServiceInfo.CAPABILITY_CAN_RETRIEVE_WINDOW_CONTENT)
-            val userId = Class.forName("android.os.UserHandle").getMethod("getUserId", Int::class.javaPrimitiveType)
-                .invoke(null, context.applicationInfo.uid)
-            val method = managerType.getMethod("registerUiTestAutomationService", IBinder::class.java, clientType,
-                AccessibilityServiceInfo::class.java, Int::class.javaPrimitiveType, Int::class.javaPrimitiveType)
-            registration.register(value) { original ->
-                method.invoke(manager, token, original, info, userId, UiAutomation.FLAG_DONT_SUPPRESS_ACCESSIBILITY_SERVICES)
-            }
-        }
-
-        fun close(): Boolean {
-            val complete = registration.close {
-                automation?.let { UiAutomation::class.java.getMethod("disconnect").invoke(it) }
-            }
-            if (complete) automation = null
-            return complete
-        }
     }
 
     companion object {

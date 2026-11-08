@@ -17,17 +17,31 @@ internal class BackgroundDisplayIo<C : Any> {
     private var releasing = false
     private var completed = false
     private var pinned: C? = null
+    private var firstRequest = false
+    private var notAdmitted = false
+
+    fun wasNotAdmitted(): Boolean = synchronized(lock) { notAdmitted }
+
+    /** Called inside the admitted IO body. Only its own complete reply can prove no admission. */
+    fun <R> startResource(peer: C, exchange: () -> R, admission: (R) -> Boolean?): R {
+        synchronized(lock) {
+            check(!releaseStarted && activeCalls > 0 && !firstRequest && pinned == null)
+            pinned = peer
+            firstRequest = true // Before sending: a lost reply can never be called unused.
+        }
+        val reply = exchange()
+        val accepted = admission(reply)
+        synchronized(lock) {
+            check(pinned === peer && firstRequest)
+            if (accepted == false) notAdmitted = true
+        }
+        return reply
+    }
 
     fun peer(): C? = synchronized(lock) { pinned }
 
     fun previewAvailable(peer: C): Boolean = synchronized(lock) { !releaseStarted && pinned === peer }
     fun previewClosed(): Boolean = synchronized(lock) { releaseStarted }
-
-    fun pin(peer: C) = synchronized(lock) {
-        check(!releaseStarted && activeCalls > 0) { "Background resource admission was stopped" }
-        check(pinned == null || pinned === peer) { "Background resource peer changed" }
-        pinned = peer
-    }
 
     fun seal() = synchronized(lock) {
         releaseStarted = true
@@ -97,6 +111,8 @@ internal class BackgroundDisplayIo<C : Any> {
 
     // Only called under lock. No pin means no CREATE/LAUNCH was committed to any peer.
     private fun finishUnused() {
+        // A refused first request retires only after its actual exchange left the IO body.
+        if (notAdmitted && activeCalls == 0) { releaseStarted = true; pinned = null }
         if (releaseStarted && activeCalls == 0 && pinned == null && !completed) {
             completed = true
             io.shutdown()

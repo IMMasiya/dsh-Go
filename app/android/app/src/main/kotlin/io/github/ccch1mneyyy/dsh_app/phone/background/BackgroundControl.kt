@@ -743,7 +743,7 @@ class BackgroundControl private constructor(context: Context) {
                 if (!gate.current(probe)) { reason = AppStrings.get(app, R.string.background_selection_cancelled); return@call }
                 val cap = peer.execute(Bundle().apply { putString(Proto.OP, Proto.OP_PROBE) })
                 if ((cap.get(Proto.OK) as? Boolean) != true ||
-                    (cap.get(Proto.SELF_CHECK_PROBE_VERSION) as? Int) != 1 ||
+                    !OwnerScopeProtocol.supported(cap) || (cap.get(Proto.SELF_CHECK_PROBE_VERSION) as? Int) != 1 ||
                     (cap.get(Proto.RELEASE_RECEIPT) as? Int) != 1) {
                     reason = failed(R.string.background_gate_peer_unsupported, peer)
                     return@call
@@ -756,8 +756,15 @@ class BackgroundControl private constructor(context: Context) {
                 }
                 if (!gate.current(probe)) { reason = AppStrings.get(app, R.string.background_selection_cancelled); return@call }
                 // No callback, new admission or live check between pin and this sole begin.
-                call.io.pin(peer)
-                val reply = peer.execute(request)
+                val reply = OwnerScopeProtocol.first(call.io, peer, request)
+                if (call.io.wasNotAdmitted()) {
+                    reason = AppStrings.get(app, when (reply.getString(Proto.ERROR)) {
+                        "scopeHistoryFull" -> R.string.phone_scope_history_full
+                        "scopeModeMismatch" -> R.string.phone_scope_mode_mismatch
+                        else -> R.string.phone_scope_busy
+                    })
+                    return@call
+                }
                 when (val result = gate.updateStrict(probe, call.io.owner, reply.get(Proto.OWNER),
                     reply.get(Proto.SELF_CHECK_PROBE_VERSION), reply.get(Proto.OK),
                     reply.get(Proto.SELF_CHECK_DISPLAY_READY), reply.get(Proto.INJECT_OK),
@@ -801,7 +808,7 @@ class BackgroundControl private constructor(context: Context) {
 
     private fun releaseGate(peer: PrivilegedChannel, owner: String): Boolean {
         notifyChanged() // phase is now cleaning; no controller or I/O state lock is held.
-        val reply = peer.execute(Bundle().apply {
+        val reply = OwnerScopeProtocol.execute(peer, owner, Bundle().apply {
             putString(Proto.OP, Proto.OP_RELEASE)
             putString(Proto.OWNER, owner)
             putInt(Proto.RELEASE_RECEIPT, 1)

@@ -18,6 +18,9 @@ object Proto {
     // request keys
     const val OP = "op"
     const val OWNER = "owner"
+    const val OWNER_SCOPE_VERSION = "ownerScopeVersion"
+    const val SCOPE_LIMIT = "scopeLimit"
+    const val SCOPE_ACCEPTED = "scopeAccepted"
     const val CALL = "call"
     const val PKG = "pkg"
     const val TARGET_IDENTITY_VERSION = "targetIdentityVersion"
@@ -187,6 +190,16 @@ object Reasons {
     fun withDetail(reason: String, detail: String?): String = reason + detail?.let { "（$it）" }.orEmpty()
 
     fun of(code: String?): String = when (code) {
+        // l10n:keep agent resource protocol
+        "scopeUnsupported" -> "所选后台服务不支持任务资源归属，请更新并显式重新连接；未发送新的资源请求"
+        // l10n:keep agent resource protocol
+        "scopeBusy", "scopeCapacity" -> "后台资源正在占用或清理，请等待原任务收尾后再开始"
+        // l10n:keep agent resource protocol
+        "scopeHistoryFull" -> "本次后台服务已保留256个任务的收尾记录，请先清理全部任务，再关闭通道并重新选择；不会自动重启"
+        // l10n:keep agent resource protocol
+        "scopeModeMismatch" -> "后台服务仍采用原兼容模式，请先清理并关闭通道，再显式重新连接"
+        // l10n:keep agent resource protocol
+        "scopeIdentityUnavailable" -> "后台回复归属未确认，请保留原任务并尝试清理，不要重发动作"
         // l10n:keep agent background protocol
         "viewportUnsupported" -> "当前特权端不支持横屏视口，请更新或重新连接后重试；未打开应用"
         // l10n:keep agent background protocol

@@ -17,7 +17,7 @@ import android.os.Process
  */
 @androidx.annotation.Keep
 class PrivilegedDisplayService(context: Context) : IPrivilegedDisplay.Stub() {
-    private val core = PrivilegedDisplayCore(context)
+    private val core = PrivilegedDisplayHost(context)
     private val appUid = context.applicationInfo.uid
 
     override fun onTransact(code: Int, data: Parcel, reply: Parcel?, flags: Int): Boolean {
@@ -62,7 +62,7 @@ object PrivilegedDisplayMain {
         // ActivityThread.systemMain() constructs Handlers, so prepare before systemContext().
         if (Looper.myLooper() == null) Looper.prepareMainLooper()
         val context = systemContext()
-        val core = PrivilegedDisplayCore(context)
+        val core = PrivilegedDisplayHost(context)
         System.err.println("DSH_VDISPLAY_READY uid=${Process.myUid()} rev=${Proto.REVISION}")
         System.err.flush()
         val worker = Thread({ serve(core) }, "dsh-vdisplay")
@@ -72,7 +72,7 @@ object PrivilegedDisplayMain {
         runCatching { core.handle(Bundle().apply { putString(Proto.OP, Proto.OP_DESTROY) }) }
     }
 
-    private fun serve(core: PrivilegedDisplayCore) {
+    private fun serve(core: PrivilegedDisplayHost) {
         val input = System.`in`
         val output = System.out
         try {
