@@ -262,6 +262,27 @@ class PhoneGateCleanup {
   }
 }
 
+/// Physical-resource recovery is independent of acknowledging a logical task interruption.
+class PhoneResourceRecovery {
+  const PhoneResourceRecovery({required this.state, required this.count, required this.canRetry, this.reason});
+  final String state;
+  final int count;
+  final bool canRetry;
+  final String? reason;
+  bool get blocked => state != 'clear';
+
+  static PhoneResourceRecovery? parse(Object? value) {
+    if (value is! Map || value['v'] is! int || value['v'] != 1 ||
+        value['count'] is! int || (value['count'] as int) < 0 || (value['count'] as int) > 256 ||
+        value['canRetry'] is! bool ||
+        !const {'loading', 'clear', 'pending', 'error', 'recovering'}.contains(value['state']) ||
+        value['reason'] != null && value['reason'] is! String) return null;
+    if (value['state'] == 'recovering' && value['canRetry'] == true) return null;
+    return PhoneResourceRecovery(state: value['state'] as String, count: value['count'] as int,
+      canRetry: value['canRetry'] as bool, reason: value['reason'] as String?);
+  }
+}
+
 class PhoneBackgroundStatus {
   const PhoneBackgroundStatus({
     this.mode = PhoneBackgroundMode.off,
@@ -276,6 +297,7 @@ class PhoneBackgroundStatus {
     this.previewVersion,
     this.previewEnabled = false,
     this.gateCleanup,
+    this.resourceRecovery,
   });
 
   factory PhoneBackgroundStatus.fromMap(Map<Object?, Object?> m) => PhoneBackgroundStatus(
@@ -291,6 +313,7 @@ class PhoneBackgroundStatus {
     previewVersion: _int(_map(m['preview'])['v']),
     previewEnabled: _flag(_map(m['preview'])['enabled']),
     gateCleanup: PhoneGateCleanup.parse(m['gateCleanup']),
+    resourceRecovery: PhoneResourceRecovery.parse(m['resourceRecovery']),
   );
 
   final PhoneBackgroundMode mode;
@@ -311,6 +334,7 @@ class PhoneBackgroundStatus {
   final int? previewVersion;
   final bool previewEnabled;
   final PhoneGateCleanup? gateCleanup;
+  final PhoneResourceRecovery? resourceRecovery;
 
   PhonePrivilegedMode get effectiveMode =>
       privileged?.mode ??
@@ -1231,6 +1255,8 @@ class PhoneChannel {
       return ScreenTestResult(ok: false, reason: e.message ?? e.code);
     }
   }
+
+  Future<PhoneResult> retryBackgroundRecovery() => _result('retryBackgroundRecovery');
 
   Future<PhoneResult> retryBackgroundGateCleanup(String handle) =>
       _result('retryBackgroundGateCleanup', {'v': 1, 'handle': handle});

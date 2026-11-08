@@ -235,6 +235,9 @@ class PhoneController extends Notifier<PhoneState> {
     return ok;
   }
 
+  Future<PhoneResult> retryBackgroundRecovery() =>
+      _thenRefresh(_channel.retryBackgroundRecovery());
+
   Future<PhoneResult> retryBackgroundGateCleanup(String handle) =>
       _thenRefresh(_channel.retryBackgroundGateCleanup(handle));
 

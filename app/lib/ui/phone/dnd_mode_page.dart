@@ -114,6 +114,14 @@ class _PhoneDndPageState extends ConsumerState<PhoneDndPage> {
 
   bool get _resourceBlocked => ref.read(phoneProvider).status.background.gateCleanup?.blocked == true;
 
+  Future<void> _retryResourceRecovery() async {
+    await _run(() async {
+      final result = await _phone.retryBackgroundRecovery();
+      if (result.ok || !mounted) return result;
+      return PhoneResult(false, context.l10n.phoneResourceRecoveryPending);
+    });
+  }
+
   Future<void> _retryCleanup(String handle) async {
     // Capture the displayed handle, never substitute a newer status after awaiting.
     await _run(() => _phone.retryBackgroundGateCleanup(handle), done: context.l10n.phoneGateCleanupDone);
@@ -207,6 +215,28 @@ class _PhoneDndPageState extends ConsumerState<PhoneDndPage> {
       title: l10n.phoneDndTitle,
       subtitle: Text(l10n.phoneDndSubtitle),
       children: [
+        if (bg.resourceRecovery case final recovery? when recovery.blocked)
+          ListPageCard(
+            margin: _groupMargin,
+            children: [
+              ListPageRow(
+                key: const ValueKey('phone-resource-recovery'),
+                title: l10n.phoneResourceRecoveryTitle,
+                titleMaxLines: 3,
+                subtitle: recovery.state == 'loading' || recovery.state == 'recovering'
+                    ? l10n.phoneResourceRecoveryRunning
+                    : recovery.state == 'error'
+                        ? l10n.phoneResourceRecoveryStorage
+                        : l10n.phoneResourceRecoveryPending,
+                subtitleMaxLines: 10,
+                trailing: TextButton(
+                  key: const ValueKey('phone-resource-recovery-retry'),
+                  onPressed: !_busy && recovery.canRetry ? _retryResourceRecovery : null,
+                  child: Text(l10n.phoneResourceRecoveryRetry),
+                ),
+              ),
+            ],
+          ),
         if (bg.gateCleanup case final cleanup? when cleanup.blocked)
           ListPageCard(
             margin: _groupMargin,
