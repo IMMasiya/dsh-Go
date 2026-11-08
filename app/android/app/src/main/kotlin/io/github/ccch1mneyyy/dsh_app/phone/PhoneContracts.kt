@@ -47,6 +47,8 @@ data class ScreenSnapshot(
     val imageMime: String? = null,
     /** Known root packages contributing to this local observation; not pixel/UID attestation. */
     internal val readPackages: Set<String> = emptySet(),
+    /** Internal candidate for an INPUT retained in text; whole-screen refusals clear it. */
+    internal val focus: FocusObservation? = null,
 )
 
 /** What an element looks like to the safety rules, resolved from a snapshot id + element id. */
@@ -171,6 +173,10 @@ interface PhoneDriver {
      * (window, bounds, text); the bridge then refuses and re-observes.
      */
     fun target(screenId: String, elementId: Int): TargetInfo?
+
+    /** Captures only the original committed observation's editor. */
+    fun prepareFocusInput(screenId: String): Either<String, FocusInput> =
+        Either.Left("当前屏幕不能核实原焦点输入连接；请 handoff，不要改用全文替换或重复输入。") // l10n:keep agent focus result
 
     /** Pure memory, tied to this exact published observation; independent of image acceptance. */
     fun visualScope(screenId: String): VisualScope? = null

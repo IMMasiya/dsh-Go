@@ -403,7 +403,7 @@ class SafetyGate(
         }
         val app = s.appLabel?.let { " · $it" } ?: ""
         // l10n:keep agent safety result
-        return s.copy(text = "屏幕 ${s.id}$app\n$refusal", image = null, imageMime = null)
+        return s.copy(text = "屏幕 ${s.id}$app\n$refusal", image = null, imageMime = null, focus = null)
     }
 
     private fun describe(kind: WriteKind, t: TargetInfo?, app: String, typed: String?, submit: Boolean, point: Pair<Int, Int>?, coordinate: PhoneAction.TapXY?): String {

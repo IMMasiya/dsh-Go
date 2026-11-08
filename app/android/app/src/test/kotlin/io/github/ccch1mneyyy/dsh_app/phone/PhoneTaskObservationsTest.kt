@@ -23,6 +23,14 @@ class PhoneTaskObservationsTest {
         var collectSourceGate: ((String?) -> Boolean)? = null
         var duringCollect: () -> Unit = {}
         var collected = CollectResult(emptyList(), 0, "done", null)
+        var focusPreparations = 0
+        var duringPrepareFocus: () -> Unit = {}
+        var focusPlan: FocusInput? = null
+        override fun prepareFocusInput(screenId: String): Either<String, FocusInput> {
+            focusPreparations++
+            duringPrepareFocus()
+            return focusPlan?.let { Either.Right(it) } ?: Either.Left("unavailable")
+        }
         override fun visualScope(screenId: String): VisualScope? = scope.takeIf { screenId == "s1" }
         override fun availability() = Availability(true)
         override fun observe(detail: Boolean, image: Boolean) = ScreenSnapshot("s1", "screen", "App", "app")
@@ -384,6 +392,7 @@ class PhoneTaskObservationsTest {
             "collect(String,int,int,String,Function0,Function1)",
             "collect(String,int,int,String,Function0,Function1,Function1)",
             "target(String,int)",
+            "prepareFocusInput(String)",
             "visualScope(String)",
             "coordinateTarget(TapXY)",
             "perform(PhoneAction)",
@@ -450,6 +459,100 @@ class PhoneTaskObservationsTest {
         assertEquals(1, physical.actions)
         val replacement = ledger.bind(physical, checkNotNull(tasks.activeOwner()))
         assertNull(replacement.target("sAfter", 1))
+    }
+
+    @Test fun focusPreparationCannotBorrowAnotherTasksObservation() {
+        val physical = Driver(); val firstTasks = PhoneTasks(); val otherTasks = PhoneTasks()
+        val first = PhoneTaskObservations(firstTasks).bind(physical, owner(firstTasks))
+        val other = PhoneTaskObservations(otherTasks).bind(physical, owner(otherTasks))
+        first.observe(false, false)
+        assertTrue(other.prepareFocusInput("s1") is Either.Left)
+        assertEquals(0, physical.focusPreparations)
+        assertTrue(first.prepareFocusInput("s1") is Either.Left) // Physical driver is unavailable.
+        assertEquals(1, physical.focusPreparations)
+    }
+
+    @Test fun focusPlanIsClosedWhenTheOwnerRetiresWhileNativePreparationReturns() {
+        val tasks = PhoneTasks(); val physical = Driver()
+        val bound = PhoneTaskObservations(tasks).bind(physical, owner(tasks))
+        bound.observe(false, false)
+        var closed = 0
+        physical.focusPlan = object : FocusInput {
+            override val target = TargetInfo("s1", 1, "输入框", "Search", "app", "App", false, false, true)
+            override fun perform(text: String, allowed: () -> Boolean): ActionResult = error("retired plan dispatched")
+            override fun close() { closed++ }
+        }
+        physical.duringPrepareFocus = { tasks.stop("old"); tasks.clearStop(); tasks.begin() }
+        assertThrows(InterruptedException::class.java) { bound.prepareFocusInput("s1") }
+        assertEquals(1, physical.focusPreparations)
+        assertEquals(1, closed)
+    }
+
+    @Test fun focusPlanKeepsItsOriginalTaskAndLivePolicyGateThroughNativeAdmission() {
+        val tasks = PhoneTasks(); val other = PhoneTasks(); val physical = Driver()
+        val bound = PhoneTaskObservations(tasks).bind(physical, owner(tasks))
+        owner(other); other.setPaused(true)
+        bound.observe(false, false)
+        var physicalInputs = 0
+        var admission: (() -> Boolean)? = null
+        physical.focusPlan = object : FocusInput {
+            override val target = TargetInfo("s1", 1, "输入框", "Search", "app", "App", false, false, true)
+            override fun perform(text: String, allowed: () -> Boolean): ActionResult {
+                admission = allowed
+                if (!allowed()) return ActionResult(false, "refused")
+                physicalInputs++
+                return ActionResult(true, "local readback")
+            }
+            override fun close() {}
+        }
+        val plan = (bound.prepareFocusInput("s1") as Either.Right).value
+        var policy = true
+        try {
+            assertTrue(plan.perform(" x ") { policy }.ok)
+            assertEquals(1, physicalInputs)
+            val allowed = checkNotNull(admission)
+            assertTrue(allowed()) // Another displayed task's pause does not select the owner.
+            policy = false; assertFalse(allowed())
+            policy = true; tasks.setPaused(true); assertFalse(allowed())
+            tasks.setPaused(false); tasks.stop("old"); tasks.clearStop(); tasks.begin()
+            assertFalse(allowed())
+        } finally { plan.close() }
+    }
+
+    @Test fun focusPlanCannotUseAnObservationReplacedAfterPreparation() {
+        val tasks = PhoneTasks(); val physical = Driver()
+        val bound = PhoneTaskObservations(tasks).bind(physical, owner(tasks))
+        bound.observe(false, false)
+        var called = 0
+        var closed = 0
+        physical.focusPlan = object : FocusInput {
+            override val target = TargetInfo("s1", 1, "输入框", "Search", "app", "App", false, false, true)
+            override fun perform(text: String, allowed: () -> Boolean): ActionResult { called++; return ActionResult(true, "unexpected") }
+            override fun close() { closed++ }
+        }
+        val plan = (bound.prepareFocusInput("s1") as Either.Right).value
+        try {
+            bound.open(PhoneAppIdentity("app", 10001)) // The same task now owns sOpen, not s1.
+            assertFalse(plan.perform("x") { true }.ok)
+            assertEquals(0, called)
+        } finally { plan.close() }
+        assertEquals(1, closed)
+    }
+
+    @Test fun focusActionRecordsItsOwnReturnedObservationThroughTheRealLedger() {
+        val tasks = PhoneTasks(); val physical = Driver()
+        val bound = PhoneTaskObservations(tasks).bind(physical, owner(tasks))
+        bound.observe(false, false)
+        physical.focusPlan = object : FocusInput {
+            override val target = TargetInfo("s1", 1, "输入框", "Search", "app", "App", false, false, true)
+            override fun perform(text: String, allowed: () -> Boolean) =
+                ActionResult(allowed(), "after", ScreenSnapshot("sAfter", "new INPUT", "App", "app"))
+            override fun close() {}
+        }
+        val plan = (bound.prepareFocusInput("s1") as Either.Right).value
+        try { assertTrue(plan.perform("x") { true }.ok) } finally { plan.close() }
+        assertNotNull(bound.target("sAfter", 1))
+        assertNull(bound.target("s1", 1))
     }
 
 }

@@ -87,6 +87,34 @@ class PhoneTaskObservations(private val tasks: PhoneTasks) {
             current()
             return try { if (owns(screenId)) driver.target(screenId, elementId) else null } finally { syncCurrentScope() }
         }
+        override fun prepareFocusInput(screenId: String): Either<String, FocusInput> {
+            current()
+            if (!owns(screenId)) return Either.Left("这个屏幕编号不属于本任务的当前观察，请重新 screen。") // l10n:keep agent focus result
+            // Capturing nodes or an input connection must never run under Tasks or ledger locks.
+            val prepared = driver.prepareFocusInput(screenId)
+            if (prepared is Either.Left) { current(); syncCurrentScope(); return prepared }
+            val original = (prepared as Either.Right).value
+            var handedOff = false
+            try {
+                syncCurrentScope()
+                current()
+                if (!owns(screenId))
+                    return Either.Left("准备输入期间观察已经改变，没有输入；请重新 screen。") // l10n:keep agent focus result
+                val bound = object : FocusInput by original {
+                    override fun perform(text: String, allowed: () -> Boolean): ActionResult {
+                        current()
+                        if (!owns(screenId)) return ActionResult(false, "原焦点观察已经改变，没有输入；请重新 screen。") // l10n:keep agent focus result
+                        return try {
+                            result(original.perform(text) { taskAllowed() && owns(screenId) && allowed() })
+                        } finally { syncCurrentScope() }
+                    }
+                }
+                handedOff = true
+                return Either.Right(bound)
+            } finally {
+                if (!handedOff) original.close()
+            }
+        }
         override fun perform(action: PhoneAction): ActionResult = perform(action) { true }
         override fun perform(action: PhoneAction, allowed: () -> Boolean): ActionResult =
             perform(action, allowed, null) { true }
