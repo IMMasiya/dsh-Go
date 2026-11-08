@@ -283,8 +283,8 @@ class SystemActions(private val app: Context) : SystemApi {
 
     /**
      * Android 10+ blocks activity starts from the background unless the app is visible or its
-     * accessibility service is bound. Otherwise we still try, and also post a notification the
-     * person can tap (a notification tap always may start it).
+     * accessibility service is bound. Otherwise we still try, then offer a notification that
+     * returns to DSH for review. A normal return cannot prove the first action was blocked.
      */
     private fun start(dispatch: PhoneTasks.SystemDispatch, intent: Intent, what: String, done: String, pkg: String?, label: String?, noticeWhat: String = what): SysResult {
         // This commits once; stop does not retract a start already committed here.
@@ -300,11 +300,11 @@ class SystemActions(private val app: Context) : SystemApi {
         }
         val exempt = AppVisibility.visible || PhoneRegistry.mainDriver != null || Build.VERSION.SDK_INT < Build.VERSION_CODES.Q
         if (exempt) return SysResult(true, done, pkg, label)
-        val noticeRequested = postOpen(dispatch, intent, noticeWhat)
+        val noticeRequested = postOpen(dispatch, noticeWhat)
         return SysResult(
             true,
             // l10n:keep agent tool result
-            if (noticeRequested) "$done（DSH 不在前台，系统可能拦下后台弹出的界面；已发通知「$what」，用户点一下就能打开。）"
+            if (noticeRequested) "已尝试$what（DSH 不在前台，系统可能已执行，也可能拦下了操作；已发核对通知，点击只返回 DSH，不重复操作。请先查看目标界面。）"
             // l10n:keep agent tool result
             else "已尝试$what（DSH 不在前台，系统可能拦下后台弹出的界面；应用通知或打开操作的通知渠道已关闭，无法提供通知点击入口。请用户查看目标界面是否已打开。）",
             pkg,
@@ -312,7 +312,7 @@ class SystemActions(private val app: Context) : SystemApi {
         )
     }
 
-    private fun postOpen(dispatch: PhoneTasks.SystemDispatch, intent: Intent, what: String): Boolean {
+    private fun postOpen(dispatch: PhoneTasks.SystemDispatch, what: String): Boolean {
         ensureChannel(CHANNEL_OPEN, AppStrings.get(app, R.string.phone_open_channel), NotificationManager.IMPORTANCE_HIGH)
         val available = nm.areNotificationsEnabled() &&
             (Build.VERSION.SDK_INT < Build.VERSION_CODES.O ||
@@ -325,7 +325,9 @@ class SystemActions(private val app: Context) : SystemApi {
         if (!dispatch.commitNotice()) throw InterruptedException(PhoneTasks.STOPPED_MESSAGE)
         if (!available) return false
         val id = ids.incrementAndGet()
-        val pi = PendingIntent.getActivity(app, id, intent, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
+        val review = Intent(app, MainActivity::class.java)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+        val pi = PendingIntent.getActivity(app, id, review, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
         nm.notify(TAG, id, notification.setContentIntent(pi).build())
         return true
     }

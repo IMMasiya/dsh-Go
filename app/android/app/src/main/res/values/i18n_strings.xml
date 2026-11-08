@@ -218,7 +218,7 @@
     <string name="phone_share_chooser">Share to</string>
     <string name="phone_open_channel">Open from DSH</string>
     <string name="phone_open_notice">DSH · %1$s</string>
-    <string name="phone_tap_open">Tap to open</string>
+    <string name="phone_tap_open">Return to DSH to check the task. The action will not be repeated.</string>
     <string name="phone_reminder_channel">DSH reminders</string>
     <string name="phone_log_apps">List apps</string>
     <string name="phone_log_apps_filtered">List apps (filtered)</string>
