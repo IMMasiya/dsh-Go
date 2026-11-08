@@ -112,6 +112,77 @@ class PhoneTaskSessionsTest {
         } finally { sessions.releaseSelfCheck(lease) }
     }
 
+    @Test fun stopAllCommitsEveryExistingOwnerBeforeAnyExternalCancellation() {
+        assertFalse(invoke("A").isError); assertFalse(invoke("B").isError)
+        val a = task("A"); val b = task("B")
+        val aOwner = checkNotNull(a.tasks.activeOwner())
+        val bOwner = checkNotNull(b.tasks.activeOwner())
+        val queuedB = admit("B")
+        val entered = CountDownLatch(1); val release = CountDownLatch(1)
+        cancelScope = { record, _ ->
+            if (record === a) { entered.countDown(); check(release.await(5, TimeUnit.SECONDS)) }
+        }
+        val stopping = pool.submit { sessions.stopAll("screen off") }
+        try {
+            assertTrue(entered.await(5, TimeUnit.SECONDS))
+            assertFalse(a.tasks.isCurrent(aOwner))
+            assertFalse(b.tasks.isCurrent(bOwner))
+            assertTrue(b.tasks.isStopped())
+            assertTrue(sessions.run(queuedB, PhoneToolCatalog.APPS, emptyMap()).isError)
+            // This is not a permanent global stop switch, and callbacks hold no registry lock.
+            assertFalse(invoke("after-batch").isError)
+            release.countDown()
+            stopping.get(5, TimeUnit.SECONDS)
+        } finally { release.countDown() }
+    }
+
+    @Test fun stopAllDuringAnExistingCancellationCommitsStopWithoutASecondCancellation() {
+        assertFalse(invoke("A").isError); assertFalse(invoke("B").isError)
+        val a = task("A"); val b = task("B")
+        val bOwner = checkNotNull(b.tasks.activeOwner())
+        val entered = CountDownLatch(1); val release = CountDownLatch(1)
+        val aCancels = AtomicLong()
+        cancelScope = { record, _ ->
+            if (record === a) {
+                aCancels.incrementAndGet()
+                entered.countDown()
+                check(release.await(5, TimeUnit.SECONDS))
+            }
+        }
+        val first = pool.submit<Boolean> { sessions.stop(a, "first stop") }
+        try {
+            assertTrue(entered.await(5, TimeUnit.SECONDS))
+            val oldEpoch = a.tasks.admissionEpoch()
+            sessions.stopAll("screen off")
+            assertEquals(1L, aCancels.get())
+            assertTrue(a.tasks.admissionEpoch() > oldEpoch)
+            assertTrue(a.tasks.isStopped())
+            assertFalse(b.tasks.isCurrent(bOwner))
+            assertFalse(sessions.resume(a))
+            release.countDown()
+            assertTrue(first.get(5, TimeUnit.SECONDS))
+            assertEquals(1L, aCancels.get())
+            assertTrue(invoke("A", run = "after-stop").isError)
+        } finally { release.countDown() }
+    }
+
+    @Test fun stopAllFinishesOtherClaimedCancellationsWhenOneCallbackFails() {
+        assertFalse(invoke("A").isError); assertFalse(invoke("B").isError)
+        val a = task("A"); val b = task("B")
+        val bOwner = checkNotNull(b.tasks.activeOwner())
+        val failure = IllegalStateException("cancel failure")
+        val bCancels = AtomicLong()
+        cancelScope = { record, _ ->
+            if (record === a) throw failure
+            if (record === b) bCancels.incrementAndGet()
+        }
+        assertSame(failure, runCatching { sessions.stopAll("screen off") }.exceptionOrNull())
+        assertEquals(1L, bCancels.get())
+        assertFalse(b.tasks.isCurrent(bOwner))
+        assertFalse(sessions.isBusy(a))
+        assertFalse(sessions.isBusy(b))
+    }
+
     @Test fun durableMarkMustFinishBeforeAnyPreparationAndStopDuringItCannotAct() {
         val entered = CountDownLatch(1); val release = CountDownLatch(1); val lookups = AtomicLong()
         lookup = { lookups.incrementAndGet() }

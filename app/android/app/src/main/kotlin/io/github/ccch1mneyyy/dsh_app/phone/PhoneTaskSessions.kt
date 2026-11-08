@@ -26,6 +26,10 @@ class PhoneTaskSessions(
     private val journal: PhoneTaskJournal? = null,
     private val recoveryAdmission: () -> String? = { null },
     private val createBackgroundWorker: () -> SerialWorker = { SerialWorker("dsh-phone-background") },
+    // Pure in-memory capability/setting snapshot. Never probe a peer or read preferences here.
+    private val backgroundCapacity: () -> Int = { 1 },
+    // Connection preparation precedes any new screen lease and runs outside registry/Tasks locks.
+    private val prepareBackground: (Task, PhoneTasks.Owner) -> String? = { _, _ -> null },
 ) {
     internal class SkillScope(val owner: PhoneTasks.Owner, val draftEpoch: Long, val launchEpoch: Long) {
         var endOwner: PhoneTasks.Owner? = null
@@ -51,6 +55,7 @@ class PhoneTaskSessions(
         internal var waitingApp: PhoneAppIdentity? = null
         internal var waitingUnknownApp = false
         internal var waitingSince: Long? = null
+        internal var waitingOwner: PhoneTasks.Owner? = null
         internal val heldApps = linkedSetOf<PhoneAppIdentity>()
         internal var holdsUnknownApp = false
         internal var endRequested = false
@@ -114,7 +119,17 @@ class PhoneTaskSessions(
     private val endedRuns = HashMap<Key, String>()
     private val retainedRuns = HashSet<Key>()
     private val lastAdmitted = mutableMapOf<String?, Task>()
-    private val screens = mutableMapOf<PhoneScreen, Task>()
+    private var mainHolder: Task? = null
+    // Retired/paused/draining holders remain here until their original cleanup succeeds.
+    private val backgroundHolders = linkedSetOf<Task>()
+
+    fun backgroundHeldSlots(): Int = synchronized(lock) { backgroundHolders.size }
+
+    /** Setter barrier: old acquisitions finish before it returns; waiters re-read the new limit. */
+    fun backgroundCapacityChanged() {
+        synchronized(lock) { lock.notifyAll() }
+        changed()
+    }
     // Includes retired records until their original physical cleanup succeeds.
     private val appHolders = linkedSetOf<Task>()
     class SelfCheckLease internal constructor(internal val epoch: Long) {
@@ -124,7 +139,7 @@ class PhoneTaskSessions(
 
     /** Local diagnostic reservation, never a synthetic task or skill scope. */
     fun tryReserveSelfCheck(): SelfCheckLease? = synchronized(lock) {
-        if (resetting || selfCheck != null || screens.isNotEmpty() || appHolders.isNotEmpty() || retiring.isNotEmpty()) return null
+        if (resetting || selfCheck != null || mainHolder != null || backgroundHolders.isNotEmpty() || appHolders.isNotEmpty() || retiring.isNotEmpty()) return null
         if (entries.values.any { it.pending > 0 || it.running || it.closing || it.cancelling ||
                 it.cleanupFailed || it.ending || it.endRequested && !it.endSettled || it.tasks.isActive }) return null
         SelfCheckLease(epoch).also { selfCheck = it }
@@ -294,13 +309,17 @@ class PhoneTaskSessions(
             }
             prepared = call
             if (remainingMs(admission) <= 0) return deadlineOutput()
+            if (PhoneScreen.BACKGROUND in call.screens) {
+                prepareBackground(task, owner)?.let { return ToolOutput(it, isError = true) }
+                if (remainingMs(admission) <= 0) return deadlineOutput()
+            }
             val failure = awaitResources(admission, call)
             if (failure != null) return ToolOutput(failure, isError = true)
             val selected = synchronized(lock) {
                 if (remainingMs(admission) <= 0) return deadlineOutput()
                 if (!live(admission) || blocked(task) || !task.tasks.isCurrent(owner)) return stopped()
                 val lane = if (PhoneScreen.BACKGROUND in call.screens) {
-                    check(screens[PhoneScreen.BACKGROUND] === task)
+                    check(task in backgroundHolders)
                     task.backgroundWorker ?: createBackgroundWorker().also { task.backgroundWorker = it }
                 } else mainWorker
                 task.activeWorker = lane
@@ -322,8 +341,8 @@ class PhoneTaskSessions(
                     synchronized(lock) {
                         if (completedCall != null && completedCall.borrowedMainForBackgroundOpen &&
                             completedCall.backgroundOpenConfirmed && live(admission) && !blocked(task) &&
-                            !task.closing && screens[PhoneScreen.MAIN] === task) {
-                            task.tasks.runIfCurrent(completedCall.owner) { screens.remove(PhoneScreen.MAIN) }
+                            !task.closing && mainHolder === task) {
+                            task.tasks.runIfCurrent(completedCall.owner) { mainHolder = null }
                         }
                         // Keep this execution slot until the exact original MAIN decision is committed.
                         task.activeWorker = null
@@ -356,15 +375,41 @@ class PhoneTaskSessions(
                 it.packageName == known.packageName || it.uid == known.uid
             })) }
 
-    private fun blockers(task: Task, needed: List<PhoneScreen>, known: PhoneAppIdentity?, unknown: Boolean): Set<Task> =
-        (needed.mapNotNull { screens[it]?.takeUnless { holder -> holder === task } } +
+    private fun mandatoryBlockers(task: Task, needed: List<PhoneScreen>, known: PhoneAppIdentity?, unknown: Boolean): Set<Task> =
+        (listOfNotNull(mainHolder?.takeIf { PhoneScreen.MAIN in needed && it !== task }) +
             appBlockers(task, known, unknown)).toSet()
+
+    private fun needsBackgroundSlot(task: Task, needed: List<PhoneScreen>): Boolean =
+        PhoneScreen.BACKGROUND in needed && task !in backgroundHolders
+
+    /** MAIN/App are mandatory; BG needs any one slot, not every current holder's release. Lock held. */
+    private fun closedWaitSetContains(task: Task, limit: Int): Boolean {
+        val remaining = entries.values.filterTo(linkedSetOf()) { candidate ->
+            val owner = candidate.waitingOwner
+            owner != null && candidate.waitingSince != null && candidate.running &&
+                registered(candidate) && !blocked(candidate) && !candidate.closing && !candidate.ending &&
+                (limit > 0 || !needsBackgroundSlot(candidate, candidate.waitingScreens)) &&
+                candidate.tasks.isCurrent(owner)
+        }
+        while (remaining.isNotEmpty()) {
+            val retainedBackground = backgroundHolders.count { it in remaining }
+            val removable = remaining.filter { candidate ->
+                mandatoryBlockers(candidate, candidate.waitingScreens, candidate.waitingApp,
+                    candidate.waitingUnknownApp).none { it in remaining } &&
+                    (!needsBackgroundSlot(candidate, candidate.waitingScreens) || limit > 0 && retainedBackground < limit)
+            }
+            if (removable.isEmpty()) break
+            remaining.removeAll(removable.toSet())
+        }
+        return task in remaining
+    }
 
     private fun clearWaiting(task: Task) {
         task.waitingScreens = emptyList()
         task.waitingApp = null
         task.waitingUnknownApp = false
         task.waitingSince = null
+        task.waitingOwner = null
     }
 
     private fun awaitResources(a: Admission, call: PhoneCore.PreparedCall): String? {
@@ -381,8 +426,9 @@ class PhoneTaskSessions(
         fun acquire(): String? = synchronized(a) {
             if (remainingMs(a) <= 0) return@synchronized deadlineOutput().text
             call.borrowedMainForBackgroundOpen = call.name == PhoneToolCatalog.OPEN &&
-                call.args.bool("background") == true && PhoneScreen.MAIN in needed && screens[PhoneScreen.MAIN] == null
-            needed.forEach { screens[it] = task }
+                call.args.bool("background") == true && PhoneScreen.MAIN in needed && mainHolder == null
+            if (PhoneScreen.MAIN in needed) mainHolder = task
+            if (PhoneScreen.BACKGROUND in needed) backgroundHolders += task
             if (known != null) task.heldApps += known
             if (unknown) task.holdsUnknownApp = true
             if (known != null || unknown) appHolders += task
@@ -395,12 +441,16 @@ class PhoneTaskSessions(
             if (!current()) return PhoneTasks.STOPPED_MESSAGE
             if (known != null && known !in task.heldApps && task.heldApps.size >= MAX_APPS_PER_SCOPE)
                 return "本任务已保留 16 个应用身份，请结束并清理本任务后再打开其他应用。" // l10n:keep agent resource result
-            if (blockers(task, needed, known, unknown).isEmpty()) { return acquire() }
+            val limit = backgroundCapacity()
+            if (needsBackgroundSlot(task, needed) && limit == 0) return BACKGROUND_UNAVAILABLE
+            if (mandatoryBlockers(task, needed, known, unknown).isEmpty() &&
+                (!needsBackgroundSlot(task, needed) || backgroundHolders.size < limit)) return acquire()
             // Whole request, not the first blocker: another holder can appear before wakeup.
             task.waitingScreens = needed
             task.waitingApp = known
             task.waitingUnknownApp = unknown
             task.waitingSince = started
+            task.waitingOwner = call.owner
         }
         changed()
         try {
@@ -408,16 +458,13 @@ class PhoneTaskSessions(
                 while (true) {
                     if (remainingMs(a) <= 0) return deadlineOutput().text
                     if (!current()) return PhoneTasks.STOPPED_MESSAGE
-                    val missing = blockers(task, needed, known, unknown)
-                    if (missing.isEmpty()) { return acquire() }
-                    val pending = java.util.ArrayDeque<Task>(missing)
-                    val seen = HashSet<Task>()
-                    while (pending.isNotEmpty()) {
-                        val cursor = pending.removeFirst()
-                        if (cursor === task) return "屏幕或应用资源形成等待环，本次没有操作。请结束或交还另一任务占用的资源后重试。" // l10n:keep agent resource result
-                        if (seen.add(cursor)) blockers(cursor, cursor.waitingScreens,
-                            cursor.waitingApp, cursor.waitingUnknownApp).forEach(pending::addLast)
-                    }
+                    val limit = backgroundCapacity()
+                    if (needsBackgroundSlot(task, needed) && limit == 0) return BACKGROUND_UNAVAILABLE
+                    if (mandatoryBlockers(task, needed, known, unknown).isEmpty() &&
+                        (!needsBackgroundSlot(task, needed) || backgroundHolders.size < limit)) return acquire()
+                    // Zero means unavailable for new slots, never a zero-threshold waiting cycle.
+                    if (closedWaitSetContains(task, limit))
+                        return "屏幕或应用资源形成等待环，本次没有操作。请结束或交还另一任务占用的资源后重试。" // l10n:keep agent resource result
                     val left = until - clock()
                     if (left <= 0) return "屏幕或应用资源正被另一个对话使用，已等待 30 秒，本次没有操作。请稍后再试或结束占用任务。" // l10n:keep agent resource result
                     lock.wait(minOf(left, remainingMs(a), 1_000).coerceAtLeast(1))
@@ -584,7 +631,8 @@ class PhoneTaskSessions(
         settleResources(taskId) // Can block in platform IPC; neither registry nor worker lock is held.
         val retiredWorker = synchronized(lock) {
             task.resourcesReleased = true
-            screens.entries.removeAll { it.value === task }
+            if (mainHolder === task) mainHolder = null
+            backgroundHolders.remove(task)
             appHolders.remove(task)
             task.heldApps.clear()
             task.holdsUnknownApp = false
@@ -606,7 +654,14 @@ class PhoneTaskSessions(
                 else mapOf("kind" to "known", "packageName" to checkNotNull(task.waitingApp).packageName)
             mapOf("sessionId" to task.sessionId, "runId" to task.runId,
             "identity" to if (task.sessionId == null) "legacy" else "session",
-            "waitingForScreen" to task.waitingScreens.firstOrNull { screens[it] != null && screens[it] !== task }?.name?.lowercase(), "waitingForApp" to waitingApp,
+            "backgroundSlot" to (task in backgroundHolders),
+            "waitingForScreen" to task.waitingScreens.firstOrNull { screen ->
+                when (screen) {
+                    PhoneScreen.MAIN -> mainHolder != null && mainHolder !== task
+                    PhoneScreen.BACKGROUND -> needsBackgroundSlot(task, task.waitingScreens) &&
+                        backgroundHolders.size >= backgroundCapacity()
+                }
+            }?.name?.lowercase(), "waitingForApp" to waitingApp,
             "waitingForMs" to task.waitingSince?.let { (at - it).coerceAtLeast(0L) }, "pendingCalls" to task.pending,
             "retiring" to (task.retired != null), "settling" to task.closing, "cleanupFailed" to task.cleanupFailed,
             "finishing" to (task.closing || task.cleanupFailed || task.retired != null || task.endRequested && !task.endSettled), "draining" to (task.running && task.pending == 0),
@@ -754,8 +809,38 @@ class PhoneTaskSessions(
     }
 
     fun stopAll(reason: String) {
-        synchronized(lock) { selfCheck?.sealed = true }
-        all().forEach { stop(it, reason) }
+        data class PendingStop(val task: Task, val change: PhoneTasks.Change, val ownsCancellation: Boolean)
+        val pending = synchronized(lock) {
+            selfCheck?.sealed = true
+            entries.values.map { task ->
+                // A prior cancellation keeps responsibility for its external work. Still
+                // commit this stop now so its epoch/hold and sticky session fence cannot be lost.
+                val ownsCancellation = !task.cancelling
+                val change = task.tasks.stopDeferred(reason)
+                claimCancellation(task, change.snapshot)
+                PendingStop(task, change, ownsCancellation)
+            }
+        }
+        // Every pre-existing record is already stopped before the first external callback.
+        // A new record admitted after the batch unlocks is a separate, later admission.
+        var failure: Throwable? = null
+        for ((task, change, ownsCancellation) in pending) {
+            try {
+                if (ownsCancellation) {
+                    try { cancelScope(task, change.snapshot) }
+                    finally {
+                        try { task.tasks.publish(change) }
+                        finally { cancellationFinished(task) }
+                    }
+                } else {
+                    task.tasks.publish(change)
+                }
+            } catch (error: Throwable) {
+                // One callback must not strand the other already-claimed cancellations.
+                if (failure == null) failure = error
+            }
+        }
+        failure?.let { throw it }
     }
     fun retire() {
         val workers: List<SerialWorker>
@@ -787,7 +872,7 @@ class PhoneTaskSessions(
             resetting = false
             lock.notifyAll()
         }
-        // screens still point to old records. Their callbacks only remove their own leases.
+        // Holders still point to old records. Their callbacks only remove their own leases.
         old.forEach(::settleInactive)
         changed()
     }
@@ -802,6 +887,8 @@ class PhoneTaskSessions(
     class CapacityExceeded : IllegalStateException(CAPACITY_MESSAGE)
 
     companion object {
+        // l10n:keep agent resource admission
+        private const val BACKGROUND_UNAVAILABLE = "后台屏当前无法接纳新任务，本次没有操作。请检查后台通道状态后重试。"
         private const val MAX_APPS_PER_SCOPE = 16
         // An implementation memory bound, not a measured throughput limit. Never evict a fence.
         const val MAX_RUNS_PER_LAUNCH = 256
