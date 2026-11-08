@@ -22,6 +22,8 @@ interface PhoneEnv {
     fun zone(): ZoneId
     /** Tells the person what to fix (accessibility off, …); at most once per task and kind. */
     fun notifyFix(kind: String)
+    /** New native task only, under its current-owner check; no rendering or IO. */
+    fun onTaskStarted(owner: PhoneTasks.Owner) {}
     /**
      * Before `handoff` while the agent works on [screen]: for the background display, release it
      * without destroying its content so the app comes to the main screen. A sentence for the model, or null.
@@ -146,7 +148,10 @@ class PhoneCore(
             is PhoneTasks.Begin.Refused -> return Out(b.message + "。", error = true, summary = name, decision = "stopped")
             is PhoneTasks.Begin.Go -> b.owner.also {
                 callOwner.set(it)
-                if (b.newTask) skillTrace.start(it)
+                if (b.newTask) tasks.runIfCurrent(it) {
+                    skillTrace.start(it)
+                    env.onTaskStarted(it)
+                }
             }
         }
         if (!current(owner)) return stoppedOut(name)

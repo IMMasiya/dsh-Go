@@ -10,6 +10,8 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
+import io.github.ccch1mneyyy.dsh_app.phone.skills.PhoneSkillDrafts
+import io.github.ccch1mneyyy.dsh_app.phone.skills.PhoneSkillBridge
 import io.github.ccch1mneyyy.dsh_app.phone.a11y.OverlayPrefs
 import io.github.ccch1mneyyy.dsh_app.phone.background.PrivilegedActionGate
 import io.flutter.embedding.engine.plugins.FlutterPlugin
@@ -54,11 +56,13 @@ class PhonePlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandle
     private val controlIo = Executors.newSingleThreadExecutor { r -> Thread(r, "dsh-phone-control").apply { isDaemon = true } }
     @Volatile private var promptOwner = Any()
     @Volatile private var attached = false
+    @Volatile private var skillClient: PhoneSkillDrafts.Client? = null
     private val privilegedActions = PrivilegedActionGate()
 
     override fun onAttachedToEngine(binding: FlutterPlugin.FlutterPluginBinding) {
         appContext = binding.applicationContext
         control = PhoneControl.get(appContext)
+        skillClient = control.skillDrafts.attachClient()
         (appContext as Application).registerActivityLifecycleCallbacks(previewLifecycle)
         promptOwner = Any()
         attached = true
@@ -91,6 +95,8 @@ class PhonePlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandle
 
     override fun onDetachedFromEngine(binding: FlutterPlugin.FlutterPluginBinding) {
         attached = false
+        skillClient?.let { control.skillDrafts.retireClient(it) }
+        skillClient = null
         (appContext as Application).unregisterActivityLifecycleCallbacks(previewLifecycle)
         control.preview.removeConsumer(previewOwner)
         previewTaskId = null
@@ -166,6 +172,12 @@ class PhonePlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandle
     override fun onMethodCall(call: MethodCall, result: MethodChannel.Result) {
         when (call.method) {
             "status" -> async(result, shortControl = true) { control.status() }
+            "setSkillSavePrompt" -> {
+                val enabled = (call.arguments as? Map<*, *>)?.get("enabled") as? Boolean
+                if (enabled == null) result.success(false)
+                else async(result, shortControl = true) { control.setSkillSavePrompt(enabled) }
+            }
+            "skillDraft", "saveSkillDraft", "discardSkillDraft" -> skillCall(call, result)
             "setBackgroundPreview" -> result.success(control.preview.setEnabled(call.argument<Boolean>("enabled") == true))
             "setBackgroundKeep" -> {
                 val selected = call.argument<String>("mode").orEmpty()
@@ -255,6 +267,20 @@ class PhonePlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandle
         }
         if (call.method == "setBackgroundMode" || call.method == "adbConnect" || call.method == "requestShizukuPermission") {
             control.emitStatus()
+        }
+    }
+
+    /** Capture this attachment, never borrow the Client from a newer engine when queued work runs. */
+    private fun skillCall(call: MethodCall, result: MethodChannel.Result) {
+        val client = skillClient
+        if (client == null) { result.success(PhoneSkillBridge.rejected("stale")); return }
+        controlIo.execute {
+            val value = try { control.skillBridge.call(client, call.method, call.arguments) }
+                catch (_: Exception) { PhoneSkillBridge.rejected("io") }
+            main.post {
+                if (skillClient === client) result.success(value)
+                else result.success(PhoneSkillBridge.rejected("stale"))
+            }
         }
     }
 

@@ -27,6 +27,11 @@ import io.github.ccch1mneyyy.dsh_app.phone.a11y.PhoneA11yService
 import io.github.ccch1mneyyy.dsh_app.phone.background.BackgroundControl
 import io.github.ccch1mneyyy.dsh_app.phone.background.BackgroundPreview
 import io.github.ccch1mneyyy.dsh_app.phone.background.SecureSettingsGrant
+import io.github.ccch1mneyyy.dsh_app.phone.skills.PhoneSkillDrafts
+import io.github.ccch1mneyyy.dsh_app.phone.skills.PhoneSkillBridge
+import io.github.ccch1mneyyy.dsh_app.phone.skills.PhoneSkillLifecycle
+import io.github.ccch1mneyyy.dsh_app.phone.skills.PhoneTaskTrace
+import io.github.ccch1mneyyy.dsh_app.runtime.RuntimeController
 import io.github.ccch1mneyyy.dsh_app.runtime.DshService
 import io.github.ccch1mneyyy.dsh_app.shortcuts.EntryActivity
 import java.io.File
@@ -129,7 +134,12 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
 
     override fun uiText(): PhoneUiText = localizedUi
 
-    val core = PhoneCore(this, tasks, log)
+    val skillTrace = PhoneTaskTrace()
+    internal val skillDrafts = PhoneSkillDrafts()
+    private val skillLifecycle = PhoneSkillLifecycle(skillTrace, skillDrafts)
+    internal val skillBridge = PhoneSkillBridge(skillDrafts,
+        { write, done -> RuntimeController.get(app).savePhoneSkill(write, done) }, ::emitStatus)
+    val core = PhoneCore(this, tasks, log, skillTrace = skillTrace)
     val notificationGate = NotificationGate(app) { setStatusLine(it) }
     val prompts = PhonePrompts(app, tasks, ::isEnabled, ::isLocked, notificationGate, ::reopen)
     // Caller attribution is parsed at the boundary; taskIsolation stays 0 until per-task state lands.
@@ -178,6 +188,7 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
         if (!enabled) {
             // l10n:keep agent stop reason
             tasks.stop("手机操控已关闭")
+            skillLifecycle.retired()
             stopBridge()
         } else {
             tasks.clearStop()
@@ -232,6 +243,7 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
     fun prepareLaunch(rootfs: File, safe: Boolean, log: (String) -> Unit): Boolean {
         logger = log
         tasks.invalidateOwners()
+        skillLifecycle.retired()
         stopBridge()
         this.rootfs = rootfs
         if (!isEnabled() || safe) {
@@ -242,14 +254,16 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
         }
         return try {
             PhoneGuest.writeFiles(rootfs)
+            tasks.clearStop()
+            skillLifecycle.launched()
             val ep = bridge.start(withTcp = prefs.getBoolean(K_TCP_FALLBACK, false))
             PhoneGuest.writeConfig(rootfs, ep)
             registerScreenOff()
-            tasks.clearStop()
             emitStatus()
             true
         } catch (e: Exception) {
             log("[dsh-app] phone control: setup failed (${e.message}); starting without phone tools")
+            skillLifecycle.retired()
             stopBridge()
             false
         }
@@ -258,6 +272,7 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
     /** After the launch command was built: [mounted] false means this runtime's template had no `dsh web` to add the overlay to. */
     fun launched(mounted: Boolean) {
         if (mounted) return
+        skillLifecycle.retired()
         logger("[dsh-app] phone control: this runtime's launch command has no `dsh web` to add the phone overlay to; phone tools are off")
         stopBridge()
     }
@@ -293,6 +308,7 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
 
     fun onEngineStopped() {
         tasks.invalidateOwners()
+        skillLifecycle.retired()
         stopBridge()
         core.worker.retire()
         tasks.endTask()
@@ -324,6 +340,12 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
         return tasks.finish(taskId)
     }
 
+    /** B2 only, after physical drain/cleanup. Never called from legacy finishTask or a UI method. */
+    internal fun completeDrainedSkillTask(owner: PhoneTasks.Owner, startedEpoch: Long, completion: String) {
+        if (skillLifecycle.completeDrained(owner, startedEpoch, completion)) emitStatus()
+    }
+
+    // Legacy SerialWorker has no physical-drain proof: finishing never publishes a candidate.
     fun finishTaskScope(expectedTaskId: Long): PhoneTasks.Owner? = tasks.finishScope(expectedTaskId)
 
     /**
@@ -349,6 +371,7 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
 
     private fun onTask(s: PhoneTasks.Snapshot) {
         preview.refresh() // Clear local pixels before endTask can enter blocking release IPC.
+        skillLifecycle.changed(s)
         prompts.check()
         if (s.active && s.id != keptTask) {
             keptTask = s.id
@@ -455,8 +478,21 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
     /** Reads the existing immutable gate snapshot without refreshing phone state. */
     fun backgroundProbeDiagnostics(): Map<String, Any?> = background.inputProbeDiagnostics()
 
+    fun setSkillSavePrompt(enabled: Boolean): Boolean {
+        prefs.edit().putBoolean(K_SKILL_PROMPT, enabled).apply()
+        emitStatus()
+        return true
+    }
+
+    private fun skillsStatus(): Map<String, Any?> = mapOf(
+        "v" to 1, "askAfterSuccess" to prefs.getBoolean(K_SKILL_PROMPT, false),
+        "candidates" to skillDrafts.candidates().map { mapOf(
+            "taskId" to it.owner.taskId, "generation" to it.owner.lifecycle, "steps" to it.steps) },
+    )
+
     fun status(): Map<String, Any?> = linkedMapOf(
         "enabled" to isEnabled(),
+        "skills" to skillsStatus(),
         "bridgeListening" to bridge.listening,
         "a11y" to linkedMapOf("enabled" to a11yEnabledInSettings(), "serviceConnected" to (PhoneRegistry.mainDriver != null)),
         "overlay" to (PhoneRegistry.overlayGate != null),
@@ -585,6 +621,8 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
 
     // ── PhoneEnv ────────────────────────────────────────────────────────────────────
 
+    override fun onTaskStarted(owner: PhoneTasks.Owner) = skillLifecycle.started(owner)
+
     override fun enabled(): Boolean = isEnabled()
 
     override fun isLocked(): Boolean {
@@ -651,6 +689,7 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
         const val SERVER_VERSION = "1"
         private const val PREFS = "dsh_phone"
         private const val K_ENABLED = "enabled"
+        private const val K_SKILL_PROMPT = "skillSavePrompt"
 
         /** Only master preference publication and the keeper's final settings writes share this lock. */
         internal val keeperSwitchLock = Any()
