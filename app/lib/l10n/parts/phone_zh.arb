@@ -856,5 +856,15 @@
   "phoneSkillBundlePublishedUnverified": "文件已发布，但尚未通过完整核验。不要重复保存。",
   "phoneSkillBundleUnknown": "保存结果尚未确认，文件可能已经写入。不要重复保存。",
   "phoneSkillBundleRevision": "路线版本：{revision}",
-  "@phoneSkillBundleRevision": {"placeholders": {"revision": {"type": "String"}}}
+  "@phoneSkillBundleRevision": {"placeholders": {"revision": {"type": "String"}}},
+  "phoneSkillReplayReview": "核对手机路线",
+  "phoneSkillReplaySourceChanged": "本机会话或连接已改变，请返回当前本机会话重新选择。",
+  "phoneSkillReplayUnavailable": "此路线尚不能在当前本机安全执行。仍可按普通技能模板使用。",
+  "phoneSkillReplayConfirm": "我已核对这条路线与本次选择的 App。",
+  "phoneSkillReplayToComposer": "放入当前对话",
+  "phoneSkillReplayStartText": "本机已选择并核对手机路线。请仅调用 mcp__phone__replay，参数 {request}。若不可用或被拒绝，交回用户/模型，不要改为普通动作重放。",
+  "@phoneSkillReplayStartText": {"placeholders": {"request": {"type": "String"}}},
+  "phoneSkillReplayQueue": "发送路线（排队）",
+  "phoneSkillReplayQueued": "路线消息已被接收或排队，尚不代表路线执行成功。",
+  "phoneSkillReplaySendUncertain": "路线消息未确认发送成功；没有自动重新准备或重放。请核对原对话结果。"
 }

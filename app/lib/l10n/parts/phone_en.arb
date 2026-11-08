@@ -627,5 +627,15 @@
   "phoneSkillBundlePublishedUnverified": "The files were published, but full verification has not succeeded. Do not save again.",
   "phoneSkillBundleUnknown": "The save result is not confirmed. Files may already have been written. Do not save again.",
   "phoneSkillBundleRevision": "Route revision: {revision}",
-  "@phoneSkillBundleRevision": {"placeholders": {"revision": {"type": "String"}}}
+  "@phoneSkillBundleRevision": {"placeholders": {"revision": {"type": "String"}}},
+  "phoneSkillReplayReview": "Review phone route",
+  "phoneSkillReplaySourceChanged": "The local session or connection changed. Select the route again from the current local conversation.",
+  "phoneSkillReplayUnavailable": "This route is not available for controlled execution on this phone. The ordinary skill template remains available.",
+  "phoneSkillReplayConfirm": "I have reviewed this route and the app selected for this use.",
+  "phoneSkillReplayToComposer": "Insert into this conversation",
+  "phoneSkillReplayStartText": "A phone route has been selected and reviewed locally. Call only mcp__phone__replay with {request}. If unavailable or refused, hand back to the user/model; do not replay it as ordinary actions.",
+  "@phoneSkillReplayStartText": {"placeholders": {"request": {"type": "String"}}},
+  "phoneSkillReplayQueue": "Send route (queue)",
+  "phoneSkillReplayQueued": "The route message was accepted or queued. This does not mean the route has executed successfully.",
+  "phoneSkillReplaySendUncertain": "Delivery of the route message was not confirmed. It has not been prepared or replayed again. Check the original conversation."
 }

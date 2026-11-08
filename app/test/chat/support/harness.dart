@@ -141,6 +141,7 @@ class FakeChatController extends ChatController {
     SendMode mode = SendMode.now,
     bool verbatim = false,
     Future<bool> Function(String requestId)? beforeDeliver,
+    bool Function()? deliveryAllowed,
   }) async {
     sent.add(text);
     sentAttachments.add(attachments);

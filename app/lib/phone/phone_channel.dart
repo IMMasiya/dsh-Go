@@ -9,8 +9,10 @@ import 'package:flutter/services.dart';
 
 import '../l10n/l10n.dart';
 import 'phone_skill.dart';
+import 'phone_skill_replay.dart';
 
 export 'phone_skill.dart';
+export 'phone_skill_replay.dart';
 
 // ── Wire helpers ─────────────────────────────────────────────────────────────
 
@@ -1377,6 +1379,41 @@ class PhoneChannel {
 
   Future<PhoneSkillReply> discardSkillDraft(PhoneSkillDraftView draft) =>
       _skillReply('discardSkillDraft', {'taskId': draft.taskId, 'draftId': draft.draftId});
+
+  Future<PhoneSkillReplayInspection> inspectSkillReplay(String skillId) async {
+    try {
+      return PhoneSkillReplayInspection.parse(await _methods.invokeMapMethod<Object?, Object?>(
+        'inspectSkillReplay', {'skillId': skillId}));
+    } on MissingPluginException {
+      return const PhoneSkillReplayInspection.unavailable();
+    } on PlatformException {
+      return const PhoneSkillReplayInspection.unavailable();
+    }
+  }
+
+  Future<PhoneSkillReplayReady?> prepareSkillReplay({required String skillId, required String revision,
+    required String sessionId, required PhoneSkillReplayApp app}) async {
+    try {
+      return PhoneSkillReplayReady.parse(await _methods.invokeMapMethod<Object?, Object?>(
+        'prepareSkillReplay', {'skillId': skillId, 'revision': revision, 'sessionId': sessionId,
+          'parameters': {'appSlots': {'app1': {'packageName': app.packageName, 'uid': app.uid}}, 'values': <String, Object?>{}}}));
+    } on MissingPluginException {
+      return null;
+    } on PlatformException {
+      return null;
+    }
+  }
+
+  Future<bool> discardSkillReplay(String invocation) async {
+    try {
+      final reply = await _methods.invokeMapMethod<Object?, Object?>('discardSkillReplay', {'invocation': invocation});
+      return reply?['kind'] == 'discarded';
+    } on MissingPluginException {
+      return false;
+    } on PlatformException {
+      return false;
+    }
+  }
 
   Future<PhoneSkillReply> _skillReply(String method, Map<String, Object?> arguments) async {
     try {
