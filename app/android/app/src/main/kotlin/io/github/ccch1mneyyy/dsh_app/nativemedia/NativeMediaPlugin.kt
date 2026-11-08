@@ -161,7 +161,7 @@ class NativeMediaPlugin :
             "resume" -> {
                 val p = player
                 val done = onScreen() && p?.resume() == true
-                if (done && p?.playing == true) capture?.setPlaying(true)
+                if (done && p.playing == true) capture?.setPlaying(true)
                 ok(result, done, "audio")
             }
             "stop" -> {
