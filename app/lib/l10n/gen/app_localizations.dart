@@ -14060,6 +14060,36 @@ abstract class L10n {
   /// **'对话'**
   String get fileChatFallback;
 
+  /// No description provided for @fileUploadToHost.
+  ///
+  /// In zh, this message translates to:
+  /// **'传文件到电脑'**
+  String get fileUploadToHost;
+
+  /// No description provided for @fileUploadToHostHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'放进这个对话在电脑上的工作区，原文件不压缩'**
+  String get fileUploadToHostHint;
+
+  /// No description provided for @fileUploadProgress.
+  ///
+  /// In zh, this message translates to:
+  /// **'正在传 {done}/{total}：{name}'**
+  String fileUploadProgress(int done, int total, String name);
+
+  /// No description provided for @fileUploadDone.
+  ///
+  /// In zh, this message translates to:
+  /// **'已传到电脑：{names}'**
+  String fileUploadDone(String names);
+
+  /// No description provided for @fileUploadFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'没能传到电脑'**
+  String get fileUploadFailed;
+
   /// No description provided for @hostDetailsConnectionType.
   ///
   /// In zh, this message translates to:

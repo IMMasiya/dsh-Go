@@ -7638,6 +7638,25 @@ class L10nZh extends L10n {
   String get fileChatFallback => '对话';
 
   @override
+  String get fileUploadToHost => '传文件到电脑';
+
+  @override
+  String get fileUploadToHostHint => '放进这个对话在电脑上的工作区，原文件不压缩';
+
+  @override
+  String fileUploadProgress(int done, int total, String name) {
+    return '正在传 $done/$total：$name';
+  }
+
+  @override
+  String fileUploadDone(String names) {
+    return '已传到电脑：$names';
+  }
+
+  @override
+  String get fileUploadFailed => '没能传到电脑';
+
+  @override
   String get hostDetailsConnectionType => '连接方式';
 
   @override

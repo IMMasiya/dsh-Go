@@ -8052,6 +8052,25 @@ class L10nEn extends L10n {
   String get fileChatFallback => 'chat';
 
   @override
+  String get fileUploadToHost => 'Send files to the computer';
+
+  @override
+  String get fileUploadToHostHint => 'Into this conversation’s workspace on the computer, uncompressed';
+
+  @override
+  String fileUploadProgress(int done, int total, String name) {
+    return 'Sending $done/$total: $name';
+  }
+
+  @override
+  String fileUploadDone(String names) {
+    return 'Sent to the computer: $names';
+  }
+
+  @override
+  String get fileUploadFailed => 'Couldn’t send to the computer';
+
+  @override
   String get hostDetailsConnectionType => 'Connection type';
 
   @override
