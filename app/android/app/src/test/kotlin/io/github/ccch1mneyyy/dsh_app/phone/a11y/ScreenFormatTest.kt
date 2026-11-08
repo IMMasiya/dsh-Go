@@ -104,7 +104,7 @@ class ScreenFormatTest {
             UiNode(bounds = Box(0, 100, 300, 150), text = "ordinary", editable = true),
         ))
         val windows = listOf(UiWindow(1, WindowKind.APP, "example.app", null, frame, root))
-        assertEquals(listOf(passwordBox, codeBox), ScreenShooter.sensitiveBounds(windows))
+        assertEquals(listOf(passwordBox, codeBox), secretFieldBounds(windows))
     }
 
 }

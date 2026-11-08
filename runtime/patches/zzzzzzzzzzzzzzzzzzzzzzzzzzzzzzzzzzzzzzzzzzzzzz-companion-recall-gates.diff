@@ -596,9 +596,9 @@
 -import { HarnessError, createToolResultMessage } from "@deepseek-ai/dsh-llm";
 +import { dshGoRecall, HarnessError, createToolResultMessage } from "@deepseek-ai/dsh-llm";
  import { assertNever, deepFreeze, snapshotJsonValue } from "@deepseek-ai/dsh-util-values";
- //#region lib/types/batch.js
- /**
-@@ -249,6 +249,7 @@
+ import { randomUUID } from "node:crypto";
+ import { emitAgentEvent } from "@deepseek-ai/dsh-agent";
+@@ -273,6 +273,7 @@
  * for complete calls, including a single-call batch.
  */
  var ToolExecutionPipeline = class {
@@ -606,7 +606,7 @@
  	ctx;
  	source;
  	tools;
-@@ -330,6 +331,7 @@
+@@ -356,6 +357,7 @@
  				...base,
  				arguments: deepFreeze(detached)
  			};
@@ -614,7 +614,7 @@
  			this.deferredContexts.set(execution, deferredContexts);
  			this.contentFinalizers.set(execution, finalizerFor());
  			if (!rejected) this.contentProjectors.set(execution, capturedProjector);
-@@ -467,6 +469,8 @@
+@@ -493,6 +495,8 @@
  		try {
  			const tool = this.resolveExecution(exec.name, exec.agent, exec.parent !== void 0, exec.toolSet);
  			if (!tool) throw new ToolNotFoundError(exec.name);

@@ -159,16 +159,16 @@
  import { a as ToolNotFoundError, m as ToolBatchExecutionError, n as TOOL_ABORTED, o as ToolOutputError, p as validateJsonSchemaValue, r as TOOL_ABORTED_BEFORE_DISPATCH } from "./shared-DTdn5dXO.js";
  import { scopeTarget } from "@deepseek-ai/dsh-scope";
  import { dshGoRecall, HarnessError, createToolResultMessage } from "@deepseek-ai/dsh-llm";
-@@ -28,7 +29,7 @@
- async function executeToolBatch(input, pipeline, maxParallel) {
- 	const { calls: toolCalls, signal, agent, toolSet, maxParallelToolCalls } = input;
+@@ -51,7 +52,7 @@
+ 		phoneCaller = Object.freeze({ sessionId: agent.session.id, runId: `${epoch}:${input.log.turn}` });
+ 	}
  	if (maxParallelToolCalls !== void 0 && (!Number.isInteger(maxParallelToolCalls) || maxParallelToolCalls < 1)) throw new RangeError("maxParallelToolCalls must be a positive integer");
 -	const settlement = new BatchSettlement(input);
 +	const settlement = new BatchSettlement(input, pipeline.tools.dshGoCompanionResults);
  	try {
  		const planned = toolCalls.map((block) => ({
  			block,
-@@ -179,8 +180,9 @@
+@@ -203,8 +204,9 @@
  	input;
  	results = [];
  	contexts = [];
@@ -179,7 +179,7 @@
  	}
  	start(block) {
  		if (this.input.log === void 0) return void 0;
-@@ -196,7 +198,9 @@
+@@ -220,7 +222,9 @@
  	commit(block, result, callSeq) {
  		if (this.input.log !== void 0) {
  			const { agent, log: { turn, step } } = this.input;
@@ -190,7 +190,7 @@
  				turn,
  				step,
  				message: createToolResultMessage({
-@@ -210,6 +214,7 @@
+@@ -234,6 +238,7 @@
  				surfaceOp: "append",
  				sourceEventSeqs: [callSeq]
  			});
@@ -198,7 +198,7 @@
  		}
  		this.results.push({
  			callId: block.id,
-@@ -332,6 +337,7 @@
+@@ -358,6 +363,7 @@
  				arguments: deepFreeze(detached)
  			};
  			dshGoRecall.captureTool(execution, agent);
@@ -206,7 +206,7 @@
  			this.deferredContexts.set(execution, deferredContexts);
  			this.contentFinalizers.set(execution, finalizerFor());
  			if (!rejected) this.contentProjectors.set(execution, capturedProjector);
-@@ -565,6 +571,7 @@
+@@ -591,6 +597,7 @@
  		} catch (error) {
  			finalResult = this.materializeFinalResult(toolErrorResult(error));
  		}
