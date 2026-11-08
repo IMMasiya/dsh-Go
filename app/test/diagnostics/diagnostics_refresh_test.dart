@@ -153,15 +153,26 @@ Future<void> _flush(WidgetTester tester) async {
 
 void main() {
   final written = <String>[];
+  final manualFlags = <bool>[];
+  final reports = <String, String>{};
   setUp(() {
     SharedPreferences.setMockInitialValues({});
     written.clear();
+    manualFlags.clear();
+    reports.clear();
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger.setMockMethodCallHandler(
       DiagnosticsPublisher.channel,
       (call) async {
         if (call.method != 'publishDiagnostics') return null;
-        final markdown = (call.arguments as Map<Object?, Object?>)['markdown'] as String;
+        final arguments = call.arguments as Map<Object?, Object?>;
+        expect(arguments.keys, ['markdown', 'manual']);
+        final markdown = arguments['markdown'] as String;
+        final manual = arguments['manual'];
+        expect(manual, isA<bool>(), reason: 'the channel flag must be a fixed Boolean, not a filename');
+        manualFlags.add(manual as bool);
         written.add(markdown);
+        reports['diagnostics.md'] = markdown;
+        if (manual == true) reports['diagnostics-manual.md'] = markdown;
         return {'bytes': markdown.length};
       },
     );
@@ -353,13 +364,21 @@ void main() {
     final f = _Fixture(extra: [systemImeDiagnosticsProvider.overrideWithValue(evidence)]);
     await f.publisher.publish();
     expect(written.single, isNot(contains('System IME evidence')));
+    expect(manualFlags, [false]);
+    expect(reports.keys, ['diagnostics.md']);
     await f.publisher.publish(includeSystemIme: true);
     expect(written.last, contains('System IME evidence'));
     final zipSnapshot = await f.container.read(diagnosticsExporterProvider).collect(systemImeAt);
     expect(zipSnapshot.systemIme, same(evidence.evidence));
     expect(DiagnosticsBundle.entries(zipSnapshot).map((e) => e.name), contains('system-ime.json'));
+    final manualReport = reports['diagnostics-manual.md'];
+    evidence.clear();
     await f.publisher.publish();
     expect(written.last, isNot(contains('System IME evidence')));
+    expect(manualFlags, [false, true, false]);
+    expect(reports['diagnostics.md'], written.last);
+    expect(reports['diagnostics-manual.md'], manualReport, reason: 'clearing memory cannot retract a published report');
+    expect(manualReport, contains('System IME evidence'));
     expect(channel.collections, 1, reason: 'publication/export cannot start a new capture');
   });
 
@@ -383,6 +402,9 @@ void main() {
     expect(written.first, contains('System IME evidence'));
     expect(written.last, contains('- state：connected'));
     expect(written.last, isNot(contains('System IME evidence')));
+    expect(manualFlags, [true, false]);
+    expect(reports['diagnostics.md'], written.last, reason: 'automatic refresh must still update connection facts');
+    expect(reports['diagnostics-manual.md'], written.first, reason: 'queued refresh cannot discard manual IME evidence');
   });
 
   testWidgets('clearing during manual collection cannot put old evidence in the eventual snapshot', (tester) async {
@@ -438,8 +460,25 @@ void main() {
       await publisher.publish();
       expect(written.last, isNot(contains('System IME evidence')));
       expect(manualCollections, 1, reason: 'manual opt-in must reset after draining the queue');
+      expect(manualFlags, [false, true, false]);
+      expect(reports['diagnostics-manual.md'], written[1]);
     });
   }
+
+  testWidgets('a failed native manual publication does not report a saved copy', (tester) async {
+    final flags = <Object?>[];
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger.setMockMethodCallHandler(
+      DiagnosticsPublisher.channel,
+      (call) async {
+        flags.add((call.arguments as Map<Object?, Object?>)['manual']);
+        return null;
+      },
+    );
+    final f = _Fixture();
+    expect(await f.publisher.publish(includeSystemIme: true), isNull);
+    expect(flags, [true]);
+    expect(reports, isEmpty);
+  });
 
   testWidgets('disposing the publisher owner during the final collection await prevents a late write', (tester) async {
     final hold = Completer<VoiceMode>();

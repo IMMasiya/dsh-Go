@@ -89,6 +89,51 @@ void main() {
     expect(diagnostics.evidence?.events, hasLength(2), reason: 'page disposal is not evidence clearing');
   });
 
+  testWidgets('native dialog inactivity preserves consent and its successful result', (tester) async {
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    addTearDown(() => tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed));
+    final channel = _Channel();
+    final diagnostics = SystemImeDiagnostics(channel);
+    addTearDown(diagnostics.dispose);
+    await _pump(tester, diagnostics);
+    await tester.tap(find.text(appL10n.systemImeCollect));
+    await tester.pump();
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+    await tester.pump();
+    expect(diagnostics.collecting, isTrue);
+    expect(channel.cancellations, 0);
+    channel.requests.single.complete(systemImeEvidence());
+    await tester.pump();
+    expect(diagnostics.evidence?.events, hasLength(1));
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    await tester.pump();
+    expect(find.text(appL10n.systemImeRetained), findsOneWidget);
+  });
+
+  for (final target in [AppLifecycleState.hidden, AppLifecycleState.paused, AppLifecycleState.detached]) {
+    testWidgets('actually leaving ($target) still cancels and discards late evidence', (tester) async {
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+      final channel = _Channel();
+      final diagnostics = SystemImeDiagnostics(channel);
+      addTearDown(diagnostics.dispose);
+      await _pump(tester, diagnostics);
+      await tester.tap(find.text(appL10n.systemImeCollect));
+      await tester.pump();
+      for (final state in [AppLifecycleState.inactive, AppLifecycleState.hidden, AppLifecycleState.paused, AppLifecycleState.detached]) {
+        tester.binding.handleAppLifecycleStateChanged(state);
+        if (state == target) break;
+      }
+      expect(diagnostics.collecting, isFalse);
+      expect(channel.cancellations, greaterThanOrEqualTo(1));
+      channel.requests.single.complete(systemImeEvidence());
+      if (target == AppLifecycleState.paused) tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.hidden);
+      if (target != AppLifecycleState.detached) tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+      await tester.pump();
+      expect(diagnostics.evidence, isNull);
+    });
+  }
+
   testWidgets('unavailable gives an optional settings entry without opening or requesting permissions', (tester) async {
     final channel = _Channel();
     final diagnostics = SystemImeDiagnostics(channel);

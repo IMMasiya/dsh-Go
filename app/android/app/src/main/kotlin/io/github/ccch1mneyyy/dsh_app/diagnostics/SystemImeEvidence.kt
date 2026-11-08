@@ -21,6 +21,10 @@ object SystemImeEvidence {
     const val MAX_BYTES = 128 * 1024
     const val MAX_LINE_BYTES = 2048
     const val RUNTIME_MS = 1500L
+    const val REQUEST_MAX_AGE_MS = 4000L
+
+    fun requestFresh(requestedAt: Long, now: Long): Boolean =
+        requestedAt > 0 && requestedAt in (now - REQUEST_MAX_AGE_MS)..now
     val command = listOf(
         "/system/bin/logcat", "-d", "-v", "epoch", "-t", "1000",
         "ImeTracker:I", "InputMethodManager:D", "RemoteInputConnectionImpl:W",
@@ -32,7 +36,7 @@ object SystemImeEvidence {
         "HIDE_SOFT_INPUT_FROM_IME", "HIDE_STATE_HIDDEN_FORWARD_NAV",
         "HIDE_ALWAYS_HIDDEN_STATE", "HIDE_WINDOW_LOST_FOCUS",
     )
-    private val header = Regex("^([0-9]{10,12})[.]([0-9]{3,9}) +([0-9]+) +[0-9]+ +[VDIWEF] +([A-Za-z]+) *: (.*)$")
+    private val header = Regex("^ *([0-9]{10,12})[.]([0-9]{3,9}) +([0-9]+) +[0-9]+ +[VDIWEF] +([A-Za-z]+) *: (.*)$")
     private val tracker = Regex(
         "^" + Regex.escape(APP_PACKAGE) + ":[A-Za-z0-9]+: onRequest(Show|Hide) at " +
             "ORIGIN_(CLIENT|SERVER|IME) reason ([A-Z_]+)(?: fromUser (true|false))?$",
@@ -48,6 +52,8 @@ object SystemImeEvidence {
         val timestamp = seconds * 1000 + match.groupValues[2].take(3).toLong()
         if (timestamp < capturedAt - WINDOW_MS || timestamp > capturedAt) return null
         val pid = match.groupValues[3].toIntOrNull() ?: return null
+        // Package names inside log messages are claims; authenticate the emitter.
+        if (appPid <= 0 || pid != appPid) return null
         val tag = match.groupValues[4]
         val message = match.groupValues[5]
         if (tag == "ImeTracker") {
@@ -57,7 +63,6 @@ object SystemImeEvidence {
                 if (request.groupValues[1] == "Show") "requestShow" else "requestHide",
                 request.groupValues[4].takeIf { it.isNotEmpty() }?.toBooleanStrict(), reason, "imeTracker")
         }
-        if (appPid <= 0 || pid != appPid) return null
         val event = when (tag) {
             "InputMethodManager" -> when {
                 show.matches(message) -> "requestShow"

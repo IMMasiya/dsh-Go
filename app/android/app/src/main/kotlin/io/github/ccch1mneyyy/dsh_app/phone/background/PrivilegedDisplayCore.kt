@@ -90,7 +90,12 @@ class PrivilegedDisplayCore(private val context: Context) {
             }
             if (op == Proto.OP_COLLECT_SYSTEM_IME) {
                 // Independent of display ownership, gates, UiAutomation and injection.
-                val capture = io.github.ccch1mneyyy.dsh_app.diagnostics.SystemImeLogcat.collect(request.getInt(Proto.IME_PID))
+                val evidence = io.github.ccch1mneyyy.dsh_app.diagnostics.SystemImeEvidence
+                val now = System.currentTimeMillis()
+                // An old queued IPC must not begin a new read after its prompt expired.
+                val capture = if (evidence.requestFresh(request.getLong(Proto.IME_REQUESTED_AT), now))
+                    io.github.ccch1mneyyy.dsh_app.diagnostics.SystemImeLogcat.collect(request.getInt(Proto.IME_PID))
+                else io.github.ccch1mneyyy.dsh_app.diagnostics.SystemImeLogcat.Capture("timeout", now)
                 response.putBoolean(Proto.OK, capture.code == "ok" || capture.code == "noEvents")
                 response.putString(Proto.ERROR, capture.code)
                 response.putLong("capturedAt", capture.capturedAt)

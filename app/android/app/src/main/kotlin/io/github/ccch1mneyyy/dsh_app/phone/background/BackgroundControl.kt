@@ -345,6 +345,7 @@ class BackgroundControl private constructor(context: Context) {
             val response = ch.execute(Bundle().apply {
                 putString(Proto.OP, Proto.OP_COLLECT_SYSTEM_IME)
                 putInt(Proto.IME_PID, Process.myPid())
+                putLong(Proto.IME_REQUESTED_AT, System.currentTimeMillis())
             })
             if (!allowed()) return evidence.result("cancelled")
             val code = evidence.coreCode(response.getBoolean(Proto.OK), response.getString(Proto.ERROR))

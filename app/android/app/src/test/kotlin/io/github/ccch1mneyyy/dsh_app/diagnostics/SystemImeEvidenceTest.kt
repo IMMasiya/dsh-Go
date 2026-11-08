@@ -12,6 +12,20 @@ class SystemImeEvidenceTest {
         "$pkg:a1b2: onRequestShow at ORIGIN_CLIENT reason $reason$suffix"
     private fun parse(value: String) = SystemImeEvidence.parse(value, 42, at)
 
+    @Test fun epochPaddingDoesNotDiscardAppEvents() {
+        val trackerEvent = parse("         " + line(tracker()))!!
+        assertEquals("requestShow", trackerEvent.event)
+        assertEquals(1_790_000_019_123L, trackerEvent.timestamp)
+        val legacy = line("showSoftInput() view=android.view.View{123} flags=0", "InputMethodManager")
+        assertEquals("requestShow", parse("         " + legacy)!!.event)
+        assertNull(parse("not a timestamp " + line(tracker())))
+    }
+    @Test fun trackerPackageNameCannotAuthenticateAnotherProcess() {
+        assertNull(parse(line(tracker(), pid = 99)))
+        assertNull(SystemImeEvidence.parse(line(tracker()), 0, at))
+        assertNotNull(parse(line(tracker(), pid = 42)))
+    }
+
     @Test fun trackerReturnsOnlyFixedFields() {
         val event = parse(line(tracker()))!!
         assertEquals(1_790_000_019_123L, event.timestamp)
@@ -80,6 +94,14 @@ class SystemImeEvidenceTest {
         assertEquals(true, SystemImeEvidence.result("noEvents")["ok"])
         assertEquals(false, SystemImeEvidence.result("unavailable")["ok"])
     }
+    @Test fun queuedRequestsExpireBeforeStartingAnotherRead() {
+        assertTrue(SystemImeEvidence.requestFresh(at, at))
+        assertTrue(SystemImeEvidence.requestFresh(at - 4000, at))
+        assertFalse(SystemImeEvidence.requestFresh(at - 4001, at))
+        assertFalse(SystemImeEvidence.requestFresh(at + 1, at))
+        assertFalse(SystemImeEvidence.requestFresh(0, at))
+    }
+
     @Test fun consentMustBeFreshAndCannotSurviveCancellationOrBeReused() {
         val first = SystemImeConsent()
         assertFalse(first.allowed())

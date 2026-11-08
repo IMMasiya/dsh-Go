@@ -187,7 +187,11 @@ class _SystemImeDiagnosticsSectionState extends ConsumerState<SystemImeDiagnosti
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state != AppLifecycleState.resumed) _diagnostics.cancelPending();
+    // A native consent dialog makes Flutter inactive without leaving the Activity.
+    // Native onActivityPaused also revokes consent when the user actually leaves.
+    if (state == AppLifecycleState.hidden || state == AppLifecycleState.paused || state == AppLifecycleState.detached) {
+      _diagnostics.cancelPending();
+    }
   }
 
   @override

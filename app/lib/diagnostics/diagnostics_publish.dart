@@ -85,7 +85,10 @@ class DiagnosticsPublisher {
     if (_disposed || isCurrent?.call() == false) return null;
     final markdown = diagnosticsMarkdown(snapshot);
     try {
-      final reply = await channel.invokeMapMethod<Object?, Object?>('publishDiagnostics', {'markdown': markdown});
+      final reply = await channel.invokeMapMethod<Object?, Object?>('publishDiagnostics', {
+        'markdown': markdown,
+        'manual': includeSystemIme,
+      });
       if (reply == null) return null;
       final bytes = reply['bytes'];
       return PublishedDiagnostics(
