@@ -70,6 +70,8 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
             "phone_opening_background" -> R.string.phone_opening_background
             "phone_reading_background" -> R.string.phone_reading_background
             "phone_reading_screen" -> R.string.phone_reading_screen
+            "phone_system_handler_unconfirmed" -> R.string.phone_system_handler_unconfirmed
+            "phone_system_attempt_stopped" -> R.string.phone_system_attempt_stopped
             "phone_reading_list" -> R.string.phone_reading_list
             "phone_acting" -> R.string.phone_acting
             "phone_status_tap" -> R.string.phone_status_tap

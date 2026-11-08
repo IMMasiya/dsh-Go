@@ -1,5 +1,6 @@
 package io.github.ccch1mneyyy.dsh_app.phone
 
+import io.github.ccch1mneyyy.dsh_app.phone.background.Reasons
 import io.github.ccch1mneyyy.dsh_app.phone.skills.PhoneTaskTrace
 import java.time.ZoneId
 import java.util.concurrent.atomic.AtomicReference
@@ -253,25 +254,32 @@ class PhoneCore(
             // l10n:keep agent tool result
             if (background) return Out("后台屏只能用 app 打开应用，不支持链接。", error = true)
             UrlPolicy.check(url)?.let { return Out(it, error = true, summary = ui.get("phone_log_open_url", "打开链接"), decision = "refused:url") } // l10n:keep test default
-            val target = env.system().urlTarget(url)
-            target.error?.let { return Out(it, error = true, summary = ui.get("phone_log_open_url", "打开链接"), decision = "refused:url") } // l10n:keep test default
-            target.packageName?.let { pkg ->
-                safety.checkOpen(pkg, target.appLabel)?.let { return Out(it.message, error = true, app = target.appLabel ?: pkg, summary = ui.get("phone_log_open_url", "打开链接"), decision = "refused:${it.rule}") } // l10n:keep test default
+            val plan = when (val prepared = env.system().prepareUrl(url)) {
+                is Either.Left -> return Out(prepared.value, error = true, decision = "refused:url")
+                is Either.Right -> prepared.value
             }
-            if (!tasks.isCurrent(owner) || Thread.currentThread().isInterrupted) return stoppedOut("open")
+            val target = (plan.target as? SystemTarget.Known)?.app
+            target?.let { handler ->
+                safety.checkOpen(handler.packageName, handler.label)?.let { refusal ->
+                    return Out(refusal.message, error = true, app = handler.label, decision = "refused:${refusal.rule}")
+                }
+            }
+            if (!current(owner)) return stoppedOut("open")
             skillTrace.markIncomplete(owner)
-            val r = env.system().openUrl(url, target, tasks.systemDispatch(owner))
-            return afterSystem(owner, r, ui.get("phone_log_open_url_scheme", "打开链接 %1\$s:", url.substringBefore(':')), target.appLabel ?: target.packageName) // l10n:keep test default
+            val r = env.system().launch(plan, tasks.systemDispatch(owner))
+            return afterSystem(owner, r, ui.get("phone_log_open_url_scheme", "打开链接 %1\$s:", url.substringBefore(':'))) // l10n:keep test default
         }
         val selected = when (val r = resolveApp(appQ!!)) {
             is Either.Left -> return Out(r.value, error = true)
             is Either.Right -> r.value
         }
         // The list may be cached; approvals and dispatch use a fresh native PM identity.
-        val app = when (val r = env.system().resolveLaunch(selected)) {
+        val plan = when (val r = env.system().prepareLaunch(selected)) {
             is Either.Left -> return Out(r.value, error = true)
             is Either.Right -> r.value
         }
+        val app = (plan.target as? SystemTarget.Known)?.app
+            ?: return Out(Reasons.of("targetIdentityUnavailable"), error = true)
         safety.checkOpen(app.packageName, app.label)?.let {
             return Out(it.message, error = true, app = app.label, summary = ui.get("phone_log_open_app", "打开 %1\$s", app.packageName), decision = "refused:${it.rule}") // l10n:keep test default
         }
@@ -279,11 +287,11 @@ class PhoneCore(
             if (!tasks.isCurrent(owner) || Thread.currentThread().isInterrupted) return stoppedOut("open")
             val ticket = skillTrace.beginOpen(owner, PhoneScreen.MAIN)
             val result = try {
-                env.system().launch(app, tasks.systemDispatch(owner)).also {
+                env.system().launch(plan, tasks.systemDispatch(owner)).also {
                     skillTrace.finish(ticket, it.ok, false, false)
                 }
             } catch (e: Throwable) { skillTrace.fail(ticket); throw e }
-            return afterSystem(owner, result, ui.get("phone_log_open_app", "打开 %1\$s", app.packageName), app.label) // l10n:keep test default
+            return afterSystem(owner, result, ui.get("phone_log_open_app", "打开 %1\$s", app.packageName)) // l10n:keep test default
         }
         val driver = env.driver(PhoneScreen.BACKGROUND, owner)
             ?: return Out(env.backgroundUnavailable(), error = true, app = app.label, summary = ui.get("phone_log_open_background", "后台屏打开 %1\$s", app.packageName), decision = "unavailable") // l10n:keep test default
@@ -309,31 +317,35 @@ class PhoneCore(
             summary = ui.get("phone_log_open_background", "后台屏打开 %1\$s", app.packageName), decision = if (res.ok) decision else "failed") // l10n:keep test default
     }
 
-    /** A system action that brought up another app's UI: attach the new main screen when we can read it. */
-    private fun afterSystem(owner: PhoneTasks.Owner, r: SysResult, summary: String, app: String?): Out {
-        if (!current(owner)) return stoppedAfterSystem(r, summary, app)
-        if (r.ok && !tasks.setAppIfCurrent(owner, r.appLabel ?: app)) return stoppedAfterSystem(r, summary, app)
+    /** The handler is a dispatch fact. Only the following read describes the actual foreground UI. */
+    private fun afterSystem(owner: PhoneTasks.Owner, r: SysResult, summary: String): Out {
+        if (!current(owner)) return stoppedAfterSystem(r, summary)
+        if (r.ok && !tasks.setAppIfCurrent(owner, r.appLabel)) return stoppedAfterSystem(r, summary)
         val screen = try {
             if (r.ok) {
-                // setAppIfCurrent notifies listeners, which can retire this owner.
-                if (!current(owner)) return stoppedAfterSystem(r, summary, app)
+                if (!current(owner)) return stoppedAfterSystem(r, summary)
                 say(owner, ui.get("phone_reading_screen", "DSH 正在看屏幕")) // l10n:keep test default
                 mainScreenAfter(owner, SETTLE_AFTER_LAUNCH_MS)
             } else null
         } catch (_: InterruptedException) {
             Thread.currentThread().interrupt()
-            return stoppedAfterSystem(r, summary, app)
+            return stoppedAfterSystem(r, summary)
         }
-        if (!current(owner)) return stoppedAfterSystem(r, summary, app)
-        return Out(r.message, error = !r.ok, screen = screen, app = r.appLabel ?: app, summary = summary, decision = if (r.ok) "ok" else "failed")
+        if (!current(owner)) return stoppedAfterSystem(r, summary)
+        val expected = (r.target as? SystemTarget.Known)?.app
+        val observation = if (r.ok && expected != null && screen?.packageName != expected.packageName)
+            ui.get("phone_system_handler_unconfirmed", "后续读屏未确认原处理应用位于前台；不会重复启动。") // l10n:keep test default
+        else ""
+        return Out(r.message + if (observation.isEmpty()) "" else "\n$observation", error = !r.ok,
+            screen = screen, app = screen?.appLabel ?: r.appLabel, summary = summary, decision = if (r.ok) "ok" else "failed")
     }
 
-    /** The system already returned; stopping the following observation cannot retract that result. */
-    private fun stoppedAfterSystem(r: SysResult, summary: String, app: String?): Out = Out(
+    /** A later stop does not retract the platform call or replace its attempted target. */
+    private fun stoppedAfterSystem(r: SysResult, summary: String): Out = Out(
         PhoneTasks.STOPPED_MESSAGE + "。\n" + r.message, // l10n:keep agent tool result
-        error = true, app = r.appLabel ?: app,
-        summary = if (r.ok) ui.get("phone_log_system_returned_success", "%1\$s（系统返回成功；后续停止）", summary) // l10n:keep test default
-            else ui.get("phone_log_system_returned_failure", "%1\$s（系统返回失败；后续停止）", summary), // l10n:keep test default
+        error = true, app = r.appLabel,
+        summary = if (r.target != null) ui.get("phone_system_attempt_stopped", "%1\$s（已尝试；后续停止）", summary) // l10n:keep test default
+            else summary,
         decision = "stopped",
     )
 
@@ -380,10 +392,19 @@ class PhoneCore(
                 }
             }
         }
-        if (!tasks.isCurrent(owner) || Thread.currentThread().isInterrupted) return stoppedOut("intent $kind")
+        val plan = when (val prepared = env.system().prepareIntent(spec, shareTo)) {
+            is Either.Left -> return Out(prepared.value, error = true, summary = "intent $kind", decision = "refused:identity")
+            is Either.Right -> prepared.value
+        }
+        (plan.target as? SystemTarget.Known)?.app?.let { handler ->
+            safety.checkOpen(handler.packageName, handler.label)?.let {
+                return Out(it.message, error = true, app = handler.label, summary = "intent $kind", decision = "refused:${it.rule}")
+            }
+        }
+        if (!current(owner)) return stoppedOut("intent $kind")
         skillTrace.markIncomplete(owner)
-        val r = env.system().intent(spec, shareTo, tasks.systemDispatch(owner))
-        return afterSystem(owner, r, "intent $kind", r.appLabel ?: shareTo?.label)
+        val r = env.system().launch(plan, tasks.systemDispatch(owner))
+        return afterSystem(owner, r, "intent $kind")
     }
 
     private fun notify(a: Args, owner: PhoneTasks.Owner): Out {
