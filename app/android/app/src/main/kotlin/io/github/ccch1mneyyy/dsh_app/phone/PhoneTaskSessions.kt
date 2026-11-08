@@ -401,6 +401,8 @@ class PhoneTaskSessions(
                         // Its launch fence survives successful physical cleanup until it returns.
                         if (!task.cancelling) retiring.remove(task)
                         settleSkill(task, ended)
+                        // A successful cleanup consumes this retry token; legacy reuses the Task record.
+                        task.pendingFinish = null
                         if (task.retired == null && ended != null && task.tasks.isCurrent(ended)) {
                             task.finished = ended
                             if (task.sessionId == null) task.stopped = false
