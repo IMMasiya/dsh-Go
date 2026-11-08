@@ -208,6 +208,15 @@
             android:taskAffinity=""
             android:theme="@android:style/Theme.NoDisplay" />
 
+        <!-- Local self-check only: App UID starts this fixed inert target on its leased display. -->
+        <activity
+            android:name=".phone.selfcheck.PhoneSelfCheckTargetActivity"
+            android:exported="false"
+            android:launchMode="standard"
+            android:taskAffinity="${applicationId}.phone.selfcheck"
+            android:excludeFromRecents="true"
+            android:theme="@android:style/Theme.Material.Light.NoActionBar" />
+
         <!-- Quick Settings tile 「新对话」 (tile/NewChatTileService.kt). -->
         <service
             android:name=".tile.NewChatTileService"

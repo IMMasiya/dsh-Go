@@ -289,7 +289,9 @@ class PhonePlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandle
         val args = call.arguments as? Map<*, *>
         val valid = when (call.method) {
             "phoneSelfCheckStatus" -> call.arguments == null
-            "startPhoneSelfCheck" -> args != null && args.keys == setOf("v") && args["v"] is Int && args["v"] == 1
+            "startPhoneSelfCheck" -> args != null && args["v"] is Int && args["v"] == 1 &&
+                (args.keys == setOf("v") || args.keys == setOf("v", "profile") &&
+                    PhoneSelfCheckReport.Profile.parse(args["profile"]) != null)
             else -> args != null && args.keys == setOf("v", "runHandle") && args["v"] is Int &&
                 args["v"] == 1 && args["runHandle"] is String
         }
@@ -299,7 +301,9 @@ class PhonePlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandle
                 val host = activity?.activity
                 if (host == null || !AppVisibility.isResumed(host))
                     control.selfCheck.refused(PhoneSelfCheckReport.Reason.UNAVAILABLE)
-                else control.selfCheck.start(owner, live)
+                else control.selfCheck.start(owner, live,
+                    PhoneSelfCheckReport.Profile.parse(args?.get("profile")) ?: PhoneSelfCheckReport.Profile.PROBE_B,
+                    { activity?.activity?.takeIf { live() && AppVisibility.isResumed(it) } })
             }
             "phoneSelfCheckStatus" -> control.selfCheck.status()
             "cancelPhoneSelfCheck" -> control.selfCheck.cancel(checkNotNull(args)["runHandle"] as String)

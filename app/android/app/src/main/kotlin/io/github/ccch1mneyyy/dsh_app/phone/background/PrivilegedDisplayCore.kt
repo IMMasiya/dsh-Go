@@ -13,6 +13,7 @@ import android.app.ActivityOptions
 import android.app.KeyguardManager
 import android.app.PendingIntent
 import android.app.UiAutomation
+import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import io.github.ccch1mneyyy.dsh_app.phone.a11y.ImageGeometry
@@ -45,6 +46,7 @@ import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 import android.view.accessibility.AccessibilityWindowInfo
 import io.github.ccch1mneyyy.dsh_app.phone.SensitiveWords
+import io.github.ccch1mneyyy.dsh_app.phone.selfcheck.TargetContract
 import java.io.ByteArrayOutputStream
 import java.lang.reflect.InvocationTargetException
 import java.lang.reflect.Proxy
@@ -94,6 +96,8 @@ class PrivilegedDisplayCore(private val context: Context) {
     private var height = 0
     private val released = AtomicBoolean(false)
     private var strictOwner = false
+    private var targetSequence: SelfCheckTargetSequence? = null
+    private var targetSnapshot: TargetSnapshot? = null
     private var selfCheckOwner = false
     private var selfCheckWindow: BackgroundInputProbe? = null
     private var releasingDisplayId: Int? = null
@@ -119,6 +123,7 @@ class PrivilegedDisplayCore(private val context: Context) {
     fun handle(request: Bundle): Bundle {
         val response = Bundle()
         val op = request.getString(Proto.OP)
+        var targetReply = SelfCheckTargetRequest.Step.entries.any { it.op == op }
         var selfCheckReply = op == Proto.OP_SELF_CHECK_PROBE
         try {
             if (op == Proto.OP_PROBE) {
@@ -131,6 +136,11 @@ class PrivilegedDisplayCore(private val context: Context) {
                 if (runCatching { rootTasksEmpty(Display.DEFAULT_DISPLAY) }.isSuccess) {
                     response.putInt(Proto.RELEASE_RECEIPT, 1)
                     response.putInt(Proto.SELF_CHECK_PROBE_VERSION, 1)
+                    if (Build.VERSION.SDK_INT >= 34 && runCatching {
+                        rootTaskInfoType.getField("topActivity")
+                        rootTaskInfoType.getField("displayId")
+                        privileged.packageManager.getActivityInfo(ComponentName(Proto.APP_PACKAGE, TargetContract.ACTIVITY_CLASS), 0)
+                    }.isSuccess) response.putInt(Proto.SELF_CHECK_TARGET_VERSION, 1)
                 }
                 return response
             }
@@ -168,13 +178,14 @@ class PrivilegedDisplayCore(private val context: Context) {
             if (op == Proto.OP_GRANT_SECURE_SETTINGS) {
                 lock.withLock {
                     requireTreeReady()
-                    if (selfCheckOwner) throw Fault("identityChanged")
+                    if (selfCheckOwner || targetSequence != null) throw Fault("identityChanged")
                     grantSecureSettings(request.getInt(Proto.USER))
                 }
                 response.putBoolean(Proto.OK, true)
                 return response
             }
             lock.withLock {
+                targetReply = targetReply || targetSequence != null
                 selfCheckReply = selfCheckReply || selfCheckOwner
                 try { dispatch(op, request, response) }
                 catch (e: Throwable) { visualObservation = null; throw e }
@@ -183,7 +194,7 @@ class PrivilegedDisplayCore(private val context: Context) {
         } catch (e: Throwable) {
             response.putBoolean(Proto.OK, false)
             response.putString(Proto.ERROR, failureCode(e))
-            val detail = if (selfCheckReply) (e as? InputProbe.Failure)?.observation?.encode() else failureDetail(e)
+            val detail = if (targetReply) null else if (selfCheckReply) (e as? InputProbe.Failure)?.observation?.encode() else failureDetail(e)
             detail?.let { response.putString(Proto.ERROR_DETAIL, it) }
         }
         return response
@@ -203,6 +214,10 @@ class PrivilegedDisplayCore(private val context: Context) {
         else e.javaClass.simpleName
 
     private fun dispatch(op: String?, request: Bundle, response: Bundle) {
+        if (SelfCheckTargetRequest.Step.entries.any { it.op == op }) {
+            selfCheckTarget(request, response)
+            return
+        }
         if (op == Proto.OP_SELF_CHECK_PROBE) {
             requireTreeReady()
             selfCheckProbe(request, response)
@@ -211,7 +226,7 @@ class PrivilegedDisplayCore(private val context: Context) {
         val ownerId = request.getString(Proto.OWNER).orEmpty()
         if (op == null || ownerId.isEmpty()) throw Fault("invalidArguments")
         if (op == Proto.OP_RELEASE) {
-            if (selfCheckOwner && !request.containsKey(Proto.RELEASE_RECEIPT)) throw Fault("releaseReceiptRequired")
+            if ((selfCheckOwner || targetSequence != null) && !request.containsKey(Proto.RELEASE_RECEIPT)) throw Fault("releaseReceiptRequired")
             if (request.containsKey(Proto.RELEASE_RECEIPT)) {
                 if (request.get(Proto.RELEASE_RECEIPT) !is Int || request.getInt(Proto.RELEASE_RECEIPT) != 1) throw Fault("invalidArguments")
                 val neverCreated = releaseStrict(ownerId)
@@ -226,7 +241,7 @@ class PrivilegedDisplayCore(private val context: Context) {
             return
         }
         requireTreeReady()
-        if (selfCheckOwner) throw Fault("identityChanged")
+        if (selfCheckOwner || targetSequence != null) throw Fault("identityChanged")
         if (owner != null && owner != ownerId) throw Fault("identityChanged")
         if ((op == Proto.OP_CREATE || op == Proto.OP_LAUNCH) && request.containsKey(Proto.RELEASE_RECEIPT)) {
             if (request.get(Proto.RELEASE_RECEIPT) !is Int || request.getInt(Proto.RELEASE_RECEIPT) != 1) throw Fault("invalidArguments")
@@ -296,6 +311,142 @@ class PrivilegedDisplayCore(private val context: Context) {
                 observe(pkg, false, response)
             }
             else -> throw Fault("invalidArguments")
+        }
+    }
+
+    private data class TargetSnapshot(val run: String, val windowId: Int, val index: Int, val element: BgNode)
+
+    private fun selfCheckTarget(request: Bundle, response: Bundle) {
+        val parsed = SelfCheckTargetRequest.parse(request.keySet()) { request.get(it) }
+            ?: throw Fault("invalidArguments")
+        response.putString(Proto.OWNER, parsed.owner)
+        response.putInt(Proto.SELF_CHECK_TARGET_VERSION, 1)
+        response.putString(Proto.TARGET_RUN, parsed.run)
+        response.putString(Proto.STEP_NONCE, parsed.nonce)
+        when (parsed.step) {
+            SelfCheckTargetRequest.Step.CREATE -> response.putBoolean(Proto.SELF_CHECK_DISPLAY_READY, false)
+            SelfCheckTargetRequest.Step.READ -> {
+                response.putBoolean(Proto.TARGET_MATCHED, false)
+                response.putBoolean(Proto.TREE_COMPLETE, false)
+                response.putBoolean(Proto.INITIAL_COUNTER_MATCHED, false)
+            }
+            SelfCheckTargetRequest.Step.TAP -> response.putBoolean(Proto.ACTION_ATTEMPTED, false)
+        }
+        requireTreeReady()
+        var sequence = targetSequence
+        if (sequence == null) {
+            if (parsed.step != SelfCheckTargetRequest.Step.CREATE || owner != null || lastReleasedOwner == parsed.owner)
+                throw Fault("identityChanged")
+            if (display != null || reader != null || pendingReader != null || readerAllocationUncertain || selfCheckWindow != null)
+                throw Fault("releaseUnconfirmed")
+            // Register the owner and purpose before ANY allocation. Failed create still needs RELEASE.
+            owner = parsed.owner
+            strictOwner = true
+            targetSnapshot = null
+            sequence = SelfCheckTargetSequence(parsed.owner, parsed.run)
+            targetSequence = sequence
+            releasingDisplayId = null
+            displayCreationAttempted = false
+            displayApiReleased = false
+            visualObservation = null
+        }
+        if (owner != parsed.owner || !strictOwner || selfCheckOwner) throw Fault("identityChanged")
+        sequence.enter(parsed)?.let { throw Fault(it) }
+        if (Build.VERSION.SDK_INT < 34) throw Fault("targetUnavailable")
+        if (keyguard?.isKeyguardLocked == true) throw Fault("locked")
+        when (parsed.step) {
+            SelfCheckTargetRequest.Step.CREATE -> {
+                // Fixed ordinary-display flags, not B's Presentation path. Never launches here.
+                createDisplay(Bundle().apply {
+                    putInt(Proto.SHORT_SIDE, 720); putInt(Proto.ASPECT_W, 9); putInt(Proto.ASPECT_H, 20)
+                })
+                val actual = display?.display ?: throw Fault("displayMissing")
+                if (!actual.isValid || actual.displayId <= Display.DEFAULT_DISPLAY) throw Fault("displayUnsupported")
+                response.putInt(Proto.DISPLAY_ID, actual.displayId)
+                response.putBoolean(Proto.SELF_CHECK_DISPLAY_READY, true)
+            }
+            SelfCheckTargetRequest.Step.READ -> {
+                targetSnapshot = awaitTargetSnapshot(parsed.run, 0, response, initial = true)
+            }
+            SelfCheckTargetRequest.Step.TAP -> {
+                val previous = targetSnapshot ?: throw Fault("outOfOrder")
+                val expected = Bundle().apply {
+                    putInt(Proto.ELEMENT, previous.index)
+                    putString(Proto.EXPECT_ROLE, previous.element.role)
+                    putString(Proto.EXPECT_LABEL, previous.element.label)
+                    putString(Proto.EXPECT_VIEW_ID, previous.element.viewId)
+                }
+                // resolveElement's actual fresh location read checks the SAME run and window.
+                val button = resolveElement(Proto.APP_PACKAGE, expected, previous)
+                requireTargetComponent()
+                response.putBoolean(Proto.ACTION_ATTEMPTED, true)
+                injectTap(button.bounds.centerX(), button.bounds.centerY(), false)
+                awaitTargetSnapshot(parsed.run, 1, response, initial = false, windowId = previous.windowId)
+            }
+        }
+        sequence.complete(parsed.step)
+    }
+
+    /** Full ATMS query, not getRunningTasks(50). No server Context UID is called the App user. */
+    private fun requireTargetComponent() {
+        val actual = display?.display ?: throw Fault("displayMissing")
+        if (!actual.isValid || actual.displayId <= Display.DEFAULT_DISPLAY || targetSequence == null)
+            throw Fault("targetChanged")
+        if (keyguard?.isKeyguardLocked == true) throw Fault("locked")
+        val rows = rootTasksMethod.invoke(taskManager, actual.displayId) as? List<*> ?: throw Fault("targetUnavailable")
+        if (rows.any { !rootTaskInfoType.isInstance(it) }) throw Fault("targetUnavailable")
+        if (rows.isEmpty()) throw Fault("targetUnavailable")
+        if (rows.size != 1) throw Fault("targetChanged")
+        val row = rows.single()
+        val component = rootTaskInfoType.getField("topActivity").get(row) as? ComponentName
+            ?: throw Fault("targetUnavailable")
+        if (rootTaskInfoType.getField("displayId").getInt(row) != actual.displayId ||
+            component.packageName != Proto.APP_PACKAGE || component.className != TargetContract.ACTIVITY_CLASS)
+            throw Fault("targetChanged")
+    }
+
+    private fun readTargetSnapshot(run: String, counter: Int, response: Bundle? = null, initial: Boolean = false, windowId: Int? = null): TargetSnapshot {
+        requireTargetComponent()
+        val evidence = SelfCheckTargetEvidence(run, counter)
+        val tree = try { readTree(displayId(), Proto.APP_PACKAGE, targetEvidence = evidence) }
+        catch (e: Fault) { throw Fault(when (e.code) {
+            "treeUnavailable", "textConnectionUnavailable" -> "targetUnavailable"
+            "displayTargetChanged" -> "targetChanged"
+            else -> e.code
+        }) }
+        requireTargetComponent()
+        val button = tree.elements.singleOrNull { it.viewId == evidence.buttonId }
+        val bounds = button?.bounds
+        val usable = button != null && bounds != null && !bounds.isEmpty && bounds.left >= 0 && bounds.top >= 0 &&
+            bounds.right <= width && bounds.bottom <= height && button.flags and Proto.FLAG_CLICKABLE != 0
+        val matched = tree.complete && tree.targetWindowId != null && (windowId == null || tree.targetWindowId == windowId) &&
+            evidence.targetMatched && !tree.hasSecrets && usable
+        response?.putBoolean(Proto.TARGET_MATCHED, matched)
+        response?.putBoolean(Proto.TREE_COMPLETE, tree.complete)
+        if (initial) response?.putBoolean(Proto.INITIAL_COUNTER_MATCHED, tree.complete && evidence.counterMatched)
+        else if (tree.complete) response?.putBoolean(Proto.COUNTER_MATCHED, evidence.counterMatched)
+        if (!tree.complete) throw Fault("targetUnavailable")
+        if (!matched) throw Fault("targetChanged")
+        if (!evidence.counterMatched) throw Fault("targetReadbackMismatch")
+        return TargetSnapshot(run, checkNotNull(tree.targetWindowId), tree.elements.indexOf(button) + 1, checkNotNull(button))
+    }
+
+    /** Repeats only bounded read observations inside this consumed op, never the tap or launch. */
+    private fun awaitTargetSnapshot(run: String, counter: Int, response: Bundle, initial: Boolean, windowId: Int? = null): TargetSnapshot {
+        val deadline = SystemClock.uptimeMillis() + if (initial) 4000L else 1500L
+        while (true) {
+            // Only this latest read may supply its facts. Never carry an earlier matching
+            // window across a later identity/query failure; ACTION_ATTEMPTED stays sticky.
+            val counterKey = if (initial) Proto.INITIAL_COUNTER_MATCHED else Proto.COUNTER_MATCHED
+            for (key in listOf(Proto.TARGET_MATCHED, Proto.TREE_COMPLETE, counterKey)) {
+                if (initial) response.putBoolean(key, false) else response.remove(key)
+            }
+            try {
+                return readTargetSnapshot(run, counter, response, initial, windowId)
+            } catch (e: Fault) {
+                if (e.code !in setOf("targetUnavailable", "targetReadbackMismatch") || SystemClock.uptimeMillis() >= deadline) throw e
+                sleepChecked(50)
+            }
         }
     }
 
@@ -529,6 +680,7 @@ class PrivilegedDisplayCore(private val context: Context) {
             }
         }
         display = null; owner = null; strictOwner = false; selfCheckOwner = false
+        targetSequence = null; targetSnapshot = null
         releasingDisplayId = null; displayCreationAttempted = false; displayApiReleased = false
         lastReleasedOwner = ownerId
         lastReleaseNeverCreated = neverCreated
@@ -772,7 +924,7 @@ class PrivilegedDisplayCore(private val context: Context) {
         } else lock.lock()
         val reply = try {
             if (enabled) requireTreeReady()
-            if (selfCheckOwner) throw Fault("identityChanged")
+            if (selfCheckOwner || targetSequence != null) throw Fault("identityChanged")
             val requestedOwner = request.getString(Proto.OWNER)
             if (requestedOwner.isNullOrEmpty() || requestedOwner != owner) throw Fault("identityChanged")
             requireDisplay()
@@ -884,13 +1036,14 @@ class PrivilegedDisplayCore(private val context: Context) {
 
     // ---- UiAutomation control-tree read ------------------------------------
 
-    private class TreeRead(val targetId: Int = 0, val inspectVisual: Boolean = false) {
+    private class TreeRead(val targetId: Int = 0, val inspectVisual: Boolean = false, val targetEvidence: SelfCheckTargetEvidence? = null) {
         var visualWindow: BackgroundVisualObservation.Window? = null
         var hasSensitive = false
         val elements = ArrayList<BgNode>()
         var visited = 0
         var complete = true
         var hasSecrets = false
+        var targetWindowId: Int? = null
         var target: AccessibilityNodeInfo? = null
     }
 
@@ -923,11 +1076,11 @@ class PrivilegedDisplayCore(private val context: Context) {
         } finally { closeTreeConnection() }
     }
 
-    private fun readTree(displayId: Int, pkg: String, scanOtherWindows: Boolean = false, inspectVisual: Boolean = false): TreeRead {
+    private fun readTree(displayId: Int, pkg: String, scanOtherWindows: Boolean = false, inspectVisual: Boolean = false, targetEvidence: SelfCheckTargetEvidence? = null): TreeRead {
         val vd = display ?: throw Fault("displayMissing")
         return withTreeConnection(vd.display, pkg, "treeUnavailable") { automation ->
             tracePhase("dsh.bg.treeRead") {
-                readTree(automation, displayId, pkg, scanOtherWindows = scanOtherWindows, inspectVisual = inspectVisual)
+                readTree(automation, displayId, pkg, scanOtherWindows = scanOtherWindows, inspectVisual = inspectVisual, targetEvidence = targetEvidence)
             }
         }
     }
@@ -935,6 +1088,7 @@ class PrivilegedDisplayCore(private val context: Context) {
     private fun readTree(
         automation: UiAutomation, displayId: Int, pkg: String,
         targetId: Int = 0, scanOtherWindows: Boolean = false, inspectVisual: Boolean = false,
+        targetEvidence: SelfCheckTargetEvidence? = null,
     ): TreeRead {
         runCatching { invoke(automation, "clearCache") }
         @Suppress("UNCHECKED_CAST")
@@ -944,12 +1098,14 @@ class PrivilegedDisplayCore(private val context: Context) {
         val windows = displayWindows.filter {
             it.type == AccessibilityWindowInfo.TYPE_APPLICATION
         }
+        if (targetEvidence != null && (displayWindows.size != 1 || windows.size != 1)) throw Fault("targetUnavailable")
         val roots = ArrayList<AccessibilityNodeInfo?>()
         try {
             for (window in windows) roots.add(window.root)
             val selected = BackgroundTree.selectApplicationWindow(roots.map { it?.packageName?.toString() }, pkg)
                 ?: throw Fault(if (roots.firstOrNull() != null) "displayTargetChanged" else "treeUnavailable")
-            val tree = TreeRead(targetId, inspectVisual)
+            val tree = TreeRead(targetId, inspectVisual, targetEvidence)
+            if (targetEvidence != null) tree.targetWindowId = windows[selected.index].id
             if (inspectVisual && displayWindows.size == 1 && windows.size == 1) {
                 val window = windows[selected.index]
                 tree.visualWindow = try {
@@ -985,6 +1141,8 @@ class PrivilegedDisplayCore(private val context: Context) {
         if (node == null) { tree.complete = false; return }
         if (tree.visited >= budget) { tree.complete = false; return }
         tree.visited++
+        tree.targetEvidence?.observe(node.viewIdResourceName, node.isVisibleToUser, node.text,
+            node.contentDescription, node.isEnabled, node.isClickable)
         if (node.isVisibleToUser && isSecret(node)) tree.hasSecrets = true
         val text = if (emitElements || tree.inspectVisual) bestText(node) else ""
         if (tree.inspectVisual && node.isVisibleToUser && !tree.hasSensitive) {
@@ -1105,11 +1263,17 @@ class PrivilegedDisplayCore(private val context: Context) {
 
     // ---- actions -----------------------------------------------------------
 
-    private fun resolveElement(pkg: String, request: Bundle): BgNode {
+    private fun resolveElement(pkg: String, request: Bundle, target: TargetSnapshot? = null): BgNode {
         val index = request.getInt(Proto.ELEMENT, -1)
         if (index < 1) throw Fault("invalidArguments")
-        val elements = readTree(displayId(), pkg).elements
-        val e = elements.getOrNull(index - 1) ?: throw Fault("elementMissing")
+        val e = if (target == null) {
+            readTree(displayId(), pkg).elements.getOrNull(index - 1) ?: throw Fault("elementMissing")
+        } else {
+            val fresh = readTargetSnapshot(target.run, 0)
+            if (fresh.windowId != target.windowId || fresh.index != index || fresh.element.bounds != target.element.bounds)
+                throw Fault("targetChanged")
+            fresh.element
+        }
         val expectRole = request.getString(Proto.EXPECT_ROLE)
         val expectLabel = request.getString(Proto.EXPECT_LABEL)
         val expectViewId = request.getString(Proto.EXPECT_VIEW_ID)
@@ -1117,7 +1281,7 @@ class PrivilegedDisplayCore(private val context: Context) {
         // target, so "Invoice 12 view" turning into "Invoice 12 delete" must not pass.
         if (expectRole != null && expectRole != e.role ||
             expectLabel != null && expectLabel != e.label ||
-            expectViewId != null && expectViewId != e.viewId) throw Fault("staleSnapshot")
+            expectViewId != null && expectViewId != e.viewId) throw Fault(if (target == null) "staleSnapshot" else "targetChanged")
         return e
     }
 

@@ -13,7 +13,9 @@ const phoneSelfCheckStages = <String>[
   'device', 'channel', 'display', 'input_probe', 'launch', 'tree', 'tap', 'scroll',
   'back', 'text_ascii', 'text_zh', 'capture', 'continuity', 'main', 'ocr', 'cleanup',
 ];
-const _covered = {'device', 'channel', 'display', 'input_probe', 'cleanup'};
+const phoneSelfCheckProfiles = <String>['probe_b', 'target_c1'];
+const _probeCovered = {'device', 'channel', 'display', 'input_probe', 'cleanup'};
+const _targetCovered = {'device', 'channel', 'display', 'launch', 'tree', 'tap', 'cleanup'};
 const _runStates = {'idle', 'running', 'cleaning', 'done', 'cancelled', 'cleanup_pending'};
 const _stepStates = {'not_run', 'running', 'pass', 'fail', 'skipped', 'unknown', 'cancelled'};
 const _reasons = {
@@ -23,6 +25,8 @@ const _reasons = {
   'releasePending', 'releaseUnconfirmed', 'releaseFailed', 'releaseQueryFailed', 'releaseReceiptRequired',
   'inputWindowNotReady', 'inputUnconfirmed', 'inputRejected', 'inputApiUnavailable',
   'inputProbeCleanupFailed', 'systemOperationDenied', 'deviceUnavailable', 'timeout',
+  'targetUnavailable', 'targetChanged', 'targetCleanupPending', 'targetWrongMain',
+  'targetReadbackMismatch', 'treeCleanupPending', 'targetLaunchDenied',
 };
 String? _reason(Object? value) => value == null ? null : value is String && _reasons.contains(value) ? value : 'other';
 
@@ -42,6 +46,13 @@ String phoneSelfCheckReasonGroup(String? reason) => switch (reason) {
   'releaseQueryFailed' || 'releaseReceiptRequired' || 'inputProbeCleanupFailed' => 'cleanup',
   'systemOperationDenied' => 'denied',
   'timeout' => 'timeout',
+  'targetUnavailable' => 'target_unavailable',
+  'targetChanged' => 'target_changed',
+  'targetCleanupPending' => 'target_cleanup',
+  'targetWrongMain' => 'target_main',
+  'targetReadbackMismatch' => 'target_readback',
+  'treeCleanupPending' => 'tree_cleanup',
+  'targetLaunchDenied' => 'target_launch',
   'unavailable' || 'channelUnavailable' || 'deviceUnavailable' => 'unavailable',
   _ => 'other',
 };
@@ -54,14 +65,23 @@ class PhoneSelfCheckStep {
   final String? reason;
   final int? durationMs;
 
-  static PhoneSelfCheckStep parse(String stage, Map? value) {
-    if (!_covered.contains(stage)) return PhoneSelfCheckStep._(stage, 'not_run', false, null, null);
+  static PhoneSelfCheckStep parse(String stage, Map? value, {String profile = 'probe_b'}) {
+    final main = profile == 'target_c1' && stage == 'main';
+    final covered = profile == 'target_c1' ? _targetCovered : _probeCovered;
+    if (!covered.contains(stage) && !main) return PhoneSelfCheckStep._(stage, 'not_run', false, null, null);
+    // C1 never samples absence of MAIN disturbance: only a real wrong-MAIN failure is evidence.
+    if (main && (value == null || value['state'] == 'not_run' && value['observed'] == false && value['reason'] == null)) {
+      return PhoneSelfCheckStep._(stage, 'not_run', false, null, null);
+    }
     if (value == null) return PhoneSelfCheckStep._(stage, 'unknown', false, 'invalidResponse', null);
     final state = value['state'];
     final observed = value['observed'];
     final duration = value['durationMs'];
     if (state is! String || !_stepStates.contains(state) || observed is! bool ||
         duration != null && (duration is! int || duration < 0)) {
+      return PhoneSelfCheckStep._(stage, 'unknown', false, 'invalidResponse', null);
+    }
+    if (main && (state != 'fail' || !observed || value['reason'] != 'targetWrongMain')) {
       return PhoneSelfCheckStep._(stage, 'unknown', false, 'invalidResponse', null);
     }
     // A claimed pass without an observation cannot be green; not_run never carries evidence.
@@ -74,7 +94,7 @@ class PhoneSelfCheckStep {
 
 class PhoneSelfCheckSnapshot {
   const PhoneSelfCheckSnapshot._({required this.available, required this.accepted, required this.state,
-    required this.steps, this.runHandle, this.reason});
+    required this.steps, this.runHandle, this.reason, this.profile});
   factory PhoneSelfCheckSnapshot.unavailable() => PhoneSelfCheckSnapshot._(
     available: false, accepted: false, state: 'unknown', reason: 'unavailable',
     steps: List.unmodifiable([for (final stage in phoneSelfCheckStages) PhoneSelfCheckStep.parse(stage, null)]),
@@ -82,6 +102,8 @@ class PhoneSelfCheckSnapshot {
   final bool available;
   final bool accepted;
   final String state;
+  /// Native run identity metadata. A UI choice never changes this value.
+  final String? profile;
   /// Local action identity only. Never rendered, logged, used as a filename, or exported.
   final String? runHandle;
   final String? reason;
@@ -94,6 +116,8 @@ class PhoneSelfCheckSnapshot {
         value['coverage'] != 'partial' || value['state'] is! String || !_runStates.contains(value['state'])) {
       return PhoneSelfCheckSnapshot.unavailable();
     }
+    final profile = value.containsKey('profile') ? value['profile'] : 'probe_b';
+    if (profile is! String || !phoneSelfCheckProfiles.contains(profile)) return PhoneSelfCheckSnapshot.unavailable();
     final rawSteps = value['steps'];
     if (rawSteps is! List || rawSteps.length > phoneSelfCheckStages.length) return PhoneSelfCheckSnapshot.unavailable();
     final byStage = <String, Map>{};
@@ -113,8 +137,8 @@ class PhoneSelfCheckSnapshot {
       return PhoneSelfCheckSnapshot.unavailable();
     }
     return PhoneSelfCheckSnapshot._(available: true, accepted: value['accepted'] as bool,
-      state: state, runHandle: handle, reason: _reason(value['reason']),
-      steps: List.unmodifiable([for (final stage in phoneSelfCheckStages) PhoneSelfCheckStep.parse(stage, byStage[stage])]),
+      state: state, runHandle: handle, reason: _reason(value['reason']), profile: profile,
+      steps: List.unmodifiable([for (final stage in phoneSelfCheckStages) PhoneSelfCheckStep.parse(stage, byStage[stage], profile: profile)]),
     );
   }
 }
@@ -123,7 +147,10 @@ class PhoneSelfCheckChannel {
   const PhoneSelfCheckChannel([this.channel = const MethodChannel('dsh/phone')]);
   final MethodChannel channel;
   Future<PhoneSelfCheckSnapshot> status() => _invoke('phoneSelfCheckStatus');
-  Future<PhoneSelfCheckSnapshot> start() => _invoke('startPhoneSelfCheck', {'v': 1});
+  Future<PhoneSelfCheckSnapshot> start({String profile = 'probe_b'}) {
+    if (!phoneSelfCheckProfiles.contains(profile)) return Future.value(PhoneSelfCheckSnapshot.unavailable());
+    return _invoke('startPhoneSelfCheck', {'v': 1, if (profile != 'probe_b') 'profile': profile});
+  }
   Future<PhoneSelfCheckSnapshot> cancel(String handle) => _invoke('cancelPhoneSelfCheck', {'v': 1, 'runHandle': handle});
   Future<PhoneSelfCheckSnapshot> retry(String handle) => _invoke('retryPhoneSelfCheckCleanup', {'v': 1, 'runHandle': handle});
   Future<PhoneSelfCheckSnapshot> _invoke(String method, [Map<String, Object?>? args]) async {
@@ -172,7 +199,9 @@ class PhoneSelfCheckController extends ChangeNotifier {
     }
   }
 
-  Future<void> start() async { if (canStart) await _command(channel.start); }
+  Future<void> start({String profile = 'probe_b'}) async {
+    if (canStart && phoneSelfCheckProfiles.contains(profile)) await _command(() => channel.start(profile: profile));
+  }
   Future<void> cancel() async {
     final handle = snapshot.runHandle;
     if (canCancel && handle != null) await _command(() => channel.cancel(handle));
@@ -200,7 +229,10 @@ class PhoneSelfCheckController extends ChangeNotifier {
   }
 
   void _accept(PhoneSelfCheckSnapshot next) {
-    if (next.available) { snapshot = next; _uncertain = false; readFailed = false; }
+    if (next.available && snapshot.runHandle != null && next.runHandle == snapshot.runHandle && next.profile != snapshot.profile) {
+      // A run cannot switch coverage after it starts, including a reply that drops C1's profile.
+      readFailed = true; _uncertain = true;
+    } else if (next.available) { snapshot = next; _uncertain = false; readFailed = false; }
     else { readFailed = true; }
     notifyListeners();
   }
@@ -218,11 +250,20 @@ class PhoneSelfCheckController extends ChangeNotifier {
 
 /// Only this fixed whitelist is serialized. No raw map, handle, log, settings, or content path.
 String phoneSelfCheckMarkdown(PhoneSelfCheckSnapshot snapshot) {
-  final out = StringBuffer('# DSH local phone self-check\n\nCoverage: partial.\n'
-      'Only device, selected channel, presentation display, input receiver and cleanup are covered.\n'
-      'Activity launch, text, images, continuity, MAIN disturbance and OCR are not tested.\n'
-      'Cleanup can mean only return of an unused local reservation, not that a display was created.\n'
-      'This is the latest accepted status snapshot, not proof of the current device state.\n\n');
+  final out = StringBuffer('# DSH local phone self-check\n\nCoverage: partial.\n');
+  out.writeln('Profile: ${snapshot.profile ?? "unknown"}');
+  if (snapshot.profile == 'target_c1') {
+    out.writeln('Only device, selected channel, ordinary display, fixed target launch/tree/tap and cleanup are covered.');
+    out.writeln('MAIN only records an observed wrong-display failure; no MAIN pass or absence of disturbance is claimed.');
+    out.writeln('Input receiver, scrolling, back, text, images, continuity and OCR are not tested.');
+  } else if (snapshot.profile == 'probe_b') {
+    out.writeln('Only device, selected channel, presentation display, input receiver and cleanup are covered.');
+    out.writeln('Activity launch, text, images, continuity, MAIN disturbance and OCR are not tested.');
+  } else {
+    out.writeln('Profile unavailable; no check coverage can be established.');
+  }
+  out.writeln('Cleanup can mean only return of an unused local reservation, not that a display was created.');
+  out.writeln('This is the latest accepted status snapshot, not proof of the current device state.\n');
   out.writeln('State: ${snapshot.state}');
   out.writeln('Reason: ${phoneSelfCheckReasonGroup(snapshot.reason)}\n');
   out.writeln('| Stage | State | Observed | Reason | Duration (ms) |');

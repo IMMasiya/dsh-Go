@@ -1,6 +1,8 @@
 package io.github.ccch1mneyyy.dsh_app.phone
 
+import android.app.Activity
 import android.os.Bundle
+import io.github.ccch1mneyyy.dsh_app.phone.PhoneSelfCheckReport.Profile
 import io.github.ccch1mneyyy.dsh_app.phone.PhoneSelfCheckReport.Reason
 import io.github.ccch1mneyyy.dsh_app.phone.PhoneSelfCheckReport.Stage
 import io.github.ccch1mneyyy.dsh_app.phone.PhoneSelfCheckReport.State
@@ -9,6 +11,8 @@ import io.github.ccch1mneyyy.dsh_app.phone.background.BackgroundDisplayIo
 import io.github.ccch1mneyyy.dsh_app.phone.background.BackgroundReleaseReceipt
 import io.github.ccch1mneyyy.dsh_app.phone.background.PrivilegedChannel
 import io.github.ccch1mneyyy.dsh_app.phone.background.Proto
+import io.github.ccch1mneyyy.dsh_app.phone.selfcheck.PhoneSelfCheckTarget
+import io.github.ccch1mneyyy.dsh_app.phone.selfcheck.TargetState
 import java.util.UUID
 import java.util.concurrent.Executors
 
@@ -30,10 +34,14 @@ internal class PhoneSelfCheck(
         val live: () -> Boolean,
         val lease: PhoneTaskSessions.SelfCheckLease,
         val borrow: BackgroundControl.SelfCheckBorrow,
+        val profile: Profile,
+        val host: () -> Activity?,
     ) {
         val handle = UUID.randomUUID().toString()
         val io = BackgroundDisplayIo<PrivilegedChannel>()
-        val report = PhoneSelfCheckReport()
+        val report = PhoneSelfCheckReport(profile)
+        val targetRun = if (profile == Profile.TARGET_C1) UUID.randomUUID().toString() else null
+        val target = targetRun?.let(PhoneSelfCheckTarget::prepare)
         var state = "running"
         var cancelled = false
         var workerActive = true
@@ -49,7 +57,8 @@ internal class PhoneSelfCheck(
     val needsReceiver: Boolean get() = synchronized(lock) { starting != null || latest?.held == true }
 
     /** Called by the local main-thread UI entry; reservation and receiver setup do not run a probe. */
-    fun start(client: Any, live: () -> Boolean): Map<String, Any?> {
+    fun start(client: Any, live: () -> Boolean, profile: Profile = Profile.PROBE_B,
+              host: () -> Activity? = { null }): Map<String, Any?> {
         unavailable()?.let { return refused(it) }
         val ticket = synchronized(lock) {
             if (!live()) return responseLocked(false, Reason.RETIRED)
@@ -64,7 +73,7 @@ internal class PhoneSelfCheck(
             sessions.releaseSelfCheck(lease) // No peer was pinned and no operation was dispatched.
             return abandonStart(ticket, Reason.CHANNEL_UNAVAILABLE)
         }
-        val run = Run(client, live, lease, borrow)
+        val run = Run(client, live, lease, borrow, profile, host)
         val accepted = synchronized(lock) {
             val active = !ticket.cancelled && ticket.live()
             starting = null
@@ -135,6 +144,7 @@ internal class PhoneSelfCheck(
     }
 
     private fun seal(run: Run) {
+        run.target?.let(PhoneSelfCheckTarget::seal)
         sessions.sealSelfCheck(run.lease)
         run.io.seal()
     }
@@ -145,6 +155,7 @@ internal class PhoneSelfCheck(
             unavailable() == null
 
     private fun execute(run: Run) {
+        if (run.profile == Profile.TARGET_C1) { executeTarget(run); return }
         var channelReady = false
         var beginAttempted = false
         val startedAt = clock()
@@ -200,6 +211,124 @@ internal class PhoneSelfCheck(
         } finally { cleanup(run) }
     }
 
+    /** Fixed native target only. UI work never occupies the physical I/O lane or registry lock. */
+    private fun executeTarget(run: Run) {
+        val target = checkNotNull(run.target)
+        val targetRun = checkNotNull(run.targetRun)
+        var pendingStage = Stage.CHANNEL
+        var beganStageAt = clock()
+        try {
+            if (!mayStart(run)) { cancelFromWorker(run); return }
+            update(run, Stage.CHANNEL, State.RUNNING, false)
+            val createNonce = UUID.randomUUID().toString()
+            val id = run.io.call {
+                if (!mayStart(run)) { cancelFromWorker(run); return@call null }
+                val peer = run.borrow.channel
+                val cap = peer.execute(Bundle().apply { putString(Proto.OP, Proto.OP_PROBE) })
+                if ((cap.get(Proto.OK) as? Boolean) != true) {
+                    update(run, Stage.CHANNEL, State.UNKNOWN, false, Reason.CHANNEL_UNAVAILABLE,
+                        clock() - beganStageAt)
+                    return@call null
+                }
+                if ((cap.get(Proto.SELF_CHECK_TARGET_VERSION) as? Int) != 1 ||
+                    (cap.get(Proto.RELEASE_RECEIPT) as? Int) != 1) {
+                    update(run, Stage.CHANNEL, State.FAIL, true, Reason.UNSUPPORTED_PEER,
+                        clock() - beganStageAt)
+                    return@call null
+                }
+                update(run, Stage.CHANNEL, State.PASS, true, durationMs = clock() - beganStageAt)
+                if (!mayStart(run)) { cancelFromWorker(run); return@call null }
+                pendingStage = Stage.DISPLAY
+                beganStageAt = clock()
+                update(run, Stage.DISPLAY, State.RUNNING, false)
+                val request = targetRequest(run, Proto.OP_SELF_CHECK_TARGET_CREATE, createNonce).apply {
+                    putInt(Proto.RELEASE_RECEIPT, 1)
+                }
+                if (!mayStart(run)) { cancelFromWorker(run); return@call null }
+                // Commit this exact request immediately after pin; cancellation cannot leave an unused pin.
+                run.io.pin(peer)
+                val reply = peer.execute(request)
+                synchronized(lock) {
+                    run.report.acceptTargetCreate(run.io.owner, targetRun, createNonce,
+                        reply.get(Proto.OWNER), reply.get(Proto.TARGET_RUN), reply.get(Proto.STEP_NONCE),
+                        reply.get(Proto.SELF_CHECK_TARGET_VERSION), reply.get(Proto.OK), reply.get(Proto.ERROR),
+                        reply.get(Proto.SELF_CHECK_DISPLAY_READY), reply.get(Proto.DISPLAY_ID), clock() - beganStageAt)
+                }.also { changed() }
+            } ?: return
+
+            if (!mayStart(run)) { cancelFromWorker(run); return }
+            pendingStage = Stage.LAUNCH
+            beganStageAt = clock()
+            update(run, Stage.LAUNCH, State.RUNNING, false)
+            val launched = PhoneSelfCheckTarget.launch(target, id, run.host) { mayStart(run) }
+            recordTargetFacts(run, launched)
+            if (!mayStart(run)) { cancelFromWorker(run); return }
+            if (!launched.created || launched.wrongMain) {
+                update(run, Stage.LAUNCH, State.UNKNOWN, launched.launchAttempted,
+                    if (launched.wrongMain) Reason.TARGET_WRONG_MAIN
+                    else if (!launched.launchAttempted) Reason.TARGET_LAUNCH_DENIED else Reason.TARGET_UNAVAILABLE,
+                    clock() - beganStageAt)
+                return
+            }
+
+            pendingStage = Stage.TREE
+            beganStageAt = clock()
+            update(run, Stage.TREE, State.RUNNING, false)
+            val readNonce = UUID.randomUUID().toString()
+            val readRequest = targetRequest(run, Proto.OP_SELF_CHECK_TARGET_READ, readNonce)
+            val readReply = run.io.call {
+                if (!mayStart(run)) { cancelFromWorker(run); return@call null }
+                run.borrow.channel.execute(readRequest)
+            } ?: return
+            val ready = synchronized(lock) {
+                run.report.acceptTargetRead(run.io.owner, targetRun, readNonce,
+                    readReply.get(Proto.OWNER), readReply.get(Proto.TARGET_RUN), readReply.get(Proto.STEP_NONCE),
+                    readReply.get(Proto.SELF_CHECK_TARGET_VERSION), readReply.get(Proto.OK), readReply.get(Proto.ERROR),
+                    readReply.get(Proto.TARGET_MATCHED), readReply.get(Proto.TREE_COMPLETE),
+                    readReply.get(Proto.INITIAL_COUNTER_MATCHED), clock() - beganStageAt)
+            }
+            changed()
+            if (!ready) return
+            if (!mayStart(run)) { cancelFromWorker(run); return }
+
+            pendingStage = Stage.TAP
+            beganStageAt = clock()
+            update(run, Stage.TAP, State.RUNNING, false)
+            val tapNonce = UUID.randomUUID().toString()
+            val tapRequest = targetRequest(run, Proto.OP_SELF_CHECK_TARGET_TAP, tapNonce)
+            val tapReply = run.io.call {
+                if (!mayStart(run)) { cancelFromWorker(run); return@call null }
+                run.borrow.channel.execute(tapRequest)
+            } ?: return
+            synchronized(lock) {
+                run.report.acceptTargetTap(run.io.owner, targetRun, tapNonce,
+                    tapReply.get(Proto.OWNER), tapReply.get(Proto.TARGET_RUN), tapReply.get(Proto.STEP_NONCE),
+                    tapReply.get(Proto.SELF_CHECK_TARGET_VERSION), tapReply.get(Proto.OK), tapReply.get(Proto.ERROR),
+                    tapReply.get(Proto.ACTION_ATTEMPTED), tapReply.get(Proto.TARGET_MATCHED),
+                    tapReply.get(Proto.TREE_COMPLETE), tapReply.get(Proto.COUNTER_MATCHED), clock() - beganStageAt)
+            }
+            changed()
+        } catch (_: Exception) {
+            synchronized(lock) {
+                val reason = if (pendingStage == Stage.CHANNEL) Reason.CHANNEL_UNAVAILABLE else Reason.DEVICE_UNAVAILABLE
+                if (pendingStage == Stage.TREE) run.report.unknownTargetRead(reason, clock() - beganStageAt)
+                else run.report.update(pendingStage, State.UNKNOWN, false, reason, clock() - beganStageAt)
+            }
+        } finally { cleanup(run) }
+    }
+
+    private fun targetRequest(run: Run, op: String, nonce: String): Bundle = Bundle().apply {
+        putString(Proto.OP, op)
+        putString(Proto.OWNER, run.io.owner)
+        putInt(Proto.SELF_CHECK_TARGET_VERSION, 1)
+        putString(Proto.TARGET_RUN, checkNotNull(run.targetRun))
+        putString(Proto.STEP_NONCE, nonce)
+    }
+
+    private fun recordTargetFacts(run: Run, facts: TargetState.Facts) {
+        if (facts.wrongMain) update(run, Stage.MAIN, State.FAIL, true, Reason.TARGET_WRONG_MAIN)
+    }
+
     private fun cancelFromWorker(run: Run) {
         synchronized(lock) { run.cancelled = true; run.state = "cleaning" }
         seal(run)
@@ -214,7 +343,15 @@ internal class PhoneSelfCheck(
         }
         changed()
         val startedAt = clock()
-        val physical = try {
+        // A pending Android launch/target must be sealed and truly closed before the VD can go away.
+        val targetClosed = run.target?.let { target ->
+            try { PhoneSelfCheckTarget.close(target).also { recordTargetFacts(run, it) }.closed }
+            catch (_: Exception) {
+                recordTargetFacts(run, PhoneSelfCheckTarget.snapshot(target))
+                false
+            }
+        } ?: true
+        val physical = targetClosed && try {
             run.io.release { peer ->
                 val reply = peer.execute(Bundle().apply {
                     putString(Proto.OP, Proto.OP_RELEASE)
@@ -237,7 +374,8 @@ internal class PhoneSelfCheck(
                 run.report.update(Stage.CLEANUP, State.PASS, true, durationMs = clock() - startedAt)
             } else {
                 run.state = "cleanup_pending"
-                run.report.update(Stage.CLEANUP, State.UNKNOWN, false, Reason.CLEANUP_FAILED, clock() - startedAt)
+                run.report.update(Stage.CLEANUP, State.UNKNOWN, false,
+                    if (targetClosed) Reason.CLEANUP_FAILED else Reason.TARGET_CLEANUP_PENDING, clock() - startedAt)
             }
         }
         changed()
@@ -253,6 +391,7 @@ internal class PhoneSelfCheck(
         val current = latest
         return linkedMapOf<String, Any?>(
             "v" to 1, "accepted" to accepted, "state" to (current?.state ?: "idle"),
+            "profile" to (current?.profile ?: Profile.PROBE_B).wire,
             "coverage" to "partial", "steps" to (current?.report ?: PhoneSelfCheckReport()).toMaps(),
         ).apply {
             current?.let { put("runHandle", it.handle) }

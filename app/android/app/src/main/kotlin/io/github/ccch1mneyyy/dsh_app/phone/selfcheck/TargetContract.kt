@@ -1,0 +1,16 @@
+package io.github.ccch1mneyyy.dsh_app.phone.selfcheck
+
+/** Fixed, inert C1 target shared by the Activity and the privileged tree verifier. */
+internal object TargetContract {
+    const val ACTIVITY_CLASS = "io.github.ccch1mneyyy.dsh_app.phone.selfcheck.PhoneSelfCheckTargetActivity"
+    const val MARKER_ID = "phone_selfcheck_target_marker"
+    const val COUNTER_ID = "phone_selfcheck_target_counter"
+    const val BUTTON_ID = "phone_selfcheck_target_button"
+    private val uuid = Regex("[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}")
+
+    fun validRun(value: String): Boolean = uuid.matches(value)
+    fun identifier(targetRun: String): String = "dsh-selfcheck-c1:$targetRun"
+    fun marker(targetRun: String): String = "dsh-c1:$targetRun"
+    fun counter(value: Int): String = value.toString()
+    fun viewId(packageName: String, name: String): String = "$packageName:id/$name"
+}

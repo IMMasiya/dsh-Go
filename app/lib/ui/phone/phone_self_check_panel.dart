@@ -20,6 +20,7 @@ class _PhoneSelfCheckPanelState extends State<PhoneSelfCheckPanel> {
   late final PhoneSelfCheckReport _report;
   late final AppLifecycleListener _lifecycle;
   bool _saving = false;
+  String _nextProfile = 'probe_b';
 
   @override void initState() {
     super.initState();
@@ -64,7 +65,21 @@ class _PhoneSelfCheckPanelState extends State<PhoneSelfCheckPanel> {
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             Text(l10n.phoneSelfCheckPartial, style: Theme.of(context).textTheme.titleSmall),
             const SizedBox(height: 8),
-            Text(l10n.phoneSelfCheckScope),
+            Text(l10n.phoneSelfCheckReportProfile(snapshot.profile ?? 'unknown'),
+              key: const ValueKey('self-check-report-profile')),
+            Text(snapshot.profile == 'target_c1' ? l10n.phoneSelfCheckTargetScope : l10n.phoneSelfCheckScope),
+            const SizedBox(height: 12),
+            Text(l10n.phoneSelfCheckProfileChoice),
+            DropdownButton<String>(
+              key: const ValueKey('self-check-profile'),
+              value: _nextProfile,
+              isExpanded: true,
+              items: [for (final profile in phoneSelfCheckProfiles)
+                DropdownMenuItem(value: profile, child: Text(l10n.phoneSelfCheckProfile(profile)))],
+              onChanged: _controller.canStart ? (value) {
+                if (value != null && phoneSelfCheckProfiles.contains(value)) setState(() => _nextProfile = value);
+              } : null,
+            ),
             const SizedBox(height: 12),
             Text(l10n.phoneSelfCheckRunState(snapshot.state), key: const ValueKey('self-check-state')),
             if (reason != 'none') ...[
@@ -74,7 +89,7 @@ class _PhoneSelfCheckPanelState extends State<PhoneSelfCheckPanel> {
             const SizedBox(height: 12),
             Wrap(spacing: 8, runSpacing: 8, children: [
               FilledButton(key: const ValueKey('self-check-start'),
-                onPressed: _controller.canStart ? () => unawaited(_controller.start()) : null,
+                onPressed: _controller.canStart ? () => unawaited(_controller.start(profile: _nextProfile)) : null,
                 child: Text(l10n.phoneSelfCheckStart)),
               if (snapshot.active) OutlinedButton(key: const ValueKey('self-check-cancel'),
                 onPressed: _controller.canCancel ? () => unawaited(_controller.cancel()) : null,
