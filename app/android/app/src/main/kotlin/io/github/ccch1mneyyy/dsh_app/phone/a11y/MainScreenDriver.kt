@@ -723,6 +723,7 @@ internal class MainScreenDriver(private val service: PhoneA11yService, private v
             val text = ScreenDigest.text(previous?.id, previous?.screen, snap.id, snap.screen, canReuse = canReuse, observationChanged = changed)
             var ocrText = if (snap.screen.poorTree) "\n" + LocalOcrBoundary.message(shooter.localTextWithoutFrame()) else ""
             var nextImage: ImageObservation? = null
+            var screenshotSecure = false
             val epoch = localOcr.enabledEpoch()
             val remaining = actionDeadline - SystemClock.uptimeMillis()
             val readLocal = snap.screen.poorTree && epoch != null && ocrAllowed(cap, snap, gen)
@@ -739,11 +740,15 @@ internal class MainScreenDriver(private val service: PhoneA11yService, private v
                         readLocalText = readLocal,
                         localTextPrivacyAllowed = readLocal,
                         localTextCancelled = { !ocrAllowed(cap, snap, gen) || localOcr.enabledEpoch() != epoch })
-                    if (shot.secure) visual.observed(null, null)
+                    screenshotSecure = shot.secure
+                    if (screenshotSecure) {
+                        visual.observed(null, null)
+                        ocrText = ""
+                    }
                     if (compareFrame && !shot.secure && !cancelled(gen) && availability().ok) {
                         nextImage = shot.observation
                     }
-                    val stillCurrent = readLocal && verifyOcrContext(cap, snap, gen, actionDeadline)
+                    val stillCurrent = !screenshotSecure && readLocal && verifyOcrContext(cap, snap, gen, actionDeadline)
                     if (stillCurrent && epoch != null && epoch == localOcr.enabledEpoch() &&
                         snap.screen.poorTree && shot.geometry != null && shot.viewport != null) {
                         val result = shot.visualText()!!
@@ -775,7 +780,7 @@ internal class MainScreenDriver(private val service: PhoneA11yService, private v
                     VisualFrame.Change.UNAVAILABLE -> "（截图无法比较，不能验证这次操作；不要自动重复操作。）"
                 }
             }
-            return ActionResult(ok, message + note + visualNote, toSnapshot(snap, text + ocrText))
+            return ActionResult(ok, message + note + visualNote, toSnapshot(snap, text + ocrText).copy(secure = snap.hidden || screenshotSecure))
         } finally { cap.recycle() }
     }
 
