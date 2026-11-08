@@ -105,7 +105,7 @@ class _Images {
 }
 
 Future<void> _flush(WidgetTester tester) async {
-  for (var i = 0; i < 3; i++) { await tester.pump(); }
+  await tester.pumpAndSettle();
 }
 
 void _pause(WidgetTester tester) {
@@ -145,9 +145,10 @@ Future<ui.Image> _frame(WidgetTester tester, _NativePreview native, _Images imag
 }
 
 Future<void> _unmount(WidgetTester tester) async {
+  // Resume frame scheduling before removing a viewer that the test left paused.
+  _resume(tester);
   await tester.pumpWidget(const SizedBox.shrink());
   await _flush(tester);
-  _resume(tester);
 }
 
 void main() {
@@ -181,26 +182,29 @@ void main() {
 
   testWidgets('only resumed and current route subscribes; covering route cancels', (tester) async {
     final native = _NativePreview()..install();
-    await _mount(tester, PhoneChannel(preview: _events), resumed: false);
-    expect(native.calls, isEmpty);
-    _resume(tester);
-    await _flush(tester);
-    expect(native.calls, ['listen']);
-    expect(native.arguments, [{'taskId': 7}]);
-    native.emit(_event('waiting', 0));
-    await _flush(tester);
-    expect(find.text(appL10n.phonePreviewWaiting), findsOneWidget);
-    final navigator = Navigator.of(tester.element(find.byType(PhoneBackgroundPreviewDialog)));
-    unawaited(navigator.push<void>(PageRouteBuilder<void>(
-      opaque: false, transitionDuration: Duration.zero, reverseTransitionDuration: Duration.zero,
-      pageBuilder: (_, _, _) => const Scaffold(body: Text('cover')),
-    )));
-    await _flush(tester);
-    expect(native.calls, ['listen', 'cancel']);
-    navigator.pop();
-    await _flush(tester);
-    expect(native.calls, ['listen', 'cancel', 'listen']);
-    await _unmount(tester);
+    try {
+      await _mount(tester, PhoneChannel(preview: _events), resumed: false);
+      expect(native.calls, isEmpty);
+      _resume(tester);
+      await _flush(tester);
+      expect(native.calls, ['listen']);
+      expect(native.arguments, [{'taskId': 7}]);
+      native.emit(_event('waiting', 0));
+      await _flush(tester);
+      expect(find.text(appL10n.phonePreviewWaiting), findsOneWidget);
+      final navigator = Navigator.of(tester.element(find.byType(PhoneBackgroundPreviewDialog)));
+      unawaited(navigator.push<void>(PageRouteBuilder<void>(
+        opaque: false, transitionDuration: Duration.zero, reverseTransitionDuration: Duration.zero,
+        pageBuilder: (_, _, _) => const Scaffold(body: Text('cover')),
+      )));
+      await _flush(tester);
+      expect(native.calls, ['listen', 'cancel']);
+      navigator.pop();
+      await _flush(tester);
+      expect(native.calls, ['listen', 'cancel', 'listen']);
+    } finally {
+      await _unmount(tester);
+    }
     expect(native.calls.last, 'cancel');
     expect(tester.takeException(), isNull);
   });
