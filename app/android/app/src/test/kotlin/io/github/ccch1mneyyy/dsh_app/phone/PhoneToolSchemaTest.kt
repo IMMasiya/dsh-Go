@@ -43,11 +43,15 @@ class PhoneToolSchemaTest {
         override fun system() = object : SystemApi {
             override fun apps() = emptyList<AppEntry>()
             override fun isInstalled(pkg: String) = false
-            override fun resolveLaunch(app: AppEntry): Either<String, AppEntry> = Either.Right(app)
-            override fun launch(app: AppEntry, dispatch: PhoneTasks.SystemDispatch): SysResult = error("unexpected launch")
-            override fun urlTarget(url: String): UrlTarget = error("unexpected URL")
-            override fun openUrl(url: String, target: UrlTarget, dispatch: PhoneTasks.SystemDispatch): SysResult = error("unexpected URL")
-            override fun intent(spec: IntentSpec, shareTo: AppEntry?, dispatch: PhoneTasks.SystemDispatch): SysResult { intents += spec; return SysResult(true, "done") }
+            override fun prepareLaunch(app: AppEntry): Either<String, SystemLaunch> = Either.Right(TestSystemLaunch(SystemTarget.Known(app)))
+            override fun prepareUrl(url: String): Either<String, SystemLaunch> = error("unexpected URL")
+            override fun prepareIntent(spec: IntentSpec, selectedApp: AppEntry?): Either<String, SystemLaunch> =
+                Either.Right(TestSystemLaunch(SystemTarget.UserChoice, "intent", spec))
+            override fun launch(plan: SystemLaunch, dispatch: PhoneTasks.SystemDispatch): SysResult {
+                check(dispatch.commitStart())
+                intents += (plan as TestSystemLaunch).spec!!
+                return SysResult(true, "attempted", plan.target)
+            }
             override fun notify(title: String, text: String): SysResult = error("unexpected notification")
             override fun clipboardSet(text: String): SysResult = error("unexpected clipboard")
             override fun clipboardGet(): SysResult = error("unexpected clipboard")
@@ -139,6 +143,27 @@ class PhoneToolSchemaTest {
         assertTrue(confirmationText.last().contains("(30,40)"))
         assertTrue(confirmationText.last().contains("2000"))
         assertEquals(2, confirmations)
+    }
+
+    @Test fun allFixedIntentKindsUseThePreparedLaunchConsumer() {
+        val calls = listOf(
+            mapOf("kind" to "alarm", "hour" to 9, "minute" to 30),
+            mapOf("kind" to "timer", "seconds" to 60),
+            mapOf("kind" to "calendar", "title" to "Synthetic", "begin" to "2030-01-02T10:00:00Z", "end" to "2030-01-02T11:00:00Z"),
+            mapOf("kind" to "dial", "number" to "123"),
+            mapOf("kind" to "sms_draft", "text" to "Synthetic"),
+            mapOf("kind" to "share", "text" to "Synthetic"),
+            mapOf("kind" to "navigate", "destination" to "Synthetic"),
+            mapOf("kind" to "settings", "page" to "wifi"),
+        )
+        for (args in calls) {
+            val out = core.call(PhoneToolCatalog.INTENT, args)
+            assertFalse(out.text, out.isError)
+        }
+        assertEquals(8, intents.size)
+        assertEquals(listOf(IntentSpec.Alarm::class, IntentSpec.Timer::class, IntentSpec.Calendar::class,
+            IntentSpec.Dial::class, IntentSpec.SmsDraft::class, IntentSpec.Share::class,
+            IntentSpec.Navigate::class, IntentSpec.Settings::class), intents.map { it::class })
     }
 
 }

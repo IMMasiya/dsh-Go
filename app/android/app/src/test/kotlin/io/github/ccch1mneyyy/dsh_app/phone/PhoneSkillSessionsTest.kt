@@ -54,13 +54,12 @@ class PhoneSkillSessionsTest {
             override fun system() = object : SystemApi {
                 override fun apps() = listOf(AppEntry("Example", PhoneAppIdentity("example.app", 10123)))
                 override fun isInstalled(pkg: String) = true
-                override fun resolveLaunch(app: AppEntry): Either<String, AppEntry> = Either.Right(app)
-                override fun launch(app: AppEntry, dispatch: PhoneTasks.SystemDispatch): SysResult {
-                    check(dispatch.commitStart()); this@Fixture.launch(); return SysResult(true, "opened")
+                override fun prepareLaunch(app: AppEntry): Either<String, SystemLaunch> = Either.Right(TestSystemLaunch(SystemTarget.Known(app)))
+                override fun launch(plan: SystemLaunch, dispatch: PhoneTasks.SystemDispatch): SysResult {
+                    check(dispatch.commitStart()); this@Fixture.launch(); return SysResult(true, "opened", plan.target)
                 }
-                override fun urlTarget(url: String) = error("unexpected url")
-                override fun openUrl(url: String, target: UrlTarget, dispatch: PhoneTasks.SystemDispatch) = error("unexpected url")
-                override fun intent(spec: IntentSpec, shareTo: AppEntry?, dispatch: PhoneTasks.SystemDispatch) = error("unexpected intent")
+                override fun prepareUrl(url: String): Either<String, SystemLaunch> = error("unexpected url")
+                override fun prepareIntent(spec: IntentSpec, selectedApp: AppEntry?): Either<String, SystemLaunch> = error("unexpected intent")
                 override fun notify(title: String, text: String) = error("unexpected notify")
                 override fun clipboardSet(text: String) = error("unexpected clipboard")
                 override fun clipboardGet() = error("unexpected clipboard")

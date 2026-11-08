@@ -23,6 +23,10 @@ class PhoneCorePromptOwnerTest {
     private var afterStart: () -> Unit = {}
     private var settle: () -> Unit = {}
     private var launchResult = SysResult(true, "launched")
+    private var preparedTarget: SystemTarget = SystemTarget.Known(AppEntry("Example", PhoneAppIdentity("example.app", 10123)))
+    private var preparedPlan: SystemLaunch? = null
+    private var startedPlan: SystemLaunch? = null
+    private var policies = PhonePolicies()
     private var launches = 0
     private var urls = 0
     private var intents = 0
@@ -30,7 +34,7 @@ class PhoneCorePromptOwnerTest {
     private val background = Driver(PhoneScreen.BACKGROUND)
     private val core = PhoneCore(object : PhoneEnv {
         override fun enabled() = true
-        override fun policies() = PhonePolicies()
+        override fun policies() = policies
         override fun isLocked() = false
         override fun gate() = object : UserGate {
             override fun confirm(request: ConfirmRequest): Decision { asked++; return confirm() }
@@ -52,14 +56,28 @@ class PhoneCorePromptOwnerTest {
         override fun system() = object : SystemApi {
             override fun apps(): List<AppEntry> { lookup(); return listOf(AppEntry("Example", PhoneAppIdentity("example.app", 10123))) }
             override fun isInstalled(pkg: String) = true
-            override fun resolveLaunch(app: AppEntry): Either<String, AppEntry> { beforeResolve(); return freshApp }
-            override fun launch(app: AppEntry, dispatch: PhoneTasks.SystemDispatch): SysResult { commit(dispatch); launches++; afterStart(); return launchResult }
-            override fun urlTarget(url: String): UrlTarget {
-                lookup()
-                return UrlTarget(packageName = "example.app", appLabel = "Example")
+            override fun prepareLaunch(app: AppEntry): Either<String, SystemLaunch> {
+                beforeResolve()
+                return when (val resolved = freshApp) {
+                    is Either.Left -> resolved
+                    is Either.Right -> Either.Right(TestSystemLaunch(SystemTarget.Known(resolved.value)).also { preparedPlan = it })
+                }
             }
-            override fun openUrl(url: String, target: UrlTarget, dispatch: PhoneTasks.SystemDispatch): SysResult { commit(dispatch); urls++; afterStart(); return SysResult(true, "opened") }
-            override fun intent(spec: IntentSpec, shareTo: AppEntry?, dispatch: PhoneTasks.SystemDispatch): SysResult { commit(dispatch); intents++; afterStart(); return SysResult(true, "sent") }
+            override fun prepareUrl(url: String): Either<String, SystemLaunch> {
+                lookup()
+                return Either.Right(TestSystemLaunch(preparedTarget, "url").also { preparedPlan = it })
+            }
+            override fun prepareIntent(spec: IntentSpec, selectedApp: AppEntry?): Either<String, SystemLaunch> =
+                Either.Right(TestSystemLaunch(preparedTarget, "intent", spec).also { preparedPlan = it })
+            override fun launch(plan: SystemLaunch, dispatch: PhoneTasks.SystemDispatch): SysResult {
+                commit(dispatch)
+                startedPlan = plan
+                val fake = plan as TestSystemLaunch
+                when (fake.kind) { "app" -> launches++; "url" -> urls++; "intent" -> intents++ }
+                afterStart()
+                val result = if (fake.kind == "app") launchResult else SysResult(true, "attempted")
+                return SysResult(result.ok, result.message, plan.target)
+            }
             override fun notify(title: String, text: String) = error("unexpected notification")
             override fun clipboardSet(text: String) = error("unexpected clipboard")
             override fun clipboardGet() = error("unexpected clipboard")
@@ -73,6 +91,7 @@ class PhoneCorePromptOwnerTest {
         val openedTargets = mutableListOf<PhoneAppIdentity>()
         var observing: () -> Unit = {}
         var observedText = "Example"
+        var observedPackage: String? = "example.app"
         var observedImage: ByteArray? = null
         var collects = 0
         var collecting: () -> Unit = {}
@@ -83,7 +102,7 @@ class PhoneCorePromptOwnerTest {
         override fun observe(detail: Boolean, image: Boolean): ScreenSnapshot {
             reads++
             observing()
-            return ScreenSnapshot("${screen.prefix}1", observedText, "Example", "example.app", image = observedImage)
+            return ScreenSnapshot("${screen.prefix}1", observedText, "Example", observedPackage, image = observedImage)
         }
         override fun collect(screenId: String, listElementId: Int, maxPages: Int, until: String?): CollectResult {
             collects++
@@ -434,7 +453,7 @@ class PhoneCorePromptOwnerTest {
         assertTrue(result.text.contains("launched"))
         assertNull(result.image)
         assertEquals("stopped", core.log.last()!!.decision)
-        assertTrue(core.log.last()!!.summary.contains("系统返回成功"))
+        assertTrue(core.log.last()!!.summary.contains("已尝试"))
         assertEquals(1, launches)
         assertEquals(1, main.reads)
     }
@@ -477,7 +496,7 @@ class PhoneCorePromptOwnerTest {
         assertEquals(1, launches)
         assertEquals(0, main.reads)
         assertEquals("stopped", core.log.last()!!.decision)
-        assertTrue(core.log.last()!!.summary.contains("系统返回成功"))
+        assertTrue(core.log.last()!!.summary.contains("已尝试"))
         assertFalse(core.log.last()!!.summary.contains("launched"))
     }
 
@@ -490,7 +509,7 @@ class PhoneCorePromptOwnerTest {
         assertEquals(1, launches)
         assertEquals(0, main.reads)
         assertEquals("stopped", core.log.last()!!.decision)
-        assertTrue(core.log.last()!!.summary.contains("系统返回成功"))
+        assertTrue(core.log.last()!!.summary.contains("已尝试"))
     }
 
     @Test fun aFailedSystemReturnIsPreservedWhenItsOwnerWasReplaced() {
@@ -504,8 +523,59 @@ class PhoneCorePromptOwnerTest {
         assertEquals(0, main.reads)
         assertEquals(1, launches)
         assertEquals("stopped", core.log.last()!!.decision)
-        assertTrue(core.log.last()!!.summary.contains("系统返回失败"))
+        assertTrue(core.log.last()!!.summary.contains("已尝试"))
         assertFalse(core.log.last()!!.summary.contains("private payload"))
+    }
+
+    @Test fun everySystemEntrySubmitsTheExactPreparedObject() {
+        for (call in listOf(::openApp, ::openUrl, ::shareIntent)) {
+            assertFalse(call().isError)
+            assertNotNull(preparedPlan)
+            assertSame(preparedPlan, startedPlan)
+        }
+    }
+
+    @Test fun freshMainAppIdentityIsCheckedInsteadOfTheCachedApp() {
+        policies = PhonePolicies(denyPackages = listOf("blocked.handler"))
+        freshApp = Either.Right(AppEntry("Handler", PhoneAppIdentity("blocked.handler", 20234)))
+        assertTrue(openApp().isError)
+        assertEquals(0, launches)
+        assertNull(startedPlan)
+    }
+
+    @Test fun urlAndFixedIntentCheckTheActualPreparedHandler() {
+        policies = PhonePolicies(denyPackages = listOf("blocked.handler"))
+        preparedTarget = SystemTarget.Known(AppEntry("Handler", PhoneAppIdentity("blocked.handler", 20234)))
+        assertTrue(openUrl().isError)
+        assertTrue(core.call(PhoneToolCatalog.INTENT, mapOf("kind" to "settings", "page" to "wifi")).isError)
+        assertEquals(0, urls + intents)
+        assertNull(startedPlan)
+    }
+
+    @Test fun settingsSubjectIsNotUsedAsTheHandlerAndChooserHasNoInventedApp() {
+        policies = PhonePolicies(denyPackages = listOf("example.app"))
+        preparedTarget = SystemTarget.Known(AppEntry("Settings handler", PhoneAppIdentity("vendor.settings", 1000)))
+        assertFalse(core.call(PhoneToolCatalog.INTENT,
+            mapOf("kind" to "settings", "page" to "app_notifications", "app" to "example.app")).isError)
+        assertEquals(1, intents)
+        assertEquals("Settings handler", tasks.snapshot().app)
+        replace() // A chooser cannot invent a handler for this new task.
+        preparedTarget = SystemTarget.UserChoice
+        assertFalse(openUrl().isError)
+        assertNull(tasks.snapshot().app)
+        assertSame(SystemTarget.UserChoice, startedPlan!!.target)
+    }
+
+    @Test fun mismatchedPostObservationIsAttachedWithoutRelabelingOrRetryingThePlan() {
+        main.observedPackage = "another.app"
+        main.observedText = "ACTUAL_OTHER_SCREEN"
+        val result = openApp()
+        assertFalse(result.isError)
+        assertTrue(result.text.contains("ACTUAL_OTHER_SCREEN"))
+        assertTrue(result.text.contains("未确认原处理应用"))
+        assertEquals(1, launches)
+        assertEquals(1, main.reads)
+        assertEquals("example.app", (startedPlan!!.target as SystemTarget.Known).app.packageName)
     }
 
 }

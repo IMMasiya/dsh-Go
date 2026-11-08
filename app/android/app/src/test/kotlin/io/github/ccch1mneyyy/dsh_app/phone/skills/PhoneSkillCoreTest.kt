@@ -35,11 +35,15 @@ class PhoneSkillCoreTest {
         val system = object : SystemApi {
             override fun apps() = listOf(AppEntry("PRIVATE_APP", PhoneAppIdentity("example.app", 10123)))
             override fun isInstalled(pkg: String) = true
-            override fun resolveLaunch(app: AppEntry): Either<String, AppEntry> = Either.Right(app)
-            override fun launch(app: AppEntry, dispatch: PhoneTasks.SystemDispatch): SysResult { opens++; return SysResult(true, "PRIVATE_RESULT") }
-            override fun urlTarget(url: String) = UrlTarget(packageName = "example.app")
-            override fun openUrl(url: String, target: UrlTarget, dispatch: PhoneTasks.SystemDispatch) = SysResult(true, "PRIVATE_RESULT")
-            override fun intent(spec: IntentSpec, shareTo: AppEntry?, dispatch: PhoneTasks.SystemDispatch) = SysResult(true, "PRIVATE_RESULT")
+            override fun prepareLaunch(app: AppEntry): Either<String, SystemLaunch> = Either.Right(TestSystemLaunch(SystemTarget.Known(app)))
+            override fun prepareUrl(url: String): Either<String, SystemLaunch> = Either.Right(TestSystemLaunch(SystemTarget.UserChoice, "url"))
+            override fun prepareIntent(spec: IntentSpec, selectedApp: AppEntry?): Either<String, SystemLaunch> =
+                Either.Right(TestSystemLaunch(SystemTarget.UserChoice, "intent", spec))
+            override fun launch(plan: SystemLaunch, dispatch: PhoneTasks.SystemDispatch): SysResult {
+                check(dispatch.commitStart())
+                if ((plan as TestSystemLaunch).kind == "app") opens++
+                return SysResult(true, "PRIVATE_RESULT", plan.target)
+            }
             override fun notify(title: String, text: String) = SysResult(true, "PRIVATE_RESULT")
             override fun clipboardSet(text: String) = SysResult(true, "PRIVATE_RESULT")
             override fun clipboardGet() = SysResult(true, "PRIVATE_CLIPBOARD")
