@@ -19,7 +19,7 @@ class BackgroundGateCallTest {
         var begins = 0
         val attempts = mutableListOf<Pair<Any, String>>()
         try {
-            call.io.call<Unit> { call.io.startResource<Unit>(call.peer, { begins++; throw java.io.IOException("lost reply") }) { true } }
+            call.io.call<Unit> { call.io.startResource<Unit>(call.peer, { beforeSend -> beforeSend(); begins++; throw java.io.IOException("lost reply") }) { true } }
             fail("the real I/O call must propagate its missing reply")
         } catch (_: java.io.IOException) { }
         assertFalse(call.finishProbeAndCleanup { peer, owner -> attempts += peer to owner; false })
@@ -45,7 +45,7 @@ class BackgroundGateCallTest {
         val interrupted = AtomicBoolean()
         val worker = Thread {
             try {
-                call.io.call { call.io.startResource(call.peer, { entered.countDown(); reply.await(); sawReply.set(true) }) { true } }
+                call.io.call { call.io.startResource(call.peer, { beforeSend -> beforeSend(); entered.countDown(); reply.await(); sawReply.set(true) }) { true } }
             } finally {
                 interrupted.set(Thread.currentThread().isInterrupted)
                 call.finishProbeAndCleanup { peer, owner ->
@@ -80,7 +80,7 @@ class BackgroundGateCallTest {
         val cleaned = AtomicBoolean()
         val thread = Thread {
             try {
-                call.io.call { cap.countDown(); proceed.await(); call.io.startResource(call.peer, { began.incrementAndGet() }) { true } }
+                call.io.call { cap.countDown(); proceed.await(); call.io.startResource(call.peer, { beforeSend -> beforeSend(); began.incrementAndGet() }) { true } }
             } catch (_: IllegalStateException) {
                 // Real pin admission was sealed between cap and the only begin.
             } finally {
@@ -99,7 +99,7 @@ class BackgroundGateCallTest {
 
     @Test fun onlyOneRetryClaimsPhysicalCleanupAndDeadPeerDoesNotLookReleased() {
         val call = call()
-        call.io.call { call.io.startResource(call.peer, { Unit }) { true } }
+        call.io.call { call.io.startResource(call.peer, { beforeSend -> beforeSend(); Unit }) { true } }
         assertFalse(call.finishProbeAndCleanup { _, _ -> false })
         assertEquals("unknown", call.status(false)["state"])
         assertEquals(false, call.status(false)["canRetry"])

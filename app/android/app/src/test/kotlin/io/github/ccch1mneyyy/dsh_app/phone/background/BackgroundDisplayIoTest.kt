@@ -21,7 +21,7 @@ class BackgroundDisplayIoTest {
         val entered = CountDownLatch(1); val answer = CountDownLatch(1)
         val previews = AtomicInteger()
         assertNull(scope.tryPreview { previews.incrementAndGet() })
-        val agent = Thread { scope.call { scope.startResource(peer, { entered.countDown(); answer.await() }) { true } } }.apply { start() }
+        val agent = Thread { scope.call { scope.startResource(peer, { beforeSend -> beforeSend(); entered.countDown(); answer.await() }) { true } } }.apply { start() }
         try {
             await(entered)
             assertNull(scope.tryPreview { previews.incrementAndGet() })
@@ -36,7 +36,7 @@ class BackgroundDisplayIoTest {
 
     @Test fun strictCleanupWaitsForTheSamePhysicalPreviewReply() {
         val scope = BackgroundDisplayIo<Any>(); val peer = Any()
-        scope.call { scope.startResource(peer, { Unit }) { true } }
+        scope.call { scope.startResource(peer, { beforeSend -> beforeSend(); Unit }) { true } }
         val entered = CountDownLatch(1); val answer = CountDownLatch(1)
         val replied = AtomicBoolean(); val releases = AtomicInteger()
         val ioInterrupted = AtomicBoolean(); val previewInterrupted = AtomicBoolean(); val cleanupInterrupted = AtomicBoolean()
@@ -71,7 +71,7 @@ class BackgroundDisplayIoTest {
 
     @Test fun anAgentWaitingAfterOnePreviewBlocksTheNextOptionalPoll() {
         val scope = BackgroundDisplayIo<Any>(); val peer = Any()
-        scope.call { scope.startResource(peer, { Unit }) { true } }
+        scope.call { scope.startResource(peer, { beforeSend -> beforeSend(); Unit }) { true } }
         val previewEntered = CountDownLatch(1); val previewAnswer = CountDownLatch(1)
         val agentEntered = CountDownLatch(1); val agentAnswer = CountDownLatch(1)
         val sequence = java.util.Collections.synchronizedList(mutableListOf<String>())
@@ -93,7 +93,7 @@ class BackgroundDisplayIoTest {
         val probe = CountDownLatch(1); val answer = CountDownLatch(1)
         val sent = AtomicInteger(); val failure = AtomicReference<Throwable?>()
         val caller = Thread {
-            try { scope.call { probe.countDown(); answer.await(); scope.startResource(peer, { sent.incrementAndGet() }) { true } } }
+            try { scope.call { probe.countDown(); answer.await(); scope.startResource(peer, { beforeSend -> beforeSend(); sent.incrementAndGet() }) { true } } }
             catch (error: Throwable) { failure.set(error) }
         }.apply { start() }
         try {
@@ -115,7 +115,7 @@ class BackgroundDisplayIoTest {
         val result = pool.submit<SerialWorker.Outcome<Int>> {
             worker.run(100, 10_000, owner) {
                 val value = scope.call {
-                    scope.startResource(peer, { entered.countDown(); reply.await()
+                    scope.startResource(peer, { beforeSend -> beforeSend(); entered.countDown(); reply.await()
                         ioInterrupted.set(Thread.currentThread().isInterrupted); 7 }) { true }
                 }
                 callerInterrupted.set(Thread.currentThread().isInterrupted)
@@ -139,7 +139,7 @@ class BackgroundDisplayIoTest {
 
     @Test fun interruptingCleanupWaiterStillDrainsTheSameReleaseFuture() {
         val scope = BackgroundDisplayIo<Any>(); val peer = Any()
-        scope.call { scope.startResource(peer, { Unit }) { true } }
+        scope.call { scope.startResource(peer, { beforeSend -> beforeSend(); Unit }) { true } }
         val entered = CountDownLatch(1); val reply = CountDownLatch(1)
         val restored = AtomicBoolean(); val interruptedIo = AtomicBoolean(); val calls = AtomicInteger()
         val caller = Thread {
@@ -161,7 +161,7 @@ class BackgroundDisplayIoTest {
     @Test fun sealedQueuedCallsNeverReachThePhysicalPeer() {
         val scope = BackgroundDisplayIo<Any>(); val peer = Any()
         val entered = CountDownLatch(1); val reply = CountDownLatch(1); val sent = AtomicInteger()
-        val first = Thread { scope.call { scope.startResource(peer, { entered.countDown(); reply.await() }) { true } } }.apply { start() }
+        val first = Thread { scope.call { scope.startResource(peer, { beforeSend -> beforeSend(); entered.countDown(); reply.await() }) { true } } }.apply { start() }
         val secondFailure = AtomicReference<Throwable?>()
         var second: Thread? = null
         try {

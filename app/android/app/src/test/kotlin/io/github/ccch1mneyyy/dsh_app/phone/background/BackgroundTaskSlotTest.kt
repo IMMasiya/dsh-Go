@@ -92,7 +92,7 @@ class BackgroundTaskSlotTest {
         val slot = BackgroundTaskSlot<BackgroundDisplayIo<Any>>(Any())
         val original = slot.acquire(owner, { tasks.isCurrent(owner) }) { BackgroundDisplayIo() }!!
         val io = original.driver; val peer = Any()
-        io.call { io.startResource(peer, { true }) { it } }
+        io.call { io.startResource(peer, { beforeSend -> beforeSend(); true }) { it } }
         tasks.stop("stop")
         assertSame(original, slot.seal(owner.taskId))
         io.seal()
