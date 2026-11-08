@@ -112,6 +112,72 @@ void main() {
     }
   });
 
+  testWidgets('definite bundle save refusal releases query identity before editing into a plain template', (tester) async {
+    final calls = <MethodCall>[];
+    var saves = 0;
+    Map<String, Object?> view({required bool bundle}) => {
+      'kind': 'shown', 'draft': {
+        'draftId': _draft, 'taskId': 7, 'generation': 3, 'revision': bundle ? 1 : 2,
+        'skillName': _name, 'markdown': '# Safe local template\n',
+        'stepOrder': [0], 'parameterizedFields': ['goal'], 'phase': null,
+        if (bundle) 'bundleRevision': _bundle,
+      },
+    };
+    messenger.setMockMethodCallHandler(_methods, (call) async {
+      calls.add(call);
+      if (call.method == 'saveSkillDraft') {
+        saves++;
+        return saves == 1 ? {'kind': 'rejected', 'code': 'io'} : {'kind': 'saving', 'phase': 'staging'};
+      }
+      if (call.method == 'discardSkillDraft') { return {'kind': 'discarded'}; }
+      final action = (call.arguments as Map)['action'];
+      if (action == 'open') { return view(bundle: true); }
+      if (action == 'edit') { return view(bundle: false); }
+      if (action == 'view') { return {'kind': 'saved', 'name': _name, 'relativePath': 'skills/$_name/SKILL.md'}; }
+      fail('Unexpected phase-one query action: $action');
+    });
+    try {
+      await tester.pumpWidget(MaterialApp(home: PhoneSkillEditor(channel: PhoneChannel(),
+        candidate: const PhoneSkillCandidate(taskId: 7, generation: 3, steps: 1))));
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(find.byType(CheckboxListTile));
+      await tester.tap(find.byType(CheckboxListTile));
+      await tester.pump();
+      await tester.tap(find.widgetWithText(FilledButton, appL10n.commonSave));
+      await tester.pumpAndSettle();
+      expect(saves, 1);
+      expect(find.text(appL10n.phoneSkillWriteFailed), findsOneWidget);
+      await tester.ensureVisible(find.byType(TextField).first);
+      await tester.enterText(find.byType(TextField).first, 'Change this local template');
+      await tester.pump();
+      await tester.ensureVisible(find.text(appL10n.phoneSkillUpdatePreview));
+      await tester.tap(find.text(appL10n.phoneSkillUpdatePreview));
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(find.byType(CheckboxListTile));
+      await tester.tap(find.byType(CheckboxListTile));
+      await tester.pump();
+      await tester.tap(find.widgetWithText(FilledButton, appL10n.commonSave));
+      await tester.pumpAndSettle();
+      expect(saves, 2);
+      // The old phase-two handle used to reject this real phase-one saving reply.
+      expect(find.text(appL10n.phoneSkillCheckWrite), findsOneWidget);
+      expect(tester.widget<CheckboxListTile>(find.byType(CheckboxListTile)).onChanged, isNull);
+      await tester.tap(find.text(appL10n.phoneSkillCheckWrite));
+      await tester.pumpAndSettle();
+      expect(calls.last.method, 'skillDraft');
+      expect(calls.last.arguments, {'action': 'view', 'taskId': 7, 'draftId': _draft});
+      expect(find.text(appL10n.phoneSkillSavedBody), findsOneWidget);
+      expect(find.text(appL10n.phoneSkillStale), findsNothing);
+      expect(calls.where((call) => call.method == 'saveSkillDraft').map((call) => call.arguments), [
+        {'taskId': 7, 'draftId': _draft, 'revision': 1, 'confirmed': true},
+        {'taskId': 7, 'draftId': _draft, 'revision': 2, 'confirmed': true},
+      ]);
+    } finally {
+      await tester.pumpWidget(const SizedBox());
+      await tester.pumpAndSettle();
+    }
+  });
+
   for (final response in <Map<String, Object?>>[
     {..._reply(), 'bundleRevision': 'd' * 32},
     {..._reply(), 'name': 'phone-task-${'e' * 32}', 'relativePath': 'skills/phone-task-${'e' * 32}/SKILL.md'},

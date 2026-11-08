@@ -309,6 +309,7 @@ class _PhoneSkillEditorState extends State<PhoneSkillEditor> {
           if (!fromQuery && (reply.code == 'io' || reply.code == 'no_home' || reply.code == 'conflict')) {
             _pendingWrite = false;
             _writeDraft = null;
+            _queryHandle = null;
           }
           _error = fromQuery && const {'io', 'no_home', 'conflict'}.contains(reply.code) ? 'unavailable' : reply.code;
           _confirmed = false;
