@@ -73,6 +73,73 @@ class PhoneTaskSessionsTest {
     private fun end(session: String, run: String = "1") { sessions.admitEnd(session, run)?.let(sessions::settleEnd) }
     @After fun close() { pool.shutdownNow(); worker.shutdown() }
 
+    @Test fun selfCheckReservationBlocksEvenMetadataWithoutCreatingATask() {
+        val before = sessions.all().toList()
+        val lease = checkNotNull(sessions.tryReserveSelfCheck())
+        assertTrue(sessions.selfCheckCurrent(lease))
+        assertNull(sessions.tryReserveSelfCheck())
+        assertTrue(invoke("new-session").isError)
+        assertTrue(invoke(null).isError)
+        assertEquals(before, sessions.all())
+        assertFalse(legacy.isActive)
+        assertEquals(0L, ids.get())
+        assertTrue(sessions.releaseSelfCheck(lease))
+        assertFalse(invoke("new-session").isError)
+    }
+
+    @Test fun pendingCallAndActiveThinkingBothExcludeSelfCheck() {
+        val pending = admit("A")
+        assertNull(sessions.tryReserveSelfCheck())
+        assertFalse(sessions.run(pending, PhoneToolCatalog.APPS, emptyMap()).isError)
+        assertNull(sessions.tryReserveSelfCheck()) // no worker body, but original task remains active
+        end("A")
+        val lease = checkNotNull(sessions.tryReserveSelfCheck())
+        assertTrue(sessions.releaseSelfCheck(lease))
+    }
+
+    @Test fun selfCheckSealAndLaunchRetirementPreserveOriginalCleanupIdentity() {
+        val original = checkNotNull(sessions.tryReserveSelfCheck())
+        sessions.sealSelfCheck(original)
+        assertFalse(sessions.selfCheckCurrent(original))
+        assertTrue(invoke("A").isError)
+        sessions.retire()
+        assertNull(sessions.tryReserveSelfCheck())
+        assertTrue(invoke("A").isError)
+        assertTrue(sessions.releaseSelfCheck(original)) // old epoch still owns the physical fence
+        val next = checkNotNull(sessions.tryReserveSelfCheck())
+        assertFalse(sessions.releaseSelfCheck(original))
+        sessions.sealSelfCheck(original)
+        assertTrue(sessions.selfCheckCurrent(next))
+        assertTrue(sessions.releaseSelfCheck(next))
+    }
+
+    @Test fun unconfirmedRetiringResourceExcludesSelfCheckUntilActualCleanup() {
+        assertFalse(invoke(null, tool = PhoneToolCatalog.SCREEN).isError)
+        val oldId = legacy.snapshot().id
+        cleanup = { throw IllegalStateException("unconfirmed") }
+        sessions.retire()
+        assertNull(sessions.tryReserveSelfCheck())
+        cleanup = { assertEquals(oldId, it) }
+        assertTrue(sessions.retryCleanup(oldId))
+        val lease = checkNotNull(sessions.tryReserveSelfCheck())
+        assertTrue(sessions.releaseSelfCheck(lease))
+    }
+
+    @Test fun scopeCancellationMustFinishBeforeSelfCheckCanReserve() {
+        assertFalse(invoke("A").isError)
+        val entered = CountDownLatch(1); val release = CountDownLatch(1)
+        cancelScope = { _, _ -> entered.countDown(); assertTrue(release.await(5, TimeUnit.SECONDS)) }
+        val stopping = pool.submit<Boolean> { sessions.stop(task("A"), "stop") }
+        try {
+            assertTrue(entered.await(5, TimeUnit.SECONDS))
+            assertNull(sessions.tryReserveSelfCheck())
+            release.countDown()
+            assertTrue(stopping.get(5, TimeUnit.SECONDS))
+            val lease = checkNotNull(sessions.tryReserveSelfCheck())
+            assertTrue(sessions.releaseSelfCheck(lease))
+        } finally { release.countDown() }
+    }
+
     @Test fun appSnapshotStopStillStopsAnIdleProjectedLegacyTask() {
         assertFalse(invoke(null).isError)
         val record = sessions.all().single { it.sessionId == null }
