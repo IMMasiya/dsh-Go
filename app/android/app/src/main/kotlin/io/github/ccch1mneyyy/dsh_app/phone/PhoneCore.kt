@@ -40,10 +40,10 @@ class PhoneCore(
     val tasks: PhoneTasks,
     val log: ActionLog,
     val worker: SerialWorker = SerialWorker("dsh-phone"),
+    val skillTrace: PhoneTaskTrace = PhoneTaskTrace(),
 ) {
     private val ui: PhoneUiText get() = env.uiText()
     val safety = SafetyGate(env::policies, tasks, env::gate, uiText = env.uiText())
-    val skillTrace = PhoneTaskTrace()
 
     /** The overlay's status line; 免确认 stays visible the whole time nothing is asked. */
     private fun say(text: String) {
