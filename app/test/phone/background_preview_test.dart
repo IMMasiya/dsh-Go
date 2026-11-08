@@ -1,6 +1,7 @@
 // Real PhoneChannel/EventChannel and dialog; the native stream alone is synthetic.
 // No replacement parser/decoder and no wall-clock sleeps. Engine decode is joined
 // through Image.onCreate; lifecycle/cancel races use explicit barriers.
+// Codec scenarios create the viewer and stream subscription in one real async zone.
 import 'dart:async';
 import 'dart:convert';
 import 'dart:ui' as ui;
@@ -139,7 +140,7 @@ Future<ui.Image> _frame(WidgetTester tester, _NativePreview native, _Images imag
   images.next = made;
   native.emit(_event('frame', sequence));
   await _flush(tester); // Deliver EventChannel and start the real engine codec.
-  final image = (await tester.runAsync(() => made.future.timeout(const Duration(seconds: 10))))!;
+  final image = await made.future.timeout(const Duration(seconds: 10));
   await _flush(tester); // Join the dialog continuation and any render handle clone.
   return image;
 }
@@ -234,105 +235,111 @@ void main() {
   });
 
   testWidgets('cover and background release decoded images without ImageCache', (tester) async {
-    final native = _NativePreview()..install();
-    final images = _Images()..install();
-    try {
-      await _mount(tester, PhoneChannel(preview: _events));
-      final cache = PaintingBinding.instance.imageCache;
-      final entries = cache.currentSize;
-      final live = cache.liveImageCount;
-      final image = await _frame(tester, native, images, 1);
-      expect(tester.widget<RawImage>(find.byType(RawImage)).image, same(image));
-      expect(image.debugDisposed, isFalse);
-      expect(cache.currentSize, entries);
-      expect(cache.liveImageCount, live);
-      final navigator = Navigator.of(tester.element(find.byType(PhoneBackgroundPreviewDialog)));
-      unawaited(navigator.push<void>(PageRouteBuilder<void>(
-        opaque: false, transitionDuration: Duration.zero, reverseTransitionDuration: Duration.zero,
-        pageBuilder: (_, _, _) => const Scaffold(body: Text('cover')),
-      )));
-      await _flush(tester);
-      expect(find.byType(RawImage, skipOffstage: false), findsNothing);
-      expect(image.debugDisposed, isTrue);
-      expect(images.disposed.where((value) => identical(value, image)), hasLength(1));
-      expect(native.calls, ['listen', 'cancel']);
-      navigator.pop();
-      await _flush(tester);
-      final next = await _frame(tester, native, images, 2);
-      _pause(tester);
-      await _flush(tester);
-      expect(find.byType(RawImage, skipOffstage: false), findsNothing);
-      expect(next.debugDisposed, isTrue);
-      expect(native.calls, ['listen', 'cancel', 'listen', 'cancel']);
-    } finally {
+    await tester.runAsync<void>(() async {
+      final native = _NativePreview()..install();
+      final images = _Images()..install();
       try {
-        await _unmount(tester);
-        expect(images.created.every((image) => image.debugDisposed), isTrue,
-            reason: 'Both owner handles and RawImage render clones must retire.');
-      } finally { images.restore(); }
-    }
+        await _mount(tester, PhoneChannel(preview: _events));
+        final cache = PaintingBinding.instance.imageCache;
+        final entries = cache.currentSize;
+        final live = cache.liveImageCount;
+        final image = await _frame(tester, native, images, 1);
+        expect(tester.widget<RawImage>(find.byType(RawImage)).image, same(image));
+        expect(image.debugDisposed, isFalse);
+        expect(cache.currentSize, entries);
+        expect(cache.liveImageCount, live);
+        final navigator = Navigator.of(tester.element(find.byType(PhoneBackgroundPreviewDialog)));
+        unawaited(navigator.push<void>(PageRouteBuilder<void>(
+          opaque: false, transitionDuration: Duration.zero, reverseTransitionDuration: Duration.zero,
+          pageBuilder: (_, _, _) => const Scaffold(body: Text('cover')),
+        )));
+        await _flush(tester);
+        expect(find.byType(RawImage, skipOffstage: false), findsNothing);
+        expect(image.debugDisposed, isTrue);
+        expect(images.disposed.where((value) => identical(value, image)), hasLength(1));
+        expect(native.calls, ['listen', 'cancel']);
+        navigator.pop();
+        await _flush(tester);
+        final next = await _frame(tester, native, images, 2);
+        _pause(tester);
+        await _flush(tester);
+        expect(find.byType(RawImage, skipOffstage: false), findsNothing);
+        expect(next.debugDisposed, isTrue);
+        expect(native.calls, ['listen', 'cancel', 'listen', 'cancel']);
+      } finally {
+        try {
+          await _unmount(tester);
+          expect(images.created.every((image) => image.debugDisposed), isTrue,
+              reason: 'Both owner handles and RawImage render clones must retire.');
+        } finally { images.restore(); }
+      }
+    });
     expect(tester.takeException(), isNull);
   });
 
   testWidgets('task, generation and sequence reject late state; a newer clear releases pixels', (tester) async {
-    final native = _NativePreview()..install();
-    final images = _Images()..install();
-    try {
-      await _mount(tester, PhoneChannel(preview: _events));
-      final image = await _frame(tester, native, images, 10);
-      for (final event in [
-        _event('off', 99, task: 8), _event('off', 99, generation: 0),
-        _event('off', 9), _event('off', 10),
-      ]) { native.emit(event); }
-      await _flush(tester);
-      expect(tester.widget<RawImage>(find.byType(RawImage)).image, same(image));
-      native.emit(_event('off', 11));
-      await _flush(tester);
-      expect(find.byType(RawImage), findsNothing);
-      expect(find.text(appL10n.phonePreviewOff), findsOneWidget);
-      expect(image.debugDisposed, isTrue);
-      // Older waiting/protected events must not revive or relabel the cleared observation.
-      native.emit(_event('waiting', 10));
-      native.emit(_event('protected', 99, task: 8));
-      await _flush(tester);
-      expect(find.text(appL10n.phonePreviewOff), findsOneWidget);
-      final recovered = await _frame(tester, native, images, 12);
-      expect(tester.widget<RawImage>(find.byType(RawImage)).image, same(recovered));
-      native.emit({'malformed': true});
-      await _flush(tester);
-      expect(find.byType(RawImage), findsNothing);
-      expect(recovered.debugDisposed, isTrue);
-      expect(find.text(appL10n.phonePreviewUnavailable), findsOneWidget);
-    } finally {
+    await tester.runAsync<void>(() async {
+      final native = _NativePreview()..install();
+      final images = _Images()..install();
       try {
-        await _unmount(tester);
-        expect(images.created.every((image) => image.debugDisposed), isTrue,
-            reason: 'Both owner handles and RawImage render clones must retire.');
-      } finally { images.restore(); }
-    }
+        await _mount(tester, PhoneChannel(preview: _events));
+        final image = await _frame(tester, native, images, 10);
+        for (final event in [
+          _event('off', 99, task: 8), _event('off', 99, generation: 0),
+          _event('off', 9), _event('off', 10),
+        ]) { native.emit(event); }
+        await _flush(tester);
+        expect(tester.widget<RawImage>(find.byType(RawImage)).image, same(image));
+        native.emit(_event('off', 11));
+        await _flush(tester);
+        expect(find.byType(RawImage), findsNothing);
+        expect(find.text(appL10n.phonePreviewOff), findsOneWidget);
+        expect(image.debugDisposed, isTrue);
+        // Older waiting/protected events must not revive or relabel the cleared observation.
+        native.emit(_event('waiting', 10));
+        native.emit(_event('protected', 99, task: 8));
+        await _flush(tester);
+        expect(find.text(appL10n.phonePreviewOff), findsOneWidget);
+        final recovered = await _frame(tester, native, images, 12);
+        expect(tester.widget<RawImage>(find.byType(RawImage)).image, same(recovered));
+        native.emit({'malformed': true});
+        await _flush(tester);
+        expect(find.byType(RawImage), findsNothing);
+        expect(recovered.debugDisposed, isTrue);
+        expect(find.text(appL10n.phonePreviewUnavailable), findsOneWidget);
+      } finally {
+        try {
+          await _unmount(tester);
+          expect(images.created.every((image) => image.debugDisposed), isTrue,
+              reason: 'Both owner handles and RawImage render clones must retire.');
+        } finally { images.restore(); }
+      }
+    });
     expect(tester.takeException(), isNull);
   });
 
   testWidgets('image created after the viewer retires is disposed without becoming RawImage', (tester) async {
-    final native = _NativePreview()..install();
-    final images = _Images()..install();
-    try {
-      await _mount(tester, PhoneChannel(preview: _events));
-      // The real codec calls onCreate before returning its FrameInfo. Retire the
-      // consumer at this exact boundary, not after an arbitrary timed sleep.
-      images.retireOnCreate = () => _pause(tester);
-      final late = await _frame(tester, native, images, 1);
-      expect(late.debugDisposed, isTrue);
-      expect(images.disposed.where((value) => identical(value, late)), hasLength(1));
-      expect(find.byType(RawImage), findsNothing);
-      expect(native.calls, ['listen', 'cancel']);
-    } finally {
+    await tester.runAsync<void>(() async {
+      final native = _NativePreview()..install();
+      final images = _Images()..install();
       try {
-        await _unmount(tester);
-        expect(images.created.every((image) => image.debugDisposed), isTrue,
-            reason: 'Both owner handles and RawImage render clones must retire.');
-      } finally { images.restore(); }
-    }
+        await _mount(tester, PhoneChannel(preview: _events));
+        // The real codec calls onCreate before returning its FrameInfo. Retire the
+        // consumer at this exact boundary, not after an arbitrary timed sleep.
+        images.retireOnCreate = () => _pause(tester);
+        final late = await _frame(tester, native, images, 1);
+        expect(late.debugDisposed, isTrue);
+        expect(images.disposed.where((value) => identical(value, late)), hasLength(1));
+        expect(find.byType(RawImage), findsNothing);
+        expect(native.calls, ['listen', 'cancel']);
+      } finally {
+        try {
+          await _unmount(tester);
+          expect(images.created.every((image) => image.debugDisposed), isTrue,
+              reason: 'Both owner handles and RawImage render clones must retire.');
+        } finally { images.restore(); }
+      }
+    });
     expect(tester.takeException(), isNull);
   });
 }
