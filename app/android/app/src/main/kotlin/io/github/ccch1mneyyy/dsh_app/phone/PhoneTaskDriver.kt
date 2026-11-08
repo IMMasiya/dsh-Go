@@ -95,7 +95,7 @@ class PhoneTaskObservations(private val tasks: PhoneTasks) {
             perform(action, allowed, coordinateAdmission) { true }
         override fun perform(action: PhoneAction, allowed: () -> Boolean,
                              coordinateAdmission: ((() -> Boolean) -> Boolean)?,
-                             scrollSourcesAllowed: (Set<String>) -> Boolean): ActionResult {
+                             actionSourcesAllowed: (Set<String>) -> Boolean): ActionResult {
             current()
             if (action !is PhoneAction.Key && !owns(action.screenId)) {
                 // l10n:keep agent observation ownership result
@@ -109,7 +109,7 @@ class PhoneTaskObservations(private val tasks: PhoneTasks) {
                             committed = coordinateAdmission?.invoke(claim) ?: claim()
                     }
                     committed
-                }, { sources -> taskAllowed() && scrollSourcesAllowed(sources) }))
+                }, { sources -> taskAllowed() && actionSourcesAllowed(sources) }))
             } finally { syncCurrentScope() }
         }
         override fun collect(screenId: String, listElementId: Int, maxPages: Int, until: String?): CollectResult =

@@ -275,7 +275,7 @@ internal class MainScreenDriver(private val service: PhoneA11yService, private v
 
     override fun perform(action: PhoneAction, allowed: () -> Boolean,
                          coordinateAdmission: ((() -> Boolean) -> Boolean)?,
-                         scrollSourcesAllowed: (Set<String>) -> Boolean): ActionResult {
+                         actionSourcesAllowed: (Set<String>) -> Boolean): ActionResult {
         // l10n:keep agent screen result
         if (Looper.myLooper() == Looper.getMainLooper()) return ActionResult(false, "内部错误：手机动作不能在主线程执行。")
         val gen = abortGen
@@ -307,9 +307,9 @@ internal class MainScreenDriver(private val service: PhoneA11yService, private v
             refuseHalted(allowed)?.let { return it }
             return when (action) {
                 is PhoneAction.Key -> key(action, gen)
-                is PhoneAction.Tap -> tap(action, gen, allowed)
+                is PhoneAction.Tap -> tap(action, gen, allowed, actionSourcesAllowed)
                 is PhoneAction.Type -> type(action, gen, allowed)
-                is PhoneAction.Scroll -> scroll(action, gen, allowed, scrollSourcesAllowed)
+                is PhoneAction.Scroll -> scroll(action, gen, allowed, actionSourcesAllowed)
                 is PhoneAction.TapXY -> tapXY(action, gen, allowed, coordinateAdmission)
             }
         }
@@ -512,7 +512,8 @@ internal class MainScreenDriver(private val service: PhoneA11yService, private v
         }
     }
 
-    private fun tap(a: PhoneAction.Tap, gen: Long, allowed: () -> Boolean): ActionResult {
+    private fun tap(a: PhoneAction.Tap, gen: Long, allowed: () -> Boolean,
+                    actionSourcesAllowed: (Set<String>) -> Boolean): ActionResult {
         val res = resolve(a.screenId, a.elementId)
         val r = res as? Resolved ?: return res as ActionResult
         try {
@@ -521,7 +522,8 @@ internal class MainScreenDriver(private val service: PhoneA11yService, private v
                 // l10n:keep agent screen result
                 return ActionResult(false, "[${a.elementId}] 是列表本身，不能点。看更多用 scroll，整理全部条目用 collect。")
             }
-            refuseHalted(allowed)?.let { return it }
+            refuseHalted { allowed() && actionSourcesAllowed(r.cap.windows.mapNotNull { it.packageName }.toSet()) }
+                ?.let { return it }
             val before = clock.count
             val out = actuator.click(r.node, r.el.bounds, r.cap.screen, a.long)
             val what = short(r.el.label.ifEmpty { r.el.role })
@@ -575,7 +577,7 @@ internal class MainScreenDriver(private val service: PhoneA11yService, private v
     }
 
     private fun scroll(a: PhoneAction.Scroll, gen: Long, allowed: () -> Boolean,
-                       scrollSourcesAllowed: (Set<String>) -> Boolean): ActionResult {
+                       actionSourcesAllowed: (Set<String>) -> Boolean): ActionResult {
         val snap = latest
         val dirWord = when (a.direction) {
             // l10n:keep agent screen result
@@ -608,7 +610,7 @@ internal class MainScreenDriver(private val service: PhoneA11yService, private v
                     else "无法确认当前界面仍与上一屏一致，没有滚动。请先看新屏幕。" // l10n:keep agent screen result
                     return ActionResult(false, reason, toSnapshot(publish(cap, false)))
                 }
-                refuseHalted { allowed() && scrollSourcesAllowed(cap.windows.mapNotNull { it.packageName }.toSet()) }
+                refuseHalted { allowed() && actionSourcesAllowed(cap.windows.mapNotNull { it.packageName }.toSet()) }
                     ?.let { return it }
                 val screen = cap.screen
                 val before = clock.count
@@ -627,7 +629,7 @@ internal class MainScreenDriver(private val service: PhoneA11yService, private v
             // l10n:keep agent screen result
             if ((r.el.packageName == ownPackage || r.snap.ownApp) && !lifted.ownApp) return ActionResult(false, "这是 DSH 自己的界面，不操作。")
             // A failed node scroll falls back to a screen gesture within these bounds.
-            refuseHalted { allowed() && scrollSourcesAllowed(r.cap.windows.mapNotNull { it.packageName }.toSet()) }
+            refuseHalted { allowed() && actionSourcesAllowed(r.cap.windows.mapNotNull { it.packageName }.toSet()) }
                 ?.let { return it }
             val before = clock.count
             val out = actuator.scroll(r.node, r.el.scroll, r.el.horizontal, r.el.bounds, r.cap.screen, a.direction)

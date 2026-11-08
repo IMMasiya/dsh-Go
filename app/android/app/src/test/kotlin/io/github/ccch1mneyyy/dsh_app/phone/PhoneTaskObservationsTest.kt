@@ -35,8 +35,8 @@ class PhoneTaskObservationsTest {
         }
         override fun perform(action: PhoneAction, allowed: () -> Boolean,
                              coordinateAdmission: ((() -> Boolean) -> Boolean)?,
-                             scrollSourcesAllowed: (Set<String>) -> Boolean): ActionResult {
-            scrollSourceGate = scrollSourcesAllowed
+                             actionSourcesAllowed: (Set<String>) -> Boolean): ActionResult {
+            scrollSourceGate = actionSourcesAllowed
             if (action is PhoneAction.Scroll) duringScroll()
             return perform(action, allowed, coordinateAdmission)
         }

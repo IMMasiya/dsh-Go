@@ -18,6 +18,7 @@ class PhoneCorePromptOwnerTest {
     private var reviewRequired = false
     private var beforeHandoff: (PhoneTasks.Owner) -> Unit = {}
     private var asked = 0
+    private val confirmedPackages = mutableListOf<String?>()
     private val statuses = mutableListOf<String?>()
     private var beforeStatus: () -> Unit = {}
     private var deferStatus = false
@@ -45,7 +46,7 @@ class PhoneCorePromptOwnerTest {
         override fun policies() = policyRead?.invoke() ?: policies
         override fun isLocked() = false
         override fun gate() = if (!gateAvailable) null else object : UserGate {
-            override fun confirm(request: ConfirmRequest): Decision { asked++; return confirm() }
+            override fun confirm(request: ConfirmRequest): Decision { asked++; confirmedPackages += request.packageName; return confirm() }
             override fun handoff(reason: String, timeoutMs: Long): HandoffResult { asked++; return handoff() }
             override fun handoff(reason: String, timeoutMs: Long, cause: HandoffCause?): HandoffResult {
                 handoffCauses += cause
@@ -100,6 +101,10 @@ class PhoneCorePromptOwnerTest {
     private class Driver(override val screen: PhoneScreen) : PhoneDriver {
         var reads = 0
         var writes = 0
+        var targetPackage = "example.app"
+        var tapSources: Set<String>? = null
+        var beforeTapSources: () -> Unit = {}
+        var tapSourceCalls = 0
         var scrollSources: Set<String> = emptySet()
         var beforeScrollSources: () -> Unit = {}
         var afterScrollSources: () -> Unit = {}
@@ -166,17 +171,22 @@ class PhoneCorePromptOwnerTest {
             return collect(screenId, listElementId, maxPages, until)
         }
         override fun target(screenId: String, elementId: Int) = TargetInfo(screenId, elementId,
-            "按钮", "发送", "example.app", "Example", false, false, false)
+            "按钮", "发送", targetPackage, "Example", false, false, false)
         override fun perform(action: PhoneAction): ActionResult { actions += action; writes++; return ActionResult(true, "done") }
         override fun perform(action: PhoneAction, allowed: () -> Boolean,
                              coordinateAdmission: ((() -> Boolean) -> Boolean)?,
-                             scrollSourcesAllowed: (Set<String>) -> Boolean): ActionResult {
+                             actionSourcesAllowed: (Set<String>) -> Boolean): ActionResult {
             if (!allowed()) return ActionResult(false, PhoneTasks.STOPPED_MESSAGE)
             if (action is PhoneAction.Scroll) {
                 beforeScrollSources()
                 scrollSourceCalls++
-                val accepted = try { scrollSourcesAllowed(scrollSources) } finally { afterScrollSources() }
+                val accepted = try { actionSourcesAllowed(scrollSources) } finally { afterScrollSources() }
                 if (!accepted) return ActionResult(false, "source refused")
+            }
+            if (action is PhoneAction.Tap && tapSources != null) {
+                beforeTapSources()
+                tapSourceCalls++
+                if (!actionSourcesAllowed(checkNotNull(tapSources))) return ActionResult(false, "source refused")
             }
             return perform(action)
         }
@@ -1295,6 +1305,85 @@ class PhoneCorePromptOwnerTest {
             assertEquals(withScreen, result.text.contains("late collected screen"))
             if (withScreen) assertArrayEquals(byteArrayOf(1, 2, 3), result.image) else assertNull(result.image)
             assertEquals("ok", core.log.last()!!.decision)
+            assertTrue(tasks.isCurrent(checkNotNull(original)))
+            assertFalse(tasks.isStopped())
+        }
+    }
+
+    @Test fun confirmedTapStillRejectsLateDeniedActionSourceWithoutStoppingOwner() {
+        for (long in listOf(false, true)) {
+            policies = PhonePolicies(confirmEveryWritePackages = listOf("other.app"))
+            main.targetPackage = "other.app"
+            main.tapSources = linkedSetOf("other.app", "cover.app")
+            val confirmations = asked
+            var original: PhoneTasks.Owner? = null
+            beforeStatus = { original = checkNotNull(tasks.activeOwner()) }
+            main.beforeTapSources = {
+                assertEquals(confirmations + 1, asked)
+                assertEquals("other.app", confirmedPackages.last())
+                policies = policies.copy(denyPackages = listOf("cover.app"))
+            }
+            val writes = main.writes
+            val checks = main.tapSourceCalls
+            val result = core.call(PhoneToolCatalog.TAP, mapOf("screen" to "s1", "id" to 1, "long" to long))
+            assertTrue(result.isError)
+            assertEquals(writes, main.writes)
+            assertEquals(checks + 1, main.tapSourceCalls)
+            assertEquals(confirmations + 1, asked)
+            assertEquals("refused:deny-list", core.log.last()!!.decision)
+            assertTrue(tasks.isCurrent(checkNotNull(original)))
+            assertFalse(tasks.isStopped())
+        }
+    }
+
+    @Test fun confirmedTapKeepsOneInputWhenOnlyAnUnrelatedSourceIsDenied() {
+        for (long in listOf(false, true)) {
+            policies = PhonePolicies(confirmEveryWritePackages = listOf("other.app"))
+            main.targetPackage = "other.app"
+            main.tapSources = linkedSetOf("other.app", "cover.app")
+            val confirmations = asked
+            var original: PhoneTasks.Owner? = null
+            beforeStatus = { original = checkNotNull(tasks.activeOwner()) }
+            main.beforeTapSources = {
+                assertEquals(confirmations + 1, asked)
+                assertEquals("other.app", confirmedPackages.last())
+                policies = policies.copy(denyPackages = listOf("unrelated.app"))
+            }
+            val writes = main.writes
+            val checks = main.tapSourceCalls
+            val result = core.call(PhoneToolCatalog.TAP, mapOf("screen" to "s1", "id" to 1, "long" to long))
+            assertFalse(result.text, result.isError)
+            assertEquals(writes + 1, main.writes)
+            assertEquals(PhoneAction.Tap("s1", 1, long), main.actions.last())
+            assertEquals(checks + 1, main.tapSourceCalls)
+            assertEquals(confirmations + 1, asked)
+            assertEquals("confirmed", core.log.last()!!.decision)
+            assertTrue(tasks.isCurrent(checkNotNull(original)))
+            assertFalse(tasks.isStopped())
+        }
+    }
+
+    @Test fun confirmedTapDoesNotUnlockAnOwnAppActionSource() {
+        for (unlocked in listOf(false, true)) for (long in listOf(false, true)) {
+            policies = PhonePolicies(confirmEveryWritePackages = listOf("other.app"),
+                unlocks = PhoneUnlocks(ownApp = unlocked))
+            main.targetPackage = "other.app"
+            main.tapSources = linkedSetOf("other.app", SafetyRules.OWN_PACKAGE)
+            val confirmations = asked
+            var original: PhoneTasks.Owner? = null
+            beforeStatus = { original = checkNotNull(tasks.activeOwner()) }
+            main.beforeTapSources = {
+                assertEquals(confirmations + 1, asked)
+                assertEquals("other.app", confirmedPackages.last())
+            }
+            val writes = main.writes
+            val checks = main.tapSourceCalls
+            val result = core.call(PhoneToolCatalog.TAP, mapOf("screen" to "s1", "id" to 1, "long" to long))
+            assertEquals(!unlocked, result.isError)
+            assertEquals(writes + if (unlocked) 1 else 0, main.writes)
+            assertEquals(checks + 1, main.tapSourceCalls)
+            assertEquals(confirmations + 1, asked)
+            assertEquals(if (unlocked) "confirmed" else "refused:own-app", core.log.last()!!.decision)
             assertTrue(tasks.isCurrent(checkNotNull(original)))
             assertFalse(tasks.isStopped())
         }
