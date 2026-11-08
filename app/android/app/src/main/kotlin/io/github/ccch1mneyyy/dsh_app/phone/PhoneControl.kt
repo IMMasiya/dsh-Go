@@ -188,10 +188,12 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
     private val server = McpServer(PhoneToolCatalog.listJson(), { name, args, _ -> sessions.run(sessions.admit(null), name, args) }, SERVER_VERSION)
     private val bridge = PhoneBridge(server, { line -> logger(line) }, { call ->
         val admission = sessions.admit(call.caller)
+        val nativeReplyCommit = PhoneReplyCommit()
         PhoneCallWork(
-            invoke = { call.run { name, args, _ -> sessions.run(admission, name, args) } },
+            invoke = { call.runWithCommit(nativeReplyCommit) { name, args, _ -> sessions.run(admission, name, args) } },
             remainingMs = { sessions.remainingMs(admission) },
             expiredReply = { call.run { _, _, _ -> sessions.expire(admission) } },
+            nativeReplyCommit = nativeReplyCommit,
         )
     }, { end ->
         try {
