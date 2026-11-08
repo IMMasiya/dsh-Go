@@ -161,4 +161,19 @@ class PhoneSkillBundleReaderTest {
         assertEquals(R.Post.PageIs("home"), result.route.steps.single().post)
         assertThrows(UnsupportedOperationException::class.java) { (result.route.steps as MutableList<R.Step>).clear() }
     }
+
+    @Test fun selfConsistentRewriteWithSameRevisionDoesNotMatchOriginalSaveReceipt() = withRoot { root, dir ->
+        val identity = PhoneSkillBundleInstaller.Identity(name, revision, 1, digest(markdown), digest(route))
+        publish(dir)
+        assertTrue(PhoneSkillBundleInstaller.matches(identity, accepted(read(root))))
+        val changedMarkdown = "# a different confirmed document\n".toByteArray()
+        publish(dir, md = changedMarkdown)
+        val rewritten = accepted(read(root)) // All three current files are self-consistent.
+        assertFalse(PhoneSkillBundleInstaller.matches(identity, rewritten))
+        val changedRoute = route + "\n".toByteArray() // Same typed route, distinct exact raw bytes.
+        publish(dir, rt = changedRoute)
+        assertFalse(PhoneSkillBundleInstaller.matches(identity, accepted(read(root))))
+        publish(dir)
+        assertFalse(PhoneSkillBundleInstaller.matches(identity.copy(draftRevision = 2), accepted(read(root))))
+    }
 }

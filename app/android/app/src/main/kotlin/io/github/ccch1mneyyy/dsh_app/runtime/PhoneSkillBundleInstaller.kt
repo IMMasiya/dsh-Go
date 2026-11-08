@@ -35,7 +35,7 @@ internal object PhoneSkillBundleInstaller {
         data class Refused(val reason: PhoneSkillBundleReader.Reason) : Frozen
     }
     enum class Publication { PUBLISHED, UNKNOWN }
-    enum class Verification { VERIFICATION_UNAVAILABLE, BUNDLE_INVALID }
+    enum class Verification { VERIFICATION_UNAVAILABLE, BUNDLE_INVALID, ORIGIN_UNAVAILABLE }
     sealed interface Result {
         data class Saved(val identity: Identity) : Result
         data class Unverified(val identity: Identity, val publication: Publication, val code: Verification) : Result
@@ -128,7 +128,7 @@ internal object PhoneSkillBundleInstaller {
         }
     }
 
-    private fun matches(identity: Identity, read: PhoneSkillBundleReader.Read.Accepted): Boolean =
+    internal fun matches(identity: Identity, read: PhoneSkillBundleReader.Read.Accepted): Boolean =
         read.route.skillName == identity.name && read.route.revision == identity.revision &&
             read.draftRevision == identity.draftRevision &&
             read.skillSha256 == identity.skillSha256 && read.routeSha256 == identity.routeSha256

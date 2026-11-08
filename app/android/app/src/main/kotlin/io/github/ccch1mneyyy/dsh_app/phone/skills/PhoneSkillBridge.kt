@@ -2,6 +2,7 @@ package io.github.ccch1mneyyy.dsh_app.phone.skills
 
 import io.github.ccch1mneyyy.dsh_app.runtime.PhoneSkillInstallResult
 import io.github.ccch1mneyyy.dsh_app.runtime.PhoneSkillWrite
+import io.github.ccch1mneyyy.dsh_app.runtime.PhoneSkillBundleInstaller
 import java.util.Locale
 
 /** Local MethodChannel adapter. Invoke on a worker: parsing/rendering never runs on the UI thread. */
@@ -9,6 +10,9 @@ internal class PhoneSkillBridge(
     private val drafts: PhoneSkillDrafts,
     private val save: (PhoneSkillWrite, (PhoneSkillInstallResult) -> Unit) -> Unit,
     private val changed: () -> Unit,
+    private val check: (PhoneSkillWrite.SaveBinding, PhoneSkillBundleInstaller.Publication, (PhoneSkillInstallResult) -> Unit) -> Unit =
+        { binding, publication, done -> done(PhoneSkillInstallResult.BundleUnverified(binding.identity, publication,
+            PhoneSkillBundleInstaller.Verification.ORIGIN_UNAVAILABLE)) },
 ) {
     fun call(client: PhoneSkillDrafts.Client, method: String, arguments: Any?): Map<String, Any?> {
         val a = arguments as? Map<*, *> ?: return rejected("invalid")
@@ -69,6 +73,29 @@ internal class PhoneSkillBridge(
         }
     }
 
+    /** New read-only action only: never block controlIo waiting for the rootfs worker. */
+    fun checkSave(client: PhoneSkillDrafts.Client, arguments: Any?, onDone: (Map<String, Any?>) -> Unit) {
+        val a = arguments as? Map<*, *>
+        if (a == null || a.keys != setOf("action", "taskId", "draftId", "name", "bundleRevision") || a["action"] != "check_save") {
+            onDone(rejected("invalid")); return
+        }
+        val task = positive(a["taskId"])
+        val draft = id(a)
+        val name = (a["name"] as? String)?.takeIf { NAME.matches(it) }
+        val revision = (a["bundleRevision"] as? String)?.takeIf { ID.matches(it) }
+        if (task == null || draft == null || name == null || revision == null) { onDone(rejected("invalid")); return }
+        when (val begun = drafts.beginCheck(client, draft, task, name, revision)) {
+            is PhoneSkillDrafts.Check.Immediate -> onDone(reply(begun.reply))
+            is PhoneSkillDrafts.Check.Saving -> onDone(writeState(draft, begun.write))
+            is PhoneSkillDrafts.Query -> check(begun.binding, begun.publication) { result ->
+                // Runtime calls here in the physical reader job's finally. UI retirement does
+                // not release the pin; update/clear it first, independent of reply attachment.
+                val value = reply(drafts.completeCheck(begun, result))
+                try { changed() } finally { onDone(value) }
+            }
+        }
+    }
+
     private fun writeState(id: String, write: PhoneSkillWrite): Map<String, Any?> {
         // A real callback/result may already have won, including synchronous Runtime refusal.
         if (write.result() != null) return reply(drafts.saved(id, write))
@@ -109,6 +136,7 @@ internal class PhoneSkillBridge(
     private fun integer(value: Any?): Long? = when (value) { is Int -> value.toLong(); is Long -> value; else -> null }
     companion object {
         private val ID = Regex("[a-f0-9]{32}")
+        private val NAME = Regex("phone-task-[a-f0-9]{32}")
         fun rejected(code: String): Map<String, Any?> = mapOf("kind" to "rejected", "code" to code)
     }
 }

@@ -339,38 +339,78 @@ class RuntimeController private constructor(private val app: Context) : DshProce
 
     /** User-selected phone draft only. Lock order: Controller -> write; no IO under either. */
     internal fun savePhoneSkill(write: PhoneSkillWrite, onDone: (PhoneSkillInstallResult) -> Unit) {
-        val generation = synchronized(this) {
-            if (phase == Phase.RUNNING && !runSafe && !resetting && stopGen < runGen &&
-                phoneSkillStoppedGeneration < runGen) runGen else null
-        }
-        if (generation == null) {
+        val origin = capturePhoneSkillOrigin()?.let(write::bindSaveOrigin)
+        if (origin == null) {
             val result = PhoneSkillInstallResult.Refused.STALE
             write.finish(result)
             main.post { onDone(result) }
             return
         }
-        worker.execute {
-            fun current(): Boolean = phase == Phase.RUNNING && !runSafe && !resetting &&
-                runGen == generation && stopGen < generation && phoneSkillStoppedGeneration < generation
-            val bundle = write.bundle
-            val result = if (bundle == null) PhoneSkillInstaller.install(installer.rootfs, write.document,
-                canStage = { synchronized(this) { current() && write.canStage() } },
-                beginCommit = { synchronized(this) { current() && write.beginCommit() } },
-            ) else when (val saved = PhoneSkillBundleInstaller.install(installer.rootfs, bundle,
-                canStage = { synchronized(this) { current() && write.canStage() } },
-                beginCommit = { synchronized(this) { current() && write.beginCommit() } },
-            )) {
-                is PhoneSkillBundleInstaller.Result.Saved -> PhoneSkillInstallResult.BundleSaved(saved.identity)
-                is PhoneSkillBundleInstaller.Result.Unverified -> PhoneSkillInstallResult.BundleUnverified(
-                    saved.identity, saved.publication, saved.code)
-                PhoneSkillBundleInstaller.Result.Refused.STALE -> PhoneSkillInstallResult.Refused.STALE
-                PhoneSkillBundleInstaller.Result.Refused.NO_HOME -> PhoneSkillInstallResult.Refused.NO_HOME
-                PhoneSkillBundleInstaller.Result.Refused.CONFLICT -> PhoneSkillInstallResult.Refused.CONFLICT
-                PhoneSkillBundleInstaller.Result.Refused.IO, PhoneSkillBundleInstaller.Result.Refused.INVALID -> PhoneSkillInstallResult.Refused.IO
+        try { worker.execute {
+            fun current(): Boolean = phoneSkillOriginCurrent(origin)
+            var result: PhoneSkillInstallResult? = null
+            try {
+                val bundle = write.bundle
+                result = if (bundle == null) PhoneSkillInstaller.install(origin.root, write.document,
+                    canStage = { synchronized(this) { current() && write.canStage() } },
+                    beginCommit = { synchronized(this) { current() && write.beginCommit() } },
+                ) else when (val saved = PhoneSkillBundleInstaller.install(origin.root, bundle,
+                    canStage = { synchronized(this) { current() && write.canStage() } },
+                    beginCommit = { synchronized(this) { current() && write.beginCommit() } },
+                )) {
+                    is PhoneSkillBundleInstaller.Result.Saved -> PhoneSkillInstallResult.BundleSaved(saved.identity)
+                    is PhoneSkillBundleInstaller.Result.Unverified -> PhoneSkillInstallResult.BundleUnverified(
+                        saved.identity, saved.publication, saved.code)
+                    PhoneSkillBundleInstaller.Result.Refused.STALE -> PhoneSkillInstallResult.Refused.STALE
+                    PhoneSkillBundleInstaller.Result.Refused.NO_HOME -> PhoneSkillInstallResult.Refused.NO_HOME
+                    PhoneSkillBundleInstaller.Result.Refused.CONFLICT -> PhoneSkillInstallResult.Refused.CONFLICT
+                    PhoneSkillBundleInstaller.Result.Refused.IO, PhoneSkillBundleInstaller.Result.Refused.INVALID -> PhoneSkillInstallResult.Refused.IO
+                }
+            } finally {
+                // Physical completion precedes any UI callback. A permit already consumed is
+                // not proof of zero publication when the operation fails without a result.
+                val finished = result ?: write.bundle?.takeIf { write.phase() == PhoneSkillWrite.Phase.COMMITTING }?.let {
+                    PhoneSkillInstallResult.BundleUnverified(it.identity, PhoneSkillBundleInstaller.Publication.UNKNOWN,
+                        PhoneSkillBundleInstaller.Verification.VERIFICATION_UNAVAILABLE)
+                } ?: PhoneSkillInstallResult.Refused.IO
+                write.finish(finished)
+                main.post { onDone(finished) }
             }
-            // Report what the filesystem did even if the UI retired after commit permission.
+        } } catch (_: java.util.concurrent.RejectedExecutionException) {
+            // Submission failed: this job cannot enter the reader/installer.
+            val result = PhoneSkillInstallResult.Refused.IO
             write.finish(result)
             main.post { onDone(result) }
+        }
+    }
+
+    /** Original worker/root only. Completion runs in the physical job's finally, NOT on main.
+     * The caller clears its Receipt pin there before separately delivering UI callbacks. */
+    internal fun checkPhoneSkillSave(binding: PhoneSkillWrite.SaveBinding,
+        publication: PhoneSkillBundleInstaller.Publication, onDone: (PhoneSkillInstallResult) -> Unit) {
+        fun unverified(code: PhoneSkillBundleInstaller.Verification) =
+            PhoneSkillInstallResult.BundleUnverified(binding.identity, publication, code)
+        try { worker.execute {
+            var result: PhoneSkillInstallResult = unverified(PhoneSkillBundleInstaller.Verification.VERIFICATION_UNAVAILABLE)
+            try {
+                val origin = binding.origin
+                result = if (origin == null || !phoneSkillOriginCurrent(origin)) {
+                    unverified(PhoneSkillBundleInstaller.Verification.ORIGIN_UNAVAILABLE)
+                } else {
+                    val identity = binding.identity
+                    val read = PhoneSkillBundleReader.read(origin.root, identity.name, identity.revision, binding.descriptors)
+                    when {
+                        !phoneSkillOriginCurrent(origin) -> unverified(PhoneSkillBundleInstaller.Verification.ORIGIN_UNAVAILABLE)
+                        read is PhoneSkillBundleReader.Read.Accepted && PhoneSkillBundleInstaller.matches(identity, read) ->
+                            PhoneSkillInstallResult.BundleSaved(identity)
+                        read is PhoneSkillBundleReader.Read.Rejected && read.reason == PhoneSkillBundleReader.Reason.IO ->
+                            unverified(PhoneSkillBundleInstaller.Verification.VERIFICATION_UNAVAILABLE)
+                        else -> unverified(PhoneSkillBundleInstaller.Verification.BUNDLE_INVALID)
+                    }
+                }
+            } finally { onDone(result) }
+        } } catch (_: java.util.concurrent.RejectedExecutionException) {
+            onDone(unverified(PhoneSkillBundleInstaller.Verification.ORIGIN_UNAVAILABLE))
         }
     }
 

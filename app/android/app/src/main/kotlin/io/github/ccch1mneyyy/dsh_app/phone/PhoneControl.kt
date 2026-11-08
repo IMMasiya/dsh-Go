@@ -166,7 +166,13 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
         process = java.util.UUID.randomUUID().toString().replace("-", ""))
     private val skillLifecycle = PhoneSkillLifecycle(skillTrace, skillDrafts)
     internal val skillBridge = PhoneSkillBridge(skillDrafts,
-        { write, done -> RuntimeController.get(app).savePhoneSkill(write, done) }, ::emitStatus)
+        { write, done -> RuntimeController.get(app).savePhoneSkill(write, done) }, ::emitStatus,
+        check = { binding, publication, done ->
+            val origin = binding.origin
+            if (origin == null) done(io.github.ccch1mneyyy.dsh_app.runtime.PhoneSkillInstallResult.BundleUnverified(
+                binding.identity, publication, io.github.ccch1mneyyy.dsh_app.runtime.PhoneSkillBundleInstaller.Verification.ORIGIN_UNAVAILABLE))
+            else origin.runtime.checkPhoneSkillSave(binding, publication, done)
+        })
     private val displaySelection = PhoneDisplaySelection()
     private val legacyObservations = PhoneTaskObservations(tasks)
     val core = PhoneCore(this, tasks, log, skillTrace = skillTrace,
@@ -736,6 +742,7 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
 
     private fun skillsStatus(): Map<String, Any?> = mapOf(
         "v" to 1, "askAfterSuccess" to prefs.getBoolean(K_SKILL_PROMPT, false),
+        "saveResults" to skillDrafts.saveResults(),
         "candidates" to skillDrafts.candidates().map { mapOf(
             "taskId" to it.owner.taskId, "generation" to it.owner.lifecycle, "steps" to it.steps) },
     )

@@ -453,11 +453,18 @@ class PhonePlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandle
         val client = skillClient
         if (client == null) { result.success(PhoneSkillBridge.rejected("stale")); return }
         controlIo.execute {
-            val value = try { control.skillBridge.call(client, call.method, call.arguments) }
-                catch (_: Exception) { PhoneSkillBridge.rejected("io") }
-            main.post {
-                if (skillClient === client) result.success(value)
-                else result.success(PhoneSkillBridge.rejected("stale"))
+            fun finish(value: Map<String, Any?>) {
+                main.post {
+                    if (skillClient === client) result.success(value)
+                    else result.success(PhoneSkillBridge.rejected("stale"))
+                }
+            }
+            if (call.method == "skillDraft" && (call.arguments as? Map<*, *>)?.get("action") == "check_save") {
+                control.skillBridge.checkSave(client, call.arguments, ::finish)
+            } else {
+                val value = try { control.skillBridge.call(client, call.method, call.arguments) }
+                    catch (_: Exception) { PhoneSkillBridge.rejected("io") }
+                finish(value)
             }
         }
     }

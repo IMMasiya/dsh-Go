@@ -17,6 +17,18 @@ internal class PhoneSkillWrite(val document: PhoneSkillDraft.Ready,
     enum class Phase { STAGING, COMMITTING, FINISHED, CANCELLED }
     private var phase = Phase.STAGING
     private var outcome: PhoneSkillInstallResult? = null
+    /** Small immutable receipt metadata; no Markdown or route bytes. */
+    data class SaveBinding(val identity: PhoneSkillBundleInstaller.Identity,
+        val origin: RuntimeController.PhoneSkillOrigin?,
+        val descriptors: Map<String, io.github.ccch1mneyyy.dsh_app.phone.skills.PhoneSkillRoute.Descriptor>)
+    private var binding = bundle?.let { SaveBinding(it.identity, null, it.descriptors) }
+    @Synchronized fun bindSaveOrigin(origin: RuntimeController.PhoneSkillOrigin): RuntimeController.PhoneSkillOrigin {
+        val current = binding ?: return origin // Phase1 has no bundle query.
+        current.origin?.let { return it } // Never borrow a later Runtime/root for this write.
+        binding = current.copy(origin = origin)
+        return origin
+    }
+    @Synchronized fun saveBinding(): SaveBinding? = binding
 
     @Synchronized fun canStage(): Boolean = phase == Phase.STAGING
     @Synchronized fun phase(): Phase = phase

@@ -363,4 +363,114 @@ class PhoneSkillDraftsTest {
         assertEquals(old, (f.manager.view(f.client, old.draftId, old.owner.taskId) as PhoneSkillDrafts.Shown).view)
     }
 
+    private fun frozenSave(manager: PhoneSkillDrafts, client: PhoneSkillDrafts.Client, task: Long,
+        finish: Boolean = true): Pair<PhoneSkillDrafts.View, PhoneSkillWrite> {
+        val source = candidate(task)
+        assertTrue(manager.offer(manager.currentEpoch(), source))
+        val old = (manager.open(client, source.owner, true) as PhoneSkillDrafts.Shown).view
+        val bound = (manager.bindBundle(manager.currentEpoch(), old.owner, old.draftId, old.revision, bundle(old)) as PhoneSkillDrafts.Shown).view
+        val write = (manager.beginSave(client, bound.draftId, task, bound.revision, true) as PhoneSkillDrafts.Started).write
+        assertTrue(write.beginCommit())
+        if (finish) {
+            write.finish(PhoneSkillInstallResult.BundleUnverified(write.bundle!!.identity,
+                B.Publication.PUBLISHED, B.Verification.VERIFICATION_UNAVAILABLE))
+            assertTrue(manager.saved(bound.draftId, write) is PhoneSkillDrafts.Unverified)
+        }
+        return bound to write
+    }
+    private fun checkArgs(view: PhoneSkillDrafts.View) = mapOf<String, Any?>("action" to "check_save",
+        "taskId" to view.owner.taskId, "draftId" to view.draftId, "name" to view.skillName, "bundleRevision" to view.bundleRevision)
+
+    @Test fun actualBridgeCoalescesQueriesAndRetirementDoesNotReleaseTheOriginalPin() {
+        val manager = PhoneSkillDrafts(); val oldClient = manager.attachClient()
+        val (view, write) = frozenSave(manager, oldClient, 10)
+        var reads = 0; var installs = 0
+        var completed: ((PhoneSkillInstallResult) -> Unit)? = null
+        val bridge = PhoneSkillBridge(manager, { _, _ -> installs++ }, {}, check = { _, _, done -> reads++; completed = done })
+        var first: Map<String, Any?>? = null
+        bridge.checkSave(oldClient, checkArgs(view)) { first = it }
+        assertNull(first); assertEquals(1, reads)
+        manager.retireClient(oldClient); manager.onEngineRetired()
+        val current = manager.attachClient()
+        var duplicate: Map<String, Any?>? = null
+        bridge.checkSave(current, checkArgs(view)) { duplicate = it }
+        assertEquals("unverified", duplicate!!["kind"]); assertEquals(1, reads)
+        assertEquals(view.draftId, manager.saveResults().single()["draftId"])
+        checkNotNull(completed)(PhoneSkillInstallResult.BundleSaved(write.bundle!!.identity))
+        assertEquals("saved", first!!["kind"])
+        bridge.checkSave(current, checkArgs(view)) { duplicate = it }
+        assertEquals("saved", duplicate!!["kind"]); assertEquals(1, reads); assertEquals(0, installs)
+        bridge.checkSave(oldClient, checkArgs(view)) { assertEquals("stale", it["code"]) }
+        bridge.checkSave(PhoneSkillDrafts().attachClient(), checkArgs(view)) { assertEquals("stale", it["code"]) }
+        assertEquals(1, reads)
+    }
+
+    @Test fun queryMetadataSurvivesWeakWriteAndWrongDigestCannotPromoteOriginalReceipt() {
+        val manager = PhoneSkillDrafts(); val client = manager.attachClient()
+        val (view, write) = frozenSave(manager, client, 20)
+        fun begin() = manager.beginCheck(client, view.draftId, 20, view.skillName, view.bundleRevision!!) as PhoneSkillDrafts.Query
+        val first = begin()
+        val identity = write.bundle!!.identity
+        first.receipt.write.clear() // Real WeakReference cleared; Receipt owns its original small metadata.
+        assertEquals(identity, first.binding.identity)
+        val bad = manager.completeCheck(first, PhoneSkillInstallResult.BundleSaved(identity.copy(skillSha256 = "0".repeat(64))))
+        assertEquals(B.Verification.BUNDLE_INVALID, (bad as PhoneSkillDrafts.Unverified).code)
+        assertEquals(B.Publication.PUBLISHED, bad.publication)
+        val second = begin()
+        val originUnavailable = manager.completeCheck(second, PhoneSkillInstallResult.BundleUnverified(identity,
+            B.Publication.UNKNOWN, B.Verification.ORIGIN_UNAVAILABLE)) as PhoneSkillDrafts.Unverified
+        assertEquals(B.Publication.PUBLISHED, originUnavailable.publication)
+        assertEquals(B.Verification.ORIGIN_UNAVAILABLE, originUnavailable.code)
+        assertTrue(manager.completeCheck(begin(), PhoneSkillInstallResult.BundleSaved(identity)) is PhoneSkillDrafts.Saved)
+    }
+
+    @Test fun allPinnedReceiptsBlockNewSaveButAnUnpinnedUnverifiedReceiptCanBeEvicted() {
+        val manager = PhoneSkillDrafts(); val client = manager.attachClient()
+        val pinned = (1L..8L).map { task ->
+            val (view, _) = frozenSave(manager, client, task)
+            manager.beginCheck(client, view.draftId, task, view.skillName, view.bundleRevision!!) as PhoneSkillDrafts.Query
+        }
+        val source = candidate(9); assertTrue(manager.offer(manager.currentEpoch(), source))
+        val old = (manager.open(client, source.owner, true) as PhoneSkillDrafts.Shown).view
+        val view = (manager.bindBundle(manager.currentEpoch(), old.owner, old.draftId, old.revision, bundle(old)) as PhoneSkillDrafts.Shown).view
+        assertEquals(PhoneSkillDrafts.Code.BUSY, code(manager.beginSave(client, view.draftId, 9, view.revision, true)))
+        val evicted = pinned.first()
+        manager.completeCheck(evicted, PhoneSkillInstallResult.BundleUnverified(evicted.binding.identity,
+            B.Publication.PUBLISHED, B.Verification.ORIGIN_UNAVAILABLE))
+        val write = (manager.beginSave(client, view.draftId, 9, view.revision, true) as PhoneSkillDrafts.Started).write
+        assertEquals(8, manager.saveResults().size) // Seven pinned receipts + one reserved in-flight write.
+        assertTrue(write.beginCommit()); write.finish(PhoneSkillInstallResult.BundleSaved(write.bundle!!.identity))
+        assertTrue(manager.saved(view.draftId, write) is PhoneSkillDrafts.Saved)
+        assertEquals(8, manager.saveResults().size)
+        val oldQuery = manager.beginCheck(client, evicted.draftId, 1, evicted.binding.identity.name, evicted.binding.identity.revision)
+        assertEquals(PhoneSkillDrafts.Code.STALE, code((oldQuery as PhoneSkillDrafts.Check.Immediate).reply))
+        assertTrue(pinned.drop(1).all { it.receipt.queryInFlight })
+    }
+
+    @Test fun aWriteReservesItsReceiptBeforeOtherQueriesPinAllExistingRecords() {
+        val manager = PhoneSkillDrafts(); val client = manager.attachClient()
+        val records = (1L..7L).map { frozenSave(manager, client, it).first }
+        val (view, write) = frozenSave(manager, client, 8, finish = false)
+        val queries = records.map { manager.beginCheck(client, it.draftId, it.owner.taskId, it.skillName, it.bundleRevision!!) as PhoneSkillDrafts.Query }
+        assertEquals(8, manager.saveResults().size)
+        manager.onEngineRetired()
+        write.finish(PhoneSkillInstallResult.BundleUnverified(write.bundle!!.identity, B.Publication.PUBLISHED, B.Verification.BUNDLE_INVALID))
+        assertTrue(manager.saved(view.draftId, write) is PhoneSkillDrafts.Unverified)
+        assertEquals(8, manager.saveResults().size)
+        assertTrue(queries.all { it.receipt.queryInFlight })
+    }
+
+    @Test fun checkSaveUsesFrozenIdentityAndNeverQueuesAnInFlightWriteAgain() {
+        val manager = PhoneSkillDrafts(); val client = manager.attachClient()
+        val (view, _) = frozenSave(manager, client, 30, finish = false)
+        var reads = 0; var installs = 0
+        val bridge = PhoneSkillBridge(manager, { _, _ -> installs++ }, {}, check = { _, _, _ -> reads++ })
+        bridge.checkSave(client, checkArgs(view)) {
+            assertEquals("saving", it["kind"]); assertEquals("committing", it["phase"])
+            assertEquals(view.skillName, it["name"]); assertEquals(view.bundleRevision, it["bundleRevision"])
+        }
+        bridge.checkSave(client, checkArgs(view) + ("bundleRevision" to "0".repeat(32))) { assertEquals("stale", it["code"]) }
+        bridge.checkSave(client, checkArgs(view) + ("root" to "/other")) { assertEquals("invalid", it["code"]) }
+        assertEquals(0, reads); assertEquals(0, installs)
+    }
 }
