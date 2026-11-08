@@ -14,6 +14,7 @@ import android.content.Intent
 import android.graphics.Point
 import android.hardware.display.DisplayManager
 import android.os.Build
+import android.os.Handler
 import android.os.Looper
 import android.os.PowerManager
 import android.os.SystemClock
@@ -21,6 +22,9 @@ import android.util.Log
 import android.view.Display
 import android.view.accessibility.AccessibilityNodeInfo
 import io.github.ccch1mneyyy.dsh_app.phone.ActionResult
+import io.github.ccch1mneyyy.dsh_app.phone.Either
+import io.github.ccch1mneyyy.dsh_app.phone.FocusInput
+import io.github.ccch1mneyyy.dsh_app.phone.FocusObservation
 import io.github.ccch1mneyyy.dsh_app.phone.Availability
 import io.github.ccch1mneyyy.dsh_app.phone.CollectResult
 import io.github.ccch1mneyyy.dsh_app.phone.PhoneControl
@@ -39,6 +43,8 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.FutureTask
+import java.util.concurrent.TimeUnit
 
 /**
  * The main screen, read and driven through [PhoneA11yService]. Calls block (bridge worker
@@ -69,6 +75,10 @@ internal class MainScreenDriver(private val service: PhoneA11yService, private v
     private val lock = Any()
     @Volatile private var latest: Snapshot? = null
     private val visual = MainVisualState(Any())
+    private val focusLock = Any()
+    private var focusCandidate: FocusCandidate? = null
+    @Volatile private var focusRevision = 0L
+    private val mainHandler = Handler(Looper.getMainLooper())
 
     /** Bumped by [abort] (stop, screen off): loops and waits started before it give up. */
     @Volatile private var abortGen = 0L
@@ -90,6 +100,7 @@ internal class MainScreenDriver(private val service: PhoneA11yService, private v
         val visualEvidence: MainVisualEvidence?,
         val readPackages: Set<String>,
     ) {
+        var focus: FocusObservation? = null
         @Volatile var image: ImageObservation? = null
         // Null denotes an actual public image; only OCR-only coordinates depend on the ON epoch.
         @Volatile var ocrOnlyEpoch: Long? = null
@@ -101,10 +112,10 @@ internal class MainScreenDriver(private val service: PhoneA11yService, private v
         shooter.close()
     }
 
-    fun abort() { abortGen++; visual.invalidate() }
+    fun abort() { abortGen++; visual.invalidate(); clearFocusCandidate() }
 
     /** Main thread, so it runs ahead of any coordinate start queued behind the event. */
-    fun windowChanged() = visual.windowChanged()
+    fun windowChanged() { visual.windowChanged(); clearFocusCandidate() }
 
     // ---- PhoneDriver ------------------------------------------------------------------------------
 
@@ -119,7 +130,7 @@ internal class MainScreenDriver(private val service: PhoneA11yService, private v
         // l10n:keep agent screen result
         keyguard.isKeyguardLocked -> Availability(false, "手机已锁屏。请用户解锁后再继续。", AppStrings.get(service, R.string.phone_availability_locked))
         else -> Availability(true)
-    }).also { if (!it.ok) visual.invalidate() }
+    }).also { if (!it.ok) { visual.invalidate(); clearFocusCandidate() } }
 
     override fun foregroundPackage(): String? {
         if (!availability().ok) return null
@@ -227,8 +238,9 @@ internal class MainScreenDriver(private val service: PhoneA11yService, private v
                 }
             }
             if (snap.screen.poorTree) text.append("\n").append(formatted?.text ?: LocalOcrBoundary.message(localText))
+            if (secure) clearFocusCandidate()
             ScreenSnapshot(snap.id, text.toString(), snap.appLabel, snap.packageName, secure || snap.hidden, snap.screen.poorTree, bytes, mime,
-                readPackages = snap.readPackages)
+                readPackages = snap.readPackages, focus = snap.focus.takeUnless { secure })
         } finally { cap.recycle() }
     }
 
@@ -247,6 +259,188 @@ internal class MainScreenDriver(private val service: PhoneA11yService, private v
         return try { SystemClock.uptimeMillis() < deadline && ocrAllowed(check, snap, gen) &&
             observation(check).reusableCoordinates(snap.observation) }
         finally { check.recycle() }
+    }
+
+    private class FocusCandidate(
+        val snapshot: Snapshot, val element: ScreenElement, val node: AccessibilityNodeInfo,
+        val token: FocusObservation, val revision: Long, val generation: Long,
+        val selectionStart: Int, val selectionEnd: Int, val inputType: Int,
+    )
+
+    @Suppress("DEPRECATION")
+    private fun releaseFocusNode(node: AccessibilityNodeInfo) {
+        if (Build.VERSION.SDK_INT < 33) node.recycle()
+    }
+
+    private fun clearFocusCandidate() {
+        val old = synchronized(focusLock) {
+            focusRevision++
+            focusCandidate.also { focusCandidate = null }
+        }
+        old?.let { releaseFocusNode(it.node) }
+    }
+
+    /** The saved copy is an identity witness only: never refresh it or perform actions on it. */
+    @Suppress("DEPRECATION")
+    private fun replaceFocusCandidate(cap: Capture, snap: Snapshot) {
+        clearFocusCandidate()
+        if (Build.VERSION.SDK_INT < 33 || snap.hidden || snap.unreadable || cap.partial || cap.truncated ||
+            unavailable(cap) || !published()) return
+        val revision = focusRevision
+        val gen = abortGen
+        val candidate = try {
+            val el = snap.screen.elements.filter { it.kind == ElementKind.INPUT &&
+                cap.native(it.ref)?.isFocused == true }.singleOrNull() ?: return
+            val node = cap.native(el.ref) ?: return
+            if (!focusNodeMatches(cap, el, node) || el.password || el.secret) return
+            val start = node.textSelectionStart
+            val end = node.textSelectionEnd
+            if (start < 0 || end < 0 || node.inputType == android.text.InputType.TYPE_NULL) return
+            FocusCandidate(snap, el, AccessibilityNodeInfo.obtain(node), FocusObservation(el.id),
+                revision, gen, start, end, node.inputType)
+        } catch (_: Exception) { return }
+        val kept = synchronized(focusLock) {
+            if (revision != focusRevision || gen != abortGen || !published()) false else {
+                focusCandidate = candidate
+                snap.focus = candidate.token
+                true
+            }
+        }
+        if (!kept) releaseFocusNode(candidate.node)
+    }
+
+    private fun focusNodeMatches(cap: Capture, el: ScreenElement, node: AccessibilityNodeInfo): Boolean {
+        if (cap.partial || cap.truncated || unavailable(cap) || cap.windows.firstOrNull()?.id != el.windowId ||
+            !node.isFocused || !node.isEditable || !node.isEnabled || !node.isVisibleToUser || node.isPassword ||
+            node.windowId != el.windowId || node.packageName?.toString() != el.packageName ||
+            node.viewIdResourceName == null || node.viewIdResourceName != el.viewId) return false
+        val root = cap.windows.firstOrNull()?.root?.let { cap.native(it.ref) } ?: return false
+        val focus = root.findFocus(AccessibilityNodeInfo.FOCUS_INPUT) ?: return false
+        return try { focus == node && focus.windowId == el.windowId } finally { releaseFocusNode(focus) }
+    }
+
+    override fun prepareFocusInput(screenId: String): Either<String, FocusInput> {
+        if (Build.VERSION.SDK_INT < 33 || Looper.myLooper() == Looper.getMainLooper())
+            return Either.Left(FOCUS_UNAVAILABLE)
+        val candidate = synchronized(focusLock) {
+            val current = focusCandidate
+            if (current == null || current.snapshot.id != screenId || !current.token.committed) null
+            else current.also { focusCandidate = null } // Transfer the sole saved copy to this execution.
+        } ?: return Either.Left(FOCUS_UNAVAILABLE)
+        var transferred = false
+        try {
+            synchronized(lock) {
+                if (!focusCurrent(candidate) || !availability().ok) return Either.Left(FOCUS_CHANGED)
+                val capture = FutureTask { service.captureFocusInput() }
+                if (!mainHandler.post(capture)) return Either.Left(FOCUS_UNAVAILABLE)
+                val input = try { capture.get(2_000, TimeUnit.MILLISECONDS) }
+                    finally { capture.cancel(false) } // Late getter result owns no disposable Android resource.
+                if (input == null || !input.currentBeforeDispatch() || !verifyFocus(candidate, input))
+                    return Either.Left(FOCUS_CHANGED)
+                val plan = MainFocusInput(candidate, input)
+                transferred = true
+                return Either.Right(plan)
+            }
+        } catch (e: InterruptedException) {
+            Thread.currentThread().interrupt()
+            return Either.Left(FOCUS_CHANGED)
+        } catch (_: Exception) {
+            return Either.Left(FOCUS_UNAVAILABLE)
+        } finally { if (!transferred) releaseFocusNode(candidate.node) }
+    }
+
+    private fun focusCurrent(candidate: FocusCandidate): Boolean =
+        published() && !cancelled(candidate.generation) && latest === candidate.snapshot &&
+            focusRevision == candidate.revision
+
+    @android.annotation.TargetApi(33)
+    private fun verifyFocus(candidate: FocusCandidate, input: FocusCapturedInput33): Boolean {
+        if (!focusCurrent(candidate) || !input.currentBeforeDispatch() || !availability().ok) return false
+        val unlocks = lifted
+        if ((candidate.element.packageName == ownPackage || candidate.snapshot.ownApp) && !unlocks.ownApp ||
+            candidate.snapshot.protectedPage && !unlocks.systemPages) return false
+        val witness = input.snapshot
+        if (witness.editor.packageName != candidate.element.packageName ||
+            witness.editor.inputType != candidate.inputType || witness.selectionStart != candidate.selectionStart ||
+            witness.selectionEnd != candidate.selectionEnd || witness.editor.fieldId == 0 ||
+            witness.editor.fieldId == android.view.View.NO_ID) return false
+        val resourceName = try { service.packageManager.getResourcesForApplication(witness.editor.packageName!!)
+            .getResourceName(witness.editor.fieldId) } catch (_: Exception) { return false }
+        if (resourceName != candidate.element.viewId) return false
+        val cap = capture()
+        try {
+            val titles = cap.windows.mapNotNull { it.title } +
+                ProtectedPages.titleTexts(cap.windows.firstOrNull()?.root, cap.screen.height)
+            if ((cap.ownAppInFront || cap.packageName == ownPackage) && !lifted.ownApp ||
+                ProtectedPages.isProtected(cap.packageName, titles) && !lifted.systemPages) return false
+            val matching = ScreenFormat.index(cap.windows).filter { it.kind == ElementKind.INPUT &&
+                it.windowId == candidate.element.windowId && it.fingerprint == candidate.element.fingerprint }
+                .singleOrNull() ?: return false
+            val node = cap.native(matching.ref) ?: return false
+            if (node != candidate.node || !focusNodeMatches(cap, candidate.element, node) ||
+                node.inputType != candidate.inputType || node.textSelectionStart != candidate.selectionStart ||
+                node.textSelectionEnd != candidate.selectionEnd) return false
+            // Fresh classification, not just the retained copy's old flags.
+            val classified = ScreenFormat.format(ScreenInput("focus-check", candidate.snapshot.appLabel,
+                cap.packageName, cap.screen.width, cap.screen.height, cap.keyboardShown, cap.windows))
+                .elements.singleOrNull { it.ref == matching.ref } ?: return false
+            return !classified.password && !classified.secret && input.currentBeforeDispatch() &&
+                focusCurrent(candidate) && availability().ok
+        } finally { cap.recycle() }
+    }
+
+    @android.annotation.TargetApi(33)
+    private inner class MainFocusInput(
+        private val candidate: FocusCandidate, private val input: FocusCapturedInput33,
+    ) : FocusInput {
+        private val ownership = Any()
+        private var closed = false
+        private var used = false
+        override val target: TargetInfo = info(candidate.snapshot.id, candidate.element)
+
+        override fun close() = synchronized(ownership) {
+            if (!closed) { closed = true; releaseFocusNode(candidate.node) }
+        }
+
+        override fun perform(text: String, allowed: () -> Boolean): ActionResult = synchronized(ownership) {
+            if (closed || used) return ActionResult(false, FOCUS_CHANGED)
+            used = true
+            try {
+                synchronized(lock) {
+                    actionDeadline = SystemClock.uptimeMillis() + 30_000L
+                    actionBeforeImage = null
+                    if (!allowed() || !focusCurrent(candidate) || !availability().ok || !awaitInputIdle() ||
+                        !allowed() || !verifyFocus(candidate, input)) return ActionResult(false, FOCUS_CHANGED)
+                    val before = input.readBounded(actionDeadline)
+                    if (!focusSampleMatchesSelection(before, candidate.selectionStart, candidate.selectionEnd) ||
+                        !allowed() || SystemClock.uptimeMillis() >= actionDeadline || !verifyFocus(candidate, input) ||
+                        !allowed() || SystemClock.uptimeMillis() >= actionDeadline ||
+                        !input.currentBeforeDispatch()) return ActionResult(false, FOCUS_CHANGED)
+                    val events = clock.count
+                    input.commitOnce(text)
+                    val afterText = if (allowed() && focusCurrent(candidate)) input.readBounded(actionDeadline) else null
+                    val result = if (focusCurrent(candidate) && input.sameEditor() && allowed())
+                        FocusReadback.compare(before, afterText, text) else FocusReadback.Result(FocusReadback.Kind.UNKNOWN, false)
+                    // l10n:keep agent focus result
+                    val message = when (result.kind) {
+                        FocusReadback.Kind.LOCAL_CONSISTENT -> if (result.absoluteAlignment)
+                            "已尝试一次焦点输入；有限回读的局部文字与光标位置一致，不表示业务成功，也不证明输入因果。"
+                        else "已尝试一次焦点输入；按当前光标对齐的局部文字一致，原绝对位置未核实，不表示业务成功。"
+                        FocusReadback.Kind.LOCAL_DIFFERENT -> "已尝试一次焦点输入；有限回读与预期局部形状不同，可能已产生效果，不要重发或切换输入方式。"
+                        FocusReadback.Kind.UNKNOWN -> FOCUS_UNKNOWN
+                    }
+                    if (!allowed() || !focusCurrent(candidate) || SystemClock.uptimeMillis() >= actionDeadline)
+                        return ActionResult(false, FOCUS_UNKNOWN)
+                    return after(events, candidate.snapshot, candidate.generation, message,
+                        previousImage = null, ok = result.kind == FocusReadback.Kind.LOCAL_CONSISTENT)
+                }
+            } catch (e: InterruptedException) {
+                Thread.currentThread().interrupt()
+                return ActionResult(false, if (input.attempted) FOCUS_UNKNOWN else FOCUS_CHANGED)
+            } catch (_: Exception) {
+                return ActionResult(false, if (input.attempted) FOCUS_UNKNOWN else FOCUS_CHANGED)
+            } finally { close() }
+        }
     }
 
     override fun target(screenId: String, elementId: Int): TargetInfo? = synchronized(lock) {
@@ -806,7 +1000,7 @@ internal class MainScreenDriver(private val service: PhoneA11yService, private v
             val note = if (ok) ScreenVerdict.note(comparable = comparable, changed = changed, keyboard = keyboard, scrolled = scrolled)
                 else unconfirmedActionNote(comparable, changed, keyboard)
             val canReuse = comparable && observation.sameContext(old) && observation.keyboardShown == old.keyboardShown
-            val text = ScreenDigest.text(previous?.id, previous?.screen, snap.id, snap.screen, canReuse = canReuse, observationChanged = changed)
+            val text = if (snap.focus != null) snap.screen.text else ScreenDigest.text(previous?.id, previous?.screen, snap.id, snap.screen, canReuse = canReuse, observationChanged = changed)
             var ocrText = if (snap.screen.poorTree) "\n" + LocalOcrBoundary.message(shooter.localTextWithoutFrame()) else ""
             var nextImage: ImageObservation? = null
             var screenshotSecure = false
@@ -1024,12 +1218,13 @@ internal class MainScreenDriver(private val service: PhoneA11yService, private v
             visualEvidence(cap), cap.windows.mapNotNull { it.packageName }.toSet(),
         )
         latest = snap
+        replaceFocusCandidate(cap, snap)
         visual.publish(id)
         return snap
     }
 
     private fun toSnapshot(s: Snapshot, text: String = s.screen.text) =
-        ScreenSnapshot(s.id, text, s.appLabel, s.packageName, secure = s.hidden, poorTree = s.screen.poorTree, readPackages = s.readPackages)
+        ScreenSnapshot(s.id, text, s.appLabel, s.packageName, secure = s.hidden, poorTree = s.screen.poorTree, readPackages = s.readPackages, focus = s.focus)
 
     /** A fresh text snapshot for an action result; null when the screen can't be read now. */
     private fun observeQuiet(): ScreenSnapshot? {
@@ -1047,6 +1242,7 @@ internal class MainScreenDriver(private val service: PhoneA11yService, private v
 
     // l10n:keep agent screen result
     private fun blank(reason: String): ScreenSnapshot {
+        clearFocusCandidate()
         visual.invalidate()
         return ScreenSnapshot("${PhoneScreen.MAIN.prefix}0", "屏幕读不到：$reason", null, null) // l10n:keep agent screen result
     }
@@ -1075,6 +1271,13 @@ internal class MainScreenDriver(private val service: PhoneA11yService, private v
 
     companion object {
         private const val TAG = "DshA11y"
+        // l10n:keep agent focus result
+        private const val FOCUS_UNAVAILABLE = "当前没有本任务已返回且可核对的焦点输入框，或系统不支持原焦点连接；请先由用户聚焦后重新读屏。"
+        // l10n:keep agent focus result
+        private const val FOCUS_CHANGED = "原焦点、选区或任务状态已变化，未提交输入；请重新读屏，不会自动改靶。"
+        // l10n:keep agent focus result
+        private const val FOCUS_UNKNOWN = "已尝试一次焦点输入，但有限回读不足以确认结果；可能已产生效果，不要重发或切换输入方式。"
+
 
         /**
          * A `type` whose read-back differs from what was typed. An ordinary input says what it
@@ -1113,3 +1316,17 @@ internal fun mainOcrEpochCurrent(observationEpoch: Long?, enabledEpoch: Long?): 
 internal fun unconfirmedActionNote(comparable: Boolean, changed: Boolean, keyboard: String?): String =
     keyboard ?: if (comparable && changed) "" else
         "（本次结果仍未确认，请先核对屏幕，不要自动重试。）" // l10n:keep agent result
+
+/** Bind the bounded original-wrapper sample to the observed absolute node/F1 selection. */
+internal fun focusSampleMatchesSelection(sample: FocusReadback.Sample?, start: Int, end: Int): Boolean {
+    if (sample == null || sample.offset < 0 || start < 0 || end < 0 || sample.text.length > 4096 ||
+        sample.selectionStart !in 0..sample.text.length || sample.selectionEnd !in 0..sample.text.length) return false
+    fun boundary(at: Int): Boolean = when (at) {
+        0 -> sample.text.isEmpty() || !Character.isLowSurrogate(sample.text[0])
+        sample.text.length -> !Character.isHighSurrogate(sample.text[at - 1])
+        else -> !(Character.isHighSurrogate(sample.text[at - 1]) && Character.isLowSurrogate(sample.text[at]))
+    }
+    return boundary(sample.selectionStart) && boundary(sample.selectionEnd) &&
+        sample.offset.toLong() + sample.selectionStart == start.toLong() &&
+        sample.offset.toLong() + sample.selectionEnd == end.toLong()
+}
