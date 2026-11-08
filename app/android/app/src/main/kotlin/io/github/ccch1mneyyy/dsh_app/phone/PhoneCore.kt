@@ -1,5 +1,6 @@
 package io.github.ccch1mneyyy.dsh_app.phone
 
+import io.github.ccch1mneyyy.dsh_app.phone.skills.PhoneTaskTrace
 import java.time.ZoneId
 import java.util.concurrent.atomic.AtomicReference
 
@@ -42,6 +43,7 @@ class PhoneCore(
 ) {
     private val ui: PhoneUiText get() = env.uiText()
     val safety = SafetyGate(env::policies, tasks, env::gate, uiText = env.uiText())
+    val skillTrace = PhoneTaskTrace()
 
     /** The overlay's status line; 免确认 stays visible the whole time nothing is asked. */
     private fun say(text: String) {
@@ -89,6 +91,9 @@ class PhoneCore(
         }
         val outcome = worker.run(budgetMs(name), MAX_TOTAL_MS) { scope -> execute(name, Args(args), scope, callOwner) }
         val owner = callOwner.get()
+        if (owner != null && name in TRACE_ACTIONS && outcome !is SerialWorker.Outcome.Done) {
+            skillTrace.markIncomplete(owner, PhoneTaskTrace.Gap.UNCERTAIN_RESULT)
+        }
         tasks.touch(owner)
         val out = when (outcome) {
             is SerialWorker.Outcome.Done -> outcome.value
@@ -139,7 +144,10 @@ class PhoneCore(
     private fun execute(name: String, a: Args, scope: SerialWorker.Scope, callOwner: AtomicReference<PhoneTasks.Owner?>): Out {
         val owner = when (val b = tasks.begin()) {
             is PhoneTasks.Begin.Refused -> return Out(b.message + "。", error = true, summary = name, decision = "stopped")
-            is PhoneTasks.Begin.Go -> b.owner.also(callOwner::set)
+            is PhoneTasks.Begin.Go -> b.owner.also {
+                callOwner.set(it)
+                if (b.newTask) skillTrace.start(it)
+            }
         }
         if (!current(owner)) return stoppedOut(name)
         if (tasks.isPaused) {
@@ -222,6 +230,7 @@ class PhoneCore(
                 safety.checkOpen(pkg, target.appLabel)?.let { return Out(it.message, error = true, app = target.appLabel ?: pkg, summary = ui.get("phone_log_open_url", "打开链接"), decision = "refused:${it.rule}") } // l10n:keep test default
             }
             if (!tasks.isCurrent(owner) || Thread.currentThread().isInterrupted) return stoppedOut("open")
+            skillTrace.markIncomplete(owner)
             val r = env.system().openUrl(url, target, tasks.systemDispatch(owner))
             return afterSystem(owner, r, ui.get("phone_log_open_url_scheme", "打开链接 %1\$s:", url.substringBefore(':')), target.appLabel ?: target.packageName) // l10n:keep test default
         }
@@ -234,7 +243,13 @@ class PhoneCore(
         }
         if (!background) {
             if (!tasks.isCurrent(owner) || Thread.currentThread().isInterrupted) return stoppedOut("open")
-            return afterSystem(owner, env.system().launch(app, tasks.systemDispatch(owner)), ui.get("phone_log_open_app", "打开 %1\$s", app.packageName), app.label) // l10n:keep test default
+            val ticket = skillTrace.beginOpen(owner, PhoneScreen.MAIN)
+            val result = try {
+                env.system().launch(app, tasks.systemDispatch(owner)).also {
+                    skillTrace.finish(ticket, it.ok, false, false)
+                }
+            } catch (e: Throwable) { skillTrace.fail(ticket); throw e }
+            return afterSystem(owner, result, ui.get("phone_log_open_app", "打开 %1\$s", app.packageName), app.label) // l10n:keep test default
         }
         val driver = env.driver(PhoneScreen.BACKGROUND)
             ?: return Out(env.backgroundUnavailable(), error = true, app = app.label, summary = ui.get("phone_log_open_background", "后台屏打开 %1\$s", app.packageName), decision = "unavailable") // l10n:keep test default
@@ -252,7 +267,8 @@ class PhoneCore(
         lastScreen = PhoneScreen.BACKGROUND
         say(ui.get("phone_opening_background", "DSH 正在后台屏打开「%1\$s」", app.label)) // l10n:keep test default
         if (!current(owner)) return stoppedOut("open")
-        val res = driver.open(app.packageName)
+        val ticket = skillTrace.beginOpen(owner, PhoneScreen.BACKGROUND)
+        val res = traceResult(ticket) { driver.open(app.packageName) }
         if (!current(owner) || !tasks.setAppIfCurrent(owner, app.label)) return stoppedOut("open")
         if (!current(owner)) return stoppedOut("open")
         return Out(res.message, error = !res.ok, screen = res.screen?.let { safety.filterScreen(it) }, app = app.label,
@@ -326,6 +342,7 @@ class PhoneCore(
             }
         }
         if (!tasks.isCurrent(owner) || Thread.currentThread().isInterrupted) return stoppedOut("intent $kind")
+        skillTrace.markIncomplete(owner)
         val r = env.system().intent(spec, shareTo, tasks.systemDispatch(owner))
         return afterSystem(owner, r, "intent $kind", r.appLabel ?: shareTo?.label)
     }
@@ -336,6 +353,7 @@ class PhoneCore(
         val title = a.str("title") ?: return Out("notify 需要 title 和 text。", error = true)
         // l10n:keep agent tool result
         val text = a.str("text") ?: return Out("notify 需要 title 和 text。", error = true)
+        skillTrace.markIncomplete(owner)
         val r = env.system().notify(title, text)
         return Out(r.message, error = !r.ok, summary = ui.get("phone_log_notify", "通知"), decision = if (r.ok) "ok" else "failed") // l10n:keep test default
     }
@@ -347,6 +365,7 @@ class PhoneCore(
         // l10n:keep agent tool result
         if (set != null && get) return Out("clipboard 的 set 和 get 一次只能用一个。", error = true)
         if (set != null) {
+            skillTrace.markIncomplete(owner)
             val r = env.system().clipboardSet(set)
             return Out(r.message, error = !r.ok, summary = ui.get("phone_log_clipboard_write", "写剪贴板（%1\$d 字）", set.length), decision = if (r.ok) "ok" else "failed") // l10n:keep test default
         }
@@ -450,6 +469,7 @@ class PhoneCore(
         safety.checkRead(pkg, null)?.let { return Out(it.message, error = true, app = pkg, summary = summary, decision = "refused:${it.rule}") }
         say(ui.get("phone_reading_list", "DSH 正在滚动读取列表")) // l10n:keep test default
         if (!current(owner)) return stoppedOut(summary)
+        skillTrace.markIncomplete(owner)
         val r = driver.collect(sid!!, list, pages, a.str("until"))
         if (!current(owner)) return stoppedOut(summary)
         val screen = r.screen?.let { safety.filterScreen(it) }
@@ -559,7 +579,8 @@ class PhoneCore(
         if (!tasks.setAppIfCurrent(owner, appLabel ?: pkg)) return stoppedOut(summary)
         say(ui.get("phone_acting", "DSH 正在操作 · %1\$s", statusLine(kind, target, if (secret) SafetyRules.MASK else typed))) // l10n:keep test default
         if (!current(owner)) return stoppedOut(summary)
-        val res = driver.perform(action)
+        val ticket = skillTrace.beginAction(owner, action, target)
+        val res = traceResult(ticket) { driver.perform(action) }
         if (!res.ok && res.staleSnapshot) return stale(driver, sid, summary, owner, res.message)
         return Out(
             res.message,
@@ -651,9 +672,22 @@ class PhoneCore(
             PhoneAction.GlobalKey.NOTIFICATIONS -> ui.get("phone_key_notifications", "通知栏") // l10n:keep test default
         }))
         if (!current(owner)) return stoppedOut(summary)
-        val res = driver.perform(PhoneAction.Key(sid ?: "${which.prefix}0", key))
+        val action = PhoneAction.Key(sid ?: "${which.prefix}0", key)
+        val ticket = skillTrace.beginAction(owner, action, null)
+        val res = traceResult(ticket) { driver.perform(action) }
         return Out(res.message, error = !res.ok, screen = res.screen?.let { safety.filterScreen(it) }, summary = summary,
             decision = if (res.ok) "ok" else "failed")
+    }
+
+    private inline fun traceResult(ticket: PhoneTaskTrace.Ticket?, action: () -> ActionResult): ActionResult {
+        if (ticket == null) return action()
+        try {
+            return action().also { result ->
+                val post = result.screen
+                val readable = post != null && !post.secure && safety.checkRead(post.packageName, post.appLabel) == null
+                skillTrace.finish(ticket, result.ok, result.staleSnapshot, readable)
+            }
+        } catch (e: Throwable) { skillTrace.fail(ticket); throw e }
     }
 
     private fun handoff(a: Args, scope: SerialWorker.Scope, owner: PhoneTasks.Owner): Out {
@@ -672,6 +706,7 @@ class PhoneCore(
             cause = refusal?.takeIf { (who, _) -> tasks.isCurrent(who) && who.taskId == owner.taskId }?.second
             refusal = null
         }) return stoppedOut("handoff")
+        skillTrace.markIncomplete(owner)
         val note = env.beforeHandoff(lastScreen)
         if (!tasks.isCurrent(owner)) return stoppedOut("handoff")
         val result = scope.userWait { gate.handoff(reason, HANDOFF_MS, cause) }
@@ -710,6 +745,9 @@ class PhoneCore(
 
         /** Tools whose success means the agent got past whatever refused it before. */
         private val WRITES = setOf(PhoneToolCatalog.TAP, PhoneToolCatalog.TYPE, PhoneToolCatalog.TAP_XY, PhoneToolCatalog.OPEN)
+        /** An uncertain effect call tightens draft eligibility; it does not prove input was dispatched. */
+        private val TRACE_ACTIONS = setOf(PhoneToolCatalog.OPEN, PhoneToolCatalog.TAP, PhoneToolCatalog.TYPE,
+            PhoneToolCatalog.SCROLL, PhoneToolCatalog.TAP_XY, PhoneToolCatalog.KEY)
         private val DONE = setOf("ok", "allowed", "confirmed", "confirmed-app", "confirmed-task")
         const val SETTLE_AFTER_LAUNCH_MS = 1200L
         const val MAX_APPS = 150
