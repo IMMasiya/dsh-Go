@@ -44,15 +44,16 @@ class PhoneTaskSessionsTest {
             override fun collect(screenId: String, listElementId: Int, maxPages: Int, until: String?) = error("unexpected collect")
             override fun target(screenId: String, elementId: Int) = TargetInfo(screenId, elementId, "button", "Button", "example.app", "Example", false, false, false)
             override fun perform(action: PhoneAction): ActionResult { actions.incrementAndGet(); return ActionResult(true, "done") }
-            override fun open(packageName: String) = error("unexpected launch")
+            override fun open(target: PhoneAppIdentity) = error("unexpected launch")
         }
         override fun a11yState() = A11yState.CONNECTED
         override fun backgroundUnavailable() = "unavailable"
         override fun zone() = ZoneId.of("UTC")
         override fun notifyFix(kind: String) {}
         override fun system() = object : SystemApi {
-            override fun apps(): List<AppEntry> { lookup(); return listOf(AppEntry("Example", "example.app")) }
+            override fun apps(): List<AppEntry> { lookup(); return listOf(AppEntry("Example", PhoneAppIdentity("example.app", 10123))) }
             override fun isInstalled(pkg: String) = true
+            override fun resolveLaunch(app: AppEntry): Either<String, AppEntry> = Either.Right(app)
             override fun launch(app: AppEntry, dispatch: PhoneTasks.SystemDispatch): SysResult = error("unexpected launch")
             override fun urlTarget(url: String): UrlTarget = error("unexpected lookup")
             override fun openUrl(url: String, target: UrlTarget, dispatch: PhoneTasks.SystemDispatch): SysResult = error("unexpected url")

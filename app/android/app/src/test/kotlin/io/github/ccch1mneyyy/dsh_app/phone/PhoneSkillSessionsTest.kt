@@ -44,7 +44,7 @@ class PhoneSkillSessionsTest {
                 override fun observe(detail: Boolean, image: Boolean) = ScreenSnapshot("${screen.prefix}1", "private", "Example", "example.app")
                 override fun target(screenId: String, elementId: Int) = TargetInfo(screenId, elementId, "按钮", "搜索", "example.app", "Example", false, false, false)
                 override fun perform(action: PhoneAction) = ActionResult(true, "done")
-                override fun open(packageName: String) = ActionResult(true, "opened")
+                override fun open(target: PhoneAppIdentity) = ActionResult(true, "opened")
                 override fun collect(screenId: String, listElementId: Int, maxPages: Int, until: String?) = error("unexpected collect")
             }
             override fun a11yState() = A11yState.CONNECTED
@@ -52,8 +52,9 @@ class PhoneSkillSessionsTest {
             override fun zone() = ZoneId.of("UTC")
             override fun notifyFix(kind: String) {}
             override fun system() = object : SystemApi {
-                override fun apps() = listOf(AppEntry("Example", "example.app"))
+                override fun apps() = listOf(AppEntry("Example", PhoneAppIdentity("example.app", 10123)))
                 override fun isInstalled(pkg: String) = true
+                override fun resolveLaunch(app: AppEntry): Either<String, AppEntry> = Either.Right(app)
                 override fun launch(app: AppEntry, dispatch: PhoneTasks.SystemDispatch): SysResult {
                     check(dispatch.commitStart()); this@Fixture.launch(); return SysResult(true, "opened")
                 }

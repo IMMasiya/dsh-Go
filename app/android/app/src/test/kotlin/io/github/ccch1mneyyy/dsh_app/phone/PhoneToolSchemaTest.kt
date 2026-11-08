@@ -23,7 +23,7 @@ class PhoneToolSchemaTest {
         }
         override fun target(screenId: String, elementId: Int): TargetInfo? = error("unexpected target")
         override fun perform(action: PhoneAction): ActionResult { actions += action; return ActionResult(true, "done") }
-        override fun open(packageName: String): ActionResult = error("unexpected open")
+        override fun open(target: PhoneAppIdentity): ActionResult = error("unexpected open")
     }
     private val core = PhoneCore(object : PhoneEnv {
         override fun enabled() = true
@@ -43,6 +43,7 @@ class PhoneToolSchemaTest {
         override fun system() = object : SystemApi {
             override fun apps() = emptyList<AppEntry>()
             override fun isInstalled(pkg: String) = false
+            override fun resolveLaunch(app: AppEntry): Either<String, AppEntry> = Either.Right(app)
             override fun launch(app: AppEntry, dispatch: PhoneTasks.SystemDispatch): SysResult = error("unexpected launch")
             override fun urlTarget(url: String): UrlTarget = error("unexpected URL")
             override fun openUrl(url: String, target: UrlTarget, dispatch: PhoneTasks.SystemDispatch): SysResult = error("unexpected URL")

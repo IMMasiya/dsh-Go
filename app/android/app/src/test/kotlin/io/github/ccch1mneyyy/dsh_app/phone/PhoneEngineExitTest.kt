@@ -36,8 +36,9 @@ class PhoneEngineExitTest {
         override fun beforeHandoff(screen: PhoneScreen): String? = null
         override fun sleep(ms: Long) {}
         override fun system() = object : SystemApi {
-            override fun apps() = listOf(AppEntry("Example", "example.app"))
+            override fun apps() = listOf(AppEntry("Example", PhoneAppIdentity("example.app", 10123)))
             override fun isInstalled(pkg: String) = true
+            override fun resolveLaunch(app: AppEntry): Either<String, AppEntry> = Either.Right(app)
             override fun launch(app: AppEntry, dispatch: PhoneTasks.SystemDispatch) = error("unexpected launch")
             override fun urlTarget(url: String) = error("unexpected URL")
             override fun openUrl(url: String, target: UrlTarget, dispatch: PhoneTasks.SystemDispatch) = error("unexpected URL open")
@@ -70,7 +71,7 @@ class PhoneEngineExitTest {
         }
         override fun target(screenId: String, elementId: Int): TargetInfo? = null
         override fun perform(action: PhoneAction) = error("unexpected action")
-        override fun open(packageName: String) = error("unexpected open")
+        override fun open(target: PhoneAppIdentity) = error("unexpected open")
     }
 
     private fun collect() = core.call(PhoneToolCatalog.COLLECT, mapOf("screen" to "s1", "list" to 1, "max_pages" to 3))

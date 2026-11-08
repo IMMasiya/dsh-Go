@@ -17,6 +17,8 @@ class PhoneCorePromptOwnerTest {
     private var deferStatus = false
     private val queuedStatuses = mutableListOf<() -> Unit>()
     private var lookup: () -> Unit = {}
+    private var beforeResolve: () -> Unit = {}
+    private var freshApp: Either<String, AppEntry> = Either.Right(AppEntry("Example", PhoneAppIdentity("example.app", 10123)))
     private var prepareSystem: () -> Unit = {}
     private var afterStart: () -> Unit = {}
     private var settle: () -> Unit = {}
@@ -48,8 +50,9 @@ class PhoneCorePromptOwnerTest {
         override fun beforeHandoff(screen: PhoneScreen): String? { beforeHandoff(); return null }
         override fun sleep(ms: Long) { settle() }
         override fun system() = object : SystemApi {
-            override fun apps(): List<AppEntry> { lookup(); return listOf(AppEntry("Example", "example.app")) }
+            override fun apps(): List<AppEntry> { lookup(); return listOf(AppEntry("Example", PhoneAppIdentity("example.app", 10123))) }
             override fun isInstalled(pkg: String) = true
+            override fun resolveLaunch(app: AppEntry): Either<String, AppEntry> { beforeResolve(); return freshApp }
             override fun launch(app: AppEntry, dispatch: PhoneTasks.SystemDispatch): SysResult { commit(dispatch); launches++; afterStart(); return launchResult }
             override fun urlTarget(url: String): UrlTarget {
                 lookup()
@@ -67,6 +70,7 @@ class PhoneCorePromptOwnerTest {
         var reads = 0
         var writes = 0
         var opens = 0
+        val openedTargets = mutableListOf<PhoneAppIdentity>()
         var observing: () -> Unit = {}
         var observedText = "Example"
         var observedImage: ByteArray? = null
@@ -91,7 +95,7 @@ class PhoneCorePromptOwnerTest {
         override fun target(screenId: String, elementId: Int) = TargetInfo(screenId, elementId,
             "按钮", "发送", "example.app", "Example", false, false, false)
         override fun perform(action: PhoneAction): ActionResult { actions += action; writes++; return ActionResult(true, "done") }
-        override fun open(packageName: String): ActionResult { opens++; return ActionResult(true, "opened") }
+        override fun open(target: PhoneAppIdentity): ActionResult { openedTargets += target; opens++; return ActionResult(true, "opened") }
     }
 
     // Models the mandatory SystemApi ticket contract, not Android PM or Binder execution.
@@ -120,6 +124,32 @@ class PhoneCorePromptOwnerTest {
         assertFalse(result.text.contains("late collected screen"))
         assertNull(result.image)
         assertEquals("stopped", core.log.last()?.decision)
+    }
+
+    @Test fun backgroundOpenUsesFreshIdentityBeforeApprovalAndNeverEmitsUid() {
+        val identity = PhoneAppIdentity("example.app", 1010123)
+        freshApp = Either.Right(AppEntry("Fresh label", identity))
+        var resolved = false
+        beforeResolve = { resolved = true }
+        confirm = { assertTrue(resolved); Decision.ALLOW_ONCE }
+        val output = core.call(PhoneToolCatalog.OPEN, mapOf("app" to "example.app", "background" to true))
+        assertFalse(output.text, output.isError)
+        assertEquals(listOf(identity), background.openedTargets)
+        assertFalse(output.text.contains(identity.uid.toString()))
+    }
+
+    @Test fun unavailableFreshIdentityNeverFallsBackToTheCachedApp() {
+        freshApp = Either.Left("identity unavailable")
+        val output = core.call(PhoneToolCatalog.OPEN, mapOf("app" to "example.app", "background" to true))
+        assertTrue(output.isError)
+        assertEquals(0, background.opens)
+        assertEquals(0, asked)
+    }
+
+    @Test fun stopDuringNativeIdentityRefreshCannotDispatchTheOldScope() {
+        beforeResolve = { tasks.stop("stop during PM") }
+        assertTrue(core.call(PhoneToolCatalog.OPEN, mapOf("app" to "example.app", "background" to true)).isError)
+        assertEquals(0, background.opens)
     }
 
     @Test fun aStopDuringCollectDiscardsItsPartialItemsAndScreen() {

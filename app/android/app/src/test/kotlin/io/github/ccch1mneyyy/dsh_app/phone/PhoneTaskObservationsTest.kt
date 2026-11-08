@@ -7,6 +7,8 @@ class PhoneTaskObservationsTest {
     private class Driver : PhoneDriver {
         override val screen = PhoneScreen.MAIN
         var actions = 0
+        val opens = mutableListOf<PhoneAppIdentity>()
+        var duringOpen: () -> Unit = {}
         var collectGate: (() -> Boolean)? = null
         var duringCollect: () -> Unit = {}
         var collected = CollectResult(emptyList(), 0, "done", null)
@@ -14,7 +16,11 @@ class PhoneTaskObservationsTest {
         override fun observe(detail: Boolean, image: Boolean) = ScreenSnapshot("s1", "screen", "App", "app")
         override fun target(screenId: String, elementId: Int) = TargetInfo(screenId, elementId, "button", "send", "app", "App", false, false, false)
         override fun perform(action: PhoneAction): ActionResult { actions++; return ActionResult(true, "done") }
-        override fun open(packageName: String) = ActionResult(true, "opened")
+        override fun open(target: PhoneAppIdentity): ActionResult {
+            opens += target
+            duringOpen()
+            return ActionResult(true, "opened", ScreenSnapshot("sOpen", "opened screen", "App", target.packageName))
+        }
         override fun collect(screenId: String, listElementId: Int, maxPages: Int, until: String?) = collected
         override fun collect(screenId: String, listElementId: Int, maxPages: Int, until: String?, allowed: () -> Boolean): CollectResult {
             collectGate = allowed
@@ -24,6 +30,29 @@ class PhoneTaskObservationsTest {
         override fun foregroundPackage() = "app"
     }
     private fun owner(tasks: PhoneTasks) = (tasks.begin() as PhoneTasks.Begin.Go).owner
+
+    @Test fun boundOpenPassesTheOriginalNativeIdentityAndRecordsOnlyItsReturnedScreen() {
+        val tasks = PhoneTasks(); val physical = Driver()
+        val bound = PhoneTaskObservations(tasks).bind(physical, owner(tasks))
+        val identity = PhoneAppIdentity("example.app", 1010123)
+        val result = bound.open(identity)
+        assertTrue(result.ok)
+        assertSame(identity, physical.opens.single())
+        assertNotNull(bound.target("sOpen", 1))
+    }
+
+    @Test fun staleBoundOpenCannotDispatchOrPublishIntoTheReplacementScope() {
+        val tasks = PhoneTasks(); val physical = Driver(); val ledger = PhoneTaskObservations(tasks)
+        val bound = ledger.bind(physical, owner(tasks))
+        val identity = PhoneAppIdentity("example.app", 10123)
+        physical.duringOpen = { tasks.stop("replaced"); tasks.clearStop(); tasks.begin() }
+        assertThrows(InterruptedException::class.java) { bound.open(identity) }
+        assertEquals(1, physical.opens.size)
+        val replacement = ledger.bind(physical, checkNotNull(tasks.activeOwner()))
+        assertNull(replacement.target("sOpen", 1))
+        assertThrows(InterruptedException::class.java) { bound.open(identity) }
+        assertEquals(1, physical.opens.size) // Rejected before calling the physical driver again.
+    }
 
     @Test fun collectionPassesItsOwnLivePauseGateInsteadOfTheDisplayedTasksState() {
         val a = PhoneTasks(); val b = PhoneTasks(); val physical = Driver()

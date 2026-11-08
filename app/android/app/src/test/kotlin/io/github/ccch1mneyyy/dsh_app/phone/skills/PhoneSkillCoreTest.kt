@@ -28,13 +28,14 @@ class PhoneSkillCoreTest {
                 if (failRead) throw IllegalStateException("PRIVATE_READ_FAILURE")
                 return result.screen!!
             }
-            override fun open(packageName: String): ActionResult { opens++; return result }
+            override fun open(target: PhoneAppIdentity): ActionResult { opens++; return result }
             override fun collect(screenId: String, listElementId: Int, maxPages: Int, until: String?) =
                 CollectResult(listOf("PRIVATE_CONTENT"), 1, "PRIVATE_REASON", result.screen)
         }
         val system = object : SystemApi {
-            override fun apps() = listOf(AppEntry("PRIVATE_APP", "example.app"))
+            override fun apps() = listOf(AppEntry("PRIVATE_APP", PhoneAppIdentity("example.app", 10123)))
             override fun isInstalled(pkg: String) = true
+            override fun resolveLaunch(app: AppEntry): Either<String, AppEntry> = Either.Right(app)
             override fun launch(app: AppEntry, dispatch: PhoneTasks.SystemDispatch): SysResult { opens++; return SysResult(true, "PRIVATE_RESULT") }
             override fun urlTarget(url: String) = UrlTarget(packageName = "example.app")
             override fun openUrl(url: String, target: UrlTarget, dispatch: PhoneTasks.SystemDispatch) = SysResult(true, "PRIVATE_RESULT")

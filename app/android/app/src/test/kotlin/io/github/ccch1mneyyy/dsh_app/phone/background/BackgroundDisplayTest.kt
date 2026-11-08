@@ -1,5 +1,6 @@
 package io.github.ccch1mneyyy.dsh_app.phone.background
 
+import io.github.ccch1mneyyy.dsh_app.phone.PhoneAppIdentity
 import io.github.ccch1mneyyy.dsh_app.phone.PhoneAction
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -46,9 +47,9 @@ class BackgroundDisplayTest {
 
     @Test fun unnumberedScrollRejectsAnOldOrInvalidatedSnapshotBeforeOpeningAChannel() {
         val display = withLastElement()
-        BackgroundDisplay::class.java.getDeclaredField("currentPackage").apply {
+        BackgroundDisplay::class.java.getDeclaredField("currentTarget").apply {
             isAccessible = true
-            set(display, "example.opened")
+            set(display, PhoneAppIdentity("example.opened", 10123))
         }
         fun assertStale(screenId: String) {
             val result = display.perform(PhoneAction.Scroll(screenId, null, PhoneAction.Direction.DOWN))
@@ -65,9 +66,9 @@ class BackgroundDisplayTest {
 
     @Test fun collectRejectsAnOldOrInvalidatedScreenBeforeItsFirstObservation() {
         val display = withLastElement()
-        BackgroundDisplay::class.java.getDeclaredField("currentPackage").apply {
+        BackgroundDisplay::class.java.getDeclaredField("currentTarget").apply {
             isAccessible = true
-            set(display, "example.opened")
+            set(display, PhoneAppIdentity("example.opened", 10123))
         }
         fun assertStale(id: String) {
             val error = assertThrows(IllegalStateException::class.java) {
@@ -112,9 +113,9 @@ class BackgroundDisplayTest {
 
     private fun withLists(): BackgroundDisplay {
         val display = withLastElement()
-        BackgroundDisplay::class.java.getDeclaredField("currentPackage").apply {
+        BackgroundDisplay::class.java.getDeclaredField("currentTarget").apply {
             isAccessible = true
-            set(display, "example.opened")
+            set(display, PhoneAppIdentity("example.opened", 10123))
         }
         val elements = listOf(
             Element(1, "文本", "header", Region.MIDDLE),
@@ -138,6 +139,7 @@ class BackgroundDisplayTest {
         val display = BackgroundDisplay(
             channelProvider = { error("response validation must not start a connection") },
         )
+        BackgroundDisplay::class.java.getDeclaredField("targetReady").apply { isAccessible = true; setBoolean(display, true) }
         BackgroundDisplay::class.java.getDeclaredField("lastScreenId").apply {
             isAccessible = true
             set(display, "b7")
@@ -153,10 +155,11 @@ class BackgroundDisplayTest {
         val display = BackgroundDisplay(
             channelProvider = { error("a refused key must not reach the privileged channel") },
         )
+        BackgroundDisplay::class.java.getDeclaredField("targetReady").apply { isAccessible = true; setBoolean(display, true) }
         // An app is open on the background screen (set directly: opening one needs the channel).
-        BackgroundDisplay::class.java.getDeclaredField("currentPackage").apply {
+        BackgroundDisplay::class.java.getDeclaredField("currentTarget").apply {
             isAccessible = true
-            set(display, "example.opened")
+            set(display, PhoneAppIdentity("example.opened", 10123))
         }
 
         for (key in PhoneAction.GlobalKey.entries - PhoneAction.GlobalKey.BACK) {

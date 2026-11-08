@@ -25,7 +25,7 @@ class PhoneDisplayExecutionTest {
         override fun collect(screenId: String, listElementId: Int, maxPages: Int, until: String?): CollectResult = error("unused")
         override fun target(screenId: String, elementId: Int): TargetInfo? = error("unused")
         override fun perform(action: PhoneAction): ActionResult = error("unused")
-        override fun open(packageName: String): ActionResult = error("unused")
+        override fun open(target: PhoneAppIdentity): ActionResult = error("unused")
     }
 
     private fun core(task: PhoneTasks): PhoneCore {

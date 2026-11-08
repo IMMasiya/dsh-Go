@@ -31,6 +31,18 @@ class PrivilegedInputReasonTest {
         assertTrue(Reasons.of("textReadbackMismatch", null, true).contains("回读与预期不一致"))
     }
 
+    @Test fun identityFailurePreservesAcceptedTextWithoutReplayingOrClaimingSuccess() {
+        for (code in listOf("targetIdentityChanged", "targetIdentityUnavailable")) {
+            val accepted = Reasons.of(code, null, textAccepted = true)
+            assertTrue(accepted.contains("已接受文字请求"))
+            assertTrue(accepted.contains("不要自动重复"))
+            assertFalse(accepted.contains("已成功"))
+            val unknown = Reasons.of(code)
+            assertFalse(unknown.contains("未执行"))
+            assertFalse(unknown.contains("已关闭"))
+        }
+    }
+
     @Test fun absentAcceptanceKeepsExistingFailureAndDetailSemantics() {
         val expected = mapOf(
             "textTargetChanged" to "后台屏输入框或焦点已改变，未继续输入（detail）",
