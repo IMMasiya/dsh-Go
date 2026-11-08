@@ -1174,7 +1174,7 @@ internal class MainScreenDriver(private val service: PhoneA11yService, private v
         val dispatchScope = visual.scope(snap.id)
         val admission = coordinateAdmission ?: { claim: () -> Boolean -> allowed() && claim() }
         val start: (() -> Boolean) -> Boolean = { send ->
-            actuator.coordinateStart({ published() && abortGen == gen && coordinateEpochCurrent(snap) && visual.isCurrent(dispatchScope, transitions) }, admission, send)
+            actuator.coordinateStart({ published() && abortGen == gen && !overlay.editing && coordinateEpochCurrent(snap) && visual.isCurrent(dispatchScope, transitions) }, admission, send)
         }
         // l10n:keep agent screen result
         val accepted = when (a.gesture) {
