@@ -8,6 +8,9 @@ import android.view.accessibility.AccessibilityNodeInfo
 import android.view.accessibility.AccessibilityNodeInfo.AccessibilityAction
 import android.view.accessibility.AccessibilityWindowInfo
 
+/** Package metadata from the same enumeration, independent of the formatted tree subset. */
+internal data class CapturedImageWindow(val id: Int, val type: Int, val packageName: String?)
+
 /**
  * One read of the windows on the main display: plain [UiWindow]s for ScreenFormat plus
  * the native nodes they index ([UiNode.ref]), which the Actuator acts on. Drop with
@@ -49,6 +52,7 @@ internal class Capture(
     val visualWindowId: Int? = null,
     val visualComplete: Boolean = false,
     val visualOcclusions: List<Box> = emptyList(),
+    val imageWindows: List<CapturedImageWindow> = emptyList(),
 ) {
     fun native(ref: Int): AccessibilityNodeInfo? = natives.getOrNull(ref)
 
@@ -118,6 +122,7 @@ internal object TreeCapture {
             }
             Triple(apps.singleOrNull(), complete && apps.size == 1, occlusions.toList())
         }.getOrNull()
+        val imageWindows = mutableListOf<CapturedImageWindow>()
         val chosen = mutableListOf<UiWindow>()
         var topPackage: String? = null
         var ownFront = false
@@ -126,6 +131,26 @@ internal object TreeCapture {
         var unreadable: String? = null
         val screenArea = screen.area.coerceAtLeast(1)
         try {
+            // Do not let the content loop's MAX_WINDOWS/opaque-front exits erase
+            // known display-image sources. Only package metadata is read here.
+            for (w in all.orEmpty()) {
+                w.getBoundsInScreen(st.rect)
+                val bounds = Box(st.rect.left, st.rect.top, st.rect.right, st.rect.bottom)
+                if (bounds.intersect(screen).isEmpty) continue
+                var pkg: String? = null
+                if (!Thread.currentThread().isInterrupted && SystemClock.uptimeMillis() < st.deadline) {
+                    try {
+                        // API 33 permits no prefetch. Older getRoot may prefetch
+                        // internally; this code never inspects child/text data.
+                        val root = if (Build.VERSION.SDK_INT >= 33) w.getRoot(0) else w.root
+                        try { pkg = root?.packageName?.toString()?.takeIf { it.isNotBlank() } }
+                        finally { root?.let(::release) }
+                    } catch (_: Exception) {
+                        // A failed root lookup establishes no package identity.
+                    }
+                }
+                imageWindows += CapturedImageWindow(w.id, w.type, pkg)
+            }
             for (w in sorted) {
                 when (w.type) {
                     AccessibilityWindowInfo.TYPE_INPUT_METHOD -> continue
@@ -192,6 +217,7 @@ internal object TreeCapture {
             visualComplete = visual?.second == true && st.visualComplete && !st.truncated && !st.partial &&
                 hidden == null && unreadable == null && chosen.size == 1 && chosen.single().id == visual?.first,
             visualOcclusions = visual?.third.orEmpty(),
+            imageWindows = imageWindows.toList(),
         )
     }
 
