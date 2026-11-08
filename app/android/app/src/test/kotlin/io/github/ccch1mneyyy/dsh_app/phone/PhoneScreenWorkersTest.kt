@@ -25,6 +25,7 @@ class PhoneScreenWorkersTest {
         @Volatile var cleanup: (Long) -> Unit = {}
         @Volatile var handoff: () -> Unit = {}
         @Volatile var changed: () -> Unit = {}
+        @Volatile var settled: (PhoneTaskSessions.Task) -> Unit = {}
         @Volatile var bgClock: () -> Long = time::get
         private fun core(tasks: PhoneTasks, session: String?): PhoneCore {
             val ledger = PhoneTaskObservations(tasks)
@@ -73,7 +74,7 @@ class PhoneScreenWorkersTest {
         }
         val legacy = PhoneTasks(clock = time::get, idSource = ids::incrementAndGet)
         val sessions = PhoneTaskSessions(time::get, ids::incrementAndGet, ::core, legacy, core(legacy, null),
-            changed = { changed() }, settleResources = { cleanup(it) },
+            changed = { changed() }, onSettled = { settled(it) }, settleResources = { cleanup(it) },
             createBackgroundWorker = { SerialWorker("screen-bg", { bgClock() }) { false }.also { backgrounds += it } })
         fun admit(session: String?) = sessions.admit(session?.let { PhoneCaller(it, "run", "call", runLifecycle = 1) })
         fun call(session: String?, background: Boolean? = null): ToolOutput = sessions.run(admit(session),
@@ -224,11 +225,17 @@ class PhoneScreenWorkersTest {
         try {
             waitFor(bgEntered); waitFor(mainEntered)
             val old = f.task("A")
+            val released = CountDownLatch(1)
+            f.settled = { task ->
+                if (task === old && task.resourcesReleased && task.backgroundWorker == null) released.countDown()
+            }
             f.sessions.retire(); waitFor(bgInterrupted); waitFor(mainInterrupted)
             assertFalse(old.resourcesReleased); assertNotNull(old.backgroundWorker)
             assertNull(f.sessions.tryReserveSelfCheck())
             bgExit.countDown(); mainExit.countDown()
             assertTrue(a.get(5, TimeUnit.SECONDS).isError); assertTrue(b.get(5, TimeUnit.SECONDS).isError)
+            // A cancelled call returns before its physical-drain settlement callback.
+            waitFor(released)
             assertTrue(old.resourcesReleased); assertNull(old.backgroundWorker)
             f.apps = {}; assertFalse(f.call("new").isError)
         } finally { bgExit.countDown(); mainExit.countDown() }
