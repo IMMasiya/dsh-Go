@@ -472,4 +472,179 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  test('C2 covers only its native fixed stages and never grants MAIN or OCR a pass', () {
+    final snapshot = PhoneSelfCheckSnapshot.parse(_reply('done', profile: 'target_c2', steps: [
+      for (final stage in phoneSelfCheckStages) _step(stage, 'pass', true),
+    ]));
+    expect(snapshot.profile, 'target_c2');
+    expect(snapshot.steps.where((step) => step.state == 'pass').map((step) => step.stage), [
+      'device', 'channel', 'display', 'launch', 'tree', 'tap', 'text_ascii', 'text_zh', 'capture', 'continuity', 'cleanup',
+    ]);
+    for (final stage in ['input_probe', 'scroll', 'back']) {
+      expect(snapshot.steps.firstWhere((step) => step.stage == stage).state, 'not_run');
+    }
+    for (final stage in ['main', 'ocr']) {
+      expect(snapshot.steps.firstWhere((step) => step.stage == stage).state, 'unknown');
+    }
+    for (final stage in ['text_ascii', 'text_zh', 'capture', 'continuity']) {
+      for (final bad in [_step(stage, 'pass', false), _step(stage, 'pass', true, reason: 'private-fault'),
+        _step(stage, 'pass', true, duration: -1), _step(stage, 'pass', 'true')]) {
+        final parsed = PhoneSelfCheckSnapshot.parse(_reply('done', profile: 'target_c2', steps: [bad]));
+        expect(parsed.steps.firstWhere((step) => step.stage == stage).state, 'unknown');
+      }
+    }
+  });
+
+  test('C2 MAIN only accepts the finite sample matrix and actual wrong MAIN', () {
+    final valid = [
+      _step('main', 'fail', true, reason: 'targetWrongMain'),
+      _step('main', 'fail', true, reason: 'mainSamplesChanged'),
+      _step('main', 'unknown', true, reason: 'mainSamplesUnchanged'),
+      _step('main', 'unknown', true, reason: 'mainSamplesIncomplete'),
+      _step('main', 'unknown', false, reason: 'mainSamplesIncomplete'),
+    ];
+    for (final raw in valid) {
+      final parsed = PhoneSelfCheckStep.parse('main', raw, profile: 'target_c2');
+      expect(parsed.state, raw['state']); expect(parsed.observed, raw['observed']); expect(parsed.reason, raw['reason']);
+    }
+    for (final raw in [
+      _step('main', 'pass', true),
+      _step('main', 'fail', false, reason: 'mainSamplesChanged'),
+      _step('main', 'unknown', false, reason: 'mainSamplesUnchanged'),
+      _step('main', 'pass', true, reason: 'mainSamplesUnchanged'),
+      _step('main', 'unknown', true, reason: 'targetWrongMain'),
+      _step('main', 'fail', true, reason: 'mainSamplesIncomplete'),
+      _step('main', 'unknown', true, reason: 'private-main-state'),
+      _step('main', 'not_run', false, duration: -1),
+    ]) {
+      final parsed = PhoneSelfCheckStep.parse('main', raw, profile: 'target_c2');
+      expect(parsed.state, 'unknown'); expect(parsed.reason, 'invalidResponse'); expect(parsed.observed, isFalse);
+    }
+    expect(PhoneSelfCheckStep.parse('main', valid[1], profile: 'target_c1').reason, 'invalidResponse');
+  });
+
+  test('only C2 accepts an explicit uninstalled OCR reason without recognition evidence', () {
+    final valid = _step('ocr', 'not_run', false, reason: 'notInstalled');
+    final parsed = PhoneSelfCheckStep.parse('ocr', valid, profile: 'target_c2');
+    expect(parsed.state, 'not_run'); expect(parsed.observed, isFalse); expect(parsed.reason, 'notInstalled');
+    for (final raw in [null, _step('ocr', 'not_run', false), _step('ocr', 'not_run', true, reason: 'notInstalled'),
+      _step('ocr', 'pass', true, reason: 'notInstalled'), _step('ocr', 'unknown', false, reason: 'notInstalled'),
+      _step('ocr', 'not_run', false, reason: 'private-ocr'), _step('ocr', 'not_run', false, reason: 'notInstalled', duration: 1.0)]) {
+      final bad = PhoneSelfCheckStep.parse('ocr', raw, profile: 'target_c2');
+      expect(bad.state, 'unknown'); expect(bad.reason, 'invalidResponse');
+    }
+    for (final profile in ['probe_b', 'target_c1']) {
+      expect(PhoneSelfCheckStep.parse('ocr', valid, profile: profile).reason, isNull);
+    }
+    expect(PhoneSelfCheckStep.parse('capture', _step('capture', 'not_run', false, reason: 'notInstalled'),
+      profile: 'target_c2').reason, 'invalidResponse');
+  });
+
+  test('C2 report keeps finite scope and fixed reasons within the old privacy whitelist', () {
+    const reasons = {
+      'targetFrameUnavailable': 'frame_unavailable', 'targetFrameMismatch': 'frame_mismatch',
+      'targetContinuityUnconfirmed': 'continuity', 'mainSamplesChanged': 'main_changed',
+      'mainSamplesUnchanged': 'main_unchanged', 'mainSamplesIncomplete': 'main_incomplete',
+      'notInstalled': 'not_installed',
+    };
+    for (final reason in reasons.entries) expect(phoneSelfCheckReasonGroup(reason.key), reason.value);
+    final raw = _reply('done', profile: 'target_c2', handle: 'private-handle', steps: [
+      _step('text_zh', 'pass', true), _step('capture', 'unknown', true, reason: 'targetFrameMismatch'),
+      _step('main', 'unknown', true, reason: 'mainSamplesUnchanged'),
+      _step('ocr', 'not_run', false, reason: 'notInstalled'),
+    ])..['targetRun'] = 'private-run'..['frame'] = 'private-image'..['text'] = 'private-ocr'
+      ..['mainVector'] = 'private-app'..['releaseNonce'] = 'private-nonce'..['acquisitionCount'] = 999;
+    final text = phoneSelfCheckMarkdown(PhoneSelfCheckSnapshot.parse(raw));
+    expect(text, contains('Profile: target_c2')); expect(text, contains('ACTION_SET_TEXT'));
+    expect(text, contains('does not test FPS')); expect(text, contains('MAIN never passes'));
+    expect(text, contains('| main | unknown | true | main_unchanged |'));
+    expect(text, contains('| ocr | not_run | false | not_installed |'));
+    expect(text, isNot(contains('private-'))); expect(text, isNot(contains('acquisitionCount')));
+    expect(utf8.encode(text).length, lessThanOrEqualTo(diagnosticsMarkdownBytes));
+  });
+
+  test('C2 real channel sends only the fixed profile and original cleanup handle', () async {
+    final calls = <MethodCall>[];
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger.setMockMethodCallHandler(_phone, (call) async {
+      calls.add(call); return _reply('cleanup_pending', profile: 'target_c2', handle: 'c2-original');
+    });
+    const channel = PhoneSelfCheckChannel();
+    expect((await channel.start(profile: 'target_c2')).profile, 'target_c2');
+    await channel.cancel('c2-original'); await channel.retry('c2-original');
+    expect(calls[0].arguments, {'v': 1, 'profile': 'target_c2'});
+    expect(calls[1].arguments, {'v': 1, 'runHandle': 'c2-original'});
+    expect(calls[2].arguments, calls[1].arguments);
+  });
+
+  testWidgets('C2 same handle cannot downgrade profile and cleanup keeps the original identity', (tester) async {
+    var reads = 0;
+    final calls = <MethodCall>[];
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger.setMockMethodCallHandler(_phone, (call) async {
+      calls.add(call);
+      if (call.method == 'retryPhoneSelfCheckCleanup') return _reply('cleaning', profile: 'target_c2', handle: 'original');
+      return ++reads == 1 ? _reply('cleanup_pending', profile: 'target_c2', handle: 'original')
+        : _reply('done', profile: 'target_c1', handle: 'original');
+    });
+    final controller = PhoneSelfCheckController();
+    await controller.refresh(); await controller.refresh();
+    expect(controller.readFailed, isTrue); expect(controller.snapshot.profile, 'target_c2');
+    expect(controller.canStart, isFalse);
+    await controller.start(profile: 'target_c2'); await controller.retry();
+    expect(calls.where((call) => call.method == 'startPhoneSelfCheck'), isEmpty);
+    expect(calls.singleWhere((call) => call.method == 'retryPhoneSelfCheckCleanup').arguments, {'v': 1, 'runHandle': 'original'});
+    controller.dispose();
+  });
+
+  testWidgets('late C1 poll cannot replace new C2 and unknown start does not auto replay', (tester) async {
+    final old = Completer<Object?>(); var reads = 0, starts = 0;
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger.setMockMethodCallHandler(_phone, (call) async {
+      if (call.method == 'startPhoneSelfCheck') { starts++; return null; }
+      if (++reads == 1) return _reply('idle');
+      if (reads == 2) return old.future;
+      return _reply('running', profile: 'target_c2', handle: 'new-c2');
+    });
+    final controller = PhoneSelfCheckController(); await controller.refresh();
+    unawaited(controller.refresh()); await tester.pump();
+    await controller.start(profile: 'target_c2'); await controller.start(profile: 'target_c2');
+    expect(starts, 1); expect(controller.canStart, isFalse);
+    await tester.pump(const Duration(milliseconds: 800)); await tester.pump();
+    old.complete(_reply('done', profile: 'target_c1', handle: 'old-c1')); await tester.pump();
+    expect(controller.snapshot.profile, 'target_c2'); expect(controller.snapshot.runHandle, 'new-c2');
+    controller.dispose();
+  });
+
+  testWidgets('C2 panel starts explicitly and displays finite MAIN plus uninstalled OCR before explicit save', (tester) async {
+    final calls = <MethodCall>[]; final report = _RecordingReport();
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger.setMockMethodCallHandler(_phone, (call) async {
+      calls.add(call);
+      if (call.method != 'startPhoneSelfCheck') return _reply('idle');
+      return _reply('done', profile: 'target_c2', handle: 'private-c2', steps: [
+        _step('text_ascii', 'pass', true), _step('text_zh', 'pass', true),
+        _step('capture', 'pass', true), _step('continuity', 'pass', true),
+        _step('main', 'unknown', true, reason: 'mainSamplesUnchanged'),
+        _step('ocr', 'not_run', false, reason: 'notInstalled'),
+      ]);
+    });
+    await tester.pumpWidget(goldenApp(home: Scaffold(body: SingleChildScrollView(child: PhoneSelfCheckPanel(report: report)))));
+    await tester.pump(); await tester.pump();
+    final l10n = tester.element(find.byType(PhoneSelfCheckPanel)).l10n;
+    await tester.tap(find.byKey(const ValueKey('self-check-profile'))); await tester.pumpAndSettle();
+    await tester.tap(find.text(l10n.phoneSelfCheckProfile('target_c2')).last); await tester.pumpAndSettle();
+    expect(calls.where((call) => call.method == 'startPhoneSelfCheck'), isEmpty);
+    await tester.ensureVisible(find.byKey(const ValueKey('self-check-start')));
+    await tester.tap(find.byKey(const ValueKey('self-check-start'))); await tester.pump(); await tester.pump();
+    expect(calls.singleWhere((call) => call.method == 'startPhoneSelfCheck').arguments, {'v': 1, 'profile': 'target_c2'});
+    expect(find.text(l10n.phoneSelfCheckTargetC2Scope), findsOneWidget);
+    expect(tester.widget<Text>(find.byKey(const ValueKey('self-check-step-main'))).data, l10n.phoneSelfCheckStepState('unknown'));
+    expect(tester.widget<Text>(find.byKey(const ValueKey('self-check-reason-main'))).data, l10n.phoneSelfCheckReason('main_unchanged'));
+    expect(tester.widget<Text>(find.byKey(const ValueKey('self-check-reason-ocr'))).data, l10n.phoneSelfCheckReason('not_installed'));
+    expect(report.saved, isEmpty); expect(find.textContaining('private-c2'), findsNothing);
+    await tester.ensureVisible(find.byKey(const ValueKey('self-check-save')));
+    await tester.tap(find.byKey(const ValueKey('self-check-save'))); await tester.pump();
+    expect(report.saved.single.profile, 'target_c2');
+    expect(phoneSelfCheckMarkdown(report.saved.single), contains('finite task and focus samples'));
+    await tester.pumpWidget(const SizedBox()); report.done.complete(); await tester.pump();
+    expect(tester.takeException(), isNull);
+  });
+
 }

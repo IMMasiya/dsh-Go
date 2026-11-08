@@ -196,4 +196,54 @@ class TargetStateTest {
         assertNull(state.taskReadStamp())
         assertFalse(state.facts().closed)
     }
+
+    private fun c2(): Pair<TargetState, Any> {
+        val state = TargetState(run, TargetContract.Profile.C2)
+        val activity = Any()
+        state.schedule(7)
+        state.attempt()
+        state.launchReturned()
+        state.register(activity, 7, 12)
+        return state to activity
+    }
+
+    @Test fun c1CannotEnablePatternStages() {
+        val state = started()
+        val activity = Any()
+        state.register(activity, 7, 12)
+        assertFalse(state.advance(activity, 7, TargetContract.FrameStage.CAPTURE))
+    }
+
+    @Test fun stagesAreOrderedAndCannotReplayOrWrap() {
+        val (state, activity) = c2()
+        assertFalse(state.advance(activity, 7, TargetContract.FrameStage.CONTINUITY_FIRST))
+        for (stage in TargetContract.FrameStage.values()) {
+            assertTrue(state.advance(activity, 7, stage))
+            assertFalse(state.advance(activity, 7, stage))
+        }
+        assertFalse(state.advance(activity, 7, TargetContract.FrameStage.CAPTURE))
+    }
+
+    @Test fun aDifferentInstanceOrDisplayCannotAdvanceTheOriginalRun() {
+        val (state, activity) = c2()
+        assertFalse(state.advance(Any(), 7, TargetContract.FrameStage.CAPTURE))
+        assertFalse(state.advance(activity, 0, TargetContract.FrameStage.CAPTURE))
+        assertFalse(state.advance(activity, 8, TargetContract.FrameStage.CAPTURE))
+        assertTrue(state.advance(activity, 7, TargetContract.FrameStage.CAPTURE))
+    }
+
+    @Test fun sealBeforeQueuedStageExecutionRejectsItsActualAdmission() {
+        val (state, activity) = c2()
+        state.seal()
+        assertFalse(state.advance(activity, 7, TargetContract.FrameStage.CAPTURE))
+        assertTrue(state.facts().cleanupPending)
+    }
+
+    @Test fun destructionPreventsLaterPhaseAdmissionWithoutInventingClosed() {
+        val (state, activity) = c2()
+        state.destroyed(activity, finishing = true, changingConfiguration = false)
+        assertFalse(state.advance(activity, 7, TargetContract.FrameStage.CAPTURE))
+        assertFalse(state.facts().closed)
+    }
+
 }
