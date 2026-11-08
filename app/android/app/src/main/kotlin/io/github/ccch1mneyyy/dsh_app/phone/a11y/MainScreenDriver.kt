@@ -486,7 +486,8 @@ internal class MainScreenDriver(private val service: PhoneA11yService, private v
             val out = actuator.click(r.node, r.el.bounds, r.cap.screen, a.long)
             val what = short(r.el.label.ifEmpty { r.el.role })
             // l10n:keep agent screen result
-            if (!out.accepted) return ActionResult(false, "系统没有接受这次${if (a.long) "长按" else "点击"}「$what」。", observeQuiet())
+            if (!out.accepted) return after(before, r.snap, gen,
+                "系统未确认这次${if (a.long) "长按" else "点击"}「$what」完成，可能已有部分效果；请先核对新屏幕，不要直接重试。", ok = false)
             // l10n:keep agent screen result
             return after(before, r.snap, gen, "已提交${if (a.long) "长按" else "点击"}「$what」。")
         } finally { r.cap.recycle() }
@@ -509,13 +510,14 @@ internal class MainScreenDriver(private val service: PhoneA11yService, private v
             val before = clock.count
             if (!actuator.setText(r.node, a.text)) {
                 // l10n:keep agent screen result
-                return ActionResult(false, "这个输入框不接受代填（系统拒绝了输入）。可以先点一下它再试，或请用户来输入。", observeQuiet())
+                return after(before, r.snap, gen,
+                    "输入未获系统确认，输入、焦点或点击可能已产生部分效果；请先核对新屏幕，不要重复输入。", ok = false)
             }
             val got = readBack(r.node, a.text, gen)
             // l10n:keep agent screen result
             val name = short(r.el.label.ifEmpty { "输入框" })
             if (!sameText(got, a.text)) {
-                return ActionResult(false, readBackMismatch(got, info(r.snap.id, r.el)), settledSnapshot(before, gen))
+                return after(before, r.snap, gen, readBackMismatch(got, info(r.snap.id, r.el)), ok = false)
             }
             // l10n:keep agent screen result
             var message = "已在「$name」输入，回读一致。"
@@ -525,7 +527,8 @@ internal class MainScreenDriver(private val service: PhoneA11yService, private v
                 // l10n:keep agent screen result
                 if (actuator.imeEnter(r.node)) message += "已提交键盘上的发送 / 搜索操作。"
                 // l10n:keep agent screen result
-                else return ActionResult(false, "$message 但这个输入框不支持代按回车，没有提交：请点页面上的「发送」或「搜索」按钮。", settledSnapshot(before, gen))
+                else return after(before, r.snap, gen,
+                    "$message 但键盘提交未获系统确认；不要重复输入或提交，请先核对新屏幕。", ok = false)
             }
             return after(before, r.snap, gen, message)
         } finally { r.cap.recycle() }
@@ -570,7 +573,8 @@ internal class MainScreenDriver(private val service: PhoneA11yService, private v
                 val out = actuator.scroll(null, 0, a.direction == PhoneAction.Direction.LEFT || a.direction == PhoneAction.Direction.RIGHT,
                     Box(screen.left, screen.top + screen.height / 5, screen.right, screen.bottom - screen.height / 6), screen, a.direction)
                 // l10n:keep agent screen result
-                if (!out.accepted) return ActionResult(false, "没能滚动。", observeQuiet())
+                if (!out.accepted) return after(before, snap, gen,
+                    "系统未确认滑动完成，可能已有部分效果；请先核对新屏幕，不要直接重试。", scrolled = true, ok = false)
                 // l10n:keep agent screen result
                 return after(before, snap, gen, "已提交${dirWord}滑动屏幕。", scrolled = true)
             } finally { cap.recycle() }
@@ -584,7 +588,8 @@ internal class MainScreenDriver(private val service: PhoneA11yService, private v
             val before = clock.count
             val out = actuator.scroll(r.node, r.el.scroll, r.el.horizontal, r.el.bounds, r.cap.screen, a.direction)
             // l10n:keep agent screen result
-            if (!out.accepted) return ActionResult(false, "系统没有接受${dirWord}滚动，无法确认是否到底。", observeQuiet())
+            if (!out.accepted) return after(before, r.snap, gen,
+                "系统未确认${dirWord}滚动完成，无法确认是否到底；可能已有部分效果，不要直接重试。", scrolled = true, ok = false)
             // l10n:keep agent screen result
             return after(before, r.snap, gen, "已提交${dirWord}滚动${if (r.el.kind == ElementKind.LIST) "列表 [${r.el.id}]" else ""}。", scrolled = true)
         } finally { r.cap.recycle() }
@@ -681,19 +686,25 @@ internal class MainScreenDriver(private val service: PhoneA11yService, private v
             PhoneAction.CoordinateGesture.LONG -> actuator.tap(point.first, point.second, true, start)
             PhoneAction.CoordinateGesture.SWIPE -> actuator.swipe(point.first, point.second, end!!.first, end.second, a.durationMs, start)
         }
-        if (!accepted) return ActionResult(false, "系统未确认手势完成；可能已产生部分效果，请先读屏，不要直接重试。", if (cancelled(gen)) null else observeQuiet())
+        if (!accepted) {
+            val message = "系统未确认手势完成；可能已产生部分效果，请先读屏，不要直接重试。" // l10n:keep
+            if (cancelled(gen)) return ActionResult(false, message)
+            return after(before, snap, gen, message, previousImage = beforeImage, ok = false)
+        }
         // l10n:keep agent screen result
         val verb = when (a.gesture) { PhoneAction.CoordinateGesture.TAP -> "点击"; PhoneAction.CoordinateGesture.LONG -> "长按"; PhoneAction.CoordinateGesture.SWIPE -> "滑动" }
         return after(before, snap, gen, "已提交${verb}截图上的 (${a.x}, ${a.y})。", previousImage = beforeImage)
     }
 
     /** Waits for the UI to settle, reads the new screen (`+` marks) and says whether anything changed. */
-    private fun after(before: Long, previous: Snapshot?, gen: Long, message: String, scrolled: Boolean = false, previousImage: ImageObservation? = actionBeforeImage): ActionResult {
+    private fun after(before: Long, previous: Snapshot?, gen: Long, message: String, scrolled: Boolean = false, previousImage: ImageObservation? = actionBeforeImage, ok: Boolean = true): ActionResult {
+        if (cancelled(gen)) throw InterruptedException()
         clock.settle(before, 1_500, 300, 3_000) { cancelled(gen) }
+        if (cancelled(gen)) throw InterruptedException()
         val cap = try { if (previousImage == null) settledCapture(previous, gen) else capture() } catch (e: InterruptedException) { throw e } catch (e: Exception) {
             Log.w(TAG, "observation after an accepted action failed", e)
             // l10n:keep agent screen result
-            return ActionResult(true, "$message（动作已提交，但没能读到新屏幕，无法验证结果。）")
+            return ActionResult(ok, "$message（没能读到新屏幕，无法追加验证；不要自动重试。）")
         }
         try {
             val snap = publish(cap, false)
@@ -703,14 +714,18 @@ internal class MainScreenDriver(private val service: PhoneA11yService, private v
             val changed = old != null && observation.changedFrom(old)
             val keyboard = old?.let { observation.keyboardChange(it) }
             // Missing content still needs an explicit warning, even when app/window/IME changed.
-            val note = ScreenVerdict.note(comparable = comparable, changed = changed, keyboard = keyboard, scrolled = scrolled)
+            val note = if (ok) ScreenVerdict.note(comparable = comparable, changed = changed, keyboard = keyboard, scrolled = scrolled)
+                else unconfirmedActionNote(comparable, changed, keyboard)
             val canReuse = comparable && observation.sameContext(old) && observation.keyboardShown == old.keyboardShown
             val text = ScreenDigest.text(previous?.id, previous?.screen, snap.id, snap.screen, canReuse = canReuse, observationChanged = changed)
-            var ocrText = ""
+            var ocrText = if (snap.screen.poorTree) "\n" + LocalOcrBoundary.message(shooter.localTextWithoutFrame()) else ""
             var nextImage: ImageObservation? = null
             val epoch = localOcr.enabledEpoch()
             val remaining = actionDeadline - SystemClock.uptimeMillis()
             val readLocal = snap.screen.poorTree && epoch != null && ocrAllowed(cap, snap, gen)
+            if (snap.screen.poorTree && epoch != null && !readLocal) {
+                ocrText = "\n" + LocalOcrBoundary.message(LocalOcrResult.Unavailable(LocalOcrResult.Reason.PRIVACY_UNVERIFIED))
+            }
             val compareFrame = previousImage != null && !unavailable(cap) && !snap.ownApp &&
                 !snap.protectedPage && old != null && observation.sameContext(old)
             try {
@@ -741,8 +756,9 @@ internal class MainScreenDriver(private val service: PhoneA11yService, private v
                     }
                 }
             } catch (e: InterruptedException) { throw e } catch (_: Exception) {
-                // The action is already dispatched. Missing verification never changes it to a retryable failure.
-                ocrText = ""
+                // Preserve the input attempt's original result; verification cannot turn it into success.
+                ocrText = if (snap.screen.poorTree) "\n" + LocalOcrBoundary.message(
+                    LocalOcrResult.Failed(LocalOcrResult.Failure.ENGINE)) else ""
                 nextImage = null
             }
             val visualNote = if (previousImage == null) "" else {
@@ -751,12 +767,12 @@ internal class MainScreenDriver(private val service: PhoneA11yService, private v
                     // l10n:keep agent screen result
                     VisualFrame.Change.CHANGED -> "（截图中有明显画面变化；这不代表目标操作已成功。）"
                     // l10n:keep agent screen result
-                    VisualFrame.Change.UNCHANGED -> "（截图未见明显画面变化，无法确认点中目标；不要自动重复点击。）"
+                    VisualFrame.Change.UNCHANGED -> "（截图未见明显画面变化，无法验证这次操作；不要自动重复操作。）"
                     // l10n:keep agent screen result
-                    VisualFrame.Change.UNAVAILABLE -> "（动作已提交，但截图无法比较，不能验证结果；不要自动重复点击。）"
+                    VisualFrame.Change.UNAVAILABLE -> "（截图无法比较，不能验证这次操作；不要自动重复操作。）"
                 }
             }
-            return ActionResult(true, message + note + visualNote, toSnapshot(snap, text + ocrText))
+            return ActionResult(ok, message + note + visualNote, toSnapshot(snap, text + ocrText))
         } finally { cap.recycle() }
     }
 
@@ -789,11 +805,6 @@ internal class MainScreenDriver(private val service: PhoneA11yService, private v
     private fun looksUnfinished(cap: Capture, previous: Snapshot?): Boolean =
         cap.hiddenWindowTitle == null &&
             (cap.windows.isEmpty() || (ScreenFormat.textCount(cap.windows) < ScreenFormat.POOR_TREE && previous?.screen?.poorTree != true))
-
-    private fun settledSnapshot(before: Long, gen: Long): ScreenSnapshot? {
-        clock.settle(before, 800, 250, 2_000) { cancelled(gen) }
-        return observeQuiet()
-    }
 
     /** Polls the field until it shows [expected] (or 1.5 s pass); returns what it shows. */
     private fun readBack(node: AccessibilityNodeInfo, expected: String, gen: Long): String? {
@@ -997,3 +1008,8 @@ internal class MainScreenDriver(private val service: PhoneA11yService, private v
 /** Null belongs to a published image; OCR-only evidence must retain exactly its original ON epoch. */
 internal fun mainOcrEpochCurrent(observationEpoch: Long?, enabledEpoch: Long?): Boolean =
     observationEpoch == null || observationEpoch == enabledEpoch
+
+/** No completed-request receipt: unchanged content is not evidence that scrolling reached its end. */
+internal fun unconfirmedActionNote(comparable: Boolean, changed: Boolean, keyboard: String?): String =
+    keyboard ?: if (comparable && changed) "" else
+        "（本次结果仍未确认，请先核对屏幕，不要自动重试。）" // l10n:keep agent result
