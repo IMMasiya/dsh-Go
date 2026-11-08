@@ -58,8 +58,13 @@ class BackgroundDetailTest {
         assertEquals(600, BackgroundTree.detailPrefixCount(elements))
         val text = render(elements.take(600), complete = false)
         assertTrue(text.contains("未读取的节点数量未知"))
-        assertFalse(render(elements.take(1), complete = true).contains("完整"))
-        assertFalse(render(elements.take(1), complete = null).contains("完整"))
+        // The budget fixture appends a separate privacy note containing 未完整读取.
+        // Check the renderer itself so that negative note is not a completeness claim.
+        for (complete in listOf(true, null)) {
+            val rendered = BackgroundTree.render("b-2147483648", "测😀".repeat(20), true, false,
+                elements.take(1), background = true, poorTree = true, detailed = true, treeComplete = complete)
+            assertFalse(rendered.contains("完整"))
+        }
     }
 
     @Test fun legacyRenderIsUnchangedAndDoesNotInventCoordinatesOrScanMetadata() {
