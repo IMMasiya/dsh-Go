@@ -359,8 +359,11 @@ class SystemActions(private val app: Context) : SystemApi {
                 SysResult(false, "读不到剪贴板：系统只允许前台应用读，DSH 不在前台。请用户切回 DSH 再说，或直接把内容发给你。")
             }
         }
+        val limit = 20_000
+        // Keep a complete surrogate pair out of the preview when it crosses the limit.
+        val end = if (text.length > limit && text[limit - 1].isHighSurrogate() && text[limit].isLowSurrogate()) limit - 1 else limit
         // l10n:keep agent tool result
-        val shown = if (text.length > 20_000) text.take(20_000) + "\n…（后面还有 ${text.length - 20_000} 字）" else text
+        val shown = if (text.length > limit) text.take(end) + "\n…（后面还有 ${text.length - end} 字）" else text
         // l10n:keep agent tool result
         return SysResult(true, "剪贴板内容：\n$shown")
     }
