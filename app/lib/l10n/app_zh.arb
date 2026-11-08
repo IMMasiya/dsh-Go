@@ -9118,7 +9118,7 @@
   "remoteCompactHistoryHint": "支持的 DSH Remote 主机会精简历史工具详情，实时回复和审批不变。切换主机或重启 App 后生效；旧主机仍传输完整历史。",
   "searchKwRemoteCompactHistory": "精简 简洁 历史 工具 传输 流量 远程 compact slim lite",
   "remotePairEntry": "扫码配对电脑",
-  "remotePairEntryHint": "扫电脑上 Remote 插件显示的二维码，不用注册账号",
+  "remotePairEntryHint": "扫电脑上 Remote 插件显示的二维码，不用注册 Remote 账号（需要先登录 DeepSeek）",
   "remotePairAddComputer": "扫码添加电脑",
   "remotePairTitle": "扫码配对电脑",
   "remotePairSubtitle": "不用注册 Remote 账号，也不会传 DeepSeek 密码或登录凭据",
@@ -9191,6 +9191,16 @@
   "remotePairErrHostLimit": "这个账号绑定的电脑已经到上限了",
   "remotePairErrNetwork": "连不上 Remote 服务器，检查网络后重试",
   "remotePairErrFailed": "配对没有完成，请重新扫码",
+  "remotePairSwitchFailedTitle": "已和 {name} 配对",
+  "@remotePairSwitchFailedTitle": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "remotePairSwitchFailedBody": "但没能切换到这台电脑。可以重试，或者回到「远程主机」里点这台电脑。",
+  "remotePairDone": "完成",
   "stateWorkspaceFilesHint": "已上传到当前工作区的文件：",
   "stateRemoteUploadNameInvalid": "文件名不受主机支持，请去掉特殊字符或缩短后再试",
   "stateRemoteUploadWorkspaceUnavailable": "当前对话没有可写的工作目录",

@@ -88,6 +88,8 @@ PairingScan parsePairingScan(String text, {DateTime? now}) {
   final match = uri == null ? null : _ticketFragment.firstMatch(uri.fragment);
   if (uri == null ||
       (uri.scheme != 'https' && uri.scheme != 'http') ||
+      !uri.hasAuthority ||
+      uri.host.isEmpty ||
       uri.userInfo.isNotEmpty ||
       uri.path != '/pair' ||
       uri.hasQuery ||
@@ -120,7 +122,7 @@ PairingLegacyScan _parseLegacyScan(String text, DateTime now) {
 Uri _origin(String value) {
   try {
     return normalizeServerUrl(value);
-  } on ArgumentError {
+  } on Object {
     throw const PairingException('PAIRING_SCAN_INVALID', 'The pairing code names an insecure or invalid Server.');
   }
 }
@@ -135,6 +137,10 @@ bool _isKey32(String? value) {
     return false;
   }
 }
+
+/// A wire timestamp, or null outside what [DateTime] can hold.
+DateTime? _date(int? millis) =>
+    millis == null || millis.abs() > 8640000000000000 ? null : DateTime.fromMillisecondsSinceEpoch(millis);
 
 // ---------------------------------------------------------------------------
 // Session and devices
@@ -241,7 +247,7 @@ class PairingOffer {
         map['v'] != 1 ||
         sessionId == null ||
         !_uuid.hasMatch(sessionId) ||
-        expiresAt == null ||
+        _date(expiresAt) == null ||
         !_isKey32(serverKey) ||
         !_isKey32(scanSecret) ||
         (ticket != null && scanSecret != ticket) ||
@@ -250,7 +256,7 @@ class PairingOffer {
         host.identityKey == serverKey) {
       throw const PairingException('PAIRING_SCAN_INVALID', 'The Server returned an invalid pairing session.');
     }
-    final expires = DateTime.fromMillisecondsSinceEpoch(expiresAt);
+    final expires = _date(expiresAt)!;
     // Sessions live 180 s; a far-future deadline is not one.
     if (expires.isBefore(clock.subtract(clockSkew)) || expires.isAfter(clock.add(const Duration(minutes: 10)))) {
       throw const PairingException('PAIRING_EXPIRED', 'This pairing code expired. Show a new code on the computer.');
@@ -344,10 +350,11 @@ class PairingClaim {
     final map = asMap(json);
     final code = asString(map?['verificationCode']);
     final expiresAt = asInt(map?['expiresAt']);
-    if (map?['state'] != 'claimed' || code == null || !RegExp(r'^[0-9]{8}$').hasMatch(code) || expiresAt == null) {
+    final expires = _date(expiresAt);
+    if (map?['state'] != 'claimed' || code == null || !RegExp(r'^[0-9]{8}$').hasMatch(code) || expires == null) {
       throw const PairingException('PAIRING_FAILED', 'The Server returned an invalid pairing claim.');
     }
-    return PairingClaim(verificationCode: code, expiresAt: DateTime.fromMillisecondsSinceEpoch(expiresAt));
+    return PairingClaim(verificationCode: code, expiresAt: expires);
   }
 }
 
@@ -445,7 +452,7 @@ class PairingStatus {
     }
     return PairingStatus(
       state: state,
-      recoverUntil: recover == null ? null : DateTime.fromMillisecondsSinceEpoch(recover),
+      recoverUntil: _date(recover),
       failureReason: reason == null || reason.isEmpty || reason.length > 128 ? null : reason,
       credentials: credentials,
     );

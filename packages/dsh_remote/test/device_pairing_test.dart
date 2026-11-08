@@ -103,6 +103,8 @@ void main() {
       ('a non-canonical ticket', 'https://dsh.r2049.cn/pair#v1.${ticket.substring(0, 42)}B'),
       ('a short ticket', 'https://dsh.r2049.cn/pair#v1.${ticket.substring(1)}'),
       ('another scheme', 'dshgo://pair#v1.$ticket'),
+      ('no host', 'https:///pair#v1.$ticket'),
+      ('no authority', 'https:/pair#v1.$ticket'),
       ('plain text', 'hello'),
       ('an oversized code', 'https://dsh.r2049.cn/pair#v1.$ticket${' ' * 5000}'),
     ]) {
@@ -165,6 +167,7 @@ void main() {
         refused(sessionJson(expiresAt: now.subtract(const Duration(minutes: 5)).millisecondsSinceEpoch)).code,
         'PAIRING_EXPIRED',
       );
+      expect(refused(sessionJson(expiresAt: 9007199254740991)).code, 'PAIRING_SCAN_INVALID', reason: 'past DateTime');
     });
 
     test('the claim body is serialized once, in a fixed order', () {
@@ -183,6 +186,10 @@ void main() {
       expect(
         () => PairingClaim.parse({'state': 'claimed', 'verificationCode': 123456, 'expiresAt': 1}),
         throwsA(anything),
+      );
+      expect(
+        () => PairingClaim.parse({'state': 'claimed', 'verificationCode': '00123456', 'expiresAt': -9007199254740991}),
+        throwsA(isA<PairingException>()),
       );
     });
   });

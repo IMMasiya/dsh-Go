@@ -15302,7 +15302,8 @@ class L10nEn extends L10n {
   String get remotePairEntry => 'Pair a computer by scanning';
 
   @override
-  String get remotePairEntryHint => 'Scan the code the Remote plugin shows on your computer. No account needed.';
+  String get remotePairEntryHint =>
+      'Scan the code the Remote plugin shows on your computer. No Remote account needed; sign in to DeepSeek first.';
 
   @override
   String get remotePairAddComputer => 'Add a computer by scanning';
@@ -15452,6 +15453,17 @@ class L10nEn extends L10n {
 
   @override
   String get remotePairErrFailed => 'Pairing didn’t finish. Scan again.';
+
+  @override
+  String remotePairSwitchFailedTitle(String name) {
+    return 'Paired with $name';
+  }
+
+  @override
+  String get remotePairSwitchFailedBody => 'But switching to it didn’t work. Try again, or pick it under Remote hosts.';
+
+  @override
+  String get remotePairDone => 'Done';
 
   @override
   String get stateWorkspaceFilesHint => 'Files uploaded to the current workspace:';

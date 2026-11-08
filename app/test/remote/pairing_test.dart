@@ -119,6 +119,17 @@ void main() {
       expect(state().session, isNull, reason: 'the code is gone once paired');
     });
 
+    test('a code claimed while the app is in the background starts paused', () async {
+      await flow().scanned(_code);
+      flow().setPaused(true);
+      unawaited(flow().confirm());
+      await pumpEventQueue();
+      expect(state().step, PairingStep.showingCode);
+      expect(backend.paused, [true]);
+      flow().setPaused(false);
+      expect(backend.paused, [true, false]);
+    });
+
     test('a second code while one is being read is ignored', () async {
       final first = flow().scanned(_code);
       await flow().scanned('$_code#again');

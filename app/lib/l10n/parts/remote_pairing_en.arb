@@ -1,6 +1,6 @@
 {
   "remotePairEntry": "Pair a computer by scanning",
-  "remotePairEntryHint": "Scan the code the Remote plugin shows on your computer. No account needed.",
+  "remotePairEntryHint": "Scan the code the Remote plugin shows on your computer. No Remote account needed; sign in to DeepSeek first.",
   "remotePairAddComputer": "Add a computer by scanning",
   "remotePairTitle": "Pair a computer",
   "remotePairSubtitle": "No Remote account needed. Your DeepSeek password and sign-in tokens are never sent.",
@@ -44,5 +44,8 @@
   "remotePairErrIdentity": "The pairing no longer matches this computer or this phone, so it stopped. Show a new pairing code on the computer.",
   "remotePairErrHostLimit": "This account already has the maximum number of computers",
   "remotePairErrNetwork": "Can’t reach the Remote server. Check your network and try again.",
-  "remotePairErrFailed": "Pairing didn’t finish. Scan again."
+  "remotePairErrFailed": "Pairing didn’t finish. Scan again.",
+  "remotePairSwitchFailedTitle": "Paired with {name}",
+  "remotePairSwitchFailedBody": "But switching to it didn’t work. Try again, or pick it under Remote hosts.",
+  "remotePairDone": "Done"
 }

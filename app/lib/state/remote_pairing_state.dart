@@ -13,6 +13,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../l10n/l10n.dart';
 import '../remote/relay/relay_backend.dart';
 import 'hosts_state.dart';
+import 'read_list_epoch.dart';
 
 enum PairingStep {
   /// The camera (or a pasted link) is looking for a code.
@@ -74,6 +75,9 @@ class PairingFlowController extends Notifier<PairingFlowState> {
   /// The session whose code is on screen (lifecycle callbacks cannot read
   /// [state]).
   RelayPairingSession? _shown;
+
+  /// The app is in the background; a session claimed meanwhile starts paused.
+  bool _paused = false;
 
   @override
   PairingFlowState build() {
@@ -150,6 +154,9 @@ class PairingFlowController extends Notifier<PairingFlowState> {
     if (state.step != PairingStep.confirming || offer == null || backend == null) return;
     final epoch = ++_epoch;
     state = PairingFlowState(step: PairingStep.claiming, offer: offer);
+    // Pairing may sign this phone in: retire reads tied to the old sign-in,
+    // as the other sign-in paths do.
+    ref.read(readListCredentialEpochProvider.notifier).advance();
     final RelayPairingSession session;
     try {
       session = await backend.claimPairing(offer, deepseekUserId: deepseekUserId);
@@ -157,11 +164,14 @@ class PairingFlowController extends Notifier<PairingFlowState> {
       return _fail(epoch, e);
     }
     if (!_current(epoch)) {
+      // Nobody waits for this one: its cancellation error is expected.
+      session.completed.ignore();
       unawaited(session.cancel());
       return;
     }
     _scanned = null;
     _shown = session;
+    if (_paused) session.paused = true;
     state = PairingFlowState(step: PairingStep.showingCode, offer: offer, session: session);
     await _phases?.cancel();
     _phases = session.phases.listen((phase) {
@@ -203,5 +213,8 @@ class PairingFlowController extends Notifier<PairingFlowState> {
   }
 
   /// The app went to the background (or came back): pause polling.
-  void setPaused(bool paused) => _shown?.paused = paused;
+  void setPaused(bool paused) {
+    _paused = paused;
+    _shown?.paused = paused;
+  }
 }

@@ -26675,7 +26675,7 @@ abstract class L10n {
   /// No description provided for @remotePairEntryHint.
   ///
   /// In zh, this message translates to:
-  /// **'扫电脑上 Remote 插件显示的二维码，不用注册账号'**
+  /// **'扫电脑上 Remote 插件显示的二维码，不用注册 Remote 账号（需要先登录 DeepSeek）'**
   String get remotePairEntryHint;
 
   /// No description provided for @remotePairAddComputer.
@@ -26941,6 +26941,24 @@ abstract class L10n {
   /// In zh, this message translates to:
   /// **'配对没有完成，请重新扫码'**
   String get remotePairErrFailed;
+
+  /// No description provided for @remotePairSwitchFailedTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'已和 {name} 配对'**
+  String remotePairSwitchFailedTitle(String name);
+
+  /// No description provided for @remotePairSwitchFailedBody.
+  ///
+  /// In zh, this message translates to:
+  /// **'但没能切换到这台电脑。可以重试，或者回到「远程主机」里点这台电脑。'**
+  String get remotePairSwitchFailedBody;
+
+  /// No description provided for @remotePairDone.
+  ///
+  /// In zh, this message translates to:
+  /// **'完成'**
+  String get remotePairDone;
 
   /// No description provided for @stateWorkspaceFilesHint.
   ///

@@ -55,6 +55,9 @@ class _RemotePairingPageState extends ConsumerState<RemotePairingPage> {
   late final AppLifecycleListener _lifecycle;
   bool _finishing = false;
 
+  /// Paired, but switching to the computer failed: offer to try again.
+  bool _switchFailed = false;
+
   @override
   void initState() {
     super.initState();
@@ -74,14 +77,26 @@ class _RemotePairingPageState extends ConsumerState<RemotePairingPage> {
   Future<void> _finish(RelayHost host) async {
     if (_finishing) return;
     _finishing = true;
+    setState(() => _switchFailed = false);
     final navigator = Navigator.of(context);
-    ref.invalidate(relayAccountProvider);
+    var ok = false;
     try {
-      await ref.read(relayAccountProvider.future);
-    } catch (_) {}
-    if (!mounted) return;
-    final ok = await activateHost(context, ref, HostRef.relay(host.id, name: host.name));
-    if (ok && navigator.mounted) navigator.pop();
+      ref.invalidate(relayAccountProvider);
+      try {
+        await ref.read(relayAccountProvider.future);
+      } catch (_) {}
+      if (!mounted) return;
+      ok = await activateHost(context, ref, HostRef.relay(host.id, name: host.name));
+    } catch (_) {
+      ok = false;
+    } finally {
+      _finishing = false;
+    }
+    if (ok) {
+      if (navigator.mounted) navigator.pop();
+    } else if (mounted) {
+      setState(() => _switchFailed = true);
+    }
   }
 
   @override
@@ -102,6 +117,10 @@ class _RemotePairingPageState extends ConsumerState<RemotePairingPage> {
             PairingStep.confirming => _ConfirmStep(offer: flow.offer!),
             PairingStep.claiming => _Busy(label: l10n.remotePairClaiming),
             PairingStep.showingCode => _CodeStep(flow: flow),
+            PairingStep.done when _switchFailed => _SwitchFailed(
+              hostName: flow.host?.name ?? '',
+              onRetry: () => unawaited(_finish(flow.host!)),
+            ),
             PairingStep.done => _Busy(label: l10n.remotePairConnecting(flow.host?.name ?? '')),
             PairingStep.failed => _FailedStep(error: flow.error!),
           };
@@ -469,6 +488,43 @@ class _Digit extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+/// Paired (this phone is signed in, the key pinned), but switching to the
+/// computer did not happen: try again, or leave and pick it from the list.
+class _SwitchFailed extends StatelessWidget {
+  const _SwitchFailed({required this.hostName, required this.onRetry});
+
+  final String hostName;
+  final VoidCallback onRetry;
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = context.l10n;
+    final theme = Theme.of(context);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        _Card(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(l10n.remotePairSwitchFailedTitle(hostName), style: theme.textTheme.titleMedium),
+              const SizedBox(height: 8),
+              Text(
+                l10n.remotePairSwitchFailedBody,
+                style: theme.textTheme.bodyMedium?.copyWith(color: theme.colorScheme.onSurfaceVariant, height: 1.5),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 16),
+        FilledButton(onPressed: onRetry, child: Text(l10n.commonRetry)),
+        const SizedBox(height: 4),
+        TextButton(onPressed: () => Navigator.of(context).maybePop(), child: Text(l10n.remotePairDone)),
+      ],
     );
   }
 }

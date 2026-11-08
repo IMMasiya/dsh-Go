@@ -14559,7 +14559,7 @@ class L10nZh extends L10n {
   String get remotePairEntry => '扫码配对电脑';
 
   @override
-  String get remotePairEntryHint => '扫电脑上 Remote 插件显示的二维码，不用注册账号';
+  String get remotePairEntryHint => '扫电脑上 Remote 插件显示的二维码，不用注册 Remote 账号（需要先登录 DeepSeek）';
 
   @override
   String get remotePairAddComputer => '扫码添加电脑';
@@ -14700,6 +14700,17 @@ class L10nZh extends L10n {
 
   @override
   String get remotePairErrFailed => '配对没有完成，请重新扫码';
+
+  @override
+  String remotePairSwitchFailedTitle(String name) {
+    return '已和 $name 配对';
+  }
+
+  @override
+  String get remotePairSwitchFailedBody => '但没能切换到这台电脑。可以重试，或者回到「远程主机」里点这台电脑。';
+
+  @override
+  String get remotePairDone => '完成';
 
   @override
   String get stateWorkspaceFilesHint => '已上传到当前工作区的文件：';

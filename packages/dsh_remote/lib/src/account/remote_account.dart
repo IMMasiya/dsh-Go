@@ -915,17 +915,18 @@ class RemoteAccount {
             continue;
           case PairingState.completed:
             final RemoteUser user;
-            pairing._committing = true;
             try {
               user = await _commitPairing(pairing, identity, status.credentials!);
             } on PairingException {
               rethrow;
             } on Object {
-              // Storage failed: the same credentials can be fetched again
-              // until `recoverUntil`.
+              // Storage failed before the credentials were stored: the same
+              // ones can be fetched again until `recoverUntil`.
               pairing._committing = false;
               continue;
             }
+            // Stored: from here on nothing is committed twice.
+            await _pinPairedHost(pairing.offer.host);
             pairing._complete(RemotePairedHost(user: user, host: pairing.offer.host));
             return;
           case PairingState.failed:
@@ -946,8 +947,9 @@ class RemoteAccount {
     }
   }
 
-  /// Stores this phone's credentials (unless they would replace another
-  /// account's) and pins the Host key from the code the person confirmed.
+  /// Stores this phone's credentials, unless they would replace another
+  /// account's. A storage failure throws (the caller fetches them again);
+  /// only an undecodable stored record counts as none.
   Future<RemoteUser> _commitPairing(RemotePairing pairing, _Identity identity, PairingCredentials credentials) async {
     await _restore();
     const identityChanged = PairingException('PAIRING_IDENTITY_MISMATCH', 'This phone signed out or changed identity.');
@@ -956,12 +958,17 @@ class RemoteAccount {
     // sign-in (here, or in another RemoteAccount on the same store) may have
     // committed since this pairing started.
     final write = _storageState.credentialWrites.then((_) async {
+      // Still cancellable while queued behind other writes.
+      if (pairing.isClosed) throw const PairingException('PAIRING_CANCELLED', 'Pairing was cancelled on this phone.');
       final storedIdentity = asMap(tryDecodeJson(await _secrets.read(_identityKey) ?? ''));
       if (!identical(_identity, identity) || storedIdentity?['deviceId'] != identity.deviceId) throw identityChanged;
+      // A failed read is not "no credentials": it must not let this write
+      // replace another account's sign-in.
+      final raw = await _secrets.read(_credentialsKey);
       _Credentials? stored;
       try {
-        final raw = asMap(tryDecodeJson(await _secrets.read(_credentialsKey) ?? ''));
-        stored = raw == null ? null : _Credentials.fromJson(raw);
+        final map = asMap(tryDecodeJson(raw ?? ''));
+        stored = map == null ? null : _Credentials.fromJson(map);
       } on Object {
         stored = null;
       }
@@ -982,22 +989,36 @@ class RemoteAccount {
         credentials.tokens,
         provider: provider,
       );
+      pairing._committing = true;
       await _secrets.write(_credentialsKey, jsonEncode(saved.toJson()));
       _credentials = saved;
       _storageState.signInEpoch++;
     });
     _storageState.credentialWrites = write.catchError((Object _) {});
     await write;
-    final host = pairing.offer.host;
-    final pins = await _loadPins();
-    pins[host.deviceId] = _Pin(host.identityKey, host.name, DateTime.now());
-    await _savePins(pins);
     return RemoteUser(
       account: credentials.account,
       deviceId: identity.deviceId,
       serverUrl: serverUrl,
       provider: provider,
     );
+  }
+
+  /// Pins the Host key from the code the person confirmed. A failed save
+  /// keeps the pin for this run; after a restart the first connect asks for
+  /// the fingerprint as for any new Host. Never re-commits credentials.
+  Future<void> _pinPairedHost(PairingDevice host) async {
+    final pins = await _loadPins();
+    pins[host.deviceId] = _Pin(host.identityKey, host.name, DateTime.now());
+    for (var attempt = 1; ; attempt++) {
+      try {
+        await _savePins(pins);
+        return;
+      } on Object {
+        if (attempt == 3) return;
+        await Future<void>.delayed(Duration(milliseconds: 200 * attempt));
+      }
+    }
   }
 
   /// Retries outages and rate limits with the same request until [until];

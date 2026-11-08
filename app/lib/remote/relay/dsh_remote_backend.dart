@@ -339,16 +339,23 @@ class DshRemoteRelayBackend implements RelayBackend, RelayNetworkBackend, RelayP
       phases: pairing.states.where((s) => s == remote.PairingState.approved).map((_) => RelayPairingPhase.approved),
       completed: _pairing(() async {
         final paired = await pairing.result;
-        // The paired Host is already pinned; list it with presence.
-        final hosts = await listHosts(refresh: true).catchError((Object _) => const <RelayHost>[]);
-        return hosts.where((h) => h.id == paired.host.deviceId).firstOrNull ??
-            RelayHost(
-              id: paired.host.deviceId,
-              name: paired.host.name,
-              online: true,
-              platform: paired.host.platform,
-              fingerprint: remote.formatFingerprint(remote.identityFingerprint(paired.host.identityKey)),
-            );
+        // The paired Host is already pinned; list it with presence. The new
+        // membership can take a moment to show in the directory: look again
+        // briefly. Connecting lists once more and still checks the
+        // authorized descriptor and the pin.
+        for (var attempt = 0; attempt < 4; attempt++) {
+          if (attempt > 0) await Future<void>.delayed(Duration(milliseconds: 500 * attempt));
+          final hosts = await listHosts(refresh: true).catchError((Object _) => const <RelayHost>[]);
+          final listed = hosts.where((h) => h.id == paired.host.deviceId).firstOrNull;
+          if (listed != null) return listed;
+        }
+        return RelayHost(
+          id: paired.host.deviceId,
+          name: paired.host.name,
+          online: true,
+          platform: paired.host.platform,
+          fingerprint: remote.formatFingerprint(remote.identityFingerprint(paired.host.identityKey)),
+        );
       }),
       onPause: (paused) => pairing.paused = paused,
       onCancel: pairing.cancel,

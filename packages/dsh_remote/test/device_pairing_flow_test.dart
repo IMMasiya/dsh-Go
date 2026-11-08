@@ -149,14 +149,37 @@ class _PairingServer {
   }
 }
 
+/// Storage that can fail: reads of the credentials, or writes of the pins.
+class _FlakySecrets extends MemorySecretStore {
+  int failCredentialReads = 0;
+  bool failPinWrites = false;
+  int credentialWrites = 0;
+
+  @override
+  Future<String?> read(String key) async {
+    if (key.endsWith('.credentials') && failCredentialReads > 0) {
+      failCredentialReads--;
+      throw StateError('keystore unavailable');
+    }
+    return super.read(key);
+  }
+
+  @override
+  Future<void> write(String key, String value) async {
+    if (key.endsWith('.pins') && failPinWrites) throw StateError('keystore unavailable');
+    if (key.endsWith('.credentials')) credentialWrites++;
+    await super.write(key, value);
+  }
+}
+
 void main() {
   late _PairingServer server;
-  late MemorySecretStore secrets;
+  late _FlakySecrets secrets;
   late RemoteAccount account;
 
   setUp(() async {
     server = await _PairingServer.start();
-    secrets = MemorySecretStore();
+    secrets = _FlakySecrets();
     account = RemoteAccount(
       secrets: secrets,
       serverUrl: server.url,
@@ -311,6 +334,44 @@ void main() {
       throwsA(isA<PairingException>().having((e) => e.code, 'code', 'PAIRING_ACCOUNT_CONFLICT')),
     );
     expect(secrets.values[key], theirs);
+  });
+
+  test('a failed read of the stored sign-in is not "none": it is retried, never overwritten', () async {
+    final pairing = await account.claimPairing(await account.resolvePairing(scan()));
+    final identity = jsonDecode(secrets.values.entries.firstWhere((e) => e.key.endsWith('.identity')).value) as Map;
+    final key = secrets.values.keys
+        .firstWhere((k) => k.endsWith('.identity'))
+        .replaceFirst('.identity', '.credentials');
+    final later = DateTime.now().add(const Duration(days: 30)).millisecondsSinceEpoch;
+    final theirs = jsonEncode({
+      'v': 1,
+      'deviceId': identity['deviceId'],
+      'account': 'someone@example.com',
+      'accessToken': 'theirs-${'a' * 24}',
+      'accessTokenExpiresAt': later,
+      'refreshToken': 'theirs-${'r' * 24}',
+      'refreshTokenExpiresAt': later,
+    });
+    secrets.values[key] = theirs;
+    secrets.failCredentialReads = 2;
+    server.state = 'completed';
+    await expectLater(
+      pairing.result,
+      throwsA(isA<PairingException>().having((e) => e.code, 'code', 'PAIRING_ACCOUNT_CONFLICT')),
+    );
+    expect(secrets.failCredentialReads, 0, reason: 'the failed reads were retried');
+    expect(secrets.values[key], theirs);
+    expect(secrets.credentialWrites, 0);
+  });
+
+  test('a failed pin save completes once and never writes the credentials again', () async {
+    final pairing = await account.claimPairing(await account.resolvePairing(scan()));
+    secrets.failPinWrites = true;
+    server.state = 'completed';
+    final paired = await pairing.result;
+    expect(paired.user.account, server.account);
+    expect(secrets.credentialWrites, 1);
+    expect(await account.currentUser(), isNotNull);
   });
 
   test('an account signed in elsewhere keeps its credentials', () async {

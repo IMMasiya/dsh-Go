@@ -153,7 +153,7 @@ Upstream `docs/device-pairing-v1.md` and `docs/dsh-go-pairing-integration.md`, t
 3. After the person confirmed the computer (name and the full `PairingDevice.fingerprint`), `claimPairing` claims with this device identity and returns `RemotePairing.verificationCode` (8 digits). The person types it into the computer; the phone never confirms for it.
 4. `RemotePairing.result` completes once this phone's credentials are stored and the Host key is pinned; then `listHosts` / `connectHost` as usual. It fails with `PAIRING_CODE_REJECTED` (one attempt), `PAIRING_EXPIRED`, `PAIRING_CANCELLED`, `PAIRING_ACCOUNT_CONFLICT` (signed in to another account: those credentials are kept), `PAIRING_IDENTITY_MISMATCH`, or a Server code.
 
-Every pairing POST carries `X-DSH-Pairing-Proof` over the exact JSON text sent (`pairingProof`, checked against the upstream fixed vectors in `test/fixtures/pairing/proof_v1.json`). A lost claim response is recovered by resending the same bytes. Polling (2.5 s) backs off on 429/503 and pauses with `RemotePairing.paused`. `deepseekUserId` is optional unverified metadata, never credentials.
+The claim, `mobile/status` and `mobile/cancel` POSTs carry `X-DSH-Pairing-Proof` over the exact JSON text sent; `resolve` sends only the ticket, without a proof (`pairingProof`, checked against the upstream fixed vectors in `test/fixtures/pairing/proof_v1.json`). A lost claim response is recovered by resending the same bytes. Polling (2.5 s) backs off on 429/503 and pauses with `RemotePairing.paused`. `deepseekUserId` is optional unverified metadata, never credentials.
 
 ## Security model
 
