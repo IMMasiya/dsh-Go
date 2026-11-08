@@ -683,7 +683,7 @@ class BackgroundControl private constructor(context: Context) {
     fun collectSystemIme(mayStart: () -> Boolean): Map<String, Any?> {
         val evidence = io.github.ccch1mneyyy.dsh_app.diagnostics.SystemImeEvidence
         if (!mayStart()) return evidence.result("cancelled")
-        if (PhoneControl.peek()?.tasks?.snapshot()?.active == true || driverTaskId != null)
+        if (PhoneControl.peek()?.tasks?.snapshot()?.active == true || taskResource.occupied)
             return evidence.result("busy")
         val selected = synchronized(keepGuard) {
             if (selectionChange != null || mode == "off") return evidence.result("unavailable")
