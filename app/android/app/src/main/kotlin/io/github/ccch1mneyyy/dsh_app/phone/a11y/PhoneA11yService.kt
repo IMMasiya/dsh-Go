@@ -34,6 +34,7 @@ class PhoneA11yService : AccessibilityService() {
     private var probe: A11yProbe? = null
     private var receiverRegistered = false
     private var overlayContext: Context? = null
+    private var destroyed = false
 
     /** A dedicated manager whose default token comes from the live accessibility connection. */
     internal fun overlayWindowContext(): Context = overlayContext ?: run {
@@ -59,6 +60,7 @@ class PhoneA11yService : AccessibilityService() {
     }
 
     override fun onServiceConnected() {
+        if (destroyed) return
         super.onServiceConnected()
         // Re-init can reuse this service object. Retire the old driver/handler before publishing
         // the new one; coordinate starts are on this same main queue and check exact publication.
@@ -111,6 +113,7 @@ class PhoneA11yService : AccessibilityService() {
     }
 
     override fun onDestroy() {
+        destroyed = true
         // l10n:keep agent stop reason
         teardown("无障碍服务已停止")
         super.onDestroy()

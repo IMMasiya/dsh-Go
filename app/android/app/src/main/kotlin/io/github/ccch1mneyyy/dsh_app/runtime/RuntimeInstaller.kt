@@ -96,6 +96,11 @@ class RuntimeInstaller(
         }
         onProgress(total, total)
 
+        val groupNames = appendAndroidGroupNames(staging,
+            runCatching { File("/proc/self/task/${android.os.Process.myTid()}/status").readText() }.getOrNull())
+        onLog("[dsh-app] install group names: " +
+            (groupNames.skipped?.let { "skipped ($it)" } ?: "added ${groupNames.added}"))
+
         timed("activate") {
             activateRootfs(baseDir, manifest.runtimeVersion, keepDir, dropKept,
                 sync = { timed("sync") { sync() } })
