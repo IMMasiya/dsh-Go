@@ -92,6 +92,8 @@ class PrivilegedDisplayCore(private val context: Context) {
     private var height = 0
     private val released = AtomicBoolean(false)
     private var strictOwner = false
+    private var selfCheckOwner = false
+    private var selfCheckWindow: BackgroundInputProbe? = null
     private var releasingDisplayId: Int? = null
     private var displayCreationAttempted = false
     private var displayApiReleased = false
@@ -115,6 +117,7 @@ class PrivilegedDisplayCore(private val context: Context) {
     fun handle(request: Bundle): Bundle {
         val response = Bundle()
         val op = request.getString(Proto.OP)
+        var selfCheckReply = op == Proto.OP_SELF_CHECK_PROBE
         try {
             if (op == Proto.OP_PROBE) {
                 response.putBoolean(Proto.OK, true)
@@ -123,7 +126,10 @@ class PrivilegedDisplayCore(private val context: Context) {
                 response.putInt(Proto.PREVIEW_VERSION, 1)
                 response.putInt(Proto.VIEWPORT_VERSION, 1)
                 // A real successful full query is required; finding the reflective method is insufficient.
-                if (runCatching { rootTasksEmpty(Display.DEFAULT_DISPLAY) }.isSuccess) response.putInt(Proto.RELEASE_RECEIPT, 1)
+                if (runCatching { rootTasksEmpty(Display.DEFAULT_DISPLAY) }.isSuccess) {
+                    response.putInt(Proto.RELEASE_RECEIPT, 1)
+                    response.putInt(Proto.SELF_CHECK_PROBE_VERSION, 1)
+                }
                 return response
             }
             if (op == Proto.OP_COLLECT_SYSTEM_IME) {
@@ -158,11 +164,15 @@ class PrivilegedDisplayCore(private val context: Context) {
                 return response
             }
             if (op == Proto.OP_GRANT_SECURE_SETTINGS) {
-                grantSecureSettings(request.getInt(Proto.USER))
+                lock.withLock {
+                    if (selfCheckOwner) throw Fault("identityChanged")
+                    grantSecureSettings(request.getInt(Proto.USER))
+                }
                 response.putBoolean(Proto.OK, true)
                 return response
             }
             lock.withLock {
+                selfCheckReply = selfCheckReply || selfCheckOwner
                 try { dispatch(op, request, response) }
                 catch (e: Throwable) { visualObservation = null; throw e }
             }
@@ -170,7 +180,8 @@ class PrivilegedDisplayCore(private val context: Context) {
         } catch (e: Throwable) {
             response.putBoolean(Proto.OK, false)
             response.putString(Proto.ERROR, failureCode(e))
-            failureDetail(e)?.let { response.putString(Proto.ERROR_DETAIL, it) }
+            val detail = if (selfCheckReply) (e as? InputProbe.Failure)?.observation?.encode() else failureDetail(e)
+            detail?.let { response.putString(Proto.ERROR_DETAIL, it) }
         }
         return response
     }
@@ -189,9 +200,14 @@ class PrivilegedDisplayCore(private val context: Context) {
         else e.javaClass.simpleName
 
     private fun dispatch(op: String?, request: Bundle, response: Bundle) {
+        if (op == Proto.OP_SELF_CHECK_PROBE) {
+            selfCheckProbe(request, response)
+            return
+        }
         val ownerId = request.getString(Proto.OWNER).orEmpty()
         if (op == null || ownerId.isEmpty()) throw Fault("invalidArguments")
         if (op == Proto.OP_RELEASE) {
+            if (selfCheckOwner && !request.containsKey(Proto.RELEASE_RECEIPT)) throw Fault("releaseReceiptRequired")
             if (request.containsKey(Proto.RELEASE_RECEIPT)) {
                 if (request.get(Proto.RELEASE_RECEIPT) !is Int || request.getInt(Proto.RELEASE_RECEIPT) != 1) throw Fault("invalidArguments")
                 val neverCreated = releaseStrict(ownerId)
@@ -205,6 +221,7 @@ class PrivilegedDisplayCore(private val context: Context) {
             }
             return
         }
+        if (selfCheckOwner) throw Fault("identityChanged")
         if (owner != null && owner != ownerId) throw Fault("identityChanged")
         if ((op == Proto.OP_CREATE || op == Proto.OP_LAUNCH) && request.containsKey(Proto.RELEASE_RECEIPT)) {
             if (request.get(Proto.RELEASE_RECEIPT) !is Int || request.getInt(Proto.RELEASE_RECEIPT) != 1) throw Fault("invalidArguments")
@@ -275,6 +292,56 @@ class PrivilegedDisplayCore(private val context: Context) {
             }
             else -> throw Fault("invalidArguments")
         }
+    }
+
+    /** One fixed local run; its original owner must RELEASE even when setup or input fails. */
+    private fun selfCheckProbe(request: Bundle, response: Bundle) {
+        val ownerId = SelfCheckProbeRequest.owner(request.keySet()) { request.get(it) }
+            ?: throw Fault("invalidArguments")
+        response.putString(Proto.OWNER, ownerId)
+        response.putInt(Proto.SELF_CHECK_PROBE_VERSION, 1)
+        response.putBoolean(Proto.SELF_CHECK_DISPLAY_READY, false)
+        if (owner == ownerId && selfCheckOwner) throw Fault("selfCheckAlreadyStarted")
+        if (owner != null || lastReleasedOwner == ownerId) throw Fault("identityChanged")
+        if (display != null || reader != null || pendingReader != null || readerAllocationUncertain ||
+            selfCheckWindow != null) throw Fault("releaseUnconfirmed")
+
+        // Register the fixed purpose before keyguard checks or ANY reader/VD/UI allocation.
+        // This also consumes begin: a failure must be cleaned, never injected a second time.
+        owner = ownerId
+        strictOwner = true
+        selfCheckOwner = true
+        releasingDisplayId = null
+        displayCreationAttempted = false
+        displayApiReleased = false
+        visualObservation = null
+        if (keyguard?.isKeyguardLocked == true) throw Fault("locked")
+        createDisplay(Bundle().apply {
+            putInt(Proto.SHORT_SIDE, 360)
+            putInt(Proto.ASPECT_W, 9)
+            putInt(Proto.ASPECT_H, 20)
+        }, probe = true)
+        val target = display?.display ?: throw Fault("displayMissing")
+        if (target.displayId <= Display.DEFAULT_DISPLAY || !target.isValid) throw Fault("displayUnsupported")
+        response.putBoolean(Proto.SELF_CHECK_DISPLAY_READY, true)
+        val window = BackgroundInputProbe(privileged, target)
+        selfCheckWindow = window // A failing show/verify must not lose the actual cleanup job.
+        try {
+            window.verify { point, time ->
+                // An attempted send is not proof of delivery or proof that no input occurred.
+                response.putBoolean(Proto.INJECT_OK, false)
+                sendMotion(MotionEvent.ACTION_DOWN, point.x, point.y, time, waitForFinish = false)
+                sendMotion(MotionEvent.ACTION_UP, point.x, point.y, time, waitForFinish = false)
+            }
+            response.putBoolean(Proto.INJECT_OK, true) // Only matching receiver DOWN/UP gets here.
+        } catch (e: Throwable) {
+            response.putString(Proto.INJECT_ERROR, failureCode(e))
+            InputProbeDiagnostics.decode(window.failureDetail)?.let {
+                response.putString(Proto.ERROR_DETAIL, it.encode())
+            }
+            throw e
+        }
+        // No close here: RELEASE owns the same UI job, VD, readers and ATMS confirmation.
     }
 
     /** Test a real input receiver, not an empty display. Never launches or touches a user app. */
@@ -430,6 +497,10 @@ class PrivilegedDisplayCore(private val context: Context) {
         visualObservation = null
         stopPreview()
         preview.invalidate()
+        selfCheckWindow?.let { window ->
+            window.close() // Timeout/failure keeps this SAME window/job and the original owner.
+            selfCheckWindow = null
+        }
         val neverCreated = !displayCreationAttempted
         if (neverCreated) {
             if (display != null || releasingDisplayId != null) throw Fault("releaseUnconfirmed")
@@ -449,7 +520,7 @@ class PrivilegedDisplayCore(private val context: Context) {
                 Thread.sleep(minOf(50L, remaining)) // Poll budget only; the actual empty ATMS result is the proof.
             }
         }
-        display = null; owner = null; strictOwner = false
+        display = null; owner = null; strictOwner = false; selfCheckOwner = false
         releasingDisplayId = null; displayCreationAttempted = false; displayApiReleased = false
         lastReleasedOwner = ownerId
         lastReleaseNeverCreated = neverCreated
@@ -690,6 +761,7 @@ class PrivilegedDisplayCore(private val context: Context) {
             if (!lock.tryLock()) return previewReply(request, busy = true)
         } else lock.lock()
         val reply = try {
+            if (selfCheckOwner) throw Fault("identityChanged")
             val requestedOwner = request.getString(Proto.OWNER)
             if (requestedOwner.isNullOrEmpty() || requestedOwner != owner) throw Fault("identityChanged")
             requireDisplay()

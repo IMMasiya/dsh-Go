@@ -95,6 +95,7 @@ class PhonePlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandle
 
     override fun onDetachedFromEngine(binding: FlutterPlugin.FlutterPluginBinding) {
         attached = false
+        control.selfCheck.stop(promptOwner)
         skillClient?.let { control.skillDrafts.retireClient(it) }
         skillClient = null
         (appContext as Application).unregisterActivityLifecycleCallbacks(previewLifecycle)
@@ -172,6 +173,8 @@ class PhonePlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandle
     override fun onMethodCall(call: MethodCall, result: MethodChannel.Result) {
         when (call.method) {
             "status" -> async(result, shortControl = true) { control.status() }
+            "startPhoneSelfCheck", "phoneSelfCheckStatus", "cancelPhoneSelfCheck",
+            "retryPhoneSelfCheckCleanup" -> selfCheckCall(call, result)
             "setBackgroundViewport" -> async(result, shortControl = true) {
                 val args = call.arguments as? Map<*, *>
                 control.background.setBackgroundViewport(if (args != null && args.keys == setOf("preset")) args["preset"] else null)
@@ -276,6 +279,33 @@ class PhonePlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandle
         if (call.method == "setBackgroundMode" || call.method == "adbConnect" || call.method == "requestShizukuPermission") {
             control.emitStatus()
         }
+    }
+
+    /** Only this local attachment can admit a run; physical work has its own coordinator worker. */
+    private fun selfCheckCall(call: MethodCall, result: MethodChannel.Result) {
+        val owner = promptOwner
+        val live = { attached && promptOwner === owner }
+        if (!live()) { result.success(control.selfCheck.refused(PhoneSelfCheckReport.Reason.RETIRED)); return }
+        val args = call.arguments as? Map<*, *>
+        val valid = when (call.method) {
+            "phoneSelfCheckStatus" -> call.arguments == null
+            "startPhoneSelfCheck" -> args != null && args.keys == setOf("v") && args["v"] is Int && args["v"] == 1
+            else -> args != null && args.keys == setOf("v", "runHandle") && args["v"] is Int &&
+                args["v"] == 1 && args["runHandle"] is String
+        }
+        if (!valid) { result.success(control.selfCheck.refused(PhoneSelfCheckReport.Reason.INVALID_ARGUMENTS)); return }
+        val value = when (call.method) {
+            "startPhoneSelfCheck" -> {
+                val host = activity?.activity
+                if (host == null || !AppVisibility.isResumed(host))
+                    control.selfCheck.refused(PhoneSelfCheckReport.Reason.UNAVAILABLE)
+                else control.selfCheck.start(owner, live)
+            }
+            "phoneSelfCheckStatus" -> control.selfCheck.status()
+            "cancelPhoneSelfCheck" -> control.selfCheck.cancel(checkNotNull(args)["runHandle"] as String)
+            else -> control.selfCheck.retryCleanup(checkNotNull(args)["runHandle"] as String)
+        }
+        result.success(value)
     }
 
     /** Capture this attachment, never borrow the Client from a newer engine when queued work runs. */

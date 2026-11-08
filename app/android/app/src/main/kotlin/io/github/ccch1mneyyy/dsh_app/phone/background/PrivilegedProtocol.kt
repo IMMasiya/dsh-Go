@@ -53,6 +53,9 @@ object Proto {
     const val PREVIEW_HEIGHT = "previewHeight"
 
     const val OP_PROBE = "probe"
+    const val OP_SELF_CHECK_PROBE = "selfCheckProbe"
+    const val SELF_CHECK_PROBE_VERSION = "selfCheckProbeVersion"
+    const val SELF_CHECK_DISPLAY_READY = "selfCheckDisplayReady"
     const val OP_CREATE = "create"
     const val OP_LAUNCH = "launch"
     const val OP_OBSERVE = "observe"

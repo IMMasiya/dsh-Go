@@ -697,5 +697,49 @@
     }
   },
   "phoneCleanupRetry": "重试清理",
-  "phoneCleanupRetryFailed": "仍未能确认上一后台屏已清理，屏幕占用继续保留。"
+  "phoneCleanupRetryFailed": "仍未能确认上一后台屏已清理，屏幕占用继续保留。",
+  "phoneSelfCheckTitle": "本机手机自检",
+  "phoneSelfCheckPartial": "部分自检：仅固定触摸接收器",
+  "phoneSelfCheckScope": "使用已选择并连接的通道和临时展示屏。应用启动、文字输入、截图、OCR及主屏受扰情况均未测试。清理通过不代表展示屏创建成功。",
+  "phoneSelfCheckStart": "开始部分自检",
+  "phoneSelfCheckCancel": "请求取消",
+  "phoneSelfCheckRetry": "仅重试清理",
+  "phoneSelfCheckRefresh": "刷新状态",
+  "phoneSelfCheckSave": "保存脱敏报告",
+  "phoneSelfCheckSaving": "保存中…",
+  "phoneSelfCheckSaved": "报告已存入下载/DSH-Go。",
+  "phoneSelfCheckSaveFailed": "报告保存失败。",
+  "phoneSelfCheckReportHint": "仅在你点击保存时导出。本机报告只含固定结果，不含截图、识别文字、日志、账户数据或运行标识。",
+  "phoneSelfCheckRunState": "{state, select, idle{尚未开始} running{部分自检进行中} cleaning{正在清理；取消不代表已撤销派发的输入} done{执行和清理已结束，请逐项查看下方结果} cancelled{已取消，已观察到的操作仍保留} cleanup_pending{清理尚未确认，资源仍保留} other{状态不可用}}",
+  "@phoneSelfCheckRunState": {
+    "placeholders": {
+      "state": {
+        "type": "String"
+      }
+    }
+  },
+  "phoneSelfCheckStepState": "{state, select, not_run{未运行／无观察} running{进行中} pass{已观察通过} fail{失败} skipped{已跳过} unknown{未确认} cancelled{已取消} other{未确认}}",
+  "@phoneSelfCheckStepState": {
+    "placeholders": {
+      "state": {
+        "type": "String"
+      }
+    }
+  },
+  "phoneSelfCheckStage": "{stage, select, device{设备前置条件} channel{已选通道} display{展示屏创建} input_probe{触摸接收核验} launch{应用启动} tree{控件树} tap{应用按钮点按} scroll{应用滚动} back{应用返回} text_ascii{英文输入} text_zh{中文输入} capture{截图} continuity{连续运行} main{主屏受扰观察} ocr{本机OCR} cleanup{严格清理} other{未知项目}}",
+  "@phoneSelfCheckStage": {
+    "placeholders": {
+      "stage": {
+        "type": "String"
+      }
+    }
+  },
+  "phoneSelfCheckReason": "{reason, select, busy{手机或通道正忙。} unsupported{设备或特权端不支持这项自检。} cancelled{本次请求已取消或退役。} disabled{手机操控尚未开启。} locked{设备已锁定。} identity{原运行或通道身份已改变。} invalid{请求或结果无法验证。} display{临时展示屏未能确认。} input{触摸送达未确认，不会重放已派发输入。} cleanup{资源清理未确认，仅可重试清理。} denied{系统拒绝了操作。} timeout{操作超时，已派发工作仍可能完成。} unavailable{本机状态或已选通道不可用。} other{收到无法识别的结果。}}",
+  "@phoneSelfCheckReason": {
+    "placeholders": {
+      "reason": {
+        "type": "String"
+      }
+    }
+  }
 }

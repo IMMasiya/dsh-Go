@@ -24,6 +24,11 @@ class RootStarter(private val context: Context, private val onChanged: () -> Uni
         state.status()
     }
 
+    /** Short ownership read; never reconnects, probes, or waits for transport work. */
+    internal fun isPublished(expected: PrivilegedChannel): Boolean = synchronized(guard) {
+        channel === expected
+    }
+
     fun connect(): PrivilegedChannel? = synchronized(guard) {
         discardDead()
         channel

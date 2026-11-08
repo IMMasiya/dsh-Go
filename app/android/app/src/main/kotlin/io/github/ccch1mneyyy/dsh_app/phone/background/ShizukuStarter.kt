@@ -116,6 +116,11 @@ class ShizukuStarter(
         }
     }
 
+    /** Short ownership read; never reconnects, probes, or waits for transport work. */
+    internal fun isPublished(expected: PrivilegedChannel): Boolean = synchronized(guard) {
+        channel === expected && binding?.let { it.valid && !it.cleaning && it.worker == null } == true
+    }
+
     /** The 15 s bind wait does not impose a deadline on Binder PROBE or remote teardown. */
     fun connect(whenAvailable: (() -> Unit)? = null, mayStart: () -> Boolean = { true }): PrivilegedChannel? {
         if (!granted()) return null

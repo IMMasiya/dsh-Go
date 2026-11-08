@@ -95,8 +95,8 @@ internal class BackgroundInputProbe(private val context: Context, private val di
 
     override fun close() {
         probe.entered(InputProbeDiagnostics.Stage.CLEANUP)
-        // A timed-out creation cannot outlive cleanup in this same queue. The core releases
-        // the display even if this acknowledgement times out; never report that as success.
+        // A queued creation sees the sealed gate; an in-flight creation precedes this job.
+        // Timeout is not a cleanup acknowledgement; strict owners retain this probe for release.
         var interrupted = Thread.interrupted()
         try {
             cleanup.close(onUiThread = Looper.myLooper() == ui.looper, post = { ui.post(it) })

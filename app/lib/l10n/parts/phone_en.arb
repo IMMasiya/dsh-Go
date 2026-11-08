@@ -468,5 +468,49 @@
   "phoneTaskCleanupFailedHint": "Background screen cleanup could not be confirmed. Phone control remains blocked.",
   "phoneFinishingTask": "Phone task {task} is finishing",
   "phoneCleanupRetry": "Retry cleanup",
-  "phoneCleanupRetryFailed": "The previous background screen is still unconfirmed. Its screen access remains reserved."
+  "phoneCleanupRetryFailed": "The previous background screen is still unconfirmed. Its screen access remains reserved.",
+  "phoneSelfCheckTitle": "Local phone self-check",
+  "phoneSelfCheckPartial": "Partial check — fixed input receiver only",
+  "phoneSelfCheckScope": "Uses the selected connected channel and a temporary presentation display. App launch, text input, screenshots, OCR and MAIN disturbance are not tested. Cleanup alone does not prove a display was created.",
+  "phoneSelfCheckStart": "Start partial check",
+  "phoneSelfCheckCancel": "Request cancellation",
+  "phoneSelfCheckRetry": "Retry cleanup only",
+  "phoneSelfCheckRefresh": "Refresh status",
+  "phoneSelfCheckSave": "Save sanitized report",
+  "phoneSelfCheckSaving": "Saving…",
+  "phoneSelfCheckSaved": "Report saved to Downloads/DSH-Go.",
+  "phoneSelfCheckSaveFailed": "Could not save the report.",
+  "phoneSelfCheckReportHint": "Save only when you choose. The local report contains fixed results, with no screenshots, recognized text, logs, account data or run identifier.",
+  "phoneSelfCheckRunState": "{state, select, idle{Not started} running{Running partial check} cleaning{Cleaning up; cancellation does not undo sent input} done{Execution and cleanup ended; inspect each result below} cancelled{Cancelled; observed actions remain recorded} cleanup_pending{Cleanup unconfirmed — resources remain reserved} other{Status unavailable}}",
+  "@phoneSelfCheckRunState": {
+    "placeholders": {
+      "state": {
+        "type": "String"
+      }
+    }
+  },
+  "phoneSelfCheckStepState": "{state, select, not_run{Not run / no observation} running{Running} pass{Observed pass} fail{Failed} skipped{Skipped} unknown{Unconfirmed} cancelled{Cancelled} other{Unconfirmed}}",
+  "@phoneSelfCheckStepState": {
+    "placeholders": {
+      "state": {
+        "type": "String"
+      }
+    }
+  },
+  "phoneSelfCheckStage": "{stage, select, device{Device preconditions} channel{Selected channel} display{Presentation display} input_probe{Touch receiver} launch{App launch} tree{Accessibility tree} tap{App button tap} scroll{App scrolling} back{App back action} text_ascii{English text input} text_zh{Chinese text input} capture{Screenshot} continuity{Continuous operation} main{MAIN disturbance} ocr{Local OCR} cleanup{Strict cleanup} other{Unknown item}}",
+  "@phoneSelfCheckStage": {
+    "placeholders": {
+      "stage": {
+        "type": "String"
+      }
+    }
+  },
+  "phoneSelfCheckReason": "{reason, select, busy{The phone or channel is busy.} unsupported{This device or peer does not support this check.} cancelled{This request was cancelled or retired.} disabled{Phone control is turned off.} locked{The device is locked.} identity{The original run or channel no longer matches.} invalid{The request or result could not be verified.} display{The temporary display could not be verified.} input{Touch delivery was not confirmed. Sent input is not retried.} cleanup{Resource cleanup is unconfirmed. Retry only cleanup.} denied{The system denied the operation.} timeout{The operation timed out; sent work may still complete.} unavailable{The local status or selected channel is unavailable.} other{An unrecognized result was received.}}",
+  "@phoneSelfCheckReason": {
+    "placeholders": {
+      "reason": {
+        "type": "String"
+      }
+    }
+  }
 }

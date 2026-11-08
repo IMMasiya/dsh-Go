@@ -221,6 +221,17 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
         task?.active == true && task.id == taskId && !isLocked()
     }, ::emitStatus)
 
+    internal val selfCheck = PhoneSelfCheck(sessions, background, SystemClock::elapsedRealtime,
+        unavailable = {
+            when {
+                !isEnabled() -> PhoneSelfCheckReport.Reason.PHONE_DISABLED
+                Build.VERSION.SDK_INT < io.github.ccch1mneyyy.dsh_app.phone.background.BackgroundPolicy.MIN_SDK -> PhoneSelfCheckReport.Reason.UNSUPPORTED
+                isLocked() -> PhoneSelfCheckReport.Reason.LOCKED
+                else -> null
+            }
+        }, prepareReceiver = ::registerScreenOffNow,
+        changed = { refreshScreenOff(); emitStatus() })
+
     init {
         PhoneRegistry.notificationGate = notificationGate
         PhoneRegistry.promptGate = prompts
@@ -319,7 +330,7 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
             skillLifecycle.launched()
             val ep = bridge.start(withTcp = prefs.getBoolean(K_TCP_FALLBACK, false))
             PhoneGuest.writeConfig(rootfs, ep)
-            registerScreenOff()
+            refreshScreenOff()
             emitStatus()
             true
         } catch (e: Exception) {
@@ -377,6 +388,7 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
     }
 
     private fun stopBridge() {
+        selfCheck.stop()
         background.sealTask()
         bridge.stop()
         sessions.retire()
@@ -384,7 +396,7 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
         PhoneRegistry.overlayGate?.clearStatus { /* Stale displayed status only. */ }
         core.worker.retire()
         rootfs?.let { PhoneGuest.clearConfig(it) }
-        unregisterScreenOff()
+        refreshScreenOff()
     }
 
     val bridgeListening: Boolean get() = bridge.listening
@@ -514,25 +526,33 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
         it.line ?: AppStrings.get(app, R.string.phone_running) + (it.app?.let { label -> " · $label" } ?: "")
     }
 
-    private fun registerScreenOff() {
-        if (screenReceiver != null) return
-        val r = object : BroadcastReceiver() {
+    /** Receiver ownership stays on main; a pending selfcheck outlives an engine bridge. */
+    private fun refreshScreenOff() {
+        if (Looper.myLooper() != main.looper) { main.post { refreshScreenOff() }; return }
+        if (bridge.listening || selfCheck.needsReceiver) registerScreenOffNow()
+        else {
+            screenReceiver?.let { runCatching { app.unregisterReceiver(it) } }
+            screenReceiver = null
+        }
+    }
+
+    /** The local start method runs on main and requires registration before taking a lease. */
+    private fun registerScreenOffNow(): Boolean {
+        if (screenReceiver != null) return true
+        val receiver = object : BroadcastReceiver() {
             override fun onReceive(context: Context, intent: Intent) {
                 if (intent.action != Intent.ACTION_SCREEN_OFF) return
                 preview.refresh()
-                // l10n:keep agent stop reason
                 background.requestInterrupt()
-                onStopAllRequested("熄屏")
+                onStopAllRequested("熄屏") // l10n:keep agent stop reason
                 cleanupIo.execute { background.finishInterrupt() }
             }
         }
-        screenReceiver = r
-        runCatching { app.registerReceiver(r, IntentFilter(Intent.ACTION_SCREEN_OFF)) }
-    }
-
-    private fun unregisterScreenOff() {
-        screenReceiver?.let { runCatching { app.unregisterReceiver(it) } }
-        screenReceiver = null
+        return try {
+            app.registerReceiver(receiver, IntentFilter(Intent.ACTION_SCREEN_OFF))
+            screenReceiver = receiver
+            true
+        } catch (_: Exception) { false }
     }
 
     // ── Things the plugin asks for ──────────────────────────────────────────────────
@@ -724,7 +744,7 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
         displaySelection.view()?.let { it.task.interjectIfCurrent(it.owner, text) }
     }
 
-    override fun onStopAllRequested(reason: String) { sessions.stopAll(reason) }
+    override fun onStopAllRequested(reason: String) { selfCheck.stop(); sessions.stopAll(reason) }
 
     override fun onAccessibilityChanged(connected: Boolean) = emitStatus()
 

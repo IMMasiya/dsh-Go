@@ -64,9 +64,37 @@ class PhoneTaskSessions(
     private val retainedRuns = HashSet<Key>()
     private val lastAdmitted = mutableMapOf<String?, Task>()
     private val screens = mutableMapOf<PhoneScreen, Task>()
+    class SelfCheckLease internal constructor(internal val epoch: Long) {
+        internal var sealed = false
+    }
+    private var selfCheck: SelfCheckLease? = null
+
+    /** Local diagnostic reservation, never a synthetic task or skill scope. */
+    fun tryReserveSelfCheck(): SelfCheckLease? = synchronized(lock) {
+        if (resetting || selfCheck != null || screens.isNotEmpty() || retiring.isNotEmpty()) return null
+        if (entries.values.any { it.pending > 0 || it.running || it.closing || it.cancelling ||
+                it.cleanupFailed || it.ending || it.endRequested && !it.endSettled || it.tasks.isActive }) return null
+        SelfCheckLease(epoch).also { selfCheck = it }
+    }
+
+    fun selfCheckCurrent(lease: SelfCheckLease): Boolean = synchronized(lock) {
+        selfCheck === lease && !lease.sealed && lease.epoch == epoch && !resetting
+    }
+
+    fun sealSelfCheck(lease: SelfCheckLease) = synchronized(lock) {
+        if (selfCheck === lease) lease.sealed = true
+    }
+
+    /** Only the actual coordinator calls this after its physical IO has drained and released. */
+    fun releaseSelfCheck(lease: SelfCheckLease): Boolean = synchronized(lock) {
+        if (selfCheck !== lease) false
+        else { selfCheck = null; lock.notifyAll(); true }
+    }
 
     /** Called while PhoneBridge still holds its launch lock, before dispatch enters its pool. */
     fun admit(attribution: PhoneCaller?): Admission = synchronized(lock) {
+        // l10n:keep agent resource admission
+        if (selfCheck != null) return Admission(null, epoch, "本地自检正在占用手机，请稍后重试。")
         if (resetting || retiring.any { it.cancelling }) return Admission(null, epoch, PhoneTasks.STOPPED_MESSAGE)
         // B1 attribution alone does not prove the client can deliver an exact run end.
         val caller = attribution?.takeIf { it.runLifecycle == 1 }
@@ -449,6 +477,7 @@ class PhoneTaskSessions(
     fun retire() {
         val old = synchronized(lock) {
             resetting = true
+            selfCheck?.sealed = true
             epoch++
             entries.values.toList().also { records ->
                 for (task in records) {

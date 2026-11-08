@@ -105,6 +105,11 @@ class AdbStarter(private val context: Context, private val onChanged: () -> Unit
         }
     }
 
+    /** Short ownership read; never reconnects, probes, or waits for transport work. */
+    internal fun isPublished(expected: PrivilegedChannel): Boolean = synchronized(guard) {
+        channel === expected && operation == null
+    }
+
     /** Connects to the local adbd. mayStart is a nonblocking lease, checked before publication. */
     fun connect(port: Int? = null, whenAvailable: (() -> Unit)? = null, mayStart: () -> Boolean = { true }): PrivilegedChannel? {
         if (port != null && port !in 1..65535) return null
