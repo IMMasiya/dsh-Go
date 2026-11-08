@@ -155,12 +155,15 @@ class BackgroundDisplay internal constructor(
 
     override fun observe(detail: Boolean, image: Boolean): ScreenSnapshot = observeFrame(detail, image, true)
 
-    private fun observeFrame(detail: Boolean, image: Boolean, requestLocalText: Boolean): ScreenSnapshot {
+    override fun observe(detail: Boolean, image: Boolean, automaticImage: Boolean): ScreenSnapshot =
+        observeFrame(detail, image, true, automaticImage)
+
+    private fun observeFrame(detail: Boolean, image: Boolean, requestLocalText: Boolean, automaticImage: Boolean = false): ScreenSnapshot {
         coordinateImage.clear()
         val started = SystemClock.uptimeMillis()
         val ocrEpoch = if (requestLocalText) localOcr?.enabledEpoch() else null
         val target = currentTarget ?: return idleSnapshot()
-        val pixels = image || (ocrEpoch != null && coordinateSupported && localReadAllowed(target))
+        val pixels = image || automaticImage || (ocrEpoch != null && coordinateSupported && localReadAllowed(target))
         check(targetReady) { Reasons.of("targetIdentityUnavailable") }
         val request = Bundle().apply {
             putString(Proto.OP, Proto.OP_OBSERVE)
@@ -180,7 +183,7 @@ class BackgroundDisplay internal constructor(
         requireObservation(response.getBoolean(Proto.OK), response.getString(Proto.ERROR), response.getString(Proto.ERROR_DETAIL))
         requireIdentity(response)
         val local = if (requestLocalText) readLocalText(response, target, ocrEpoch, started) else null
-        return ocrSnapshot(response, false, image, local, ocrEpoch)
+        return ocrSnapshot(response, false, image || (automaticImage && response.get(Proto.POOR) == true), local, ocrEpoch)
     }
 
     private fun ocrSnapshot(response: Bundle, markNew: Boolean, image: Boolean,
