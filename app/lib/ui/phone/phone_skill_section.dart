@@ -134,6 +134,16 @@ class _PhoneSkillSectionState extends ConsumerState<PhoneSkillSection> {
     setState(() => _presenting = false);
   }
 
+  Future<void> _openResult(PhoneSkillSaveResult result) async {
+    if (_presenting) return;
+    setState(() => _presenting = true);
+    await showDialog<void>(context: context, barrierDismissible: false,
+      builder: (_) => PhoneSkillEditor.result(channel: ref.read(phoneChannelProvider), result: result));
+    if (!mounted) return;
+    setState(() => _presenting = false);
+    unawaited(ref.read(phoneProvider.notifier).refreshStatus());
+  }
+
   Future<void> _setPrompt(bool value) async {
     setState(() => _setting = true);
     final ok = await ref.read(phoneProvider.notifier).setSkillSavePrompt(value);
@@ -153,6 +163,15 @@ class _PhoneSkillSectionState extends ConsumerState<PhoneSkillSection> {
         trailing: Switch(value: widget.status.askAfterSuccess, onChanged: _setting ? null : _setPrompt),
         chevron: false,
       ),
+      for (final result in widget.status.saveResults)
+        ListPageRow(
+          icon: AppIcons.bookmark,
+          title: result.handle.name,
+          subtitle: context.l10n.phoneSkillBundleRevision(result.handle.bundleRevision),
+          trailing: TextButton(onPressed: _presenting ? null : () => _openResult(result),
+            child: Text(context.l10n.phoneSkillCheckWrite)),
+          chevron: false,
+        ),
       for (final candidate in widget.status.candidates)
         ListPageRow(
           icon: AppIcons.completed,
@@ -169,9 +188,13 @@ class _PhoneSkillSectionState extends ConsumerState<PhoneSkillSection> {
 }
 
 class PhoneSkillEditor extends StatefulWidget {
-  const PhoneSkillEditor({super.key, required this.channel, required this.candidate});
+  const PhoneSkillEditor({super.key, required this.channel, required PhoneSkillCandidate candidate})
+    : candidate = candidate, result = null;
+  const PhoneSkillEditor.result({super.key, required this.channel, required PhoneSkillSaveResult result})
+    : result = result, candidate = null;
   final PhoneChannel channel;
-  final PhoneSkillCandidate candidate;
+  final PhoneSkillCandidate? candidate;
+  final PhoneSkillSaveResult? result;
 
   @override
   State<PhoneSkillEditor> createState() => _PhoneSkillEditorState();
@@ -191,6 +214,7 @@ class _PhoneSkillEditorState extends State<PhoneSkillEditor> {
   bool _allowPop = false;
   bool _saved = false;
   PhoneSkillDraftView? _writeDraft;
+  PhoneSkillSaveHandle? _queryHandle;
   PhoneSkillReply? _unverified;
   String? _savedPath;
   String? _savedBundleRevision;
@@ -199,11 +223,17 @@ class _PhoneSkillEditorState extends State<PhoneSkillEditor> {
   @override
   void initState() {
     super.initState();
-    unawaited(_open());
+    final result = widget.result;
+    if (result == null) {
+      unawaited(_open());
+    } else {
+      _queryHandle = result.handle;
+      _accept(result.reply);
+    }
   }
 
   Future<void> _open() async {
-    final reply = await widget.channel.openSkillDraft(widget.candidate, confirmed: true);
+    final reply = await widget.channel.openSkillDraft(widget.candidate!, confirmed: true);
     if (!mounted) {
       // open can finish after this dialog was removed. Cancel only its returned
       // identity; native open always creates a new id, even for the same task.
@@ -214,13 +244,15 @@ class _PhoneSkillEditorState extends State<PhoneSkillEditor> {
   }
 
   bool _matchesWrite(PhoneSkillReply reply) {
+    final handle = _queryHandle;
+    if (handle != null) return reply.name == handle.name && reply.bundleRevision == handle.bundleRevision;
     final expected = _writeDraft ?? _draft;
     if (expected == null || reply.bundleRevision != expected.bundleRevision) return false;
     if (reply.kind == PhoneSkillReplyKind.saving && expected.bundleRevision == null) return reply.name == null;
     return reply.name == expected.skillName;
   }
 
-  void _accept(PhoneSkillReply reply, {bool fromOpen = false}) {
+  void _accept(PhoneSkillReply reply, {bool fromOpen = false, bool fromQuery = false}) {
     if (!mounted) return;
     final openTerminal = fromOpen && _draft == null && _writeDraft == null;
     setState(() {
@@ -228,9 +260,10 @@ class _PhoneSkillEditorState extends State<PhoneSkillEditor> {
       _error = null;
       switch (reply.kind) {
         case PhoneSkillReplyKind.shown:
+          if (fromQuery || widget.candidate == null) { _error = 'stale'; return; }
           final view = reply.draft!;
           final previous = _draft;
-          if (view.taskId != widget.candidate.taskId || view.generation != widget.candidate.generation ||
+          if (view.taskId != widget.candidate!.taskId || view.generation != widget.candidate!.generation ||
               previous != null && (view.draftId != previous.draftId || view.revision < previous.revision)) {
             _error = 'stale';
             return;
@@ -248,6 +281,7 @@ class _PhoneSkillEditorState extends State<PhoneSkillEditor> {
           _dirty = false;
           _confirmed = false;
           _pendingWrite = _writeDraft?.bundleRevision != null || view.phase == 'staging' || view.phase == 'committing';
+          if (_pendingWrite && view.bundleRevision != null) _queryHandle ??= PhoneSkillSaveHandle.fromDraft(view);
         case PhoneSkillReplyKind.saved:
           if (!openTerminal && !_matchesWrite(reply)) { _error = 'stale'; _confirmed = false; return; }
           _saved = true;
@@ -259,7 +293,7 @@ class _PhoneSkillEditorState extends State<PhoneSkillEditor> {
           _prerequisites.clear();
           for (final controller in _checks.values) { controller.clear(); }
         case PhoneSkillReplyKind.unverified:
-          if (!openTerminal && (_draft?.bundleRevision == null || !_matchesWrite(reply))) {
+          if (!openTerminal && (_queryHandle == null && _draft?.bundleRevision == null || !_matchesWrite(reply))) {
             _error = 'stale'; _confirmed = false; return;
           }
           _unverified = reply;
@@ -267,16 +301,16 @@ class _PhoneSkillEditorState extends State<PhoneSkillEditor> {
           _confirmed = false;
         case PhoneSkillReplyKind.saving:
           if (!_matchesWrite(reply)) { _error = 'stale'; _confirmed = false; return; }
-          _pendingWrite = true;
+          _pendingWrite = _unverified == null;
           _confirmed = false;
         case PhoneSkillReplyKind.rejected:
           // Only definite installer failures end a pending write. A transport/stale/busy
           // reply cannot establish whether the write has finished.
-          if (reply.code == 'io' || reply.code == 'no_home' || reply.code == 'conflict') {
+          if (!fromQuery && (reply.code == 'io' || reply.code == 'no_home' || reply.code == 'conflict')) {
             _pendingWrite = false;
             _writeDraft = null;
           }
-          _error = reply.code;
+          _error = fromQuery && const {'io', 'no_home', 'conflict'}.contains(reply.code) ? 'unavailable' : reply.code;
           _confirmed = false;
         case PhoneSkillReplyKind.discarded:
           _error = 'stale';
@@ -302,15 +336,24 @@ class _PhoneSkillEditorState extends State<PhoneSkillEditor> {
     setState(() {
       _busy = true; _confirmed = false; _writeDraft = draft;
       // Freeze before dispatch: losing this ACK does not establish that no bundle was published.
-      if (draft.bundleRevision != null) _pendingWrite = true;
+      if (draft.bundleRevision != null) {
+        _pendingWrite = true;
+        _queryHandle = PhoneSkillSaveHandle.fromDraft(draft);
+      }
     });
     _accept(await widget.channel.saveSkillDraft(draft, confirmed: true));
   }
 
   Future<void> _checkWrite() async {
-    if (_busy || _closing || _draft == null) return;
+    if (_busy || _closing || _queryHandle == null && _draft == null) return;
+    final handle = _queryHandle;
+    final channel = widget.channel;
+    final result = widget.result;
     setState(() => _busy = true);
-    _accept(await widget.channel.viewSkillDraft(_draft!));
+    final reply = handle == null ? await channel.viewSkillDraft(_draft!) : await channel.checkSkillSave(handle);
+    if (!mounted || !identical(channel, widget.channel) || !identical(result, widget.result) ||
+        !identical(handle, _queryHandle)) return;
+    _accept(reply, fromQuery: handle != null);
   }
 
   Future<void> _close() async {
@@ -379,6 +422,7 @@ class _PhoneSkillEditorState extends State<PhoneSkillEditor> {
                 SelectableText(_unverified!.relativePath!),
                 if (draft == null) Text(l10n.phoneSkillBundleRevision(_unverified!.bundleRevision!)),
               ],
+              if (draft == null && _pendingWrite) Text(l10n.phoneSkillWriting),
               if (!_saved && draft != null) ...[
                 if (draft.bundleRevision case final revision?) ...[
                   SelectableText(draft.skillName),
@@ -425,8 +469,8 @@ class _PhoneSkillEditorState extends State<PhoneSkillEditor> {
         ),
         actions: [
           TextButton(onPressed: _closing ? null : _close, child: Text(l10n.commonClose)),
-          if (draft != null && (_pendingWrite || _unverified != null)) TextButton(onPressed: _busy ? null : _checkWrite, child: Text(l10n.phoneSkillCheckWrite)),
-          if (!_saved && !_pendingWrite && _unverified == null) FilledButton(
+          if ((draft != null || _queryHandle != null) && (_pendingWrite || _unverified != null)) TextButton(onPressed: _busy ? null : _checkWrite, child: Text(l10n.phoneSkillCheckWrite)),
+          if (widget.result == null && !_saved && !_pendingWrite && _unverified == null) FilledButton(
             onPressed: editable && draft != null && !_dirty && _confirmed ? _save : null,
             child: Text(l10n.commonSave),
           ),

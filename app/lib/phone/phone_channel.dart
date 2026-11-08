@@ -1370,6 +1370,9 @@ class PhoneChannel {
         'revision': draft.revision, 'goal': goal, 'prerequisites': prerequisites,
         'checkpoints': checkpoints, 'stepOrder': stepOrder});
 
+  Future<PhoneSkillReply> checkSkillSave(PhoneSkillSaveHandle handle) =>
+      _skillReply('skillDraft', handle.query);
+
   Future<PhoneSkillReply> viewSkillDraft(PhoneSkillDraftView draft) => _skillReply('skillDraft',
       {'action': 'view', 'taskId': draft.taskId, 'draftId': draft.draftId});
 

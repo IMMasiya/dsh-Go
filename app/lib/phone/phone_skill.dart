@@ -19,15 +19,21 @@ class PhoneSkillCandidate {
 }
 
 class PhoneSkillStatus {
-  const PhoneSkillStatus({this.available = false, this.askAfterSuccess = false, this.candidates = const []});
+  const PhoneSkillStatus({this.available = false, this.askAfterSuccess = false, this.candidates = const [], this.saveResults = const []});
   final bool available;
   final bool askAfterSuccess;
   final List<PhoneSkillCandidate> candidates;
+  final List<PhoneSkillSaveResult> saveResults;
 
   factory PhoneSkillStatus.parse(Object? raw) {
     if (raw is! Map || raw['v'] is! int || raw['v'] != 1) return const PhoneSkillStatus();
     final values = raw['candidates'];
+    final results = raw['saveResults'];
     return PhoneSkillStatus(
+      saveResults: List.unmodifiable([
+        if (results is List)
+          for (final result in results.take(8)) ?PhoneSkillSaveResult.parse(result),
+      ]),
       available: true,
       askAfterSuccess: raw['askAfterSuccess'] == true,
       candidates: List.unmodifiable([
@@ -135,5 +141,44 @@ class PhoneSkillReply {
       default:
         return const PhoneSkillReply.unavailable();
     }
+  }
+}
+
+/// An existing native save record, not an editable draft or a filesystem path.
+class PhoneSkillSaveHandle {
+  const PhoneSkillSaveHandle._(this.taskId, this.draftId, this.name, this.bundleRevision);
+  final int taskId;
+  final String draftId;
+  final String name;
+  final String bundleRevision;
+
+  static PhoneSkillSaveHandle? fromDraft(PhoneSkillDraftView draft) => draft.bundleRevision == null ? null
+    : PhoneSkillSaveHandle._(draft.taskId, draft.draftId, draft.skillName, draft.bundleRevision!);
+
+  static PhoneSkillSaveHandle? parse(Object? raw) {
+    if (raw is! Map) return null;
+    final task = raw['taskId'], id = raw['draftId'], name = raw['name'], revision = raw['bundleRevision'];
+    if (task is! int || task <= 0 || id is! String || !_draftId.hasMatch(id) ||
+        name is! String || !_skillName.hasMatch(name) || revision is! String || !_draftId.hasMatch(revision)) return null;
+    return PhoneSkillSaveHandle._(task, id, name, revision);
+  }
+
+  Map<String, Object> get query => {'action': 'check_save', 'taskId': taskId, 'draftId': draftId,
+    'name': name, 'bundleRevision': bundleRevision};
+}
+
+class PhoneSkillSaveResult {
+  const PhoneSkillSaveResult._(this.handle, this.reply);
+  final PhoneSkillSaveHandle handle;
+  final PhoneSkillReply reply;
+
+  static PhoneSkillSaveResult? parse(Object? raw) {
+    final handle = PhoneSkillSaveHandle.parse(raw);
+    if (handle == null || raw is! Map) return null;
+    if (!const {'saving', 'saved', 'unverified'}.contains(raw['kind'])) return null;
+    // Display-only path. Queries send the frozen native identity, never a path.
+    final reply = PhoneSkillReply.parse({...raw, 'relativePath': 'skills/${handle.name}/SKILL.md'});
+    if (reply.kind == PhoneSkillReplyKind.rejected) return null;
+    return PhoneSkillSaveResult._(handle, reply);
   }
 }

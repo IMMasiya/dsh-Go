@@ -233,7 +233,7 @@ void main() {
         calls.add(call);
         if (call.method == 'saveSkillDraft') return {'kind': 'saving', 'phase': 'committing', 'name': _name, 'bundleRevision': _bundle};
         if (call.method == 'discardSkillDraft') return {'kind': 'discarded'};
-        if ((call.arguments as Map)['action'] == 'view') return ++views == 1 ? _unverified(publication) : _bundleSaved();
+        if ((call.arguments as Map)['action'] == 'check_save') return ++views == 1 ? _unverified(publication) : _bundleSaved();
         return _bundleView();
       });
       await _openAndSaveBundle(tester);
@@ -257,7 +257,7 @@ void main() {
       final writes = calls.where((c) => c.method == 'saveSkillDraft').toList();
       expect(writes.length, 1);
       expect(writes.single.arguments, {'taskId': 7, 'draftId': _id, 'revision': 1, 'confirmed': true});
-      expect(calls.where((c) => c.method == 'skillDraft' && (c.arguments as Map)['action'] == 'view').length, 2);
+      expect(calls.where((c) => c.method == 'skillDraft' && (c.arguments as Map)['action'] == 'check_save').length, 2);
       await tester.pumpWidget(const SizedBox());
       await tester.pump();
     });
@@ -288,7 +288,7 @@ void main() {
     });
   }
 
-  testWidgets('phase2 missing save ACK stays uncertain and view does not reinstall', (tester) async {
+  testWidgets('phase2 missing save ACK stays uncertain and check_save does not reinstall', (tester) async {
     var writes = 0;
     var discards = 0;
     messenger.setMockMethodCallHandler(_methods, (call) async {
@@ -297,7 +297,7 @@ void main() {
         throw PlatformException(code: 'IO', message: 'private native detail');
       }
       if (call.method == 'discardSkillDraft') { discards++; return _unverified('unknown'); }
-      if ((call.arguments as Map)['action'] == 'view') return _unverified('unknown');
+      if ((call.arguments as Map)['action'] == 'check_save') return _unverified('unknown');
       return _bundleView();
     });
     await _openAndSaveBundle(tester);
