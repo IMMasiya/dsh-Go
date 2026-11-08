@@ -13,6 +13,7 @@ import android.os.SystemClock
 import io.github.ccch1mneyyy.dsh_app.phone.PhoneControl
 import org.json.JSONArray
 import org.json.JSONObject
+import io.github.ccch1mneyyy.dsh_app.phone.skills.PhoneSkillRoute
 import java.io.File
 import java.util.concurrent.Executors
 
@@ -297,6 +298,41 @@ class RuntimeController private constructor(private val app: Context) : DshProce
 
     internal fun cancelManagedSkill(owner: ManagedSkillOwner, requestId: String? = null) {
         managedSkills.cancel(owner, requestId)
+    }
+
+    /** Original Runtime/root captured at the trusted local button request, never after queueing.
+     * This is a read origin, not an invocation or permission to execute a phone action. */
+    internal class PhoneSkillOrigin internal constructor(
+        internal val runtime: RuntimeController,
+        internal val generation: Int,
+        internal val root: File,
+    )
+
+    @Synchronized internal fun capturePhoneSkillOrigin(): PhoneSkillOrigin? =
+        if (phase == Phase.RUNNING && !runSafe && !resetting && stopGen < runGen &&
+            phoneSkillStoppedGeneration < runGen) PhoneSkillOrigin(this, runGen, installer.rootfs) else null
+
+    @Synchronized internal fun phoneSkillOriginCurrent(origin: PhoneSkillOrigin): Boolean =
+        origin.runtime === this && phase == Phase.RUNNING && !runSafe && !resetting &&
+            runGen == origin.generation && stopGen < origin.generation &&
+            phoneSkillStoppedGeneration < origin.generation
+
+    /** Uses the existing rootfs worker. The only descriptor input is the native reviewed table;
+     * private UI/JSON never supplies it. An empty table has no executable App registration.
+     * Caller keeps this same origin for pending/claim checks, outside registry/Tasks locks. */
+    internal fun readPhoneSkillBundle(origin: PhoneSkillOrigin, name: String, revision: String,
+        descriptors: Map<String, PhoneSkillRoute.Descriptor>,
+        onDone: (PhoneSkillBundleReader.Read) -> Unit) {
+        val reviewed = java.util.Collections.unmodifiableMap(LinkedHashMap(descriptors))
+        worker.execute {
+            val result = if (!phoneSkillOriginCurrent(origin)) {
+                PhoneSkillBundleReader.Read.Rejected(PhoneSkillBundleReader.Reason.UNAVAILABLE)
+            } else PhoneSkillBundleReader.read(origin.root, name, revision, reviewed)
+            main.post {
+                onDone(if (phoneSkillOriginCurrent(origin)) result
+                    else PhoneSkillBundleReader.Read.Rejected(PhoneSkillBundleReader.Reason.UNAVAILABLE))
+            }
+        }
     }
 
     /** User-selected phone draft only. Lock order: Controller -> write; no IO under either. */
