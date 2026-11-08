@@ -14,7 +14,7 @@ const { NativeToolExecutor } = await load('dsh-tool-executor-native');
 const { PtcExecutor } = await load('dsh-tool-executor-ptc');
 let serial = 0;
 
-async function fixture(t, { enabled = true, supported = true } = {}) {
+async function fixture(t, { enabled = true, supported = true, lifecycle = false } = {}) {
   const ctx = new Context();
   t.after(() => ctx.fiber.dispose());
   for (const name of ['dsh-session', 'dsh-session-projection', 'dsh-agent', 'dsh-llm',
@@ -22,7 +22,7 @@ async function fixture(t, { enabled = true, supported = true } = {}) {
   await ctx.plugin((await load('dsh-agent-loop')).AgentLoop, { agents: [] });
   await ctx.plugin(await load('dsh-mcp-client'), {
     serverName: 'phone', transport: 'stdio', command: process.execPath,
-    args: [fileURLToPath(new URL('./fixtures/phone-caller-mcp.mjs', import.meta.url)), supported ? 'supported' : 'legacy'],
+    args: [fileURLToPath(new URL('./fixtures/phone-caller-mcp.mjs', import.meta.url)), lifecycle ? 'lifecycle' : supported ? 'supported' : 'legacy'],
     dshGoPhoneCaller: enabled, failOnStartupError: true, reconnect: { enabled: false },
   });
   const native = new NativeToolExecutor(ctx);
@@ -108,3 +108,42 @@ test('no host Agent/log, no opt-in, or old server capability preserves legacy wi
     assert.equal((await old.run(await old.create())).caller, null);
   }
 });
+
+
+test('actual session end reaches managed MCP as a private ACK request with captured identity', async t => {
+  const f = await fixture(t, { lifecycle: true });
+  const a = await f.create(), b = await f.create();
+  const first = await f.run(a, 1), second = await f.run(b, 4);
+  assert.equal(first.caller.runLifecycle, 1);
+  assert.equal(second.caller.runLifecycle, 1);
+  a.session.append('turn/end', { turn: 1, reason: { kind: 'completed' } });
+  // The real Session event and MCP transport are async. Barrier through the peer's
+  // tool handler observes recorded requests; an unowned query cannot manufacture a run.
+  let ends;
+  const deadline = Date.now() + 5_000;
+  do {
+    ends = (await f.run(undefined, 1, {}, false)).ends;
+    if (ends.length === 0) await new Promise(resolve => setTimeout(resolve, 5));
+  } while (ends.length === 0 && Date.now() < deadline);
+  assert.deepEqual(ends, [{ v: 1, sessionId: a.session.id, runId: first.caller.runId, completion: 'completed' }]);
+  a.session.append('turn/end', { turn: 1, reason: { kind: 'error', message: 'must not leak' } });
+  b.session.append('turn/end', { turn: 4, reason: { kind: 'aborted', reason: 'must not leak' } });
+  do {
+    ends = (await f.run(undefined, 1, {}, false)).ends;
+    if (ends.length < 2) await new Promise(resolve => setTimeout(resolve, 5));
+  } while (ends.length < 2 && Date.now() < deadline);
+  assert.deepEqual(ends, [
+    { v: 1, sessionId: a.session.id, runId: first.caller.runId, completion: 'completed' },
+    { v: 1, sessionId: b.session.id, runId: second.caller.runId, completion: 'other' },
+  ]);
+});
+
+for (const options of [{ enabled: false, lifecycle: true }, { lifecycle: false }, { supported: false }]) {
+  test(`private end is not sent without opt-in and lifecycle negotiation: ${JSON.stringify(options)}`, async t => {
+    const f = await fixture(t, options), a = await f.create();
+    const call = await f.run(a, 1);
+    assert.equal(call.caller?.runLifecycle, undefined);
+    a.session.append('turn/end', { turn: 1, reason: { kind: 'completed' } });
+    assert.deepEqual((await f.run(undefined, 1, {}, false)).ends, []);
+  });
+}

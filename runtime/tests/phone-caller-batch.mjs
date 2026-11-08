@@ -12,6 +12,7 @@ const source = await readFile(join(process.env.DSH_PREFIX, 'node_modules/@deepse
 const module = new SourceTextModule(source);
 const imports = {
   'node:crypto': { randomUUID },
+  '@deepseek-ai/dsh-agent': { emitAgentEvent: (ctx, subject, name, payload) => ctx.emitted.push({ name, ...payload, agent: subject }) },
   './executor.js': { ToolBatchExecutionError: class extends Error { constructor(error) { super(error.message, { cause: error }); } } },
   './contracts.js': { TOOL_ABORTED_BEFORE_DISPATCH: 'ABORTED' },
   '@deepseek-ai/dsh-llm': { createToolResultMessage: value => value },
@@ -26,7 +27,10 @@ await module.link(name => {
 });
 await module.evaluate();
 const { executeToolBatch } = module.namespace;
-const agent = id => ({ session: { id, append() { return { seq: 1 }; } } });
+const agent = id => ({
+  session: { id, append() { return { seq: 1 }; } },
+  ctx: { emitted: [], listeners: [], on(name, callback) { this.listeners.push({ name, callback }); } },
+});
 let seq = 0;
 async function call(owner, turn, before = async () => {}) {
   let captured;
@@ -64,4 +68,42 @@ test('owner and turn survive delay; same turn stable, recreated Agent distinct, 
 test('calls without host Agent or logged turn retain legacy attribution', async () => {
   assert.equal((await call(undefined, undefined)).phoneCaller, undefined);
   assert.equal((await call(agent('A'), undefined)).phoneCaller, undefined);
+});
+
+
+test('real batch captures one scoped end listener, exact turn and original session object', async () => {
+  const a = agent('A'), b = agent('B');
+  const first = await call(a, 1), next = await call(a, 2);
+  assert.equal(a.ctx.listeners.length, 1);
+  const listener = a.ctx.listeners[0];
+  assert.equal(listener.name, 'session/event');
+  listener.callback(b.session, { type: 'turn/end', data: { turn: 1 } });
+  listener.callback(a.session, { type: 'step/end', data: { turn: 1 } });
+  listener.callback(a.session, { type: 'agent/turn-stopping', data: { turn: 1 } });
+  assert.equal(a.ctx.emitted.length, 0);
+  for (const turn of [1, 2]) listener.callback(a.session, { type: 'turn/end', data: { turn } });
+  assert.deepEqual(a.ctx.emitted.map(({ runId }) => runId), [first.phoneCaller.runId, next.phoneCaller.runId]);
+  assert.ok(a.ctx.emitted.every(e => e.agent === a && e.sessionId === 'A'));
+  const restored = agent('A');
+  const fresh = await call(restored, 1);
+  restored.ctx.listeners[0].callback(restored.session, { type: 'turn/end', data: { turn: 1 } });
+  assert.equal(restored.ctx.emitted[0].runId, fresh.phoneCaller.runId);
+  assert.notEqual(fresh.phoneCaller.runId, first.phoneCaller.runId);
+});
+
+
+test('end classification is finite and never forwards reason bodies', async () => {
+  const a = agent('classification'); await call(a, 1);
+  const receive = a.ctx.listeners[0].callback;
+  const cases = [
+    [{ kind: 'completed', body: 'secret' }, 'completed'],
+    ...['aborted', 'error', 'blocked', 'max-tokens'].map(kind => [{ kind, message: 'secret' }, 'other']),
+    [null, 'unknown'], [{ kind: 'new-future-kind', message: 'secret' }, 'unknown'],
+  ];
+  for (const [reason, expected] of cases) {
+    receive(a.session, { type: 'turn/end', data: { turn: 1, reason } });
+    const event = a.ctx.emitted.at(-1);
+    assert.equal(event.completion, expected);
+    assert.deepEqual(Object.keys(event).sort(), ['agent', 'completion', 'name', 'runId', 'sessionId']);
+  }
 });

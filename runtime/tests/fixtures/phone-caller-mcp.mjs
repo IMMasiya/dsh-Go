@@ -1,6 +1,7 @@
 // Synthetic MCP peer: no phone access. Only tests consume the echoed metadata.
 import { createInterface } from 'node:readline';
 
+const ends = [];
 for await (const line of createInterface({ input: process.stdin })) {
   const request = JSON.parse(line);
   if (request.id === undefined) continue;
@@ -11,8 +12,8 @@ for await (const line of createInterface({ input: process.stdin })) {
         protocolVersion: request.params.protocolVersion,
         capabilities: {
           tools: { listChanged: false },
-          ...(process.argv[2] === 'supported' ? {
-            experimental: { 'dsh-go/phone-caller': { v: 1, taskIsolation: 0 } },
+          ...(['supported', 'lifecycle'].includes(process.argv[2]) ? {
+            experimental: { 'dsh-go/phone-caller': { v: 1, taskIsolation: 0, ...(process.argv[2] === 'lifecycle' ? { runLifecycle: 1 } : {}) } },
           } : {}),
         },
         serverInfo: { name: 'synthetic-phone-caller', version: '1' },
@@ -24,8 +25,13 @@ for await (const line of createInterface({ input: process.stdin })) {
     case 'tools/call':
       result = { content: [{ type: 'text', text: JSON.stringify({
         args: request.params.arguments,
+        ends,
         caller: request.params._meta?.['dsh-go/phone-caller'] ?? null,
       }) }] };
+      break;
+    case 'dsh-go/phone-run-end':
+      ends.push(request.params);
+      result = {}; // ACK records intent only; this fixture has no device work.
       break;
     case 'ping':
       result = {};

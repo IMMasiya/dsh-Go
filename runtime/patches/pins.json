@@ -1543,6 +1543,26 @@
           "before": "17952abbbb42b85deb49254a83f1d839c7e0a15836d2601614f733298f177d19"
         }
       }
+    },
+    "zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz-phone-run-end.diff": {
+      "0.2.2-rc.1": {
+        "node_modules/@deepseek-ai/dsh-mcp-client/lib/index.js": {
+          "after": "851f298e025660da755bcd8207cba997a7520278ad189f4675e7e9c793c250a9",
+          "before": "01acaf2965cdd4389f7e2c7a73d364ed3e4329850692d1e1fb92e84469de8b63"
+        },
+        "node_modules/@deepseek-ai/dsh-mcp-client/lib/types/tools.d.ts": {
+          "after": "0bd873abe12af48b5a6552fe26f75fb478518d93d05daca2de5fc9e1b7f2bfb8",
+          "before": "fc9e870f41278b1750b704827cff70bca6c89d3f1a4e8bbfb041a375cfdc41b7"
+        },
+        "node_modules/@deepseek-ai/dsh-tools/lib/types/batch.js": {
+          "after": "dc556cd5a3cbd9cdc48b1e9d161baefc29ca5990609d590171c90e2792058fd7",
+          "before": "f6e8980e29f23ad8c36702bd24b6453d62dd6012544152ddd3441889f2a1a693"
+        },
+        "node_modules/@deepseek-ai/dsh-tools/lib/types/events.d.ts": {
+          "after": "2a8c42015d2cf4f276ce1ddc507e87ed03353a34b45d64fe45639333489941a4",
+          "before": "d9b88e373fb94f038c2ee76a30c45fdcd34bd8cca39cef7cd09a8d56de352ac9"
+        }
+      }
     }
   },
   "schema": 1
