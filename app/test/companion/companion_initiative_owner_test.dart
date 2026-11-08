@@ -489,7 +489,9 @@ void main() {
     final container = ProviderContainer();
     addTearDown(container.dispose);
     expect(container.read(companionInitiativePaceProvider), CompanionInitiativePace.rare);
-    await tester.runAsync(() => container.read(companionInitiativePaceProvider.notifier).set(CompanionInitiativePace.chatty));
+    await tester.runAsync(
+      () => container.read(companionInitiativePaceProvider.notifier).set(CompanionInitiativePace.chatty),
+    );
     final prefs = await SharedPreferences.getInstance();
     expect(prefs.getString('companion_initiative_pace'), 'chatty');
     final again = ProviderContainer();

@@ -19,7 +19,11 @@ abstract final class CompanionInitiativeRules {
 /// the person must be quiet first. At every pace she says nothing at night
 /// and invites at most once a visit.
 enum CompanionInitiativePace {
-  rare(maxPerDay: CompanionInitiativeRules.maxInvites, gapMs: CompanionInitiativeRules.inviteGapMs, quietMs: CompanionInitiativeRules.quietMs),
+  rare(
+    maxPerDay: CompanionInitiativeRules.maxInvites,
+    gapMs: CompanionInitiativeRules.inviteGapMs,
+    quietMs: CompanionInitiativeRules.quietMs,
+  ),
   often(maxPerDay: 6, gapMs: 2 * 60 * 60000, quietMs: 30000),
   chatty(maxPerDay: 12, gapMs: 30 * 60000, quietMs: 20000);
 

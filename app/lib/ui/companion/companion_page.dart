@@ -2723,11 +2723,7 @@ class _CompanionPageState extends ConsumerState<CompanionPage> implements Compan
                         icon: AppIcons.companionInvite,
                         tinted: false,
                         title: l10n.companionMenuPace,
-                        value: Text(
-                          _paceChoices(
-                            l10n,
-                          ).firstWhere((c) => c.$1 == _paceChoice(ref)).$2,
-                        ),
+                        value: Text(_paceChoices(l10n).firstWhere((c) => c.$1 == _paceChoice(ref)).$2),
                         onTap: () {
                           Navigator.of(sheet).pop();
                           _choosePace();
