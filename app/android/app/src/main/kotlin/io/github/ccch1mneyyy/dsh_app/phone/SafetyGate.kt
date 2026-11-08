@@ -189,7 +189,8 @@ class SafetyGate(
     sealed interface Verdict {
         object Allow : Verdict
         class Refuse(val message: String, val rule: String) : Verdict
-        class Confirm(val request: ConfirmRequest, val packageName: String?, val reason: String) : Verdict
+        class Confirm(val request: ConfirmRequest, val packageName: String?, val reason: String,
+                      internal val onlyOnce: Boolean = false) : Verdict
     }
 
     /** The outcome of asking (or of not needing to ask). */
@@ -320,6 +321,13 @@ class SafetyGate(
         return Verdict.Confirm(request, pkg, reason)
     }
 
+    /** Independent operation consent only; callers must check target/policy hard rules first.
+     * This never grants authority over a new target or waives subsequent checks.
+     */
+    internal fun confirmationOnce(sentence: String, pkg: String?, appLabel: String?, reason: String): Verdict =
+        Verdict.Confirm(ConfirmRequest(sentence = sentence, appLabel = appLabel ?: pkg,
+            packageName = pkg, firstInApp = false, offerTaskWaiver = false), pkg, reason, onlyOnce = true)
+
     /** Resolves a verdict, asking the person if needed. InterruptedException means stop. */
     fun resolve(verdict: Verdict, scope: SerialWorker.Scope, owner: PhoneTasks.Owner? = null): Result = when (verdict) {
         Verdict.Allow -> Result.Go("allowed")
@@ -337,6 +345,8 @@ class SafetyGate(
         val decision = scope.userWait { g.confirm(v.request.copy(owner = owner)) }
         // A real tap is not authority over a task that replaced the one being asked about.
         if (!tasks.isCurrent(owner)) return stopped()
+        if (v.onlyOnce && decision in setOf(Decision.ALLOW_APP_FOR_TASK, Decision.ALLOW_ALL_FOR_TASK, Decision.ALLOW_VISUAL_FOR_TASK))
+            return Result.No("确认返回了本请求不提供的权限，未继续操作；不要自动重试。", "denied") // l10n:keep
         if (v.request.visualScope != null && decision in setOf(Decision.ALLOW_APP_FOR_TASK, Decision.ALLOW_ALL_FOR_TASK))
             return Result.No("确认返回了本请求不提供的权限，未继续操作；不要自动重试。", "denied") // l10n:keep
         return when (decision) {
