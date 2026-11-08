@@ -6,6 +6,7 @@ import 'package:dsh_app/state/compose_inbox.dart';
 import 'package:dsh_app/state/hosts_state.dart';
 import 'package:dsh_app/state/phone_state.dart';
 import 'package:dsh_app/ui/common/list_page_row.dart';
+import 'package:dsh_app/ui/common/overview_card.dart';
 import 'package:dsh_app/ui/phone/action_log_page.dart';
 import 'package:dsh_app/ui/phone/dnd_mode_page.dart';
 import 'package:dsh_app/ui/phone/phone_control_screen.dart';
@@ -100,11 +101,19 @@ void main() {
       expect(h.runtime.starts, ['start']);
       expect(find.text('已开启，引擎正在重启'), findsOneWidget);
       expect(find.text('准备'), findsOneWidget);
+      await tester.scrollUntilVisible(find.text('进阶'), 200, scrollable: find.byType(Scrollable).first);
+      await tester.pumpAndSettle();
       expect(find.text('进阶'), findsOneWidget);
       final prefs = await SharedPreferences.getInstance();
       expect(prefs.getBool(PhoneController.disclosureKey), isTrue);
       expect(prefs.getBool(phoneBackgroundGuideSeenKey), isTrue);
 
+      // Return to the master card after checking the lower advanced section.
+      await tester.scrollUntilVisible(
+        find.descendant(of: find.byType(OverviewCard), matching: find.byType(Switch)),
+        -200, scrollable: find.byType(Scrollable).first,
+      );
+      await tester.pumpAndSettle();
       // Off, then on again: no second disclosure.
       await tester.tap(find.byType(Switch).first);
       await tester.pumpAndSettle();
@@ -238,6 +247,8 @@ void main() {
       await leaveAndResume(tester);
       expect(inTile('通知', find.text('已允许')), findsOneWidget);
 
+      await tester.scrollUntilVisible(find.text('后台运行'), 200, scrollable: find.byType(Scrollable).first);
+      await tester.pumpAndSettle();
       await tester.tap(find.text('后台运行'));
       await tester.pumpAndSettle();
       expect(find.byType(BackgroundGuidePage), findsOneWidget);
@@ -464,6 +475,8 @@ void main() {
           status: phoneStatus(mode: 'shizuku', backgroundReason: 'Shizuku 没有在运行'),
         ),
       );
+      await tester.scrollUntilVisible(find.text('不打扰模式'), 200, scrollable: find.byType(Scrollable).first);
+      await tester.pumpAndSettle();
       expect(find.text('Shizuku · Shizuku 没有在运行'), findsOneWidget);
       await tester.tap(find.text('不打扰模式'));
       await tester.pumpAndSettle();
