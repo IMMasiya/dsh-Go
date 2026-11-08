@@ -43,7 +43,7 @@ internal class Actuator(private val service: AccessibilityService, private val o
 
     fun close() { gestureThread.quitSafely() }
 
-    /** ACTION_CLICK / ACTION_LONG_CLICK on the node or its nearest clickable ancestor; a tap gesture last. */
+    /** Try one node action; use a tap gesture only when neither node nor ancestor offers one. */
     fun click(node: AccessibilityNodeInfo, bounds: Box, screen: Box, long: Boolean, allowed: () -> Boolean): Outcome {
         val action = if (long) AccessibilityNodeInfo.ACTION_LONG_CLICK else AccessibilityNodeInfo.ACTION_CLICK
         fun able(n: AccessibilityNodeInfo) = n.isEnabled && if (long) n.isLongClickable else n.isClickable
@@ -51,7 +51,8 @@ internal class Actuator(private val service: AccessibilityService, private val o
         InjectGuard.mark(0)
         if (able(node)) {
             if (!allowed()) return Outcome(false, null)
-            if (node.performAction(action)) return Outcome(true, Via.NODE)
+            val ok = node.performAction(action)
+            return Outcome(ok, if (ok) Via.NODE else null)
         }
         // A text inside a clickable row: a finger there would hit the row.
         val rect = Rect()
@@ -61,8 +62,8 @@ internal class Actuator(private val service: AccessibilityService, private val o
             parent.getBoundsInScreen(rect)
             if (able(parent) && rect.contains(bounds.centerX, bounds.centerY)) {
                 if (!allowed()) return Outcome(false, null)
-                if (parent.performAction(action)) return Outcome(true, Via.ANCESTOR)
-                break
+                val ok = parent.performAction(action)
+                return Outcome(ok, if (ok) Via.ANCESTOR else null)
             }
             parent = parent.parent
             depth++
@@ -137,12 +138,6 @@ internal class Actuator(private val service: AccessibilityService, private val o
             node.performAction(AccessibilityNodeInfo.ACTION_FOCUS)
         }
         if (!allowed()) return false
-        if (node.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args)) return true
-        // Some fields only accept text once they were clicked into.
-        if (!allowed()) return false
-        node.performAction(AccessibilityNodeInfo.ACTION_CLICK)
-        node.refresh()
-        if (!allowed()) return false
         return node.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args)
     }
 
@@ -162,7 +157,8 @@ internal class Actuator(private val service: AccessibilityService, private val o
             val action = scrollAction(scrollBits, horizontal, direction)
             if (action != null) {
                 if (!allowed()) return Outcome(false, null)
-                if (node.performAction(action)) return Outcome(true, Via.NODE)
+                val ok = node.performAction(action)
+                return Outcome(ok, if (ok) Via.NODE else null)
             }
         }
         // Keep clear of the status bar and the gesture-navigation strip at the bottom.

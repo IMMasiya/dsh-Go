@@ -451,7 +451,7 @@ internal class MainScreenDriver(private val service: PhoneA11yService, private v
                     if (SystemClock.uptimeMillis() > deadline) { stop = "超时"; break }
                     // l10n:keep agent screen result
                     val node = cap.native(list.ref) ?: run { stop = "列表不见了（界面变了）"; null } ?: break
-                    // Node failure can fall back to a gesture across another known window.
+                    // Without a node action, scrolling can use a gesture across another known window.
                     val scrollSources = cap.windows.mapNotNull { it.packageName }.toSet()
                     if (!scrollSourcesAllowed(scrollSources)) {
                         sourceDenied = true
@@ -639,7 +639,7 @@ internal class MainScreenDriver(private val service: PhoneA11yService, private v
         try {
             // l10n:keep agent screen result
             if ((r.el.packageName == ownPackage || r.snap.ownApp) && !lifted.ownApp) return ActionResult(false, "这是 DSH 自己的界面，不操作。")
-            // A failed node scroll falls back to a screen gesture within these bounds.
+            // Without a matching node action, scroll uses a screen gesture within these bounds.
             val sources = r.cap.windows.mapNotNull { it.packageName }.toSet()
             refuseHalted { allowed() && actionSourcesAllowed(sources) }?.let { return it }
             val before = clock.count
