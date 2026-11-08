@@ -35,6 +35,18 @@ class _RemoteClient extends DshClient {
   }
 }
 
+/// The active connection, switchable mid-test (another Host taking over).
+class _Active extends Notifier<AsyncValue<HostConnection?>> {
+  static late HostConnection initial;
+
+  @override
+  AsyncValue<HostConnection?> build() => AsyncData(initial);
+
+  void use(HostConnection connection) => state = AsyncData(connection);
+}
+
+final _active = NotifierProvider<_Active, AsyncValue<HostConnection?>>(_Active.new);
+
 DraftAttachment _file(String name, int size) => DraftAttachment(name: name, bytes: Uint8List(size));
 
 Widget _app(_RemoteClient client, FakePicker picker) => testApp(
@@ -69,6 +81,33 @@ void main() {
     expect(client.sent, [('s1', 'a.txt', 3), ('s1', 'photo.heic', 5000)]);
     expect(find.text('已传到电脑：a (1).txt、photo.heic'), findsOneWidget, reason: 'the Host-chosen names');
     expect(find.byType(CircularProgressIndicator), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('another Host taking over mid-batch stops it; nothing is sent there or announced', (tester) async {
+    usePhoneView(tester);
+    final first = _RemoteClient()..release = Completer<void>();
+    final second = _RemoteClient();
+    _Active.initial = HostConnection(client: first, isLocal: false);
+    final picker = FakePicker()..files = [_file('one.txt', 1), _file('two.txt', 2)];
+    await tester.pumpWidget(
+      testApp(
+        const Scaffold(body: WorkspaceUploadRow(sessionId: 's1')),
+        overrides: [
+          activeConnectionProvider.overrideWith((ref) => ref.watch(_active)),
+          attachmentPickerProvider.overrideWithValue(picker),
+        ],
+      ),
+    );
+    await tester.tap(find.text('传文件到电脑'));
+    await tester.pump();
+    final container = ProviderScope.containerOf(tester.element(find.byType(WorkspaceUploadRow)));
+    container.read(_active.notifier).use(HostConnection(client: second, isLocal: false));
+    first.release!.complete();
+    await tester.pumpAndSettle();
+    expect(first.sent.map((s) => s.$2), ['one.txt']);
+    expect(second.sent, isEmpty);
+    expect(find.textContaining('已传到电脑'), findsNothing);
     expect(tester.takeException(), isNull);
   });
 

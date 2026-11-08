@@ -68,10 +68,10 @@ void main() {
   });
   tearDown(() async => host.close());
 
-  Future<DshClient> connect({Set<String> refused = const {}}) async {
+  Future<DshClient> connect({Set<String> refused = const {}, Set<String>? capabilities}) async {
     final local = await DshClient.connect(baseUri: host.baseUri, token: FakeDsh.token, muxOptions: fastMux);
     addTearDown(local.close);
-    final client = DshClient.withCarrier(_Tunnel(local.carrier, refused));
+    final client = DshClient.withCarrier(_Tunnel(local.carrier, refused, capabilities));
     addTearDown(client.close);
     return client;
   }
@@ -81,8 +81,9 @@ void main() {
   Future<(TerminalAttachment, List<TerminalFrame>, List<Object>)> attach(
     DshClient client, {
     bool controlled = true,
+    TerminalEnvironment environment = TerminalEnvironment.defaults,
   }) async {
-    final attachment = client.attachTerminal('s1', 't1');
+    final attachment = client.attachTerminal('s1', 't1', environment: environment);
     final frames = <TerminalFrame>[];
     final errors = <Object>[];
     attachment.frames.listen(frames.add, onError: errors.add);
@@ -96,6 +97,18 @@ void main() {
     expect((await connect()).supportsTerminals, isTrue);
     expect((await connect(refused: {'terminal/follow'})).supportsTerminals, isFalse);
     expect((await connect(refused: {'terminal/resize'})).supportsTerminals, isFalse);
+  });
+
+  test('a Host that announced its features without harness.terminal.v1 has the terminal off', () async {
+    final off = await connect(capabilities: {'harness.remote.v3', 'workspace.upload.v1'});
+    expect(
+      (off.supportsTerminals, off.terminalsOffOnHost),
+      (true, true),
+      reason: 'still tried: the switch applies live',
+    );
+    final on = await connect(capabilities: {'harness.remote.v3', 'harness.terminal.v1'});
+    expect(on.terminalsOffOnHost, isFalse);
+    expect((await connect()).terminalsOffOnHost, isFalse, reason: 'no probe: the allow-list decides');
   });
 
   test('follow carries a fresh attachment id; input goes as unary calls bound to it, acked in order', () async {
@@ -161,6 +174,25 @@ void main() {
     expect(frames.whereType<TerminalAck>().map((a) => a.sequence), [1, 2, 3]);
   });
 
+  test('coalesced keys stay within the Host per-write byte budget', () async {
+    final client = await connect();
+    final (attachment, frames, _) = await attach(client, environment: const TerminalEnvironment(maxInputBytes: 3));
+    final gate = Completer<void>();
+    var held = false;
+    host.beforeRpc = (endpoint, args) async {
+      if (held) return;
+      held = true;
+      await gate.future;
+    };
+    expect(attachment.write('a'), isTrue);
+    await _until(() => held);
+    expect(attachment.write('bc'), isTrue);
+    expect(attachment.write('de'), isTrue);
+    gate.complete();
+    await _until(() => frames.whereType<TerminalAck>().length == 3);
+    expect(writes.map((w) => w['data']), ['a', 'bc', 'de'], reason: '"bcde" would be 4 bytes > 3');
+  });
+
   test('a refused call fails the attachment and is never replayed', () async {
     final client = await connect();
     host.handlers['terminal/write'] = (args) {
@@ -195,10 +227,14 @@ void main() {
 /// The local carrier as the ds-harness-remote tunnel looks: no uplink items,
 /// a fixed allow-list.
 class _Tunnel extends DshCarrier {
-  _Tunnel(this.inner, this.refused);
+  _Tunnel(this.inner, this.refused, this.capabilities);
 
   final DshCarrier inner;
   final Set<String> refused;
+  final Set<String>? capabilities;
+
+  @override
+  Set<String>? get peerCapabilities => capabilities;
 
   @override
   String get kind => 'tunnel-like';

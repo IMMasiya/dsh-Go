@@ -546,6 +546,15 @@ extension TerminalApi on DshClient {
   /// owner turned the terminal off answers `TERMINAL_DISABLED`.
   bool get supportsTerminals => carrier.supportsUplink ? carrier.allowsEndpoint('terminal/attach') : _followTerminals;
 
+  /// A Remote Host that announced its features without `harness.terminal.v1`:
+  /// its owner turned the terminal off in the Host's local Remote settings
+  /// (or the plugin predates it). Calls answer `TERMINAL_DISABLED` until the
+  /// owner turns it on, which takes effect without reconnecting.
+  bool get terminalsOffOnHost =>
+      !carrier.supportsUplink &&
+      _followTerminals &&
+      !(carrier.peerCapabilities?.contains('harness.terminal.v1') ?? true);
+
   bool get _followTerminals =>
       carrier.allowsEndpoint('terminal/follow') &&
       carrier.allowsEndpoint('terminal/write') &&
@@ -642,7 +651,7 @@ extension TerminalApi on DshClient {
     TerminalEnvironment environment = TerminalEnvironment.defaults,
   }) {
     if (!carrier.supportsUplink) {
-      final link = _FollowLink(this, sessionId, id);
+      final link = _FollowLink(this, sessionId, id, maxInputBytes: environment.maxInputBytes);
       return TerminalAttachment.over(items: link.items, send: link.send, cancel: link.cancel, environment: environment);
     }
     final MuxStream stream;
@@ -684,12 +693,16 @@ extension TerminalApi on DshClient {
 /// (then acknowledged together, in order), so typing over a slow relay does
 /// not wait one round trip per key.
 class _FollowLink {
-  _FollowLink(this._client, this._sessionId, this._id) : attachmentId = uuidV4() {
+  _FollowLink(this._client, this._sessionId, this._id, {required this.maxInputBytes}) : attachmentId = uuidV4() {
     _items = StreamController<Object?>(onListen: _open, onCancel: cancel);
   }
 
   /// Largest coalesced `terminal/write` (the Host accepts 64 Ki UTF-16 units).
   static const maxWriteChars = 32 * 1024;
+
+  /// The Host's per-write UTF-8 budget ([TerminalEnvironment.maxInputBytes]):
+  /// a coalesced write stays within it as each command already does.
+  final int maxInputBytes;
 
   final DshClient _client;
   final String _sessionId;
@@ -755,11 +768,15 @@ class _FollowLink {
         }
         switch (first['type']) {
           case 'write':
-            final data = StringBuffer(asString(first['data']) ?? '');
+            final firstData = asString(first['data']) ?? '';
+            final data = StringBuffer(firstData);
+            var bytes = utf8.encode(firstData).length;
             while (_queue.isNotEmpty && _queue.first['type'] == 'write') {
               final more = asString(_queue.first['data']) ?? '';
-              if (data.length + more.length > maxWriteChars) break;
+              final moreBytes = utf8.encode(more).length;
+              if (data.length + more.length > maxWriteChars || bytes + moreBytes > maxInputBytes) break;
               data.write(more);
+              bytes += moreBytes;
               sequences.add(asInt(_queue.removeFirst()['sequence']) ?? 0);
             }
             await _client.rpc.call('terminal/write', {..._target, 'data': data.toString()});
