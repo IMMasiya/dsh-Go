@@ -46,6 +46,37 @@ class _NativePreview {
   void emit(Object? event) => sink!.success(event);
 }
 
+/// Joins actual parsed event delivery before the sequence test pumps a frame.
+/// The async completer resumes after this map forwards to the active viewer.
+class _DeliveryPhoneChannel extends PhoneChannel {
+  _DeliveryPhoneChannel() : super(preview: _events);
+  Completer<void>? _delivery;
+  int _remaining = 0;
+
+  Future<void> expectDelivery(int count) {
+    if (count <= 0 || _delivery != null) {
+      throw StateError('A positive, non-overlapping event batch is required.');
+    }
+    final delivery = Completer<void>();
+    _delivery = delivery;
+    _remaining = count;
+    return delivery.future.timeout(const Duration(seconds: 10));
+  }
+
+  @override
+  Stream<PhonePreviewFrame?> previewFrames(int taskId) => super.previewFrames(taskId).map((frame) {
+    final delivery = _delivery;
+    if (delivery != null) {
+      _remaining--;
+      if (_remaining == 0) {
+        _delivery = null;
+        delivery.complete();
+      }
+    }
+    return frame;
+  });
+}
+
 /// MockStreamHandler.onCancel is void. Delay only the encoded ACK, so the
 /// production subscription must await its actual cancel Future before re-listen.
 class _CancelAckMessenger implements BinaryMessenger {
@@ -365,28 +396,37 @@ void main() {
     await tester.runAsync<void>(() async {
       final native = _NativePreview()..install();
       final images = _Images()..install();
+      final channel = _DeliveryPhoneChannel();
       try {
-        await _mount(tester, PhoneChannel(preview: _events));
+        await _mount(tester, channel);
         final image = await _frame(tester, native, images, 10);
+        final rejected = channel.expectDelivery(4);
         for (final event in [
           _event('off', 99, task: 8), _event('off', 99, generation: 0),
           _event('off', 9), _event('off', 10),
         ]) { native.emit(event); }
+        await rejected;
         await _flush(tester);
         expect(tester.widget<RawImage>(find.byType(RawImage)).image, same(image));
+        final cleared = channel.expectDelivery(1);
         native.emit(_event('off', 11));
+        await cleared;
         await _flush(tester);
         expect(find.byType(RawImage), findsNothing, reason: 'after current off sequence 11');
         expect(find.text(appL10n.phonePreviewOff), findsOneWidget);
         expect(image.debugDisposed, isTrue);
         // Older waiting/protected events must not revive or relabel the cleared observation.
+        final older = channel.expectDelivery(2);
         native.emit(_event('waiting', 10));
         native.emit(_event('protected', 99, task: 8));
+        await older;
         await _flush(tester);
         expect(find.text(appL10n.phonePreviewOff), findsOneWidget);
         final recovered = await _frame(tester, native, images, 12);
         expect(tester.widget<RawImage>(find.byType(RawImage)).image, same(recovered));
+        final malformed = channel.expectDelivery(1);
         native.emit({'malformed': true});
+        await malformed;
         await _flush(tester);
         expect(find.byType(RawImage), findsNothing, reason: 'after malformed event');
         expect(recovered.debugDisposed, isTrue);
