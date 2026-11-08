@@ -740,4 +740,69 @@ class PhoneCorePromptOwnerTest {
         assertEquals("example.app", (startedPlan!!.target as SystemTarget.Known).app.packageName)
     }
 
+
+    @Test fun lateHandlerDenyBeforeSystemCommitBlocksEveryEntryWithoutStoppingItsOwner() {
+        for (call in listOf(::openApp, ::openUrl, ::shareIntent)) {
+            policies = PhonePolicies()
+            prepareSystem = { policies = PhonePolicies(denyPackages = listOf("example.app")) }
+            val result = call()
+            assertTrue(result.text, result.isError)
+            assertEquals(0, launches + urls + intents)
+            assertNull(startedPlan)
+            assertTrue(tasks.isActive)
+            assertFalse(tasks.isStopped())
+            assertFalse(result.text.startsWith(PhoneTasks.STOPPED_MESSAGE))
+            assertNotEquals("stopped", core.log.last()!!.decision)
+        }
+    }
+
+    @Test fun lateShareSubjectDenyStillBlocksWhenItsHandlerIsDifferent() {
+        preparedTarget = SystemTarget.Known(AppEntry("Other handler", PhoneAppIdentity("other.handler", 20234)))
+        prepareSystem = { policies = PhonePolicies(denyPackages = listOf("example.app")) }
+        val result = shareIntent()
+        assertTrue(result.text, result.isError)
+        assertEquals(0, intents)
+        assertNull(startedPlan)
+        assertTrue(tasks.isActive)
+        assertFalse(tasks.isStopped())
+        assertFalse(result.text.startsWith(PhoneTasks.STOPPED_MESSAGE))
+        assertNotEquals("stopped", core.log.last()!!.decision)
+    }
+
+    @Test fun unrelatedLateDenyDoesNotCancelAnySystemEntry() {
+        for (call in listOf(::openApp, ::openUrl, ::shareIntent)) {
+            policies = PhonePolicies()
+            prepareSystem = { policies = PhonePolicies(denyPackages = listOf("unrelated.app")) }
+            val before = launches + urls + intents
+            val result = call()
+            assertFalse(result.text, result.isError)
+            assertEquals(before + 1, launches + urls + intents)
+            assertSame(preparedPlan, startedPlan)
+            assertTrue(tasks.isActive)
+            assertFalse(tasks.isStopped())
+        }
+        assertEquals(1, launches)
+        assertEquals(1, urls)
+        assertEquals(1, intents)
+    }
+
+    @Test fun policyTighteningAfterSystemStartPreservesAttemptWithoutRedispatch() {
+        for (call in listOf(::openApp, ::openUrl, ::shareIntent)) {
+            policies = PhonePolicies()
+            afterStart = { policies = PhonePolicies(denyPackages = listOf("example.app")) }
+            val before = launches + urls + intents
+            val result = call()
+            assertEquals(before + 1, launches + urls + intents)
+            assertSame(preparedPlan, startedPlan)
+            assertTrue(result.text, result.text.contains(if (before == 0) "launched" else "attempted"))
+            assertFalse(result.text.startsWith(PhoneTasks.STOPPED_MESSAGE))
+            assertNotEquals("stopped", core.log.last()!!.decision)
+            assertTrue(tasks.isActive)
+            assertFalse(tasks.isStopped())
+        }
+        assertEquals(1, launches)
+        assertEquals(1, urls)
+        assertEquals(1, intents)
+    }
+
 }

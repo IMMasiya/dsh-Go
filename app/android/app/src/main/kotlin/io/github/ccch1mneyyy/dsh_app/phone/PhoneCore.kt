@@ -374,7 +374,7 @@ class PhoneCore(
             }
             if (!current(owner)) return stoppedOut("open")
             skillTrace.markIncomplete(owner)
-            val r = env.system().launch(plan, tasks.systemDispatch(owner))
+            val r = launchSystem(plan, owner)
             return afterSystem(owner, scope, r, ui.get("phone_log_open_url_scheme", "打开链接 %1\$s:", url.substringBefore(':'))) // l10n:keep test default
         }
         val app = (plan.target as? SystemTarget.Known)?.app
@@ -386,7 +386,7 @@ class PhoneCore(
             if (!tasks.isCurrent(owner) || Thread.currentThread().isInterrupted) return stoppedOut("open")
             val ticket = skillTrace.beginOpen(owner, PhoneScreen.MAIN)
             val result = try {
-                env.system().launch(plan, tasks.systemDispatch(owner)).also {
+                launchSystem(plan, owner).also {
                     skillTrace.finish(ticket, it.ok, false, false)
                 }
             } catch (e: Throwable) { skillTrace.fail(ticket); throw e }
@@ -524,8 +524,28 @@ class PhoneCore(
         }
         if (!current(owner)) return stoppedOut("intent $kind")
         skillTrace.markIncomplete(owner)
-        val r = env.system().launch(plan, tasks.systemDispatch(owner))
+        val r = launchSystem(plan, owner, call.shareSubject)
         return afterSystem(owner, scope, r, "intent $kind")
+    }
+
+    /** PM may block after Core's first check. Recheck only this original target at start admission. */
+    private fun launchSystem(plan: SystemLaunch, owner: PhoneTasks.Owner, subject: AppEntry? = null): SysResult {
+        val handler = (plan.target as? SystemTarget.Known)?.app
+        val denied = AtomicReference<SafetyGate.Verdict.Refuse?>(null)
+        val dispatch = tasks.systemDispatch(owner) {
+            val refusal = subject?.let { safety.checkOpen(it.packageName, it.label) }
+                ?: handler?.let { safety.checkOpen(it.packageName, it.label) }
+            if (refusal != null) denied.compareAndSet(null, refusal)
+            denied.get() == null
+        }
+        return try {
+            env.system().launch(plan, dispatch)
+        } catch (e: InterruptedException) {
+            // Only this call's explicit policy refusal means no start was committed. Owner
+            // cancellation keeps its original exception; an already committed start is not recalled.
+            val refusal = denied.get() ?: throw e
+            SysResult(false, refusal.message)
+        }
     }
 
     private fun notify(a: Args, owner: PhoneTasks.Owner): Out {
