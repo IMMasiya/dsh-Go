@@ -2,7 +2,6 @@ package io.github.ccch1mneyyy.dsh_app.phone.a11y
 
 import android.content.Context
 import android.content.pm.PackageManager
-import io.github.ccch1mneyyy.dsh_app.phone.skills.PhoneSkillNavigationWitness
 import java.security.MessageDigest
 
 /** One reviewed public navigation relation, not a general App/label matcher or execution grant.
@@ -91,12 +90,21 @@ internal object MarkorNavigation {
         return Before(app, observation)
     }
 
-    fun after(context: Context, before: Before, cap: Capture): PhoneSkillNavigationWitness? {
+    fun afterObservation(context: Context, before: Before, cap: Capture): Observation? {
         if (!readable(cap)) return null
         val (app, labels) = installed(context) ?: return null
         if (app != before.app) return null
-        val now = inspect(cap.windows, labels) ?: return null
-        if (now.windowId != before.observation.windowId || now.selected != "nav_more") return null
-        return PhoneSkillNavigationWitness(app.uid, app.version, app.updated, app.signers)
+        return inspect(cap.windows, labels)?.takeIf { it.windowId == before.observation.windowId }
     }
+
+    fun selectedObservation(context: Context, cap: Capture,
+        selected: io.github.ccch1mneyyy.dsh_app.phone.skills.PhoneSkillReplaySelections.App): Observation? {
+        if (selected.packageName != PACKAGE || !readable(cap)) return null
+        val (app, labels) = installed(context) ?: return null
+        if (app.uid != selected.uid || app.version != selected.version || app.updated != selected.updated ||
+            app.signers != selected.signers) return null
+        return inspect(cap.windows, labels)
+    }
+
+
 }

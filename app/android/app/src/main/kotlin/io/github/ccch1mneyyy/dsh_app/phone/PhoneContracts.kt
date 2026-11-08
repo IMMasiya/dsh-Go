@@ -181,6 +181,9 @@ interface PhoneDriver {
     /** Captures only the original committed observation's editor. */
     fun prepareFocusInput(screenId: String): Either<String, FocusInput> =
         Either.Left("当前屏幕不能核实原焦点输入连接；请 handoff，不要改用全文替换或重复输入。") // l10n:keep agent focus result
+    /** Native reviewed-route operation; default drivers cannot execute it. */
+    fun prepareSkillReplayStep(step: SkillReplayStep): Either<String, SkillReplayPlan> =
+        Either.Left("当前屏幕不支持已核手机路线，未执行。") // l10n:keep agent replay result
 
     /** Pure memory, tied to this exact published observation; independent of image acceptance. */
     fun visualScope(screenId: String): VisualScope? = null

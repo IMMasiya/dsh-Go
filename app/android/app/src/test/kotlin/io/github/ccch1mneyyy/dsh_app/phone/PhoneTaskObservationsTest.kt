@@ -6,6 +6,10 @@ import org.junit.Test
 
 class PhoneTaskObservationsTest {
     private class Driver : PhoneDriver {
+        var replayPlan: SkillReplayPlan? = null
+        override fun prepareSkillReplayStep(step: SkillReplayStep): Either<String, SkillReplayPlan> =
+            replayPlan?.let { Either.Right(it) } ?: Either.Left("unsupported")
+
         override val screen = PhoneScreen.MAIN
         var actions = 0
         var performedScreen: ScreenSnapshot? = null
@@ -393,6 +397,7 @@ class PhoneTaskObservationsTest {
             "collect(String,int,int,String,Function0,Function1,Function1)",
             "target(String,int)",
             "prepareFocusInput(String)",
+            "prepareSkillReplayStep(SkillReplayStep)",
             "visualScope(String)",
             "coordinateTarget(TapXY)",
             "perform(PhoneAction)",
@@ -555,4 +560,39 @@ class PhoneTaskObservationsTest {
         assertNull(bound.target("s1", 1))
     }
 
+
+    @Test fun replayPlanKeepsPrivateBeforeOutOfLedgerAndGuardsOriginalOwnerAtPerform() {
+        val tasks = PhoneTasks(); val original = owner(tasks); val physical = Driver()
+        var closed = 0; var writes = 0; var externalChecks = 0
+        physical.replayPlan = object : SkillReplayPlan {
+            override val before = ScreenSnapshot("sPrivate", "private before", "App", "app")
+            override val target: TargetInfo? = null
+            override val alreadySatisfied = false
+            override val attempted get() = writes > 0
+            override val post = SkillReplayPost.UNKNOWN
+            override fun perform(allowed: () -> Boolean): ActionResult {
+                if (!allowed()) return ActionResult(false, "paused")
+                writes++
+                return ActionResult(true, "one", before.copy(id = "sAfter"))
+            }
+            override fun close() { closed++ }
+        }
+        val bound = PhoneTaskObservations(tasks).bind(physical, original)
+        val app = io.github.ccch1mneyyy.dsh_app.phone.skills.PhoneSkillReplaySelections.App("app", 1, 1, 1, "a".repeat(64))
+        val step = io.github.ccch1mneyyy.dsh_app.phone.skills.PhoneSkillRoute.Step(
+            io.github.ccch1mneyyy.dsh_app.phone.skills.PhoneSkillRoute.Op.OPEN_APP, "app1", PhoneScreen.MAIN,
+            post = io.github.ccch1mneyyy.dsh_app.phone.skills.PhoneSkillRoute.Post.PageIs("fixture"))
+        val plan = (bound.prepareSkillReplayStep(SkillReplayStep(app, step)) as Either.Right).value
+        assertNull(bound.target("sPrivate", 1))
+        tasks.setPaused(true)
+        assertFalse(plan.perform { externalChecks++; true }.ok)
+        assertEquals(0, externalChecks); assertEquals(0, writes)
+        tasks.setPaused(false)
+        assertTrue(plan.perform { externalChecks++; true }.ok)
+        assertNull("private after is not a returned model observation", bound.target("sAfter", 1))
+        tasks.stop("test"); tasks.clearStop(); owner(tasks)
+        assertThrows(InterruptedException::class.java) { plan.perform { externalChecks++; true } }
+        assertEquals(1, writes); assertEquals(1, externalChecks)
+        plan.close(); assertEquals(1, closed)
+    }
 }

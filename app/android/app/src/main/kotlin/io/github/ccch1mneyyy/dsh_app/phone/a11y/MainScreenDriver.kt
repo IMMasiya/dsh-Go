@@ -25,6 +25,9 @@ import android.view.Display
 import android.view.accessibility.AccessibilityNodeInfo
 import io.github.ccch1mneyyy.dsh_app.phone.ActionResult
 import io.github.ccch1mneyyy.dsh_app.phone.Either
+import io.github.ccch1mneyyy.dsh_app.phone.SkillReplayStep
+import io.github.ccch1mneyyy.dsh_app.phone.SkillReplayPlan
+import io.github.ccch1mneyyy.dsh_app.phone.SkillReplayPost
 import io.github.ccch1mneyyy.dsh_app.phone.FocusInput
 import io.github.ccch1mneyyy.dsh_app.phone.FocusObservation
 import io.github.ccch1mneyyy.dsh_app.phone.Availability
@@ -572,6 +575,84 @@ internal class MainScreenDriver(private val service: PhoneA11yService, private v
         }
     }
 
+    override fun prepareSkillReplayStep(step: SkillReplayStep): Either<String, SkillReplayPlan> = synchronized(lock) {
+        val relation = io.github.ccch1mneyyy.dsh_app.phone.skills.PhoneSkillRoute.Step(
+            io.github.ccch1mneyyy.dsh_app.phone.skills.PhoneSkillRoute.Op.SELECT_OPTION, "app1", PhoneScreen.MAIN,
+            "navigation", "bottom-tabs", io.github.ccch1mneyyy.dsh_app.phone.skills.PhoneSkillRoute.Value.OptionLiteral("more"),
+            io.github.ccch1mneyyy.dsh_app.phone.skills.PhoneSkillRoute.Post.OptionSelected)
+        if (step.relation != relation || Looper.myLooper() == Looper.getMainLooper() || !availability().ok)
+            return Either.Left("当前页面不能核实这条公共路线，未执行。") // l10n:keep
+        val cap = capture()
+        try {
+            val observed = MarkorNavigation.selectedObservation(service, cap, step.app)
+                ?: return Either.Left("当前应用或导航页面不符合已核路线，未执行。") // l10n:keep
+            val snap = publish(cap, detail = false)
+            val satisfied = observed.selected == "nav_more"
+            val el = if (satisfied) null else {
+                if (!observed.moreCanClick) return Either.Left("当前更多选项不可直接操作，未执行。") // l10n:keep
+                val hit = ScreenFormat.index(cap.windows).singleOrNull { it.ref == observed.moreRef }
+                    ?: return Either.Left("当前路线目标不唯一，未执行。") // l10n:keep
+                snap.screen.elements.singleOrNull { it.fingerprint == hit.fingerprint }
+                    ?: return Either.Left("当前路线目标没有唯一可核对编号，未执行。") // l10n:keep
+            }
+            Either.Right(NavigationReplayPlan(step, observed.windowId, snap, el, satisfied, abortGen))
+        } finally { cap.recycle() }
+    }
+
+    private inner class NavigationReplayPlan(private val step: SkillReplayStep, private val window: Int,
+        private val original: Snapshot, element: ScreenElement?, override val alreadySatisfied: Boolean,
+        private val generation: Long) : SkillReplayPlan {
+        private var used = false
+        private var closed = false
+        override val before: ScreenSnapshot = toSnapshot(original)
+        override val target: TargetInfo? = element?.let { info(original.id, it) }
+        @Volatile override var attempted: Boolean = false
+            private set
+        @Volatile override var post: SkillReplayPost = SkillReplayPost.UNKNOWN
+            private set
+        override fun close() = synchronized(lock) { closed = true }
+        override fun perform(allowed: () -> Boolean): ActionResult = synchronized(lock) {
+            if (closed || used) return ActionResult(false, "原路线步骤已使用或失效，没有再次操作。") // l10n:keep
+            used = true
+            actionDeadline = SystemClock.uptimeMillis() + 30_000L
+            actionBeforeImage = null
+            if (cancelled(generation) || !allowed() || !availability().ok || !awaitInputIdle() || !allowed())
+                return ActionResult(false, "原路线步骤已停止，没有继续操作。") // l10n:keep
+            val cap = capture()
+            try {
+                val observed = MarkorNavigation.selectedObservation(service, cap, step.app)
+                    ?.takeIf { it.windowId == window }
+                    ?: return ActionResult(false, "原路线应用、页面或窗口已改变，没有操作。") // l10n:keep
+                val snap = publish(cap, detail = false)
+                val app = MarkorNavigation.App(step.app.uid, step.app.version, step.app.updated, step.app.signers)
+                val navigation = MarkorNavigation.Before(app, observed)
+                if (observed.selected == "nav_more") {
+                    if (!allowed() || cancelled(generation)) return ActionResult(false, "原路线步骤已停止。") // l10n:keep
+                    post = SkillReplayPost.SATISFIED
+                    return ActionResult(true, "更多已选中；本步没有再次点击，仅核验该公开选中状态。", // l10n:keep
+                        toSnapshot(snap), navigationWitness = io.github.ccch1mneyyy.dsh_app.phone.skills.PhoneSkillNavigationWitness(
+                            app.uid, app.version, app.updated, app.signers))
+                }
+                if (alreadySatisfied) return ActionResult(false, "准备后选中状态改变，没有把只读核验改成点击。") // l10n:keep
+                val hit = ScreenFormat.index(cap.windows).singleOrNull { it.ref == observed.moreRef }
+                    ?: return ActionResult(false, "原路线目标不唯一，没有操作。") // l10n:keep
+                val el = snap.screen.elements.singleOrNull { it.fingerprint == hit.fingerprint }
+                    ?: return ActionResult(false, "原路线目标不可核对，没有操作。") // l10n:keep
+                val node = cap.native(hit.ref) ?: return ActionResult(false, "原路线目标不可读取，没有操作。") // l10n:keep
+                refuseWrite(Resolved(snap, el, cap, node, hit))?.let { return it }
+                if (!observed.moreCanClick || !node.isEnabled || !allowed() || cancelled(generation))
+                    return ActionResult(false, "原路线目标或权限改变，没有操作。") // l10n:keep
+                val events = clock.count
+                attempted = true
+                val accepted = node.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+                // One actual NODE request only. False may be an in-flight timeout; no fallback/retry.
+                after(events, snap, generation,
+                    if (accepted) "已尝试选择更多；以下核对仅针对公开选中状态。" else "节点请求未确认，可能已有作用，不要重试。", // l10n:keep
+                    ok = accepted, navigation = navigation, navigationPost = { post = it })
+            } finally { cap.recycle() }
+        }
+    }
+
     override fun target(screenId: String, elementId: Int): TargetInfo? = synchronized(lock) {
         val snap = latest ?: return null
         if (snap.id != screenId) return null
@@ -1112,7 +1193,7 @@ internal class MainScreenDriver(private val service: PhoneA11yService, private v
 
     /** Waits for the UI to settle, reads the new screen (`+` marks) and says whether anything changed. */
     private fun after(before: Long, previous: Snapshot?, gen: Long, message: String, scrolled: Boolean = false, previousImage: ImageObservation? = actionBeforeImage, ok: Boolean = true,
-                      navigation: MarkorNavigation.Before? = null): ActionResult {
+                      navigation: MarkorNavigation.Before? = null, navigationPost: ((SkillReplayPost) -> Unit)? = null): ActionResult {
         if (cancelled(gen)) throw InterruptedException()
         clock.settle(before, 1_500, 300, 3_000) { cancelled(gen) }
         if (cancelled(gen)) throw InterruptedException()
@@ -1192,8 +1273,13 @@ internal class MainScreenDriver(private val service: PhoneA11yService, private v
                     VisualFrame.Change.UNAVAILABLE -> "（截图无法比较，不能验证这次操作；不要自动重复操作。）"
                 }
             }
-            val witness = if (ok && !snap.hidden && !screenshotSecure && !cancelled(gen))
-                navigation?.let { MarkorNavigation.after(service, it, cap) } else null
+            val observedNavigation = if (ok && !snap.hidden && !screenshotSecure && !cancelled(gen))
+                navigation?.let { MarkorNavigation.afterObservation(service, it, cap) } else null
+            if (observedNavigation != null) navigationPost?.invoke(
+                if (observedNavigation.selected == "nav_more") SkillReplayPost.SATISFIED else SkillReplayPost.DIFFERENT)
+            val witness = if (observedNavigation?.selected == "nav_more") navigation?.app?.let {
+                io.github.ccch1mneyyy.dsh_app.phone.skills.PhoneSkillNavigationWitness(it.uid, it.version, it.updated, it.signers)
+            } else null
             return ActionResult(ok, message + note + visualNote, toSnapshot(snap, text + ocrText).copy(secure = snap.hidden || screenshotSecure),
                 navigationWitness = witness)
         } finally { cap.recycle() }

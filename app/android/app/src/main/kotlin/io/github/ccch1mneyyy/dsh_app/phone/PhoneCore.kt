@@ -2,6 +2,8 @@ package io.github.ccch1mneyyy.dsh_app.phone
 
 import io.github.ccch1mneyyy.dsh_app.phone.background.Reasons
 import io.github.ccch1mneyyy.dsh_app.phone.skills.PhoneTaskTrace
+import io.github.ccch1mneyyy.dsh_app.phone.skills.PhoneSkillReplaySelections
+import io.github.ccch1mneyyy.dsh_app.phone.skills.PhoneSkillOutcomes
 import java.time.ZoneId
 import java.util.concurrent.atomic.AtomicReference
 
@@ -87,6 +89,9 @@ class PhoneCore(
         val name: String, val args: Args, val owner: PhoneTasks.Owner,
         val screens: List<PhoneScreen>, val launch: SystemLaunch? = null,
         val shareSubject: AppEntry? = null,
+        internal val replay: PhoneSkillReplaySelections.Selection? = null,
+        internal val replaySelections: PhoneSkillReplaySelections? = null,
+        internal val replayOutcomes: PhoneSkillOutcomes? = null,
     ) {
         // Only Sessions reads/writes acquisition under its registry lock; never a Core-wide grant.
         internal var borrowedMainForBackgroundOpen = false
@@ -96,6 +101,106 @@ class PhoneCore(
         // selected package on MAIN before moving it; its actual target is checked by T1a.
         val unknownApp: Boolean get() = PhoneScreen.MAIN in screens &&
             !(name == PhoneToolCatalog.OPEN && args.bool("background") == true)
+    }
+
+    /** Only a first claimed native Selection reaches this path; public args never construct it. */
+    internal fun prepareReplayCall(selection: PhoneSkillReplaySelections.Selection,
+        selections: PhoneSkillReplaySelections, outcomes: PhoneSkillOutcomes,
+        owner: PhoneTasks.Owner): Either<ToolOutput, PreparedCall> {
+        if (!env.enabled() || !selection.sourceCurrent() || !selections.current(selection))
+            return Either.Left(ToolOutput("原手机路线来源已失效，未执行。", isError = true)) // l10n:keep replay result
+        val key = PhoneSkillOutcomes.Key(selection.request.name, selection.request.revision, selection.bundle.routeSha256)
+        if (outcomes.begin(selection.invocation, key) !in setOf(PhoneSkillOutcomes.Result.SAVED, PhoneSkillOutcomes.Result.UNCHANGED))
+            return Either.Left(ToolOutput("路线结果记录不可用，未执行。", isError = true)) // l10n:keep replay result
+        return Either.Right(PreparedCall(REPLAY, Args(emptyMap()), owner, listOf(PhoneScreen.MAIN),
+            replay = selection, replaySelections = selections, replayOutcomes = outcomes))
+    }
+
+    private fun replay(call: PreparedCall, scope: SerialWorker.Scope, owner: PhoneTasks.Owner): Out {
+        val selection = checkNotNull(call.replay)
+        val selections = checkNotNull(call.replaySelections)
+        val outcomes = checkNotNull(call.replayOutcomes)
+        fun live() = current(owner) && !tasks.isPaused && !env.isLocked() && env.enabled() &&
+            selection.sourceCurrent() && selections.current(selection)
+        fun stop(reason: String): Out = Out(reason + " 已停止路线，不会自动重试；请交回用户或模型。", // l10n:keep replay result
+            error = true, summary = REPLAY, decision = "handed_back")
+        if (!live()) return stop("原任务或路线已不可继续。") // l10n:keep replay result
+        val driver = when (val result = driverFor(PhoneScreen.MAIN, owner)) {
+            is Either.Left -> return stop(result.value)
+            is Either.Right -> result.value
+        }
+        for (step in selection.bundle.route.steps) {
+            if (!live()) return stop("原任务或路线已不可继续。") // l10n:keep replay result
+            val plan = when (val result = driver.prepareSkillReplayStep(SkillReplayStep(selection.app, step))) {
+                is Either.Left -> return stop(result.value)
+                is Either.Right -> result.value
+            }
+            plan.use {
+                val packages = plan.before.readPackages + selection.app.packageName
+                safety.checkReadSources(env.policies(), packages)?.let { return stop(it.message) }
+                val target = plan.target
+                var confirmed = false
+                val refusal = AtomicReference<SafetyGate.Result.No?>(null)
+                fun writeVerdict() = safety.checkWrite(WriteKind.TAP, target, selection.app.packageName,
+                    target?.appLabel, null, false, null, null, PhoneScreen.MAIN, null)
+                if (!plan.alreadySatisfied) {
+                    if (target == null) return stop("当前页面没有唯一可操作目标。") // l10n:keep replay result
+                    val verdict = writeVerdict()
+                    when (val result = safety.resolve(verdict, scope, owner)) {
+                        is SafetyGate.Result.No -> return stop(result.message)
+                        is SafetyGate.Result.Go -> confirmed = verdict is SafetyGate.Verdict.Confirm
+                    }
+                }
+                fun allowed(): Boolean {
+                    if (!live() || refusal.get() != null) return false
+                    val read = safety.checkReadSources(env.policies(), packages)
+                    if (read != null) refusal.compareAndSet(null, SafetyGate.Result.No(read.message, "refused:${read.rule}"))
+                    if (!plan.alreadySatisfied && refusal.get() == null) {
+                        val denied = when (val verdict = writeVerdict()) {
+                            is SafetyGate.Verdict.Refuse -> SafetyGate.Result.No(verdict.message, "refused:${verdict.rule}")
+                            is SafetyGate.Verdict.Confirm -> if (confirmed) null else SafetyGate.Result.No(
+                                "策略已变化，原确认不足。", "refused:policy-changed") // l10n:keep replay result
+                            SafetyGate.Verdict.Allow -> null
+                        }
+                        if (denied != null) refusal.compareAndSet(null, denied)
+                    }
+                    return refusal.get() == null
+                }
+                if (!allowed()) return stop(refusal.get()?.message ?: "原任务或路线已不可继续。") // l10n:keep replay result
+                // Durable uncertainty marker precedes a possible click, outside all driver/Tasks locks.
+                // It is NOT evidence that dispatch happened. A known no-attempt result stays not_started.
+                if (!plan.alreadySatisfied && outcomes.markDispatch(selection.invocation) !in
+                    setOf(PhoneSkillOutcomes.Result.SAVED, PhoneSkillOutcomes.Result.UNCHANGED))
+                    return stop("路线结果记录暂不可写，未开始下一动作。") // l10n:keep replay result
+                if (!plan.alreadySatisfied) skillTrace.markIncomplete(owner, PhoneTaskTrace.Gap.UNSUPPORTED_EFFECT)
+                // Replay accounting owns this typed route; do not silently omit it from an otherwise
+                // complete Phase1 recording and later certify that shortened recording as reusable.
+                try {
+                    val result = plan.perform(::allowed)
+                    if (plan.attempted) selections.dispatched(selection)
+                    if (!live()) return stop("任务或来源在步骤期间失效，结果未获完整核对。") // l10n:keep replay result
+                    refusal.get()?.let { return stop(it.message) }
+                    val witness = result.navigationWitness
+                    if (!result.ok || plan.post != SkillReplayPost.SATISFIED || witness == null ||
+                        witness.uid != selection.app.uid || witness.version != selection.app.version ||
+                        witness.updated != selection.app.updated || witness.signingDigest != selection.app.signers) {
+                        if (result.ok && plan.post == SkillReplayPost.DIFFERENT) selections.failedPost(selection)
+                        return stop("步骤预期状态未获同次真实后读证明；已开始的动作可能已有部分效果。") // l10n:keep replay result
+                    }
+                    val snapshot = result.screen ?: return stop("步骤缺少同次后读。") // l10n:keep replay result
+                    val policy = env.policies()
+                    safety.checkReadSources(policy, snapshot.readPackages + selection.app.packageName)?.let { return stop(it.message) }
+                    if (snapshot.secure) return stop("当前后读不可公开。") // l10n:keep replay result
+                    if (!live() || !selections.completed(selection)) return stop("步骤核对后任务已失效。") // l10n:keep replay result
+                } finally {
+                    if (plan.attempted) selections.dispatched(selection)
+                }
+            }
+        }
+        if (!live()) return stop("路线完成前原任务已失效。") // l10n:keep replay result
+        selections.verified(selection)
+        return Out("路线各步骤均取得当前页面预期状态的有限核对；这不证明应用外部业务完成。", // l10n:keep replay result
+            summary = REPLAY, decision = "ok")
     }
 
     /** Production Sessions already owns begin/callStarted; PM work never takes the action worker. */
@@ -138,7 +243,7 @@ class PhoneCore(
 
     private fun runCall(name: String, args: Args, callOwner: AtomicReference<PhoneTasks.Owner?>, prepared: PreparedCall? = null,
                         executionWorker: SerialWorker = worker, remainingMs: () -> Long = { MAX_TOTAL_MS }): ToolOutput {
-        rejection(name)?.let { return it }
+        if (prepared?.replay == null) rejection(name)?.let { return it }
         val remaining = remainingMs()
         val outcome = if (remaining <= 0) SerialWorker.Outcome.TimedOut(queued = true) else
             executionWorker.run(budgetMs(name), remaining, owner = tasks) { scope ->
@@ -239,6 +344,7 @@ class PhoneCore(
                 is Either.Right -> result.value
             }
             if (!current(owner)) return stoppedOut(name)
+            if (call.replay != null) return replay(call, scope, owner)
             return when (name) {
                 PhoneToolCatalog.APPS -> apps(a, owner)
                 PhoneToolCatalog.OPEN -> open(call, scope, owner)
@@ -1168,6 +1274,7 @@ class PhoneCore(
         summary = summary, decision = "stopped")
 
     companion object {
+        internal const val REPLAY = "replay"
         internal const val FOCUS_TEXT = "focus_text"
 
         /** Under DSH's 660 s MCP timeout, so the bridge always answers first. */

@@ -28,6 +28,9 @@ import io.github.ccch1mneyyy.dsh_app.phone.a11y.PhoneA11yService
 import io.github.ccch1mneyyy.dsh_app.phone.background.BackgroundControl
 import io.github.ccch1mneyyy.dsh_app.phone.background.BackgroundPreview
 import io.github.ccch1mneyyy.dsh_app.phone.background.SecureSettingsGrant
+import io.github.ccch1mneyyy.dsh_app.phone.skills.PhoneSkillReplayApps
+import io.github.ccch1mneyyy.dsh_app.phone.skills.PhoneSkillReplaySelections
+import io.github.ccch1mneyyy.dsh_app.phone.skills.PhoneSkillOutcomes
 import io.github.ccch1mneyyy.dsh_app.phone.skills.PhoneSkillDrafts
 import io.github.ccch1mneyyy.dsh_app.phone.skills.PhoneSkillBridge
 import io.github.ccch1mneyyy.dsh_app.phone.skills.PhoneSkillLifecycle
@@ -156,7 +159,11 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
 
     val skillTrace = PhoneTaskTrace()
     internal val skillDrafts = PhoneSkillDrafts()
-    internal val skillReplaySelections = io.github.ccch1mneyyy.dsh_app.phone.skills.PhoneSkillReplaySelections()
+    internal val skillReplaySelections = io.github.ccch1mneyyy.dsh_app.phone.skills.PhoneSkillReplaySelections(SystemClock::elapsedRealtime)
+    private val skillReplayOutcomes = PhoneSkillOutcomes(
+        read = { prefs.getString("skillReplayOutcomesV1", null) },
+        commit = { prefs.edit().putString("skillReplayOutcomesV1", it).commit() },
+        process = java.util.UUID.randomUUID().toString().replace("-", ""))
     private val skillLifecycle = PhoneSkillLifecycle(skillTrace, skillDrafts)
     internal val skillBridge = PhoneSkillBridge(skillDrafts,
         { write, done -> RuntimeController.get(app).savePhoneSkill(write, done) }, ::emitStatus)
@@ -188,6 +195,7 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
         })
     private val server = McpServer(PhoneToolCatalog.listJson(), { name, args, _ -> sessions.run(sessions.admit(null), name, args) }, SERVER_VERSION)
     private val bridge = PhoneBridge(server, { line -> logger(line) }, { call ->
+        if (call.name == PhoneCore.REPLAY) replayWork(call) else {
         val admission = sessions.admit(call.caller)
         val nativeReplyCommit = PhoneReplyCommit()
         PhoneCallWork(
@@ -196,6 +204,7 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
             expiredReply = { call.run { _, _, _ -> sessions.expire(admission) } },
             nativeReplyCommit = nativeReplyCommit,
         )
+        }
     }, { end ->
         try {
             val task = sessions.admitEnd(end.sessionId, end.runId, end.completion)
@@ -206,6 +215,67 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
             PhoneBridge.EndWork(McpServer.error(end.id, -32000, PhoneTaskSessions.CAPACITY_MESSAGE)) {}
         }
     })
+
+    private fun settleReplayAccounting(selection: PhoneSkillReplaySelections.Selection) {
+        val outcome = skillReplaySelections.terminalOutcome(selection) ?: return
+        val saved = skillReplayOutcomes.retryStorage() && skillReplayOutcomes.settle(selection.invocation, outcome) in
+            setOf(PhoneSkillOutcomes.Result.SAVED, PhoneSkillOutcomes.Result.UNCHANGED)
+        val key = PhoneSkillOutcomes.Key(selection.request.name, selection.request.revision, selection.bundle.routeSha256)
+        skillReplaySelections.accounting(selection, !saved, saved && skillReplayOutcomes.counts(key)?.suggestDisable == true)
+    }
+
+    /** Private prepared invocation only; status/cancel/duplicates never take a Task admission. */
+    private fun replayWork(call: McpServer.Dispatch.Call): PhoneCallWork {
+        fun reply(value: Map<String, Any?>) = PhoneCallWork({ call.run { _, _, _ ->
+            PhoneSkillReplaySelections.output(value)
+        } })
+        fun rejected() = reply(mapOf("v" to 1, "state" to "rejected", "stepDispatch" to "not_dispatched",
+            "completedSteps" to 0, "cancelRequested" to false, "reason" to "没有匹配的本机当前路线准备，未执行。")) // l10n:keep replay result
+        if (call.args.keys != setOf("operation", "invocation")) return rejected()
+        val operation = call.args["operation"] as? String ?: return rejected()
+        if (operation !in setOf("start", "status", "cancel")) return rejected()
+        val id = (call.args["invocation"] as? String)?.takeIf { it.matches(Regex("[a-f0-9]{32}")) } ?: return rejected()
+        val caller = call.caller?.takeIf { it.runLifecycle == 1 } ?: return rejected()
+        val selection = skillReplaySelections.find(id) ?: return rejected()
+        if (!selection.sourceCurrent()) return rejected()
+        if (operation != "start") {
+            skillReplaySelections.control(selection, caller, operation == "cancel") ?: return rejected()
+            return PhoneCallWork({ call.run { _, _, _ ->
+                settleReplayAccounting(selection)
+                PhoneSkillReplaySelections.output(skillReplaySelections.snapshot(selection))
+            } })
+        }
+        // Native static registration stays empty until 3255 device/compatibility evidence permits it.
+        if (selection.bundle.route.descriptorId !in PhoneSkillReplayApps.descriptors) return rejected()
+        when (val claim = skillReplaySelections.claim(selection, caller)) {
+            PhoneSkillReplaySelections.Claim.Refused -> return rejected()
+            is PhoneSkillReplaySelections.Claim.Existing -> return reply(claim.result)
+            is PhoneSkillReplaySelections.Claim.Start -> Unit
+        }
+        val admission = try { sessions.admit(caller) } catch (_: Exception) {
+            skillReplaySelections.finish(selection, false, null)
+            return reply(skillReplaySelections.snapshot(selection))
+        }
+        return PhoneCallWork(
+            invoke = { call.run { _, _, _ ->
+                var normal = false
+                try {
+                    val out = sessions.runReplay(admission, selection, skillReplaySelections, skillReplayOutcomes)
+                    normal = !out.isError
+                } finally {
+                    skillReplaySelections.finish(selection, normal, sessions.deadlineMs(admission))
+                    // Only call executor threads settle IO. The deadline callback below does not.
+                    settleReplayAccounting(selection)
+                }
+                PhoneSkillReplaySelections.output(skillReplaySelections.snapshot(selection))
+            } },
+            remainingMs = { sessions.remainingMs(admission) },
+            expiredReply = { call.run { _, _, _ ->
+                sessions.expire(admission)
+                PhoneSkillReplaySelections.output(skillReplaySelections.expire(selection))
+            } },
+        )
+    }
 
     private fun createSessionCore(task: PhoneTasks, sessionId: String?): PhoneCore {
         val gate = prompts.scoped(task, sessionId)

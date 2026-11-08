@@ -1,6 +1,11 @@
 package io.github.ccch1mneyyy.dsh_app.phone
 
 import io.github.ccch1mneyyy.dsh_app.phone.background.BackgroundResourceJournal
+import io.github.ccch1mneyyy.dsh_app.phone.skills.PhoneSkillReplaySelections
+import io.github.ccch1mneyyy.dsh_app.phone.skills.PhoneSkillRoute
+import io.github.ccch1mneyyy.dsh_app.phone.skills.PhoneSkillDrafts
+import io.github.ccch1mneyyy.dsh_app.phone.skills.PhoneSkillOutcomes
+import io.github.ccch1mneyyy.dsh_app.runtime.PhoneSkillBundleReader
 import java.time.ZoneId
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
@@ -1652,4 +1657,28 @@ class PhoneTaskSessionsTest {
         assertTrue(task("current-process").tasks.snapshot().active)
     }
 
+
+    @Test fun nativeReplayUsesOriginalManagedAdmissionAndMainUnknownAppLease() {
+        val registry = PhoneSkillReplaySelections { 0L }
+        val app = PhoneSkillReplaySelections.App("example.app", 10123, 1, 1, "a".repeat(64))
+        val route = PhoneSkillRoute.Route("phone-task-" + "1".repeat(32), "2".repeat(32), "fixture", listOf("app1"), emptyList(),
+            listOf(PhoneSkillRoute.Step(PhoneSkillRoute.Op.OPEN_APP, "app1", PhoneScreen.MAIN, post = PhoneSkillRoute.Post.PageIs("home"))))
+        val selection = registry.prepare(PhoneSkillDrafts().attachClient(), 1, { true },
+            PhoneSkillReplaySelections.Request(route.skillName, route.revision, "A", app.packageName, app.uid),
+            PhoneSkillBundleReader.Read.Accepted(route, 2, "b".repeat(64), "c".repeat(64)), app)!!
+        assertTrue(registry.claim(selection, PhoneCaller("A", "1", "c", 1)) is PhoneSkillReplaySelections.Claim.Start)
+        var stored: String? = null
+        val accounting = PhoneSkillOutcomes({ stored }, { stored = it; true }, "d".repeat(32))
+        val result = sessions.runReplay(admit("A"), selection, registry, accounting)
+        assertTrue(result.isError) // Real default driver refuses unsupported typed replay, not a fake executor success.
+        assertEquals(0L, actions.get())
+        assertEquals(0, task("A").pending)
+        assertFalse(task("A").running)
+        assertTrue(task("A").holdsUnknownApp) // PM UID never substitutes for MAIN window UID.
+        assertTrue(sessions.runReplay(admit("B"), selection, registry, accounting).isError)
+        assertEquals(0, task("B").pending)
+        assertFalse(task("B").holdsUnknownApp)
+        assertEquals(0L, actions.get())
+        end("A"); end("B")
+    }
 }

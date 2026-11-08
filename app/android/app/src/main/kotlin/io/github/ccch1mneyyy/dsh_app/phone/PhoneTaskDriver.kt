@@ -115,6 +115,31 @@ class PhoneTaskObservations(private val tasks: PhoneTasks) {
                 if (!handedOff) original.close()
             }
         }
+        override fun prepareSkillReplayStep(step: SkillReplayStep): Either<String, SkillReplayPlan> {
+            current()
+            if (!taskAllowed()) return Either.Left("当前任务已暂停，未准备路线动作。") // l10n:keep
+            val prepared = driver.prepareSkillReplayStep(step)
+            if (prepared is Either.Left) { current(); syncCurrentScope(); return prepared }
+            val original = (prepared as Either.Right).value
+            var handedOff = false
+            try {
+                current()
+                if (!taskAllowed()) return Either.Left("当前任务已暂停，未准备路线动作。") // l10n:keep
+                val bound = object : SkillReplayPlan by original {
+                    override fun perform(allowed: () -> Boolean): ActionResult {
+                        current()
+                        return try {
+                            val value = original.perform { taskAllowed() && allowed() }
+                            current()
+                            value // Private route evidence is not a model-returned observation/ledger grant.
+                        }
+                        finally { syncCurrentScope() }
+                    }
+                }
+                handedOff = true
+                return Either.Right(bound)
+            } finally { if (!handedOff) original.close() }
+        }
         override fun perform(action: PhoneAction): ActionResult = perform(action) { true }
         override fun perform(action: PhoneAction, allowed: () -> Boolean): ActionResult =
             perform(action, allowed, null) { true }

@@ -1,5 +1,11 @@
 package io.github.ccch1mneyyy.dsh_app.phone
 
+import io.github.ccch1mneyyy.dsh_app.phone.skills.PhoneSkillReplaySelections
+import io.github.ccch1mneyyy.dsh_app.phone.skills.PhoneSkillRoute
+import io.github.ccch1mneyyy.dsh_app.phone.skills.PhoneSkillOutcomes
+import io.github.ccch1mneyyy.dsh_app.phone.skills.PhoneSkillDrafts
+import io.github.ccch1mneyyy.dsh_app.phone.skills.PhoneSkillNavigationWitness
+import io.github.ccch1mneyyy.dsh_app.runtime.PhoneSkillBundleReader
 import java.time.ZoneId
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
@@ -100,6 +106,9 @@ class PhoneCorePromptOwnerTest {
     }, tasks, ActionLog())
 
     private class Driver(override val screen: PhoneScreen) : PhoneDriver {
+        var replayPlan: SkillReplayPlan? = null
+        override fun prepareSkillReplayStep(step: SkillReplayStep): Either<String, SkillReplayPlan> =
+            replayPlan?.let { Either.Right(it) } ?: Either.Left("no compatible page")
         var focusEnabled = false
         var focusToken: FocusObservation? = null
         var focusPrepares = 0
@@ -1517,4 +1526,102 @@ class PhoneCorePromptOwnerTest {
         assertEquals(0, main.focusInputs)
     }
 
+
+    /** Fake only the platform's typed step; real Core/worker/SafetyGate and outcomes are exercised. */
+    private fun replayFixture(already: Boolean = false, witness: Boolean = true,
+        beforeAttempt: () -> Unit = {}): Triple<PhoneSkillReplaySelections, PhoneSkillReplaySelections.Selection, PhoneSkillOutcomes> {
+        val registry = PhoneSkillReplaySelections { 0L }
+        val app = PhoneSkillReplaySelections.App("example.app", 10123, 1, 2, "c".repeat(64))
+        val route = PhoneSkillRoute.Route("phone-task-" + "1".repeat(32), "2".repeat(32), "fixture", listOf("app1"), emptyList(),
+            listOf(PhoneSkillRoute.Step(PhoneSkillRoute.Op.SELECT_OPTION, "app1", PhoneScreen.MAIN,
+                "navigation", "bottom-tabs", PhoneSkillRoute.Value.OptionLiteral("more"), PhoneSkillRoute.Post.OptionSelected)))
+        val request = PhoneSkillReplaySelections.Request(route.skillName, route.revision, "session", app.packageName, app.uid)
+        val selected = registry.prepare(PhoneSkillDrafts().attachClient(), 1, { true }, request,
+            PhoneSkillBundleReader.Read.Accepted(route, 2, "a".repeat(64), "b".repeat(64)), app)!!
+        assertTrue(registry.claim(selected, PhoneCaller("session", "run", "call", 1)) is PhoneSkillReplaySelections.Claim.Start)
+        var stored: String? = null
+        val outcomes = PhoneSkillOutcomes({ stored }, { stored = it; true }, "d".repeat(32))
+        main.replayPlan = object : SkillReplayPlan {
+            override val before = ScreenSnapshot("sReplayBefore", "navigation", "Example", "example.app", readPackages = setOf("example.app"))
+            override val target = if (already) null else TargetInfo("sReplayBefore", 1, "button", "more", "example.app", "Example", false, false, false)
+            override val alreadySatisfied = already
+            override var attempted = false
+            override var post = SkillReplayPost.UNKNOWN
+            override fun perform(allowed: () -> Boolean): ActionResult {
+                beforeAttempt()
+                if (!allowed()) return ActionResult(false, "denied")
+                if (!already) { attempted = true; main.writes++ }
+                post = SkillReplayPost.SATISFIED
+                return ActionResult(true, "local state", before.copy(id = "sReplayAfter"),
+                    navigationWitness = if (witness) PhoneSkillNavigationWitness(app.uid, app.version, app.updated, app.signers) else null)
+            }
+            override fun close() { }
+        }
+        return Triple(registry, selected, outcomes)
+    }
+    private fun executeReplay(fixture: Triple<PhoneSkillReplaySelections, PhoneSkillReplaySelections.Selection, PhoneSkillOutcomes>): ToolOutput {
+        val owner = (tasks.begin() as PhoneTasks.Begin.Go).owner
+        val call = (core.prepareReplayCall(fixture.second, fixture.first, fixture.third, owner) as Either.Right).value
+        assertTrue("MAIN must retain unknown window UID exclusion", call.unknownApp)
+        return core.call(call, core.worker)
+    }
+    @Test fun replayReturnedOkWithoutNativePostWitnessNeverCountsSuccessOrRetries() {
+        val fixture = replayFixture(witness = false)
+        assertTrue(executeReplay(fixture).isError)
+        assertEquals(1, main.writes)
+        assertEquals(0, fixture.first.snapshot(fixture.second)["completedSteps"])
+        assertEquals(PhoneSkillOutcomes.Outcome.UNKNOWN, fixture.first.finish(fixture.second, false, 1L))
+        assertTrue(fixture.first.claim(fixture.second, PhoneCaller("session", "run", "again", 1)) is PhoneSkillReplaySelections.Claim.Existing)
+        assertEquals(1, main.writes)
+    }
+    @Test fun replayAlreadySelectedVerifiesWithoutClickAndRealOutcomeSettlesOnce() {
+        val fixture = replayFixture(already = true)
+        val out = executeReplay(fixture)
+        assertFalse(out.text, out.isError)
+        assertEquals(0, main.writes)
+        val terminal = fixture.first.finish(fixture.second, true, 1L)
+        assertEquals(PhoneSkillOutcomes.Outcome.SUCCESS, terminal)
+        assertEquals(PhoneSkillOutcomes.Result.SAVED, fixture.third.settle(fixture.second.invocation, terminal))
+        assertEquals(PhoneSkillOutcomes.Result.UNCHANGED, fixture.third.settle(fixture.second.invocation, terminal))
+        val key = PhoneSkillOutcomes.Key(fixture.second.request.name, fixture.second.request.revision, fixture.second.bundle.routeSha256)
+        assertEquals(1L, fixture.third.counts(key)!!.successes)
+    }
+    @Test fun replayLatePolicyDenialStopsTheOriginalSingleAttempt() {
+        val fixture = replayFixture(beforeAttempt = { policies = PhonePolicies(denyPackages = listOf("example.app")) })
+        assertTrue(executeReplay(fixture).isError)
+        assertEquals(0, main.writes)
+        assertFalse(tasks.isStopped())
+        assertEquals(PhoneSkillOutcomes.Outcome.NOT_STARTED, fixture.first.finish(fixture.second, false, 1L))
+    }
+    @Test fun replayCancelledBetweenPrepareAndDispatchNeverStartsAndDoesNotClaimDrain() {
+        lateinit var fixture: Triple<PhoneSkillReplaySelections, PhoneSkillReplaySelections.Selection, PhoneSkillOutcomes>
+        fixture = replayFixture(beforeAttempt = { fixture.first.control(fixture.second, PhoneCaller("session", "run", "cancel", 1), true) })
+        assertTrue(executeReplay(fixture).isError)
+        assertEquals(0, main.writes)
+        assertEquals(PhoneSkillOutcomes.Outcome.CANCEL, fixture.first.finish(fixture.second, false, 1L))
+    }
+
+    @Test fun replayDeadlineWinnerPreventsLaterCoreReturnFromPromotingTheTerminal() {
+        lateinit var fixture: Triple<PhoneSkillReplaySelections, PhoneSkillReplaySelections.Selection, PhoneSkillOutcomes>
+        lateinit var work: PhoneCallWork
+        var remaining = 1L
+        var timeoutReply: String? = null
+        fixture = replayFixture(beforeAttempt = {
+            remaining = 0L
+            timeoutReply = work.expire()
+        })
+        work = PhoneCallWork(invoke = {
+            val result = executeReplay(fixture)
+            fixture.first.finish(fixture.second, !result.isError, 1L)
+            Json.write(fixture.first.snapshot(fixture.second))
+        }, remainingMs = { remaining }, expiredReply = {
+            Json.write(fixture.first.expire(fixture.second))
+        })
+        assertNull(work.run()) // Actual PhoneCallWork already committed its timeout reply.
+        assertEquals("unknown", (Json.parse(checkNotNull(timeoutReply)) as Map<*, *>)["state"])
+        assertEquals(0, main.writes)
+        fixture.first.verified(fixture.second)
+        assertEquals(PhoneSkillOutcomes.Outcome.UNKNOWN, fixture.first.finish(fixture.second, true, 1L))
+        assertEquals("unknown", fixture.first.snapshot(fixture.second)["state"])
+    }
 }

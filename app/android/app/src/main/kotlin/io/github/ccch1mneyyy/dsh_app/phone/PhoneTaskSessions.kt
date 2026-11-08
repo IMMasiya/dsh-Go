@@ -1,5 +1,8 @@
 package io.github.ccch1mneyyy.dsh_app.phone
 
+import io.github.ccch1mneyyy.dsh_app.phone.skills.PhoneSkillReplaySelections
+import io.github.ccch1mneyyy.dsh_app.phone.skills.PhoneSkillOutcomes
+
 /**
  * Per-launch session admission. The registry lock protects attribution, pending calls and screen/App
  * leases only. It is never held across driver work, UI waits, listeners or a worker join.
@@ -77,6 +80,8 @@ class PhoneTaskSessions(
         @Volatile internal var expired = false
         internal var runner: Thread? = null // Protected by this Admission, including interrupt and detach.
     }
+
+    internal fun deadlineMs(a: Admission): Long = a.startedAt + PhoneCore.MAX_TOTAL_MS
 
     internal fun remainingMs(a: Admission): Long = if (a.expired) 0L else
         (PhoneCore.MAX_TOTAL_MS - (clock() - a.startedAt).coerceAtLeast(0)).coerceAtLeast(0)
@@ -200,10 +205,19 @@ class PhoneTaskSessions(
         }
     }
 
-    fun run(admission: Admission, name: String, args: Map<String, Any?>): ToolOutput {
+    internal fun runReplay(admission: Admission, selection: PhoneSkillReplaySelections.Selection,
+        selections: PhoneSkillReplaySelections, outcomes: PhoneSkillOutcomes): ToolOutput =
+        run(admission, PhoneCore.REPLAY, emptyMap(), selection, selections, outcomes)
+
+    fun run(admission: Admission, name: String, args: Map<String, Any?>): ToolOutput =
+        run(admission, name, args, null, null, null)
+
+    private fun run(admission: Admission, name: String, args: Map<String, Any?>,
+        replay: PhoneSkillReplaySelections.Selection?, selections: PhoneSkillReplaySelections?,
+        outcomes: PhoneSkillOutcomes?): ToolOutput {
         synchronized(admission) { admission.runner = Thread.currentThread() }
         try {
-            return runAdmitted(admission, name, args)
+            return runAdmitted(admission, name, args, replay, selections, outcomes)
         } finally {
             synchronized(admission) {
                 admission.runner = null
@@ -212,7 +226,9 @@ class PhoneTaskSessions(
         }
     }
 
-    private fun runAdmitted(admission: Admission, name: String, args: Map<String, Any?>): ToolOutput {
+    private fun runAdmitted(admission: Admission, name: String, args: Map<String, Any?>,
+        replay: PhoneSkillReplaySelections.Selection?, selections: PhoneSkillReplaySelections?,
+        outcomes: PhoneSkillOutcomes?): ToolOutput {
         val task = admission.task ?: return ToolOutput(checkNotNull(admission.refusal), isError = true)
         var owner: PhoneTasks.Owner? = null
         var prepared: PhoneCore.PreparedCall? = null
@@ -220,10 +236,12 @@ class PhoneTaskSessions(
         var executionWorker: SerialWorker? = null
         task.tasks.callStarted()
         try {
+            if (replay != null && (task.sessionId != replay.request.session || task.runId != replay.run))
+                return ToolOutput("路线调用身份与原准备不匹配，未执行。", isError = true) // l10n:keep replay result
             if (remainingMs(admission) <= 0) return deadlineOutput()
             recoveryAdmission()?.let { return ToolOutput(it, isError = true) }
             journal?.refusal()?.let { return ToolOutput(it, isError = true) }
-            task.core.rejection(name)?.let { return it }
+            if (replay == null) task.core.rejection(name)?.let { return it }
             synchronized(lock) {
                 while (task.running && live(admission) && !blocked(task) && !task.closing) {
                     val left = remainingMs(admission)
@@ -303,7 +321,9 @@ class PhoneTaskSessions(
                 return if (remainingMs(admission) <= 0) deadlineOutput() else stopped()
             }
             if (remainingMs(admission) <= 0) return deadlineOutput()
-            val call = when (val result = task.core.prepareCall(name, args, owner)) {
+            val preparation = if (replay == null) task.core.prepareCall(name, args, owner)
+                else task.core.prepareReplayCall(replay, checkNotNull(selections), checkNotNull(outcomes), owner)
+            val call = when (val result = preparation) {
                 is Either.Left -> return result.value
                 is Either.Right -> result.value
             }
