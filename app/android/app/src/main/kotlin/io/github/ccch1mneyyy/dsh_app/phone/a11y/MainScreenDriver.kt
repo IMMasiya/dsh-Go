@@ -96,6 +96,9 @@ internal class MainScreenDriver(private val service: PhoneA11yService, private v
 
     fun abort() { abortGen++; visual.invalidate() }
 
+    /** Main thread, so it runs ahead of any coordinate start queued behind the event. */
+    fun windowChanged() = visual.windowChanged()
+
     // ---- PhoneDriver ------------------------------------------------------------------------------
 
     private fun published() = PhoneA11yService.instance === service && PhoneRegistry.mainDriver === this
@@ -228,12 +231,12 @@ internal class MainScreenDriver(private val service: PhoneA11yService, private v
             if (!awaitInputIdle()) return ActionResult(false, "用户正在悬浮条上输入插话，稍等再操作。")
             if (cancelled(gen)) throw InterruptedException()
             // Editing may have held this invocation for seconds after its first admission check.
-            if (!allowed()) return ActionResult(false, "本任务已暂停或停止，没有继续操作。") // l10n:keep agent result
+            refuseHalted(allowed)?.let { return it }
             return when (action) {
                 is PhoneAction.Key -> key(action, gen)
-                is PhoneAction.Tap -> tap(action, gen)
-                is PhoneAction.Type -> type(action, gen)
-                is PhoneAction.Scroll -> scroll(action, gen)
+                is PhoneAction.Tap -> tap(action, gen, allowed)
+                is PhoneAction.Type -> type(action, gen, allowed)
+                is PhoneAction.Scroll -> scroll(action, gen, allowed)
                 is PhoneAction.TapXY -> tapXY(action, gen, allowed, coordinateAdmission)
             }
         }
@@ -406,7 +409,7 @@ internal class MainScreenDriver(private val service: PhoneA11yService, private v
         }
     }
 
-    private fun tap(a: PhoneAction.Tap, gen: Long): ActionResult {
+    private fun tap(a: PhoneAction.Tap, gen: Long, allowed: () -> Boolean): ActionResult {
         val res = resolve(a.screenId, a.elementId)
         val r = res as? Resolved ?: return res as ActionResult
         try {
@@ -415,6 +418,7 @@ internal class MainScreenDriver(private val service: PhoneA11yService, private v
                 // l10n:keep agent screen result
                 return ActionResult(false, "[${a.elementId}] 是列表本身，不能点。看更多用 scroll，整理全部条目用 collect。")
             }
+            refuseHalted(allowed)?.let { return it }
             val before = clock.count
             val out = actuator.click(r.node, r.el.bounds, r.cap.screen, a.long)
             val what = short(r.el.label.ifEmpty { r.el.role })
@@ -425,7 +429,7 @@ internal class MainScreenDriver(private val service: PhoneA11yService, private v
         } finally { r.cap.recycle() }
     }
 
-    private fun type(a: PhoneAction.Type, gen: Long): ActionResult {
+    private fun type(a: PhoneAction.Type, gen: Long, allowed: () -> Boolean): ActionResult {
         val res = resolve(a.screenId, a.elementId)
         val r = res as? Resolved ?: return res as ActionResult
         try {
@@ -438,6 +442,7 @@ internal class MainScreenDriver(private val service: PhoneA11yService, private v
             if (r.node.isPassword && !lifted.secretFields) return ActionResult(false, "这是密码框，DSH 不代填。请用 handoff 让用户自己输入。")
             // l10n:keep agent screen result
             if (a.text.length > 2_000) return ActionResult(false, "一次最多输入 2000 字。")
+            refuseHalted(allowed)?.let { return it }
             val before = clock.count
             if (!actuator.setText(r.node, a.text)) {
                 // l10n:keep agent screen result
@@ -452,6 +457,8 @@ internal class MainScreenDriver(private val service: PhoneA11yService, private v
             // l10n:keep agent screen result
             var message = "已在「$name」输入，回读一致。"
             if (a.submit) {
+                // The read-back can take 1.5 s: a pause in it keeps the text but sends nothing.
+                if (!allowed()) return ActionResult(false, "$message 但本任务已暂停或停止，没有提交。") // l10n:keep agent result
                 // l10n:keep agent screen result
                 if (actuator.imeEnter(r.node)) message += "已提交键盘上的发送 / 搜索操作。"
                 // l10n:keep agent screen result
@@ -461,7 +468,7 @@ internal class MainScreenDriver(private val service: PhoneA11yService, private v
         } finally { r.cap.recycle() }
     }
 
-    private fun scroll(a: PhoneAction.Scroll, gen: Long): ActionResult {
+    private fun scroll(a: PhoneAction.Scroll, gen: Long, allowed: () -> Boolean): ActionResult {
         val snap = latest
         val dirWord = when (a.direction) {
             // l10n:keep agent screen result
@@ -494,6 +501,7 @@ internal class MainScreenDriver(private val service: PhoneA11yService, private v
                     else "无法确认当前界面仍与上一屏一致，没有滚动。请先看新屏幕。" // l10n:keep agent screen result
                     return ActionResult(false, reason, toSnapshot(publish(cap, false)))
                 }
+                refuseHalted(allowed)?.let { return it }
                 val screen = cap.screen
                 val before = clock.count
                 val out = actuator.scroll(null, 0, a.direction == PhoneAction.Direction.LEFT || a.direction == PhoneAction.Direction.RIGHT,
@@ -509,6 +517,7 @@ internal class MainScreenDriver(private val service: PhoneA11yService, private v
         try {
             // l10n:keep agent screen result
             if ((r.el.packageName == ownPackage || r.snap.ownApp) && !lifted.ownApp) return ActionResult(false, "这是 DSH 自己的界面，不操作。")
+            refuseHalted(allowed)?.let { return it }
             val before = clock.count
             val out = actuator.scroll(r.node, r.el.scroll, r.el.horizontal, r.el.bounds, r.cap.screen, a.direction)
             // l10n:keep agent screen result
@@ -565,6 +574,8 @@ internal class MainScreenDriver(private val service: PhoneA11yService, private v
         } else null
         val beforeImage: ImageObservation
         val originalScope = visual.scope(snap.id)
+        // Taken before verifying: a window shown after it refuses the start even when the scope is unknown.
+        val transitions = visual.transitions()
         val ordinary = if (a.gesture == PhoneAction.CoordinateGesture.TAP) snap.visualEvidence?.target(point.first, point.second) else null
         val cap = capture()
         try {
@@ -599,7 +610,7 @@ internal class MainScreenDriver(private val service: PhoneA11yService, private v
         val dispatchScope = visual.scope(snap.id)
         val admission = coordinateAdmission ?: { claim: () -> Boolean -> allowed() && claim() }
         val start: (() -> Boolean) -> Boolean = { send ->
-            actuator.coordinateStart({ published() && abortGen == gen && visual.isCurrent(dispatchScope) }, admission, send)
+            actuator.coordinateStart({ published() && abortGen == gen && visual.isCurrent(dispatchScope, transitions) }, admission, send)
         }
         // l10n:keep agent screen result
         val accepted = when (a.gesture) {
@@ -867,6 +878,10 @@ internal class MainScreenDriver(private val service: PhoneA11yService, private v
             // l10n:keep agent screen result
             return "已输入，但回读不一致：$now。没有重试，也没有提交；请看新屏幕决定下一步。"
         }
+
+        /** Asked again right before each physical dispatch: a pause or stop can land while the target resolves. */
+        internal fun refuseHalted(allowed: () -> Boolean): ActionResult? =
+            if (allowed()) null else ActionResult(false, "本任务已暂停或停止，没有继续操作。") // l10n:keep agent result
 
         /** Process-wide: a reconnected service must never hand out an id the model still holds. */
         private val counter = java.util.concurrent.atomic.AtomicInteger()

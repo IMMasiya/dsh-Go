@@ -45,7 +45,7 @@ class MainVisualStateTest {
         val epoch = Any(); val state = MainVisualState(epoch)
         val old = state.observed(1, "example.app"); state.publish("s1"); state.candidate("s1")
         state.invalidate(); state.accept("s1")
-        assertNull(state.scope("s1")); assertFalse(state.imageAccepted("s1")); assertFalse(state.isCurrent(old))
+        assertNull(state.scope("s1")); assertFalse(state.imageAccepted("s1")); assertFalse(state.isCurrent(old, state.transitions()))
         assertNotEquals(old, MainVisualState(Any()).observed(1, "example.app"))
     }
 }

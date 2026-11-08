@@ -8,6 +8,8 @@ internal class MainVisualState(private val driverEpoch: Any) {
     private var published: Pair<String, VisualScope.Main?>? = null
     private var imageId: String? = null
     private var accepted = false
+    /** Window transitions reported by accessibility events; no capture needed, known scope or not. */
+    private var transitions = 0L
 
     @Synchronized fun observed(windowId: Int?, packageName: String?): VisualScope.Main? {
         if (windowId == null || windowId < 0 || packageName.isNullOrBlank()) current = null
@@ -22,7 +24,10 @@ internal class MainVisualState(private val driverEpoch: Any) {
     }
     @Synchronized fun scope(id: String): VisualScope.Main? =
         published?.takeIf { it.first == id && it.second === current }?.second
-    @Synchronized fun isCurrent(scope: VisualScope.Main?): Boolean = current === scope
+    @Synchronized fun isCurrent(scope: VisualScope.Main?, transitions: Long): Boolean =
+        current === scope && this.transitions == transitions
+    @Synchronized fun transitions(): Long = transitions
+    @Synchronized fun windowChanged() { transitions++ }
     @Synchronized fun candidate(id: String) {
         if (published?.first == id) { imageId = id; accepted = false }
     }

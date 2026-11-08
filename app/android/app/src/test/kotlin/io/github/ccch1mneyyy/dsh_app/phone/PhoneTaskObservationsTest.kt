@@ -1,5 +1,6 @@
 package io.github.ccch1mneyyy.dsh_app.phone
 
+import io.github.ccch1mneyyy.dsh_app.phone.a11y.MainScreenDriver
 import org.junit.Assert.*
 import org.junit.Test
 
@@ -8,6 +9,7 @@ class PhoneTaskObservationsTest {
         override val screen = PhoneScreen.MAIN
         var actions = 0
         var capturedAdmission: ((() -> Boolean) -> Boolean)? = null
+        var capturedAllowed: (() -> Boolean)? = null
         var scope: VisualScope? = null
         val imageCommits = mutableListOf<String>()
         override fun acceptVisualObservation(screenId: String) { imageCommits += screenId }
@@ -24,6 +26,7 @@ class PhoneTaskObservationsTest {
         override fun perform(action: PhoneAction, allowed: () -> Boolean,
                              coordinateAdmission: ((() -> Boolean) -> Boolean)?): ActionResult {
             capturedAdmission = coordinateAdmission
+            capturedAllowed = allowed
             return if (allowed()) perform(action) else ActionResult(false, "stopped")
         }
         override fun open(target: PhoneAppIdentity): ActionResult {
@@ -152,6 +155,20 @@ class PhoneTaskObservationsTest {
         tasks.setPaused(false); tasks.stop("stop"); tasks.clearStop(); tasks.begin()
         assertFalse(admission { claims++; true }); assertEquals(1, claims)
     }
+    @Test fun pauseWhileTheMainDriverResolvesATargetRefusesItsPhysicalDispatch() {
+        val tasks = PhoneTasks(); val physical = Driver(); val owner = owner(tasks)
+        val bound = PhoneTaskObservations(tasks).bind(physical, owner)
+        bound.observe(false, false); bound.perform(PhoneAction.Tap("s1", 1))
+        val allowed = checkNotNull(physical.capturedAllowed)
+        assertNull(MainScreenDriver.refuseHalted(allowed)) // Admitted before resolve() captures.
+        assertTrue(tasks.setPausedIfCurrent(owner, true)) // The person pauses during that capture.
+        val refused = checkNotNull(MainScreenDriver.refuseHalted(allowed))
+        assertFalse(refused.ok); assertNull(refused.screen)
+        assertTrue(tasks.setPausedIfCurrent(owner, false)); assertNull(MainScreenDriver.refuseHalted(allowed))
+        tasks.stop("user"); tasks.clearStop(); tasks.begin()
+        assertNotNull(MainScreenDriver.refuseHalted(allowed)) // A new lifetime cannot admit the old dispatch.
+    }
+
     @Test fun actualLedgerRevokesScopeOnTextOnlyObservationBeforeAComesBack() {
         val tasks = PhoneTasks(); val physical = Driver(); val owner = owner(tasks)
         val bound = PhoneTaskObservations(tasks).bind(physical, owner)

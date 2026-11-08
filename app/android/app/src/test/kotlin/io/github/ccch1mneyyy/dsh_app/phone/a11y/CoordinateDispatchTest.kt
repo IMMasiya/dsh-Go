@@ -100,6 +100,23 @@ class CoordinateDispatchTest {
         } finally { pool.shutdownNow() }
     }
 
+    @Test fun windowTransitionAfterVerificationRefusesTheQueuedStartForKnownAndUnknownScopes() {
+        val state = MainVisualState(Any())
+        for ((window, pkg) in listOf(7 to "example.app", null to null)) {
+            state.observed(window, pkg); state.publish("s1") // The screenshot the model saw.
+            val transitions = state.transitions() // tapXY samples this before verifying.
+            state.observed(window, pkg) // Verification capture: still the same window.
+            val scope = state.scope("s1")
+            var sent = 0
+            fun start() = CoordinateDispatch(Thread.currentThread(), { state.isCurrent(scope, transitions) }, { it() }) { sent++; true }
+            val unchanged = start(); unchanged.run(); assertTrue(unchanged.awaitStart(0))
+            val queued = start()
+            state.windowChanged() // The event is handled on main before the queued start runs.
+            assertSame(scope, state.scope("s1")) // No capture ran: the cached scope alone would still pass.
+            queued.run(); assertFalse(queued.awaitStart(0)); assertEquals(1, sent)
+        }
+    }
+
     @Test fun dispatchExceptionCompletesItsOneStartWithoutReplayOrCrashingMain() {
         var sent = 0
         val ticket = CoordinateDispatch(Thread.currentThread(), { true }, { it() }) { sent++; error("unknown dispatch result") }

@@ -84,6 +84,10 @@ class PhoneA11yService : AccessibilityService() {
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         clock.tick(event?.packageName)
+        // A window shown or refocused retires coordinate starts verified before it. Our own overlay
+        // re-shows itself after each full-display capture: that is not a transition of the target.
+        if (event != null && event.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED &&
+            event.packageName?.toString() != packageName) driver?.windowChanged()
     }
 
     /**
