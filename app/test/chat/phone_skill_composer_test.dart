@@ -10,6 +10,8 @@ import 'package:dsh_app/state/chat_state.dart';
 import 'package:dsh_app/state/composer_insert.dart';
 import 'package:dsh_app/state/connection_state.dart';
 import 'package:dsh_app/state/draft_store.dart';
+import 'package:dsh_app/state/features_state.dart' show skillsProvider;
+import 'package:dsh_app/state/media_generation.dart' show mediaPluginProvider, MediaPluginState;
 import 'package:dsh_app/state/hosts_state.dart';
 import 'package:dsh_app/state/phone_skill_use.dart';
 import 'package:dsh_app/state/sessions_state.dart';
@@ -45,16 +47,6 @@ void main() {
   final messenger = TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
   tearDown(() => messenger.setMockMethodCallHandler(_method, null));
 
-  Future<void> disposeHarness(WidgetTester tester, SyncHarness h) async {
-    try {
-      await tester.pumpWidget(const SizedBox());
-      await tester.pump(const Duration(milliseconds: 600));
-    } finally {
-      await tester.runAsync(h.close);
-    }
-    await tester.pump();
-  }
-
   Future<void> settleIo(WidgetTester tester, bool Function() ready) async {
     final deadline = Stopwatch()..start();
     while (!ready()) {
@@ -65,6 +57,44 @@ void main() {
     }
   }
 
+  final releaseCatalogs = Expando<void Function()>();
+  final catalogGeneration = Expando<Object>();
+
+  Future<void> drainCatalogs(WidgetTester tester, SyncHarness h) async {
+    expect(identical(h.client.mux.generation, catalogGeneration[h]), isTrue,
+      reason: 'Catalog cleanup must not read a replacement connection generation');
+    expect(h.container.exists(skillsProvider('S')), isTrue);
+    var done = false;
+    Object? error;
+    StackTrace? stack;
+    final completion = h.container.read(skillsProvider('S').future).then<void>((_) { done = true; }, onError: (Object value, StackTrace trace) {
+      error = value;
+      stack = trace;
+      done = true;
+    });
+    await settleIo(tester, () => done);
+    await completion;
+    if (error != null) Error.throwWithStackTrace(error!, stack!);
+  }
+
+  Future<void> disposeHarness(WidgetTester tester, SyncHarness h) async {
+    try {
+      await tester.pumpWidget(const SizedBox());
+      // Join the real skills RPC before force-closing FakeDsh. Its pin keeps
+      // the same provider alive after the widget listener leaves.
+      if (releaseCatalogs[h] != null) await drainCatalogs(tester, h);
+    } finally {
+      try {
+        releaseCatalogs[h]?.call();
+      } finally {
+        releaseCatalogs[h] = null;
+        catalogGeneration[h] = null;
+        await tester.runAsync(h.close);
+      }
+    }
+    await tester.pump();
+  }
+
   Future<SyncHarness> open(WidgetTester tester) async {
     usePhoneView(tester);
     mockClipboard(tester);
@@ -73,6 +103,8 @@ void main() {
     SessionFollowEpoch? observedEpoch;
     final overrides = [
       petScopedStateProvider.overrideWith((ref, scope) => const PetState()),
+      // These are plain-text phone-route tests, not media generation tests.
+      mediaPluginProvider.overrideWithValue(MediaPluginState.absent),
       for (final override in ui.overrides)
         if (override.origin != activeConnectionProvider && override.origin != chatProvider &&
             override.origin != localConnectionProvider) override,
@@ -87,6 +119,10 @@ void main() {
     try {
       connection = HostConnection(client: h.client, isLocal: true);
       await h.container.read(localConnectionProvider.future);
+      h.host.handlers['skills/list'] = (_) => {'ok': true, 'value': {'skills': <Object?>[]}};
+      catalogGeneration[h] = h.client.mux.generation!;
+      final skills = h.container.listen(skillsProvider('S'), (_, _) {});
+      releaseCatalogs[h] = skills.close;
       await fixture.mount(tester, h);
       await pumpFrames(tester);
       final epoch = observedEpoch;
@@ -111,10 +147,16 @@ void main() {
       expect(supported, isFalse); // null means stale/early refusal, not a joined probe.
       expect(await activation, isFalse);
       expect(h.follows.length, follows);
+      await drainCatalogs(tester, h);
       return h;
-    } catch (_) {
-      await disposeHarness(tester, h);
-      rethrow;
+    } catch (error, stack) {
+      try {
+        await disposeHarness(tester, h);
+      } catch (cleanupError, cleanupStack) {
+        FlutterError.reportError(FlutterErrorDetails(exception: cleanupError, stack: cleanupStack,
+          context: ErrorDescription('while cleaning up the route composer fixture')));
+      }
+      Error.throwWithStackTrace(error, stack);
     }
   }
 
