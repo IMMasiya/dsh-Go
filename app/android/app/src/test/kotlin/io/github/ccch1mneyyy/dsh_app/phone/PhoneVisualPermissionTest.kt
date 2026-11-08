@@ -15,6 +15,8 @@ class PhoneVisualPermissionTest {
         var nextId = 0
         var id = "b0"
         var image: ByteArray? = byteArrayOf(1)
+        var textCoordinates = false
+        var coordinateCandidate = false
         var screenText = "Details"
         var policy = PhonePolicies(confirmMode = ConfirmMode.ASK)
         var decision: (ConfirmRequest) -> Decision = { if (it.visualScope != null) Decision.ALLOW_VISUAL_FOR_TASK else Decision.ALLOW_APP_FOR_TASK }
@@ -27,10 +29,11 @@ class PhoneVisualPermissionTest {
             override fun availability() = Availability(true)
             override fun observe(detail: Boolean, image: Boolean): ScreenSnapshot {
                 id = "b${++nextId}"; accepted = false
+                coordinateCandidate = this@Fixture.image != null || textCoordinates
                 return ScreenSnapshot(id, screenText, "Example", "example.app", image = this@Fixture.image)
             }
             override fun visualScope(screenId: String) = scope.takeIf { screenId == id }
-            override fun acceptVisualObservation(screenId: String) { if (screenId == id) accepted = true }
+            override fun acceptVisualObservation(screenId: String) { if (screenId == id && coordinateCandidate) accepted = true }
             override fun coordinateTarget(action: PhoneAction.TapXY) = scope?.takeIf { accepted && knownTarget && action.screenId == id }
                 ?.let { VisualTarget(it, target) }
             override fun target(screenId: String, elementId: Int): TargetInfo? = null
@@ -63,7 +66,7 @@ class PhoneVisualPermissionTest {
             override fun notifyFix(kind: String) {}
             override fun sleep(ms: Long) {}
         }, tasks, ActionLog())
-        fun read() = core.call(PhoneToolCatalog.SCREEN, mapOf("background" to true, "image" to true))
+        fun read(image: Boolean = true) = core.call(PhoneToolCatalog.SCREEN, mapOf("background" to true, "image" to image))
         fun tap(gesture: String = "tap") = core.call(PhoneToolCatalog.TAP_XY,
             mapOf("observation" to id, "x" to 30, "y" to 40, "action" to gesture))
         override fun close() { core.worker.shutdown() }
@@ -86,6 +89,39 @@ class PhoneVisualPermissionTest {
             repeat(2) { f.read(); assertFalse(f.tap().isError) }
             assertEquals(2, f.asks.size); assertTrue(f.asks.all { it.visualScope != null })
             assertFalse(f.tasks.isApproved("example.app")); assertFalse(f.tasks.isWaived)
+        }
+    }
+    @Test fun textOnlyVisualPointsStillRequireConfirmationForEveryUnknownTarget() {
+        Fixture().use { f ->
+            f.image = null; f.textCoordinates = true; f.knownTarget = false
+            f.screenText = "V1 \"Details\" box=[20,30,50,60) point=(30,40)"
+            f.policy = PhonePolicies(confirmMode = ConfirmMode.ALWAYS)
+            f.decision = { Decision.ALLOW_ONCE }
+            repeat(2) {
+                assertFalse(f.read(image = false).isError)
+                assertTrue(f.accepted)
+                assertFalse(f.tap().isError)
+            }
+            assertEquals(2, f.actions); assertEquals(2, f.asks.size)
+            assertTrue(f.asks.all { it.visualScope == null && !it.offerTaskWaiver })
+            assertFalse(f.tasks.isApproved("example.app")); assertFalse(f.tasks.isWaived)
+            assertFalse(f.tasks.hasVisualGrant(f.tasks.activeOwner()!!, f.scope!!))
+        }
+    }
+    @Test fun textOnlyScreenWithoutDriverCandidateCannotAuthorizeCoordinates() {
+        Fixture().use { f ->
+            f.image = null; f.knownTarget = false; f.decision = { Decision.ALLOW_ONCE }
+            assertFalse(f.read(image = false).isError)
+            assertFalse(f.accepted)
+            assertTrue(f.tap().isError); assertEquals(0, f.actions)
+        }
+    }
+    @Test fun finalReadRefusalDoesNotAcceptEvenAnAvailableTextCandidate() {
+        Fixture().use { f ->
+            f.image = null; f.textCoordinates = true
+            f.policy = PhonePolicies(denyPackages = listOf("example.app"))
+            assertTrue(f.read(image = false).isError)
+            assertFalse(f.accepted); assertEquals(0, f.actions)
         }
     }
     @Test fun unknownEveryWriteAndLongTapNeverOfferOrUseVisualGrant() {

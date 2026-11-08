@@ -135,7 +135,8 @@ interface PhoneDriver {
 
     fun observe(detail: Boolean, image: Boolean): ScreenSnapshot
 
-    /** Pure local commit after the current task's final image filter; not model-delivery evidence. */
+    /** Accepts only a driver-recorded candidate after the task's final screen filter, including
+     * text-only visual observations. A missing candidate is a no-op; not model-delivery evidence. */
     fun acceptVisualObservation(screenId: String) {}
 
     fun collect(screenId: String, listElementId: Int, maxPages: Int, until: String?): CollectResult

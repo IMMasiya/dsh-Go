@@ -648,7 +648,7 @@ class PhoneCore(
         val shown = safety.filterScreen(snap)
         if (!current(owner)) return stoppedOut(summary)
         val refused = shown !== snap
-        if (!refused && shown.image != null) driver.acceptVisualObservation(shown.id)
+        if (!refused) driver.acceptVisualObservation(shown.id)
         return Out(
             // l10n:keep agent tool result
             if (refused) "没有读取这个屏幕的内容。" else "",
