@@ -8414,6 +8414,12 @@ abstract class L10n {
   /// **'在主对话里看'**
   String get companionLogOpenChat;
 
+  /// No description provided for @companionLogOlder.
+  ///
+  /// In zh, this message translates to:
+  /// **'加载更早的记录'**
+  String get companionLogOlder;
+
   /// No description provided for @companionMenuHistory.
   ///
   /// In zh, this message translates to:
@@ -9647,7 +9653,7 @@ abstract class L10n {
   /// No description provided for @companionMovesHint.
   ///
   /// In zh, this message translates to:
-  /// **'这些是模型自带的。开着的会交给 AI，她回复时会自己用；点名字改个好懂的叫法，点 ▶ 先在她身上试试。'**
+  /// **'这些是模型自带的。开着的会交给 AI（表情、动作各最多 24 个，按列表顺序），她回复时会自己用；点名字改个好懂的叫法，点 ▶ 先在她身上试试。'**
   String get companionMovesHint;
 
   /// No description provided for @companionMovesNone.

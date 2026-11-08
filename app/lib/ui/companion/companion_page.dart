@@ -857,7 +857,7 @@ class _CompanionPageState extends ConsumerState<CompanionPage> implements Compan
       emotions: _moves.emotionLabels,
       actions: _moves.actionLabels,
     );
-    _marksHandled = max(_marksHandled, reply.marks.length);
+    _marksHandled = reply.marks.length;
   }
 
   void _changeMove(CompanionMove next) {
@@ -1658,17 +1658,25 @@ class _CompanionPageState extends ConsumerState<CompanionPage> implements Compan
 
   Widget _log(String name) {
     final sessionId = _sessionId;
-    if (_light || sessionId == null) {
+    if (_light) {
       return CompanionLog(
         key: const ValueKey('log-light'),
         entries: companionLogFromLight(
-          _lightHistory?.lines ?? const [],
+          [
+            ...?_lightHistory?.lines,
+            // What she is saying right now, already in her bubble.
+            if (_lightReply != null && _lightText.isNotEmpty) CompanionLine.her(_lightText),
+          ],
           emotions: _moves.emotionLabels,
           actions: _moves.actionLabels,
         ),
         name: name,
         onClose: _closeLog,
       );
+    }
+    // Full mode before her conversation there has begun: nothing said yet.
+    if (sessionId == null) {
+      return CompanionLog(key: const ValueKey('log-none'), entries: const [], name: name, onClose: _closeLog);
     }
     return Consumer(
       key: ValueKey('log-$sessionId'),

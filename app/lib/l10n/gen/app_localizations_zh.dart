@@ -4577,6 +4577,9 @@ class L10nZh extends L10n {
   String get companionLogOpenChat => '在主对话里看';
 
   @override
+  String get companionLogOlder => '加载更早的记录';
+
+  @override
   String get companionMenuHistory => '查看聊天记录';
 
   @override
@@ -5218,7 +5221,7 @@ class L10nZh extends L10n {
   String get companionMenuMoves => '动作和表情';
 
   @override
-  String get companionMovesHint => '这些是模型自带的。开着的会交给 AI，她回复时会自己用；点名字改个好懂的叫法，点 ▶ 先在她身上试试。';
+  String get companionMovesHint => '这些是模型自带的。开着的会交给 AI（表情、动作各最多 24 个，按列表顺序），她回复时会自己用；点名字改个好懂的叫法，点 ▶ 先在她身上试试。';
 
   @override
   String get companionMovesNone => '这个模型没有自带的表情和动作，她用的是内置的那些。';

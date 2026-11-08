@@ -75,28 +75,44 @@ List<CompanionLogEntry> companionLogFromChat(
   Map<String, String> emotions = const {},
   Map<String, String> actions = const {},
 }) {
+  // Items don't change once made (an update is a new item), so what one reads
+  // as is kept with it; her labels changing starts over.
+  final labels = Object.hash(
+    Object.hashAllUnordered(emotions.entries.map((e) => (e.key, e.value))),
+    Object.hashAllUnordered(actions.entries.map((e) => (e.key, e.value))),
+  );
+  if (labels != _readLabels) {
+    _read = Expando();
+    _readLabels = labels;
+  }
   final out = <CompanionLogEntry>[];
   for (final item in items) {
-    switch (item) {
-      case UserChatItem(:final text):
-        final said = companionSaidText(text);
-        if (said.isNotEmpty) out.add(CompanionLogEntry.you(said));
-      case AssistantChatItem(:final text):
-        if (_her(text, emotions, actions) case final line?) out.add(line);
-      case ToolChatItem():
-        final view = ToolView.of(item);
-        final subject = view.summary.trim();
-        out.add(
-          CompanionLogEntry.did(
-            subject.isEmpty ? view.verb : '${view.verb}  $subject',
-            code: subject.isNotEmpty && view.summaryIsCode,
-          ),
-        );
-      default:
-        break;
-    }
+    final kept = _read[item] ??= [?_entryOf(item, emotions, actions)];
+    out.addAll(kept);
   }
   return out;
+}
+
+Expando<List<CompanionLogEntry>> _read = Expando();
+int? _readLabels;
+
+CompanionLogEntry? _entryOf(ChatItem item, Map<String, String> emotions, Map<String, String> actions) {
+  switch (item) {
+    case UserChatItem(:final text):
+      final said = companionSaidText(text);
+      return said.isEmpty ? null : CompanionLogEntry.you(said);
+    case AssistantChatItem(:final text):
+      return _her(text, emotions, actions);
+    case ToolChatItem():
+      final view = ToolView.of(item);
+      final subject = view.summary.trim();
+      return CompanionLogEntry.did(
+        subject.isEmpty ? view.verb : '${view.verb}  $subject',
+        code: subject.isNotEmpty && view.summaryIsCode,
+      );
+    default:
+      return null;
+  }
 }
 
 CompanionLogEntry? _her(String text, Map<String, String> emotions, Map<String, String> actions) {
@@ -134,6 +150,28 @@ class CompanionLog extends StatefulWidget {
 class _CompanionLogState extends State<CompanionLog> {
   final _scroll = ScrollController();
 
+  /// The last fetch brought nothing (it failed): no more on its own.
+  bool _stalled = false;
+  int _before = 0;
+
+  /// Asked for, and not loading yet: one fetch at a time.
+  bool _asked = false;
+
+  @override
+  void didUpdateWidget(CompanionLog old) {
+    super.didUpdateWidget(old);
+    if (widget.loadingOlder) _asked = false;
+    if (old.loadingOlder && !widget.loadingOlder && widget.entries.length <= _before) _stalled = true;
+  }
+
+  void _load() {
+    final load = widget.onLoadOlder;
+    if (load == null || widget.loadingOlder || _asked) return;
+    _before = widget.entries.length;
+    _asked = true;
+    load();
+  }
+
   @override
   void dispose() {
     _scroll.dispose();
@@ -142,16 +180,14 @@ class _CompanionLogState extends State<CompanionLog> {
 
   /// Near the top (the end of a reversed list): fetch what came before.
   bool _onScroll(ScrollNotification notification) {
-    final load = widget.onLoadOlder;
-    if (load != null && !widget.loadingOlder && notification.metrics.extentAfter < 240) load();
+    if (!_stalled && notification.metrics.extentAfter < 240) _load();
     return false;
   }
 
   /// A log too short to scroll never scrolls near its top: look after layout.
   void _fillUp() {
-    if (!mounted || widget.loadingOlder || !_scroll.hasClients) return;
-    final load = widget.onLoadOlder;
-    if (load != null && _scroll.position.extentAfter < 240) load();
+    if (!mounted || _stalled || !_scroll.hasClients) return;
+    if (_scroll.position.extentAfter < 240) _load();
   }
 
   @override
@@ -163,7 +199,7 @@ class _CompanionLogState extends State<CompanionLog> {
     final blur = DshSurfaces.of(context).blurEnabled;
     final entries = widget.entries;
     final older = widget.onLoadOlder != null || widget.loadingOlder;
-    if (widget.onLoadOlder != null && !widget.loadingOlder) {
+    if (widget.onLoadOlder != null && !widget.loadingOlder && !_stalled) {
       WidgetsBinding.instance.addPostFrameCallback((_) => _fillUp());
     }
 
@@ -195,6 +231,17 @@ class _CompanionLogState extends State<CompanionLog> {
                 itemCount: entries.length + (older ? 1 : 0),
                 itemBuilder: (context, index) {
                   if (index == entries.length) {
+                    if (_stalled && !widget.loadingOlder) {
+                      return Center(
+                        child: TextButton(
+                          onPressed: () {
+                            setState(() => _stalled = false);
+                            _load();
+                          },
+                          child: Text(l10n.companionLogOlder),
+                        ),
+                      );
+                    }
                     return const Padding(
                       padding: EdgeInsets.symmetric(vertical: 16),
                       child: Center(

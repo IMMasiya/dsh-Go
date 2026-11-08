@@ -152,4 +152,13 @@ void main() {
     expect(companionMarkLabelFits('x' * 41), isFalse);
     expect(companionMarkLabelFits('a]b'), isFalse);
   });
+
+  test('a numbered label still fits in a mark', () {
+    final long = '好' * 40;
+    final moves = CompanionMoves.from(CompanionModelInfo(expressions: ['a/$long', 'b/$long']), const {});
+    final second = moves.expressions.last.label;
+    expect(second, endsWith(' 2'));
+    expect(second.length, lessThanOrEqualTo(40));
+    expect(companionMarkLabelFits(second), isTrue);
+  });
 }

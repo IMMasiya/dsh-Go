@@ -14,6 +14,7 @@
 // interrupted one leaves (`.old-*`, `.trash-*`, `.staging-*`) is put right
 // before the folder is next listed or read.
 
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:math' as math;
@@ -25,6 +26,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path_provider/path_provider.dart';
 
+import 'overlay_channel.dart' show petOverlayChannelProvider;
 import 'pet_pack.dart';
 
 /// Ids of brought pets start with this; the built-in ones never do.
@@ -86,15 +88,23 @@ final _backupName = RegExp(r'^\.old-(\d+)-(user-[a-z0-9-]+)$');
 
 /// Where brought pets are kept (tests swap in a temporary folder).
 final petLibraryProvider = Provider<PetLibrary>(
-  (ref) => PetLibrary(() async => Directory('${(await getApplicationSupportDirectory()).path}/pets')),
+  (ref) => PetLibrary(
+    () async => Directory('${(await getApplicationSupportDirectory()).path}/pets'),
+    // The overlay may have looked while the pet was away and marked it
+    // broken (PetOverlay's failedIds): it reads it again.
+    onRestored: (id) => unawaited(ref.read(petOverlayChannelProvider).reloadPack(id)),
+  ),
 );
 
 /// The brought pets on this phone.
 class PetLibrary {
-  PetLibrary(this._root);
+  PetLibrary(this._root, {this.onRestored});
 
   /// `<app support>/pets` (tests: a temporary folder).
   final Future<Directory> Function() _root;
+
+  /// A pet an interrupted replacement had taken away is back from its backup.
+  final void Function(String id)? onRestored;
 
   /// The tail of the queue: installs, removals, listings and reads run one at
   /// a time, so none sees another's folders half swapped.
@@ -149,16 +159,33 @@ class PetLibrary {
   });
 
   /// Removes a brought pet. It leaves in one rename, so a removal that fails
-  /// leaves it whole; its files are then deleted when they can be.
+  /// leaves it whole; its files are then deleted when they can be. Backups
+  /// of it an earlier replacement couldn't delete are moved to the trash
+  /// first: left as `.old-*`, the next tidy would bring the pet back.
   Future<void> remove(String id) async {
     if (!isUserPet(id) || !_plainId.hasMatch(id)) return;
     await _exclusive(() async {
       final root = await _root();
+      if (!await root.exists()) return;
+      final going = await root
+          .list(followLinks: false)
+          .where((e) => e is Directory && _backupName.firstMatch(_nameOf(e))?[2] == id)
+          .cast<Directory>()
+          .toList();
       final dir = Directory('${root.path}/$id');
-      if (!await dir.exists()) return;
-      final trash = Directory('${root.path}/.trash-${DateTime.now().microsecondsSinceEpoch}-$id');
-      await dir.rename(trash.path);
-      await _discard(trash);
+      if (await dir.exists()) going.add(dir);
+      final stamp = DateTime.now().microsecondsSinceEpoch;
+      final trash = <Directory>[];
+      try {
+        // The pet itself last: if a backup won't move, the pet is still whole.
+        for (final dir in going) {
+          trash.add(await dir.rename('${root.path}/.trash-$stamp-${trash.length}-$id'));
+        }
+      } finally {
+        for (final dir in trash) {
+          await _discard(dir);
+        }
+      }
     });
   }
 
@@ -196,6 +223,7 @@ class PetLibrary {
         try {
           await found.first.$2.rename('${root.path}/$id');
           restored = true;
+          onRestored?.call(id);
         } on FileSystemException {
           continue; // Tried again next time; nothing of it is thrown away meanwhile.
         }
@@ -317,8 +345,9 @@ int _depth(Object? value) => switch (value) {
 /// Whether [bytes] is a whole PNG sheet a decoder will draw: every chunk
 /// there with a good CRC, a sound IHDR (sides up to [petSheetSideCap]), one
 /// run of IDAT that inflates to exactly the rows the header promises, each
-/// with a known filter, and an IEND. What a real decode adds (unfiltering)
-/// can't fail. Never inflates past what the header promises.
+/// with a known filter, no critical chunk a decoder may not know, and an
+/// IEND. What a real decode adds (unfiltering) can't fail. Never inflates
+/// past what the header promises.
 @visibleForTesting
 bool pngIntact(Uint8List bytes) {
   try {
@@ -375,9 +404,16 @@ bool _pngIntact(Uint8List bytes) {
       case 'IEND':
         if (idat.isEmpty || (colour == 3 && !palette)) return false;
         return _rowsIntact(idat, width, height, depth, colour, interlace);
+      default:
+        // Names are four ASCII letters; one whose first is upper-case is
+        // critical: a decoder that doesn't know it gives up on the image
+        // (libpng, so Android's decoder, among them).
+        if (!RegExp(r'^[A-Za-z]{4}$').hasMatch(type) || _upper(type.codeUnitAt(0))) return false;
     }
   }
 }
+
+bool _upper(int letter) => letter >= 0x41 && letter <= 0x5A;
 
 bool _rowsIntact(List<Uint8List> idat, int width, int height, int depth, int colour, int interlace) {
   final channels = switch (colour) {

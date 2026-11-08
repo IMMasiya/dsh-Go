@@ -35,6 +35,19 @@ class _StuckLibrary extends PetLibrary {
   Future<void> remove(String id) async => throw const FileSystemException('busy');
 }
 
+/// A library whose removals wait until the test lets them go.
+class _GatedRemoval extends PetLibrary {
+  _GatedRemoval(super.root);
+
+  final gate = Completer<void>();
+
+  @override
+  Future<void> remove(String id) async {
+    await gate.future;
+    return super.remove(id);
+  }
+}
+
 /// A library whose first listing is slow: read before an import, back after it.
 class _SlowFirstList extends PetLibrary {
   _SlowFirstList(super.root);
@@ -228,6 +241,55 @@ void main() {
     await container.read(userPetsProvider.future);
     await pumpEventQueue();
     expect(container.read(userPetsProvider).value!.map((p) => p.id), ['user-cat']);
+  });
+
+  group('removing a chosen pet: what is chosen after, and still hidden', () {
+    final until = DateTime(2026, 11, 8, 18);
+
+    Future<ProviderContainer> chosenCat(PetLibrary library, {DateTime? hiddenUntil}) async {
+      await library.install(zip({'pack.json': utf8.encode(jsonEncode(packJson())), 'idle.png': png(32, 16)}));
+      final container = ProviderContainer(
+        overrides: [
+          petLibraryProvider.overrideWithValue(library),
+          petOverlayChannelProvider.overrideWithValue(_Overlay()),
+          petPrefsProvider.overrideWith(
+            () => FixedPetPrefs(PetPrefs(packId: 'user-cat', hiddenUntil: hiddenUntil, loaded: true)),
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
+      return container;
+    }
+
+    test('deleted while hidden: the default comes back, hidden as it was', () async {
+      final container = await chosenCat(PetLibrary(pets), hiddenUntil: until);
+      await container.read(userPetsProvider.notifier).remove('user-cat');
+      expect(container.read(petPrefsProvider).packId, defaultPetId);
+      expect(container.read(petPrefsProvider).hiddenUntil, until);
+    });
+
+    test('cannot be deleted while hidden: chosen again, hidden as it was', () async {
+      final container = await chosenCat(_StuckLibrary(pets), hiddenUntil: until);
+      await expectLater(
+        container.read(userPetsProvider.notifier).remove('user-cat'),
+        throwsA(isA<FileSystemException>()),
+      );
+      expect(container.read(petPrefsProvider).packId, 'user-cat');
+      expect(container.read(petPrefsProvider).hiddenUntil, until);
+    });
+
+    test('picked again while it was being deleted: the default after all', () async {
+      final library = _GatedRemoval(pets);
+      final container = await chosenCat(library);
+      final removing = container.read(userPetsProvider.notifier).remove('user-cat');
+      await pumpEventQueue();
+      expect(container.read(petPrefsProvider).packId, defaultPetId);
+      await container.read(petPrefsProvider.notifier).setPack('user-cat');
+      library.gate.complete();
+      await removing;
+      expect(container.read(petPrefsProvider).packId, defaultPetId);
+      expect(Directory('${temp.path}/pets/user-cat').existsSync(), isFalse);
+    });
   });
 
   testWidgets('cancelling the pick does nothing', (tester) async {

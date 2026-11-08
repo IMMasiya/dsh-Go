@@ -4,6 +4,8 @@
 // the same risk confirmation, the same answers sent back), drawn on her deep
 // glass so they belong to the room instead of sending the person elsewhere.
 
+import 'dart:async';
+
 import 'package:dsh_client/dsh_client.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -17,32 +19,76 @@ import '../theme/surfaces.dart';
 import 'companion_chrome.dart';
 
 /// The approval or question her session [sessionId] is waiting on, or nothing.
-/// An approval comes first: the turn can't go on without it.
-class CompanionAsk extends ConsumerWidget {
+/// An approval comes first: the turn can't go on without it. An approval
+/// about a tool call waits for that call's details (its command or path)
+/// before it can be allowed, up to [detailWait]; after that it shows what
+/// the request itself says, as the main chat does.
+class CompanionAsk extends ConsumerStatefulWidget {
   const CompanionAsk({super.key, required this.sessionId});
 
   final String sessionId;
 
+  /// How long an approval waits for its tool call to show up.
+  static const detailWait = Duration(seconds: 3);
+
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<CompanionAsk> createState() => _CompanionAskState();
+}
+
+class _CompanionAskState extends ConsumerState<CompanionAsk> {
+  /// The approval whose details didn't come in time: shown without them.
+  String? _waitedFor;
+  Timer? _wait;
+
+  @override
+  void dispose() {
+    _wait?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final asking = ref.watch(
-      chatProvider(sessionId)
-          .select((s) => (approval: s.openApproval, question: s.questions.firstOrNull, autoApprove: s.autoApprove)),
+      chatProvider(widget.sessionId).select((s) {
+        final approval = s.openApproval;
+        return (
+          approval: approval,
+          tool: approval == null ? null : _toolFor(s.items, approval),
+          question: s.questions.firstOrNull,
+          autoApprove: s.autoApprove,
+        );
+      }),
     );
-    final chat = ref.read(chatProvider(sessionId).notifier);
+    final chat = ref.read(chatProvider(widget.sessionId).notifier);
     final approval = asking.approval;
     final question = asking.question;
+    final tool = asking.tool;
+    // Details still on their way: nothing to allow yet.
+    final waiting =
+        approval != null &&
+        approval.callId != null &&
+        (tool == null || tool.status == ToolStatus.streaming) &&
+        _waitedFor != approval.eventId;
+    if (waiting && _wait == null) {
+      final id = approval.eventId;
+      _wait = Timer(CompanionAsk.detailWait, () {
+        if (mounted) setState(() => _waitedFor = id);
+      });
+    } else if (!waiting) {
+      _wait?.cancel();
+      _wait = null;
+    }
     Widget? card;
-    if (approval != null) {
+    if (approval != null && !waiting) {
       card = ApprovalCard(
         key: ValueKey('approval-${approval.eventId}'),
         request: approval,
-        view: _viewFor(ref.read(chatProvider(sessionId)).items, approval),
+        view: tool == null ? null : ToolView.of(tool),
         onRespond: chat.respond,
         // Already trusting the whole conversation: nothing wider to offer.
         onAllowAll: asking.autoApprove ? null : chat.allowAll,
       );
-    } else if (question != null) {
+    } else if (approval == null && question != null) {
       card = QuestionCard(
         key: ValueKey('question-${question.eventId}'),
         request: question,
@@ -73,12 +119,12 @@ class CompanionAsk extends ConsumerWidget {
   }
 
   /// The tool call the approval is about: its command or path is the card's body.
-  static ToolView? _viewFor(List<ChatItem> items, ApprovalRequest request) {
+  static ToolChatItem? _toolFor(List<ChatItem> items, ApprovalRequest request) {
     for (final item in items.reversed) {
       if (item is! ToolChatItem) continue;
       if (item.pendingApproval?.eventId == request.eventId ||
           (request.callId != null && item.callId == request.callId)) {
-        return ToolView.of(item);
+        return item;
       }
     }
     return null;

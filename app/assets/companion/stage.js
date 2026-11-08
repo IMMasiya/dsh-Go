@@ -294,7 +294,7 @@
         const ratio = (max - min) / (high - low);
         // Close enough is left alone (an eye that opens to 2 is still an eye at
         // 1, a body that turns 30 still turns at 10); only an order off is fitted.
-        const apart = max < low || min > high;
+        const apart = max <= low || min >= high;
         const fit = ratio > 0 && (ratio < 0.2 || ratio > 5 || apart);
         if (!fit && ids.length === 1 && ids[0] === name) return;
         this.alias.set(name, { ids, scale: fit ? ratio : 1, offset: fit ? min - low * ratio : 0 });

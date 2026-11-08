@@ -4869,6 +4869,9 @@ class L10nEn extends L10n {
   String get companionLogOpenChat => 'Open in chat';
 
   @override
+  String get companionLogOlder => 'Load earlier messages';
+
+  @override
   String get companionMenuHistory => 'View chat history';
 
   @override
@@ -5529,7 +5532,7 @@ class L10nEn extends L10n {
 
   @override
   String get companionMovesHint =>
-      'These come with the model. The ones switched on are offered to the AI and she uses them in her replies; tap a name to give it a clearer one, tap ▶ to try it on her.';
+      'These come with the model. The ones switched on are offered to the AI (up to 24 expressions and 24 motions, in list order) and she uses them in her replies; tap a name to give it a clearer one, tap ▶ to try it on her.';
 
   @override
   String get companionMovesNone =>

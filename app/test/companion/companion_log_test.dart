@@ -98,4 +98,59 @@ void main() {
     await tester.pumpAndSettle();
     expect(pulled, 1);
   });
+
+  testWidgets('a pull that went back in does not count', (tester) async {
+    var pulled = 0;
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: buildDarkTheme(),
+        home: Scaffold(
+          body: Align(
+            alignment: Alignment.bottomCenter,
+            child: CompanionSpeech(text: '嗯。', onPullBack: () => pulled++),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    final gesture = await tester.startGesture(tester.getCenter(find.text('嗯。')));
+    for (final dy in [10.0, 10.0, 10.0, -10.0, -10.0, -10.0, 10.0, 10.0]) {
+      await gesture.moveBy(Offset(0, dy));
+      await tester.pump();
+    }
+    await gesture.up();
+    await tester.pumpAndSettle();
+    expect(pulled, 0);
+  });
+
+  testWidgets('a fetch of earlier history that brings nothing stops; a tap tries again', (tester) async {
+    var loads = 0;
+    Widget log({required bool loading}) => MaterialApp(
+      theme: buildDarkTheme(),
+      localizationsDelegates: L10n.localizationsDelegates,
+      supportedLocales: L10n.supportedLocales,
+      locale: const Locale('zh'),
+      home: Scaffold(
+        body: CompanionLog(
+          entries: const [CompanionLogEntry.you('在吗')],
+          name: '小鲸',
+          onClose: () {},
+          loadingOlder: loading,
+          onLoadOlder: () => loads++,
+        ),
+      ),
+    );
+    await tester.pumpWidget(log(loading: false));
+    await tester.pump();
+    expect(loads, 1);
+    await tester.pumpWidget(log(loading: true));
+    await tester.pumpWidget(log(loading: false));
+    await tester.pump();
+    await tester.pump();
+    // Failed (nothing new came): no second try on its own.
+    expect(loads, 1);
+    await tester.tap(find.text('加载更早的记录'));
+    await tester.pump();
+    expect(loads, 2);
+  });
 }

@@ -7,8 +7,9 @@ import 'package:dsh_app/pets/pet_library.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 /// A real (transparent) PNG of [w] × [h]; [data] replaces its image data
-/// (filter bytes included), [interlace] sets IHDR's interlace method.
-Uint8List png(int w, int h, {List<int>? data, int interlace = 0}) {
+/// (filter bytes included), [interlace] sets IHDR's interlace method,
+/// [chunks] are empty chunks of those types after IHDR.
+Uint8List png(int w, int h, {List<int>? data, int interlace = 0, List<String> chunks = const []}) {
   List<int> chunk(String type, List<int> data) {
     final body = [...ascii.encode(type), ...data];
     final length = ByteData(4)..setUint32(0, data.length);
@@ -28,6 +29,7 @@ Uint8List png(int w, int h, {List<int>? data, int interlace = 0}) {
   return Uint8List.fromList([
     0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, //
     ...chunk('IHDR', header.buffer.asUint8List()),
+    for (final type in chunks) ...chunk(type, const []),
     ...chunk('IDAT', ZLibCodec().encode(data ?? rows)),
     ...chunk('IEND', const []),
   ]);
@@ -122,6 +124,11 @@ void main() {
     expect(pngIntact(png(32, 16, data: [9, ...row.skip(1), for (var y = 1; y < 16; y++) ...row])), isFalse);
     // A flipped byte: its CRC no longer matches.
     expect(pngIntact(Uint8List.fromList(whole)..[40] ^= 0xff), isFalse);
+    // A chunk a decoder may skip (ancillary: lower-case first letter) is fine; an
+    // unknown critical one (upper-case first) or a name that isn't four letters is not.
+    expect(pngIntact(png(32, 16, chunks: ['tEXt', 'abCd'])), isTrue);
+    expect(pngIntact(png(32, 16, chunks: ['ABCD'])), isFalse);
+    expect(pngIntact(png(32, 16, chunks: ['ab1d'])), isFalse);
     // Interlaced 2 × 2: Adam7 passes 1, 6 and 7 hold a row each (1, 1 and 2 pixels).
     expect(pngIntact(png(2, 2, interlace: 1, data: List.filled(5 + 5 + 9, 0))), isTrue);
     expect(pngIntact(png(2, 2, interlace: 1, data: List.filled(5 + 5 + 8, 0))), isFalse);
@@ -266,12 +273,34 @@ void main() {
       expect((await library.load('user-cat')).name, '小猫');
     });
 
+    test('a pet brought back from its backup is announced (the overlay reads it again)', () async {
+      final restored = <String>[];
+      final watched = PetLibrary(() async => pets(), onRestored: restored.add);
+      await installCat();
+      Directory('${pets().path}/user-cat').renameSync('${pets().path}/.old-123-user-cat');
+      expect((await watched.list()).map((p) => p.id), ['user-cat']);
+      expect(restored, ['user-cat']);
+      await watched.list();
+      expect(restored, ['user-cat'], reason: 'once');
+    });
+
     test('a replacement that landed is never undone; its backup goes', () async {
       await installCat();
       // The old one's folder outlived the swap (it couldn't be deleted then).
       final backup = Directory('${pets().path}/.old-5-user-cat')..createSync();
       File('${backup.path}/pack.json').writeAsStringSync(jsonEncode(packJson(id: 'user-cat', name: '旧猫')));
       expect((await library.list()).map((p) => p.name), ['小猫']);
+      expect(leftovers(), isEmpty);
+    });
+
+    test('removed while a backup of it is left over: the backup never brings it back', () async {
+      await installCat();
+      // A replacement whose old folder couldn't be deleted then.
+      final backup = Directory('${pets().path}/.old-5-user-cat')..createSync();
+      File('${backup.path}/pack.json').writeAsStringSync(jsonEncode(packJson(id: 'user-cat', name: '旧猫')));
+      await library.remove('user-cat');
+      expect(Directory(backup.path).existsSync(), isFalse);
+      expect(await library.list(), isEmpty);
       expect(leftovers(), isEmpty);
     });
 
@@ -290,6 +319,17 @@ void main() {
           zip({
             'pack.json': utf8.encode(jsonEncode(packJson(name: '大猫'))),
             'idle.png': Uint8List.sublistView(cut, 0, cut.length - 20),
+          }),
+        ),
+        problem(PetImportProblem.badSheet),
+      );
+      expect((await library.list()).map((p) => p.name), ['小猫']);
+      // Nor one with a critical chunk the phone's decoder may not know.
+      await expectLater(
+        library.install(
+          zip({
+            'pack.json': utf8.encode(jsonEncode(packJson(name: '大猫'))),
+            'idle.png': png(32, 16, chunks: ['ABCD']),
           }),
         ),
         problem(PetImportProblem.badSheet),

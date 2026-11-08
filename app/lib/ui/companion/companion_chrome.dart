@@ -274,13 +274,16 @@ class _PullBackState extends State<_PullBack> {
         _pulled = 0;
         _fired = false;
       // In a reversed view the oldest end is the far end: past it is positive.
-      case OverscrollNotification(:final overscroll, :final dragDetails?)
-          when overscroll > 0 && dragDetails.delta.dy > 0:
-        _pulled += overscroll;
+      case OverscrollNotification(:final overscroll, :final dragDetails?):
+        // Down past the edge adds; any way back takes it off again.
+        final dy = dragDetails.delta.dy;
+        _pulled = math.max(0.0, _pulled + (dy > 0 && overscroll > 0 ? overscroll : -dy.abs()));
         if (!_fired && _pulled > _far) {
           _fired = true;
           pull();
         }
+      case ScrollUpdateNotification(:final dragDetails?) when dragDetails.delta.dy < 0:
+        _pulled = math.max(0.0, _pulled + dragDetails.delta.dy);
       default:
         break;
     }

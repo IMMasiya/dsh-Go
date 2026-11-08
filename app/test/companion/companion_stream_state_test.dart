@@ -13,6 +13,7 @@ import 'package:dsh_app/state/chat_state.dart';
 import 'package:dsh_app/state/connection_state.dart';
 import 'package:dsh_app/state/hosts_state.dart';
 import 'package:dsh_app/ui/chat/widgets/approval_card.dart';
+import 'package:dsh_app/ui/companion/companion_ask.dart';
 import 'package:dsh_app/ui/companion/companion_chrome.dart';
 import 'package:dsh_app/ui/companion/companion_page.dart';
 import 'package:dsh_app/ui/companion/companion_stage.dart';
@@ -408,6 +409,87 @@ void main() {
       debugPrint(
         '[C439 POSITIVE] empty start -> monotonic chunks -> 3 same-session status notifications -> commit: OK',
       );
+    } finally {
+      await room.close(tester);
+    }
+  });
+
+  testWidgets('an approval waits for the command it is about before it can be allowed', (tester) async {
+    final room = _Room(temporary);
+    await room.open(tester);
+    try {
+      final wire = _Wire(room)
+        ..beginTurn()
+        ..start('early-approval');
+      wire.text('我看一下。');
+      await flush(tester);
+      // The approval arrives before its tool call has reached the transcript.
+      room.client.events.add(
+        HostEvent.fromFrame({
+          'type': 'waterfall',
+          'event': 'approval/request',
+          'eventId': 'approval-early',
+          'agentId': _session,
+          'request': {'toolName': 'bash', 'callId': 'call-early'},
+        }),
+      );
+      await flush(tester);
+      expect(room.state.openApproval?.eventId, 'approval-early');
+      expect(find.byType(ApprovalCard), findsNothing);
+      // Its command comes in: now there is something to allow.
+      wire.endText();
+      const call = {'type': 'tool-call', 'id': 'call-early', 'name': 'bash', 'arguments': '{"command":"ls"}'};
+      wire.chunk({'type': 'block-start', 'index': 1, 'blockType': 'tool-call'});
+      wire.chunk({
+        'type': 'tool-call-delta',
+        'index': 1,
+        'id': 'call-early',
+        'name': 'bash',
+        'argumentsDelta': '{"command":"ls"}',
+      });
+      wire.chunk({'type': 'block-end', 'index': 1, 'block': call});
+      wire.finish('tool-calls');
+      wire.settle('assistant/message', text: '我看一下。', extraParts: [call]);
+      wire.log('tool/call', {
+        'turn': 1,
+        'step': 1,
+        'callId': 'call-early',
+        'name': 'bash',
+        'arguments': '{"command":"ls"}',
+      });
+      await flush(tester);
+      await tester.pump(const Duration(milliseconds: 600));
+      expect(find.byType(ApprovalCard), findsOneWidget);
+      expect(find.textContaining('ls'), findsWidgets);
+    } finally {
+      await room.close(tester);
+    }
+  });
+
+  testWidgets('an approval whose call never shows up is shown after a short wait, as the main chat does', (
+    tester,
+  ) async {
+    final room = _Room(temporary);
+    await room.open(tester);
+    try {
+      _Wire(room)
+        ..beginTurn()
+        ..start('lonely-approval');
+      await flush(tester);
+      room.client.events.add(
+        HostEvent.fromFrame({
+          'type': 'waterfall',
+          'event': 'approval/request',
+          'eventId': 'approval-lonely',
+          'agentId': _session,
+          'request': {'toolName': 'web_fetch', 'callId': 'call-elsewhere', 'reason': '要打开一个网页'},
+        }),
+      );
+      await flush(tester);
+      expect(find.byType(ApprovalCard), findsNothing);
+      await tester.pump(CompanionAsk.detailWait);
+      await tester.pump(const Duration(milliseconds: 600));
+      expect(find.byType(ApprovalCard), findsOneWidget);
     } finally {
       await room.close(tester);
     }

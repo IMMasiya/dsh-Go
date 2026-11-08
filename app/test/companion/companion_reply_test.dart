@@ -110,4 +110,10 @@ void main() {
       expect(companionGreeting(evening, evening.subtract(const Duration(days: 4))), CompanionGreeting.longAbsence);
     });
   });
+
+  test('a note with a line break keeps the aside on one line', () {
+    final aside = companionAside(now: DateTime(2026, 11, 8, 9, 0), notes: const ['「整理\n照片」那边跑完了'])!;
+    expect(aside, isNot(contains('\n')));
+    expect(companionSaidText('$aside\n在吗'), '在吗');
+  });
 }

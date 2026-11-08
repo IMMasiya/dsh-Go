@@ -257,13 +257,25 @@ internal object PetOverlay {
 
     /**
      * A brought pet's files changed (imported again, removed): what was read of [id] is stale even
-     * though its id and size are not. Read it again if it is the one out; else it is read fresh
-     * when next pushed.
+     * though its id and size are not. Read it again if it is the one out. If it isn't (不显示,
+     * another pet), what is kept or still loading of it goes, so choosing it again reads it fresh.
      */
     fun reloadPack(id: String) {
         if (!initialized) return
         failedIds -= id
-        machine.last?.let { p -> if (p.packId == id) ensurePack(id, p.size, reload = true) }
+        val out = machine.last?.takeIf { it.packId == id }
+        if (out != null) return ensurePack(id, out.size, reload = true)
+        if (loadingKey?.startsWith("$id@") == true) {
+            loadRequest++
+            loadingKey = null
+        }
+        if (loadedKey?.startsWith("$id@") != true) return
+        loaded?.release()
+        loaded = null
+        loadedKey = null
+        stateKey = null
+        if (petView != null) removeWindows()
+        evaluate()
     }
 
     fun setEnabled(on: Boolean): Map<String, Any?> {

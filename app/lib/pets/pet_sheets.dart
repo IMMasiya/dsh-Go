@@ -59,7 +59,15 @@ class PetSheets {
           final data = await bundle.load('${PetPack.folder(pack.id)}/${anim.sheet}');
           return data.buffer.asUint8List(data.offsetInBytes, data.lengthInBytes);
         });
-    await job.done;
+    try {
+      await job.done;
+    } on Object {
+      // The old files' read, forgotten meanwhile, failed (they were being
+      // swapped out): no reason the new ones won't read. A current job's
+      // failure is the caller's to know.
+      if (job.stale) return load(pack, anim, bundle);
+      rethrow;
+    }
     // Forgotten meanwhile (the pet brought again or removed): its files
     // changed, so read them again. Evicted by another decode: decode it again.
     final kept = job.stale ? null : _images[key];

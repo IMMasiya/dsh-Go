@@ -246,7 +246,7 @@ const companionAdaptSystem = '''
 - "emotions"：{情绪: {"expression": 模型的表情名, "face": {标准参数名或模型参数 id: 数值}}}。face 里的数值是加在当前值上的量（比如 "ParamAngleZ": 10 是头再歪 10）。情绪只能是：calm happy shy sad angry surprised confused smug sleepy worried。表情名必须是下面列出的表情之一。开关类的表情（换装、隐藏部件、水印）不要用作情绪。
 - "actions"：{手势名: {"motion": 模型的动作名}}。手势名只能是：nod nodSmall shake tilt tiltLeft lookUp recoil duck sway stretch yawn wave。只在模型有明显对应的动作时写。
 - "zones"：触摸区列表，每项 {"id": head|face|body|tail|legs, "from": 0~1, "to": 0~1}，from/to 是从画面顶端往下的比例（0 顶，1 底），可选 "xFrom"/"xTo"（-1 左到 1 右）。按人物从上到下的大致比例估：头发和头顶、脸、身体、腿或尾巴。
-- "framing"：{"zoom": 0.3~3, "y": -1~1}，人物在画面里的缩放和上下位置（y 正数往上挪）。只在默认取景明显不对（人物太大、太小、头被切掉）时写。
+- "framing"：{"zoom": 0.3~3, "y": -1~1}，人物在画面里的缩放和上下位置（y 负数往上挪，正数往下挪）。只在默认取景明显不对（人物太大、太小、头被切掉）时写。
 - "tail"：尾巴摆动用的模型参数 id 列表（没有尾巴就不写）。
 - "pose"：{模型参数 id: 数值}，进来时就固定的值，比如关掉水印、选一套默认衣服。
 - "notes"：一句给用户看的话（不超过 60 字），说明做了什么、哪里没法适配。

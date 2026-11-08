@@ -115,7 +115,7 @@ class CompanionMoves {
         () {
           var label = m.label;
           for (var n = 2; taken.contains(label.toLowerCase()); n++) {
-            label = '${m.label} $n';
+            label = _numbered(m.label, n);
           }
           taken.add(label.toLowerCase());
           return label == m.label ? m : m.copyWith(label: label);
@@ -135,13 +135,20 @@ class CompanionMoves {
     };
     var label = next.label;
     for (var n = 2; taken.contains(label.toLowerCase()); n++) {
-      label = '${next.label} $n';
+      label = _numbered(next.label, n);
     }
     final settled = label == next.label ? next : next.copyWith(label: label);
     return CompanionMoves(
       expressions: [for (final m in expressions) m.kind == settled.kind && m.raw == settled.raw ? settled : m],
       motions: [for (final m in motions) m.kind == settled.kind && m.raw == settled.raw ? settled : m],
     );
+  }
+
+  /// [label] with a number after it, cut short so a mark can still carry it.
+  static String _numbered(String label, int n) {
+    final suffix = ' $n';
+    final room = 40 - suffix.length;
+    return '${label.length > room ? label.substring(0, room).trimRight() : label}$suffix';
   }
 
   /// How many of each kind the AI is told about, at most.

@@ -162,7 +162,7 @@ String? companionAside({DateTime? now, List<String> notes = const []}) {
     if (now != null)
       '${now.month}月${now.day}日 ${_weekday[now.weekday - 1]} '
           '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}',
-    ...notes,
+    for (final note in notes) note.replaceAll(RegExp(r'\s*\n\s*'), ' '),
   ];
   return parts.isEmpty ? null : '〔${parts.join('，')}〕';
 }
