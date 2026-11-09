@@ -185,15 +185,15 @@ test('C1 first micro frame is immediate at monotonic zero', async t => {
 });
 
 test('C2 ordinary edges, burst, refill and terminal revocation retain their behavior', async t => {
-  const f = await fixture(t), normal = await f.invoke(), clock = clocks(t);
+  const f = await fixture(t), clock = clocks(t), normal = await f.invoke();
   f.send({ t: 'cap.event', lease: normal, seq: 1, event: 'voice.speechStart' }); await f.fence();
   clock.mono = 700; clock.wall += 700;
   f.send({ t: 'cap.event', lease: normal, seq: 2, event: 'voice.speechEnd' }); await f.fence();
   assert.deepEqual(f.events.map(e => e.event), ['voice.speechStart', 'voice.speechEnd']);
   f.send({ t: 'cap.event', lease: normal, seq: 3, event: 'voice.stopped' }); await f.fence();
   assert.equal(f.events.at(-1).event, 'voice.stopped'); assert.equal(f.events[0].signal.aborted, true);
-  // wall started at the real post-invoke epoch and only advanced, so a fresh HTTP admission
-  // stays in its original time domain. No timer mock is active during this invoke.
+  // Both HTTP admissions stay on the same mocked monotonic clock.
+  // No timer mock is active during either invoke.
   const burst = await f.invoke(); assert.notEqual(burst, normal); f.events.length = 0;
   for (let seq = 1; seq <= 5; seq++) f.send({ t: 'cap.event', lease: burst, seq,
     event: seq % 2 ? 'voice.speechStart' : 'voice.speechEnd' });
