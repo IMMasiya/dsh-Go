@@ -75,8 +75,22 @@ internal class PhoneSkillDrafts(private val newId: () -> String = { UUID.randomU
         val nameId = newId().takeIf { HEX.matches(it) } ?: return Rejected(Code.INVALID)
         val document = PhoneSkillDraft.render(source, "phone-task-$nameId", true) as? PhoneSkillDraft.Ready
             ?: return Rejected(Code.UNAVAILABLE)
+        val prospective = Editor(id, client, source, document, source.steps.indices.toList())
+        // No editor is exposed or old write cancelled until the complete group is validated.
+        val descriptors = PhoneSkillReplayApps.descriptors
+        val route = if (descriptors.isEmpty()) PhoneSkillNavigationRoute.Result.NotEligible
+            else PhoneSkillNavigationRoute.build(source, document, newId(), prospective.revision + 1, descriptors)
+        when (route) {
+            PhoneSkillNavigationRoute.Result.NotEligible -> Unit
+            is PhoneSkillNavigationRoute.Result.Invalid -> return Rejected(
+                if (route.reason == io.github.ccch1mneyyy.dsh_app.runtime.PhoneSkillBundleReader.Reason.SIZE)
+                    Code.TOO_LARGE else Code.INVALID)
+            is PhoneSkillNavigationRoute.Result.Ready ->
+                if (!bind(prospective, route.bundle, route.preview)) return Rejected(Code.INVALID)
+        }
         if (previous != null && !cancel(previous)) return Rejected(Code.BUSY)
-        return Editor(id, client, source, document, source.steps.indices.toList()).also { editor = it }.let(::shown)
+        editor = prospective
+        return shown(prospective)
     }
 
     /** Native witness producer only; no bridge action accepts a route or descriptor from Flutter.
@@ -88,15 +102,20 @@ internal class PhoneSkillDrafts(private val newId: () -> String = { UUID.randomU
         if (epoch != expectedEpoch || e.retired || !attached(e.client) || e.source.owner != owner ||
             e.id != draftId || e.revision != expectedRevision) return Rejected(Code.STALE)
         if (e.write != null) return Rejected(Code.BUSY)
-        val document = preview ?: e.document
+        if (!bind(e, bundle, preview ?: e.document)) return Rejected(Code.INVALID)
+        return shown(e)
+    }
+
+    /** Same bounded identity mutation for an unexposed prospective editor and explicit native binding. */
+    private fun bind(e: Editor, bundle: PhoneSkillBundleInstaller.Document, document: PhoneSkillDraft.Ready): Boolean {
         if (document.owner != e.source.owner || document.skillName != e.document.skillName ||
             e.revision == Long.MAX_VALUE || bundle.identity.name != e.document.skillName ||
             bundle.identity.draftRevision != e.revision + 1 ||
-            !bundle.bytes()[0].contentEquals(document.markdown.toByteArray(Charsets.UTF_8))) return Rejected(Code.INVALID)
+            !bundle.bytes()[0].contentEquals(document.markdown.toByteArray(Charsets.UTF_8))) return false
         e.document = document
         e.bundle = bundle
         e.revision++
-        return shown(e)
+        return true
     }
 
     /** Raw editing strings live only in this call, never in a field, permit, error or rendered document. */
