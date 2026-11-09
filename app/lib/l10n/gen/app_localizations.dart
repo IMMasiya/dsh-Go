@@ -28142,6 +28142,36 @@ abstract class L10n {
   /// **'怎么连接自己的电脑或服务器？和用本机有什么不同？'**
   String get askAiQuestionRemote;
 
+  /// No description provided for @phoneRuntimeUpgradeBase.
+  ///
+  /// In zh, this message translates to:
+  /// **'新引擎与现有 Linux 环境不能确认兼容，更新已停止。原环境和已装工具没有删除。请先完整备份，再联系维护者迁移；不要直接重置或卸载 App。'**
+  String get phoneRuntimeUpgradeBase;
+
+  /// No description provided for @phoneRuntimeUpgradeManifest.
+  ///
+  /// In zh, this message translates to:
+  /// **'无法安全识别运行时更新清单，更新已停止，原环境保留。请核对安装包并联系维护者，不要直接重置。'**
+  String get phoneRuntimeUpgradeManifest;
+
+  /// No description provided for @phoneRuntimeUpgradeInterrupted.
+  ///
+  /// In zh, this message translates to:
+  /// **'运行时升级尚未完成，数据与恢复现场已保留。请重试安装；仍失败时导出诊断并联系维护者，不要重置或删除恢复目录。'**
+  String get phoneRuntimeUpgradeInterrupted;
+
+  /// No description provided for @phoneRuntimeUpgradeSymlink.
+  ///
+  /// In zh, this message translates to:
+  /// **'现有环境的系统路径已被自定义链接替换，无法安全更新。原环境保留，请先备份并联系维护者处理。'**
+  String get phoneRuntimeUpgradeSymlink;
+
+  /// No description provided for @phoneRuntimeUpgradeRunning.
+  ///
+  /// In zh, this message translates to:
+  /// **'引擎或遗留进程尚未确认停止，更新未开始。请先停止本机引擎，等待清理完成后重试；不要重置环境。'**
+  String get phoneRuntimeUpgradeRunning;
+
   /// No description provided for @schemaDocumentationTitle.
   ///
   /// In zh, this message translates to:

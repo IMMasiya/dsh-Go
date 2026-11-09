@@ -16229,6 +16229,26 @@ class L10nEn extends L10n {
       'How do I connect my own computer or server, and how is that different from this phone?';
 
   @override
+  String get phoneRuntimeUpgradeBase =>
+      'The new engine cannot be confirmed compatible with your Linux environment, so the update stopped. Your environment and installed tools were not deleted. Make a full backup and contact the maintainer for migration; do not reset or uninstall the app.';
+
+  @override
+  String get phoneRuntimeUpgradeManifest =>
+      'The runtime update manifest could not be safely identified. The update stopped and your environment was kept. Check the APK and contact the maintainer; do not reset the environment.';
+
+  @override
+  String get phoneRuntimeUpgradeInterrupted =>
+      'The runtime upgrade is incomplete. Your data and recovery state were kept. Retry installation. If it still fails, export diagnostics and contact the maintainer; do not reset or delete recovery directories.';
+
+  @override
+  String get phoneRuntimeUpgradeSymlink =>
+      'A system path was replaced by a custom link, so the environment cannot be updated safely. Your environment was kept. Back it up and contact the maintainer.';
+
+  @override
+  String get phoneRuntimeUpgradeRunning =>
+      'The engine or a leftover process has not been confirmed stopped. The update has not started. Stop the local engine and wait for cleanup before retrying; do not reset the environment.';
+
+  @override
   String get schemaDocumentationTitle => 'Field descriptions';
 
   @override
