@@ -704,6 +704,38 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
     fun appDetailsIntent(): Intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:${app.packageName}"))
         .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
 
+    /** Debug probe only. The worker builds values; only the successful caller may persist them. */
+    internal fun collectNavigationMaterial(driver: io.github.ccch1mneyyy.dsh_app.phone.a11y.MainScreenDriver,
+                                          seq: Int, publish: (ByteArray) -> Unit) {
+        fun allowed(): Boolean = app.applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE != 0 &&
+            PhoneRegistry.mainDriver === driver && enabled() && !isLocked() &&
+            core.safety.checkReadSources(policies(), listOf(io.github.ccch1mneyyy.dsh_app.phone.a11y.MarkorNavigation.PACKAGE)) == null
+        fun unavailable(reason: String) = Json.write(mapOf("schema" to 1, "seq" to seq,
+            "kind" to "unavailable", "reason" to reason)).toByteArray(Charsets.UTF_8)
+        val bytes = try {
+            if (!allowed()) unavailable("unavailable") else {
+                val result = sessions.readForSelfCheck(core.worker, 8_000, 15_000) {
+                    if (!allowed()) io.github.ccch1mneyyy.dsh_app.phone.a11y.NavigationMaterials.Unavailable("unavailable")
+                    else driver.navigationMaterial()
+                }
+                when (result) {
+                    null -> unavailable("busy")
+                    is SerialWorker.Outcome.Done -> when (val value = result.value) {
+                        is io.github.ccch1mneyyy.dsh_app.phone.a11y.NavigationMaterials.Unavailable -> unavailable(value.reason)
+                        is io.github.ccch1mneyyy.dsh_app.phone.a11y.NavigationMaterials.Sample -> {
+                            val encoded = Json.write(mapOf("schema" to 1, "seq" to seq, "kind" to "observed") + value.fields)
+                                .toByteArray(Charsets.UTF_8)
+                            if (encoded.size > io.github.ccch1mneyyy.dsh_app.phone.a11y.NavigationMaterials.MAX_BYTES) unavailable("limit")
+                            else if (!allowed() || !value.current()) unavailable("changed") else encoded
+                        }
+                    }
+                    else -> unavailable("unavailable")
+                }
+            }
+        } catch (_: Exception) { unavailable("unavailable") }
+        publish(bytes)
+    }
+
     /**
      * 「读一下当前屏幕」: the person's own on-device check, never sent to a model, so it shows
      * whatever is in front (DSH's own settings page included; the own-app rule is for tool calls).

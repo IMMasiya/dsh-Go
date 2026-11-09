@@ -1357,6 +1357,47 @@ internal class MainScreenDriver(private val service: PhoneA11yService, private v
 
     // ---- snapshots --------------------------------------------------------------------------------
 
+    /** Debug-only, read-only material; never publishes a model snapshot or performs input. */
+    internal fun navigationMaterial(): NavigationMaterials.Result {
+        val deadline = SystemClock.uptimeMillis() + 8_000L
+        val gen = abortGen
+        if (!published() || !availability().ok || cancelled(gen)) return NavigationMaterials.Unavailable("unavailable")
+        val installed = MarkorNavigation.installed(service)
+            ?: return NavigationMaterials.Unavailable("installation_unverified")
+        if (SystemClock.uptimeMillis() >= deadline || cancelled(gen)) return NavigationMaterials.Unavailable("unavailable")
+        val cap = capture(minOf(CAPTURE_MS, deadline - SystemClock.uptimeMillis()), typed = true)
+        try {
+            val window = cap.windows.singleOrNull() ?: return NavigationMaterials.Unavailable("incomplete")
+            if (cap.packageName != MarkorNavigation.PACKAGE || window.packageName != MarkorNavigation.PACKAGE)
+                return NavigationMaterials.Unavailable("app_mismatch")
+            if (window.kind != WindowKind.APP || window.root == null || cap.partial || cap.truncated ||
+                !cap.visualComplete || cap.keyboardShown != false || cap.hiddenWindowTitle != null ||
+                cap.unreadableWindowTitle != null || cap.ownAppInFront || cap.systemInFront)
+                return NavigationMaterials.Unavailable("incomplete")
+            val nodes = NavigationMaterials.project(window.root, installed.second) { node ->
+                cap.native(node.ref)?.actionList?.take(33)?.map { it.id }
+            } ?: return NavigationMaterials.Unavailable("limit")
+            if (MarkorNavigation.installed(service) != installed)
+                return NavigationMaterials.Unavailable("installation_unverified")
+            if (!typedCurrent(cap) || cancelled(gen) || SystemClock.uptimeMillis() >= deadline)
+                return NavigationMaterials.Unavailable("changed")
+            val transitions = cap.typedTransitions
+            val events = cap.typedEvents
+            val app = installed.first
+            val fields = mapOf("packageName" to MarkorNavigation.PACKAGE,
+                "installation" to mapOf("uid" to app.uid, "version" to app.version,
+                    "updated" to app.updated, "signingDigest" to app.signers),
+                "capture" to mapOf("partial" to cap.partial, "truncated" to cap.truncated,
+                    "visualComplete" to cap.visualComplete, "keyboardShown" to cap.keyboardShown, "typedCurrent" to true),
+                "window" to mapOf("id" to window.id, "kind" to "app", "bounds" to NavigationMaterials.bounds(window.bounds)),
+                "nodes" to nodes)
+            return NavigationMaterials.Sample(fields) {
+                published() && !cancelled(gen) && SystemClock.uptimeMillis() < deadline &&
+                    transitions != null && transitions == visual.transitions() && events == clock.count
+            }
+        } finally { cap.recycle() }
+    }
+
     private fun typedCurrent(cap: Capture): Boolean = cap.typedTransitions?.let {
         published() && it == visual.transitions() && cap.typedEvents == clock.count
     } == true
