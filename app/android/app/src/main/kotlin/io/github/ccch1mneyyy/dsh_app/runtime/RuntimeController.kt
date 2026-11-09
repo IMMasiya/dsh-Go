@@ -490,7 +490,22 @@ class RuntimeController private constructor(private val app: Context) : DshProce
                 // process prevents another start from advancing the generation underneath it.
                 val p = synchronized(this@RuntimeController) {
                     if (stopGen >= gen || gen != runGen) null
-                    else DshProcess(app, manifest, installer.rootfs, this).also {
+                    else DshProcess(
+                        app, manifest, installer.rootfs,
+                        object : DshProcess.Listener by this@RuntimeController {
+                            override fun onLog(line: String, stream: String) {
+                                if (stream != "system") {
+                                    synchronized(runTail) {
+                                        if (gen == runGen) {
+                                            runTail.addLast(line)
+                                            while (runTail.size > CrashClassifier.TAIL_LINES) runTail.removeFirst()
+                                        }
+                                    }
+                                }
+                                this@RuntimeController.onLog(line, stream)
+                            }
+                        },
+                    ).also {
                         launched = it
                         lastLaunch = it.launchDiagnostics
                         process = it
@@ -896,12 +911,6 @@ class RuntimeController private constructor(private val app: Context) : DshProce
     // DshProcess.Listener
 
     override fun onLog(line: String, stream: String) {
-        if (stream != "system") {
-            synchronized(runTail) {
-                runTail.addLast(line)
-                while (runTail.size > CrashClassifier.TAIL_LINES) runTail.removeFirst()
-            }
-        }
         log(line, stream)
     }
 
