@@ -6738,7 +6738,7 @@
   "phoneLocalOcrTitle": "本机文字识别（ML Kit）",
   "phoneLocalOcrUnknown": "暂时无法读取本机文字识别设置，请刷新后再试。",
   "phoneLocalOcrDisclosure": "识别在本机进行，截图和文字不会发给 Google；Google 的 SDK 会收集机型、应用版本、耗时等使用统计。",
-  "phoneLocalOcrDetails": "默认开启。关闭时，识别请求不会触发 SDK 加载或初始化。截图和识别文字可能发送给你配置的模型。关闭后不再开始新的本机文字识别；已经开始的识别可能仍在收尾。关闭不会卸载 SDK，也不承诺清除或停止发送此前积累的 SDK 统计。",
+  "phoneLocalOcrDetails": "默认开启。关闭时，文字识别请求不会触发 SDK 加载或初始化；Remote 扫码配对会独立按需初始化共用的 SDK，不会开启文字识别。截图和识别文字可能发送给你配置的模型。关闭后不再开始新的本机文字识别；已经开始的识别可能仍在收尾。关闭不会卸载 SDK，也不承诺清除或停止发送此前积累的 SDK 统计。",
   "phoneBackgroundParallelTitle": "后台任务上限",
   "phoneBackgroundParallelStatus": "设置上限：{configured} · 当前可用上限：{effective} · 已占用：{held}",
   "@phoneBackgroundParallelStatus": {
@@ -9424,6 +9424,7 @@
   "remotePairScanHint": "对准电脑上 Remote 插件显示的配对二维码",
   "remotePairPasteLink": "粘贴配对链接",
   "remotePairPasteEmpty": "剪贴板里没有配对链接",
+  "remotePairScannerFailed": "二维码识别器不可用。可以粘贴配对链接继续配对。",
   "remotePairFromImage": "从相册识别",
   "remotePairImageNoCode": "这张图里没找到二维码",
   "remotePairCameraDenied": "没有相机权限。可以在系统设置里打开，或者用「从相册识别」「粘贴配对链接」",

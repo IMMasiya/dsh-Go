@@ -331,7 +331,7 @@
         <meta-data
             android:name="flutterEmbedding"
             android:value="2" />
-        <!-- Initialized manually only by an admitted local OCR call. -->
+        <!-- Initialized on demand by Remote pairing or an admitted local OCR call, never at app startup. -->
         <provider
             android:name="com.google.mlkit.common.internal.MlKitInitProvider"
             android:authorities="${applicationId}.mlkitinitprovider"

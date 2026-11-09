@@ -11286,7 +11286,7 @@ class L10nZh extends L10n {
 
   @override
   String get phoneLocalOcrDetails =>
-      '默认开启。关闭时，识别请求不会触发 SDK 加载或初始化。截图和识别文字可能发送给你配置的模型。关闭后不再开始新的本机文字识别；已经开始的识别可能仍在收尾。关闭不会卸载 SDK，也不承诺清除或停止发送此前积累的 SDK 统计。';
+      '默认开启。关闭时，文字识别请求不会触发 SDK 加载或初始化；Remote 扫码配对会独立按需初始化共用的 SDK，不会开启文字识别。截图和识别文字可能发送给你配置的模型。关闭后不再开始新的本机文字识别；已经开始的识别可能仍在收尾。关闭不会卸载 SDK，也不承诺清除或停止发送此前积累的 SDK 统计。';
 
   @override
   String get phoneBackgroundParallelTitle => '后台任务上限';
@@ -15192,6 +15192,9 @@ class L10nZh extends L10n {
 
   @override
   String get remotePairPasteEmpty => '剪贴板里没有配对链接';
+
+  @override
+  String get remotePairScannerFailed => '二维码识别器不可用。可以粘贴配对链接继续配对。';
 
   @override
   String get remotePairFromImage => '从相册识别';

@@ -87,6 +87,8 @@ Phone control uses bundled Google ML Kit Chinese text recognition (`com.google.m
 
 Screenshots and recognized text may be sent to your configured model as part of phone control. While off, recognition requests do not trigger SDK loading or initialization. Turning local recognition off prevents new recognition; work already started may still finish. It does not uninstall the SDK, clear previously accumulated SDK statistics, or guarantee that old SDK statistics stop being sent. A device that has never initialized the SDK and a device previously used with recognition enabled have different histories.
 
+Remote’s pairing scanner also uses ML Kit and initializes the shared SDK separately when the scanner opens. Camera scanning and reading a gallery image do not require phone control or text recognition to be enabled, and do not change that setting. To connect without using ML Kit for pairing, use the Remote account sign-in path instead.
+
 See [Google ML Kit terms](https://developers.google.com/ml-kit/terms) and [Android SDK data disclosure](https://developers.google.com/ml-kit/android-data-disclosure). These SDK terms are distinct from the Apache 2.0 license attached to example code in the documentation.
 
 ## The guide doesn't match what I see

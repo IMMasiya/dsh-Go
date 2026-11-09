@@ -87,6 +87,8 @@ dsh-go 自身的匿名使用统计默认开启，第一次打开 App 时的欢�
 
 手机操控可能将截图和识别文字发给你配置的模型。关闭时，识别请求不会触发 SDK 加载或初始化。关闭本机识别后不再开始新的识别，已经开始的工作可能仍在收尾。关闭不会卸载 SDK、清除此前积累的 SDK 统计，也不保证历史 SDK 统计停止发送。从未初始化过 SDK 的设备，与此前开启并使用过识别的设备，历史状态不同。
 
+Remote 的「扫码配对电脑」也使用 ML Kit，在打开扫码界面时独立按需初始化；相机扫码和相册识码不要求先使用手机操控或开启文字识别，也不会改变本机文字识别开关。不想为配对使用 ML Kit 时，可改用 Remote 账号登录方式连接主机。
+
 参见 [Google ML Kit 条款](https://developers.google.com/ml-kit/terms)和 [Android SDK 数据披露](https://developers.google.com/ml-kit/android-data-disclosure)。SDK 条款与文档示例代码的 Apache 2.0 许可证不同。
 
 ## 手册里的入口和屏幕上不一样

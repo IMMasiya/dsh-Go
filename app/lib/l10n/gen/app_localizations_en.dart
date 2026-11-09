@@ -11865,7 +11865,7 @@ class L10nEn extends L10n {
 
   @override
   String get phoneLocalOcrDetails =>
-      'Enabled by default. While off, recognition requests do not trigger SDK loading or initialization. Screenshots and recognized text may be sent to your configured model. Turning this off prevents new local recognition; work already started may still finish. It does not uninstall the SDK or promise to clear or stop sending previously accumulated SDK statistics.';
+      'Enabled by default. While off, text recognition requests do not trigger SDK loading or initialization. Remote pairing initializes the shared SDK separately when its scanner opens; it does not enable text recognition. Screenshots and recognized text may be sent to your configured model. Turning this off prevents new local recognition; work already started may still finish. It does not uninstall the SDK or promise to clear or stop sending previously accumulated SDK statistics.';
 
   @override
   String get phoneBackgroundParallelTitle => 'Background task limit';
@@ -15978,6 +15978,9 @@ class L10nEn extends L10n {
 
   @override
   String get remotePairPasteEmpty => 'No pairing link on the clipboard';
+
+  @override
+  String get remotePairScannerFailed => 'The QR reader is unavailable. Paste the pairing link to continue pairing.';
 
   @override
   String get remotePairFromImage => 'From photos';
