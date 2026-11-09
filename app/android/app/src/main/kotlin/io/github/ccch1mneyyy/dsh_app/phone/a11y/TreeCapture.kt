@@ -55,6 +55,8 @@ internal class Capture(
     val imageWindows: List<CapturedImageWindow> = emptyList(),
     /** Same read counter; consumers must still compare current transitions after their own work. */
     val typedTransitions: Long? = null,
+    /** Delivered events for the same read; independent of the window-transition counter. */
+    val typedEvents: Long? = null,
 ) {
     fun native(ref: Int): AccessibilityNodeInfo? = natives.getOrNull(ref)
 
@@ -82,7 +84,7 @@ internal object TreeCapture {
         )
     }
 
-    private class State(val deadline: Long, val typedTransitions: Long?) {
+    private class State(val deadline: Long, val typedTransitions: Long?, val typedEvents: Long?) {
         val natives = ArrayList<AccessibilityNodeInfo>(256)
         var count = 0
         var typedFresh = true
@@ -92,8 +94,8 @@ internal object TreeCapture {
         val rect = Rect()
     }
 
-    fun capture(service: AccessibilityService, screen: Box, ownPackage: String, budgetMs: Long, typedTransitions: Long? = null): Capture {
-        val st = State(SystemClock.uptimeMillis() + budgetMs, typedTransitions)
+    fun capture(service: AccessibilityService, screen: Box, ownPackage: String, budgetMs: Long, typedTransitions: Long? = null, typedEvents: Long? = null): Capture {
+        val st = State(SystemClock.uptimeMillis() + budgetMs, typedTransitions, typedEvents)
         val all = try { service.windows } catch (_: Throwable) { null }
         val sorted = all.orEmpty().sortedByDescending { it.layer }
         // Scan every window before the content loop can stop at an opaque app window.
@@ -223,6 +225,7 @@ internal object TreeCapture {
             visualOcclusions = visual?.third.orEmpty(),
             imageWindows = imageWindows.toList(),
             typedTransitions = st.typedTransitions.takeIf { st.typedFresh },
+            typedEvents = st.typedEvents.takeIf { st.typedFresh },
         )
     }
 

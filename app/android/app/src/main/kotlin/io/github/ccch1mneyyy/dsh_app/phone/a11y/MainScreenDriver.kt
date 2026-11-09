@@ -1358,15 +1358,16 @@ internal class MainScreenDriver(private val service: PhoneA11yService, private v
     // ---- snapshots --------------------------------------------------------------------------------
 
     private fun typedCurrent(cap: Capture): Boolean = cap.typedTransitions?.let {
-        published() && it == visual.transitions()
+        published() && it == visual.transitions() && cap.typedEvents == clock.count
     } == true
 
     private fun capture(timeoutMs: Long = CAPTURE_MS, typed: Boolean = false): Capture {
         val transitions = if (typed) visual.transitions() else null
+        val events = if (typed) clock.count else null
         // Cache invalidation is a qualification input, not an assertion of an atomic WMS snapshot.
         val fresh = Build.VERSION.SDK_INT in 34..37 && runCatching { service.clearCache() }.getOrDefault(false)
         try {
-            return TreeCapture.capture(service, screenBox(), ownPackage, timeoutMs, transitions.takeIf { fresh }).also { cap ->
+            return TreeCapture.capture(service, screenBox(), ownPackage, timeoutMs, transitions.takeIf { fresh }, events.takeIf { fresh }).also { cap ->
                 val window = cap.windows.singleOrNull()
                 val titles = cap.windows.mapNotNull { it.title } + ProtectedPages.titleTexts(window?.root, cap.screen.height)
                 val known = fresh && published() && cap.visualComplete && window?.kind == WindowKind.APP &&

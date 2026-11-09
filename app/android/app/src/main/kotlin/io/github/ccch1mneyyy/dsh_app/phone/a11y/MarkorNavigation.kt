@@ -75,7 +75,7 @@ internal object MarkorNavigation {
         return Observation(window.id, tabs[selected], more.ref, more.clickable && more.actionClick)
     }
 
-    private fun readable(cap: Capture): Boolean = cap.typedTransitions != null && cap.packageName == PACKAGE && !cap.partial && !cap.truncated && cap.visualComplete &&
+    private fun readable(cap: Capture): Boolean = cap.typedTransitions != null && cap.typedEvents != null && cap.packageName == PACKAGE && !cap.partial && !cap.truncated && cap.visualComplete &&
         cap.keyboardShown == false && cap.hiddenWindowTitle == null && cap.unreadableWindowTitle == null &&
         !cap.ownAppInFront && !cap.systemInFront
 
