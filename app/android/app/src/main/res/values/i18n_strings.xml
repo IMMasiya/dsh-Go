@@ -2,6 +2,7 @@
 <!-- Native UI text (notifications, overlays, foreground service, toasts), read through
      i18n/AppStrings.kt so it follows the app language. English here, Chinese in values-zh/. -->
 <resources>
+    <string name="phone_shell_confirm">Run an Android system command (%1$s, UID %2$s). It may change system settings or app data. Screen-control confirmation exemptions do not apply. Allow only this command:\n\n%3$s</string>
     <!-- background -->
     <string name="background_shizuku_missing">No available Shizuku / Sui interface detected</string>
     <string name="background_sui_stopped">The Sui interface is currently unavailable</string>

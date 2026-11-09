@@ -10,6 +10,9 @@
 # and talks to the app through a hand-written Binder and Parcel/Bundle protocol.
 -keep class io.github.ccch1mneyyy.dsh_app.phone.background.** { *; }
 
+# Independent Shizuku service and self-ADB/app_process command entry points.
+-keep class io.github.ccch1mneyyy.dsh_app.phone.shell.** { *; }
+
 # Bouncy Castle and Conscrypt look providers and algorithms up by name;
 # libadb-android drives both for wireless-debugging pairing and TLS.
 -keep class org.bouncycastle.** { *; }

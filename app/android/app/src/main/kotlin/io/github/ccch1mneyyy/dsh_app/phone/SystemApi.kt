@@ -318,6 +318,11 @@ class Args(private val map: Map<String, Any?>) {
     fun strictBool(key: String) = map[key] as? Boolean
     /** Focus input preserves the actual JSON string; existing type coercion is unchanged. */
     fun strictText(key: String) = map[key] as? String
+    fun strictInt(key: String): Int? = when (val value = map[key]) {
+        is Int -> value
+        is Long -> value.toInt().takeIf { it.toLong() == value }
+        else -> null
+    }
     fun onlyKeys(vararg keys: String) = map.keys.all { it in keys }
 
     fun str(key: String): String? = when (val v = map[key]) {
