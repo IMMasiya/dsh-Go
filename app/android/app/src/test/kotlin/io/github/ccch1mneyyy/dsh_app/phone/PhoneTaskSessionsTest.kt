@@ -1723,6 +1723,7 @@ class PhoneTaskSessionsTest {
     }
 
     @Test fun backgroundReplayFreezesTheOrdinaryRunsOriginalDriverAndKnownApp() {
+        confirm = { Decision.ALLOW_ONCE }
         val app = PhoneAppIdentity("example.app", 10123)
         open = { ActionResult(true, "opened") }
         assertFalse(openApp("A", app.packageName).isError)
@@ -1761,6 +1762,7 @@ class PhoneTaskSessionsTest {
     }
 
     @Test fun backgroundReplayOriginalLookupStillConsumesTheSameAdmissionDeadline() {
+        confirm = { Decision.ALLOW_ONCE }
         open = { ActionResult(true, "opened") }
         assertFalse(openApp("A", "example.app").isError)
         val original = task("A")
