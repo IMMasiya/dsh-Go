@@ -67,6 +67,7 @@ internal class EngineUpgrade(
             move(safePath(staging, path), target)
         }
         writeSynced(File(preparing, "version"), version)
+        writeSynced(File(preparing, "original"), spec.paths.filter { present(File(root, it)) }.joinToString("\n"))
         sync()
         afterStep("prepared")
         move(preparing, pending)
@@ -85,6 +86,11 @@ internal class EngineUpgrade(
         val version = try { File(pending, "version").readText() }
             catch (_: Exception) { throw RuntimeUpgradeBlocked("transaction") }
         validateVersion(version)
+        val original = try { File(pending, "original").readLines() }
+            catch (_: Exception) { throw RuntimeUpgradeBlocked("transaction") }
+        if (original.distinct() != original || original.any { it !in ENGINE_PATHS }) {
+            throw RuntimeUpgradeBlocked("transaction")
+        }
         for (path in ENGINE_PATHS) {
             safePath(root, path)
             safePath(File(pending, "new"), path)
@@ -108,7 +114,7 @@ internal class EngineUpgrade(
                 ensureParent(target)
                 move(next, target)
                 afterStep("activate:$path")
-            } else if (!present(target)) {
+            } else if (!present(target) || (path in original && !present(old))) {
                 throw RuntimeUpgradeBlocked("transaction")
             }
         }
@@ -141,8 +147,10 @@ internal class EngineUpgrade(
 
     private fun move(from: File, to: File) {
         check(from.renameTo(to)) { "could not move engine upgrade entry" }
-        syncDirectory(from.parentFile!!)
-        if (from.parentFile != to.parentFile) syncDirectory(to.parentFile!!)
+        // Persist the destination before the source removal: a power cut must
+        // not make an entry unreachable from both sides of a cross-dir rename.
+        syncDirectory(to.parentFile!!)
+        if (from.parentFile != to.parentFile) syncDirectory(from.parentFile!!)
     }
 
     private fun validateVersion(version: String) {

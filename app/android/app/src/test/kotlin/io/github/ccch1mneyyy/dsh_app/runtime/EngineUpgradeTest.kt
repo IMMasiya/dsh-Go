@@ -135,6 +135,41 @@ class EngineUpgradeTest {
         assertEquals("new", entry("rootfs", "usr/local/bin/pnx").readText())
     }
 
+    @Test fun everyDirectorySyncFailureCanBeRetriedWithoutLosingEitherSystemOrPayload() {
+        installed()
+        var calls = 0
+        EngineUpgrade(base, sync = {}, syncDirectory = { calls++ }).activate("new", spec)
+        for (failureAt in 1..calls) {
+            base.deleteRecursively(); base.mkdirs(); installed()
+            var observed = 0
+            assertThrows(IOException::class.java) {
+                EngineUpgrade(base, sync = {}, syncDirectory = {
+                    if (++observed == failureAt) throw IOException("directory sync")
+                }).activate("new", spec)
+            }
+            assertUsers()
+            EngineUpgrade(base, sync = {}).recover()
+            if (File(base, "rootfs.version").readText() == "old") {
+                stage()
+                EngineUpgrade(base, sync = {}).activate("new", spec)
+            }
+            assertCurrent()
+        }
+    }
+
+    @Test fun missingPayloadCannotMakeAnOldEntryLookLikeACompletedUpgrade() {
+        installed()
+        assertThrows(IOException::class.java) {
+            EngineUpgrade(base, sync = {}, afterStep = { if (it == "journal") throw IOException("kill") })
+                .activate("new", spec)
+        }
+        File(base, "engine.upgrade/new/usr/local/bin/dsh").delete()
+        assertThrows(RuntimeUpgradeBlocked::class.java) { EngineUpgrade(base, sync = {}).recover() }
+        assertFalse(File(base, "rootfs.version").exists())
+        assertEquals("old", entry("rootfs", "usr/local/bin/dsh").readText())
+        assertUsers()
+    }
+
     @Test fun unknownOrOverbroadManifestsCannotTakeOwnershipOfUserFiles() {
         installed()
         for (paths in listOf(listOf("usr"), ENGINE_PATHS + "root", ENGINE_PATHS + "../outside")) {
