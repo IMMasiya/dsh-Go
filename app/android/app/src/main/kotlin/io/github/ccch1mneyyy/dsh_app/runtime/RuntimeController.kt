@@ -36,6 +36,7 @@ class RuntimeController private constructor(private val app: Context) : DshProce
     private val main = Handler(Looper.getMainLooper())
     private val worker = Executors.newSingleThreadExecutor { r -> Thread(r, "dsh-runtime") }
     private val sinks = LinkedHashSet<EventSink>()
+    private val statusPublishLock = Any()
     private val logDir = File(app.filesDir, "runtime/logs")
     private val runtimeLogs = RuntimeLogs(
         File(logDir, "dsh.log"), SystemClock::elapsedRealtime,
@@ -1080,7 +1081,9 @@ class RuntimeController private constructor(private val app: Context) : DshProce
         DshService.updateNotification(app)
     }
 
-    private fun emitStatus() = emit(mapOf("type" to "status", "status" to status()))
+    private fun emitStatus() = synchronized(statusPublishLock) {
+        emit(mapOf("type" to "status", "status" to status()))
+    }
 
     private fun emit(event: Map<String, Any?>) {
         val targets = synchronized(sinks) { sinks.toList() }
