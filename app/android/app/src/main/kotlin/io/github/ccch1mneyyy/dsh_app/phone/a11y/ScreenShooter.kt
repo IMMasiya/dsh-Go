@@ -33,6 +33,10 @@ internal class Shot(
     val rawWidth: Int = 0,
     val rawHeight: Int = 0,
     val viewport: io.github.ccch1mneyyy.dsh_app.phone.VisualBounds? = null,
+    /** Actual window API target; null denotes the display API when a frame was returned. */
+    val capturedWindowId: Int? = null,
+    /** This capture's successful UI hide receipt; not a compositor/frame acknowledgement. */
+    val hiddenOverlayWindowIds: Set<Int> = emptySet(),
 ) {
     /** Geometry and raw dimensions travel together even when no JPEG was requested. */
     fun visualText(): LocalOcrVisual.Output? {
@@ -67,8 +71,8 @@ internal class ScreenShooter(private val service: AccessibilityService, private 
     }
 
     /**
-     * Captures [window] (API 34+, overlay excluded by construction) or the whole display
-     * (API 30–33, overlay hidden for the moment of capture), then greys out [secrets] (see
+     * Captures [window] with the API 34+ window API, or the display after the controls' hide
+     * operation completes. UI completion is not a compositor ACK. Greys out [secrets] (see
      * [secretFieldBounds]) and draws [marks].
      */
     fun shoot(window: UiWindow?, screen: Box, marks: List<ScreenElement>, secrets: List<Box>, timeoutMs: Long, image: Boolean = true,
@@ -78,11 +82,14 @@ internal class ScreenShooter(private val service: AccessibilityService, private 
         // l10n:keep agent screenshot result
         if (Build.VERSION.SDK_INT < 30) return Shot(null, null, null, false, "本机系统低于 Android 11，不支持无障碍截图")
         val useWindow = Build.VERSION.SDK_INT >= 34 && window != null
+        var hiddenOverlayWindowIds: Set<Int> = emptySet()
         val raw = if (useWindow) capture(timeoutMs) { cb -> service.takeScreenshotOfWindow(window.id, callbackExecutor, cb) }
         else {
-            overlay.hideForCapture(true)
-            try { capture(timeoutMs) { cb -> service.takeScreenshot(Display.DEFAULT_DISPLAY, callbackExecutor, cb) } }
-            finally { overlay.hideForCapture(false) }
+            try {
+                hiddenOverlayWindowIds = overlay.hideForCaptureWithReceipt()
+                    ?: return Shot(null, null, null, false, "截图前悬浮控件隐藏未完成，请稍后重新观察。") // l10n:keep agent screenshot result
+                capture(timeoutMs) { cb -> service.takeScreenshot(Display.DEFAULT_DISPLAY, callbackExecutor, cb) }
+            } finally { overlay.hideForCapture(false) }
         }
         // l10n:keep agent screenshot result
         if (raw.secure) return Shot(null, null, null, true, "此页面禁止截图（安全窗口）")
@@ -111,7 +118,9 @@ internal class ScreenShooter(private val service: AccessibilityService, private 
             val observation = ImageObservation(geometry, raw.capturedUptimeMs, frame)
             val viewport = io.github.ccch1mneyyy.dsh_app.phone.VisualBounds(origin.left, origin.top, origin.right, origin.bottom)
             if (!image) return Shot(null, null, geometry, false, null, takenAt, observation,
-                localText, bitmap.width, bitmap.height, viewport)
+                localText, bitmap.width, bitmap.height, viewport,
+                capturedWindowId = if (useWindow) window.id else null,
+                hiddenOverlayWindowIds = hiddenOverlayWindowIds)
             var scaled = if (factor < 1f) Bitmap.createScaledBitmap(bitmap, w, h, true) else bitmap
             if (scaled === bitmap || !scaled.isMutable) {
                 val mutable = scaled.copy(Bitmap.Config.ARGB_8888, true)
@@ -123,7 +132,9 @@ internal class ScreenShooter(private val service: AccessibilityService, private 
                 val out = ByteArrayOutputStream()
                 scaled.compress(Bitmap.CompressFormat.JPEG, 80, out)
                 return Shot(out.toByteArray(), "image/jpeg", geometry, false, null, takenAt,
-                    observation, localText, bitmap.width, bitmap.height, viewport)
+                    observation, localText, bitmap.width, bitmap.height, viewport,
+                    capturedWindowId = if (useWindow) window.id else null,
+                    hiddenOverlayWindowIds = hiddenOverlayWindowIds)
             } finally { scaled.recycle() }
         } finally { bitmap.recycle() }
     }
@@ -184,6 +195,7 @@ internal class ScreenShooter(private val service: AccessibilityService, private 
             try {
                 // l10n:keep agent screenshot result
                 if (synchronized(captureLock) { closed }) return Raw(null, false, "截图失败")
+                if (Thread.currentThread().isInterrupted) throw InterruptedException()
                 start(callback)
                 // l10n:keep agent screenshot result
                 val remaining = deadline - SystemClock.uptimeMillis()

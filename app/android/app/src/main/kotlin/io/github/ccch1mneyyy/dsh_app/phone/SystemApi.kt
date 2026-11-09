@@ -316,6 +316,9 @@ class Args(private val map: Map<String, Any?>) {
     fun provided(key: String) = map.containsKey(key)
     /** Disclosure choices require an actual JSON boolean, not a coerced string or number. */
     fun strictBool(key: String) = map[key] as? Boolean
+    /** Focus input preserves the actual JSON string; existing type coercion is unchanged. */
+    fun strictText(key: String) = map[key] as? String
+    fun onlyKeys(vararg keys: String) = map.keys.all { it in keys }
 
     fun str(key: String): String? = when (val v = map[key]) {
         is String -> v.trim().takeIf { it.isNotEmpty() }

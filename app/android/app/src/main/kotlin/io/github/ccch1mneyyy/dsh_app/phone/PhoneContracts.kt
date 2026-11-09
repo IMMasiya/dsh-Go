@@ -47,6 +47,10 @@ data class ScreenSnapshot(
     val imageMime: String? = null,
     /** Known root packages contributing to this local observation; not pixel/UID attestation. */
     internal val readPackages: Set<String> = emptySet(),
+    /** Internal candidate for an INPUT retained in text; whole-screen refusals clear it. */
+    internal val focus: FocusObservation? = null,
+    /** Known packages in the image capture scope; independent of text and not pixel attestation. */
+    internal val imageReadPackages: Set<String> = emptySet(),
 )
 
 /** What an element looks like to the safety rules, resolved from a snapshot id + element id. */
@@ -111,7 +115,12 @@ data class ActionResult(
     val staleSnapshot: Boolean = false,
     /** Internal, this BG open only: the original peer confirmed its valid VD and full target identity. */
     val backgroundOpenConfirmed: Boolean = false,
+    /** Same-call native navigation facts; never supplied by a tool argument or serialized. */
+    internal val navigationWitness: io.github.ccch1mneyyy.dsh_app.phone.skills.PhoneSkillNavigationWitness? = null,
 )
+
+/** A definite refusal before collection starts; normal empty and partial results have none. */
+enum class CollectRejection { UNAVAILABLE, INVALID_TARGET, READ_REFUSED }
 
 data class CollectResult(
     /** De-duplicated items, one per line, in on-screen order. */
@@ -122,6 +131,7 @@ data class CollectResult(
     val screen: ScreenSnapshot?,
     /** Union of known packages whose pages contributed items, independent of the last screen. */
     internal val readPackages: Set<String> = emptySet(),
+    internal val rejection: CollectRejection? = null,
 )
 
 /** Whether a driver can work right now, and if not, a sentence the model can relay. */
@@ -159,12 +169,25 @@ interface PhoneDriver {
                 allowed: () -> Boolean, canRead: (String?) -> Boolean): CollectResult =
         collect(screenId, listElementId, maxPages, until, allowed)
 
+    /** Same-capture sources for a physical collect scroll, separate from the page's read source. */
+    fun collect(screenId: String, listElementId: Int, maxPages: Int, until: String?,
+                allowed: () -> Boolean, canRead: (String?) -> Boolean,
+                scrollSourcesAllowed: (Set<String>) -> Boolean): CollectResult =
+        collect(screenId, listElementId, maxPages, until, allowed, canRead)
+
     /**
      * Resolves an element of a recent snapshot for the safety rules. Null when the
      * snapshot is stale or the element no longer matches its fingerprint
      * (window, bounds, text); the bridge then refuses and re-observes.
      */
     fun target(screenId: String, elementId: Int): TargetInfo?
+
+    /** Captures only the original committed observation's editor. */
+    fun prepareFocusInput(screenId: String): Either<String, FocusInput> =
+        Either.Left("当前屏幕不能核实原焦点输入连接；请 handoff，不要改用全文替换或重复输入。") // l10n:keep agent focus result
+    /** Native reviewed-route operation; default drivers cannot execute it. */
+    fun prepareSkillReplayStep(step: SkillReplayStep): Either<String, SkillReplayPlan> =
+        Either.Left("当前屏幕不支持已核手机路线，未执行。") // l10n:keep agent replay result
 
     /** Pure memory, tied to this exact published observation; independent of image acceptance. */
     fun visualScope(screenId: String): VisualScope? = null
@@ -181,6 +204,12 @@ interface PhoneDriver {
     /** The claim is pure memory under the original task lock; dispatch happens after it returns. */
     fun perform(action: PhoneAction, allowed: () -> Boolean,
                 coordinateAdmission: ((() -> Boolean) -> Boolean)?): ActionResult = perform(action, allowed)
+
+    /** Actual action sources from the same capture; legacy drivers retain their old behavior. */
+    fun perform(action: PhoneAction, allowed: () -> Boolean,
+                coordinateAdmission: ((() -> Boolean) -> Boolean)?,
+                actionSourcesAllowed: (Set<String>) -> Boolean): ActionResult =
+        perform(action, allowed, coordinateAdmission)
 
     /** Launches the native-resolved [target] on this screen (BACKGROUND moves the task to the virtual display). */
     fun open(target: PhoneAppIdentity): ActionResult

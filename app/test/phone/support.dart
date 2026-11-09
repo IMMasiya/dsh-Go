@@ -180,10 +180,13 @@ class FakePhoneNative {
   List<Map<String, Object?>> log;
   Map<String, Object?> screen = {'ok': true, 'text': sampleScreenText};
 
+  /// Optional barriers for settings writes and their subsequent real channel readback.
+  Future<Map<String, Object?>?> Function()? onStatus;
+  Future<Map<String, Object?>> Function(Map<String, Object?>)? onSetBackgroundParallelLimit;
+
   /// Reply of `setEnabled` / `setPolicies`.
   bool accept = true;
 
-  Future<Map<String, Object?>> Function()? onStatus;
   Future<Map<String, Object?>?> Function()? onGetPolicies;
   Future<bool> Function(Map<String, Object?>)? onSetPolicies;
 
@@ -272,6 +275,18 @@ class FakePhoneNative {
           status = {...status, 'background': {..._background, 'viewport': {'v': 1, 'preset': args['preset']}}};
         }
         return viewportResult;
+      case 'setBackgroundParallelLimit':
+        if (onSetBackgroundParallelLimit != null) return onSetBackgroundParallelLimit!(args);
+        final capacityResult = results[call.method] ?? {'ok': true};
+        if (capacityResult['ok'] == true) {
+          final old = (_background['parallelism'] as Map).cast<String, Object?>();
+          final limit = args['limit'] as int;
+          final current = old['effectiveLimit'] as int;
+          status = {...status, 'background': {..._background, 'parallelism': {
+            ...old, 'configuredLimit': limit, 'effectiveLimit': current > limit ? limit : current,
+          }}};
+        }
+        return capacityResult;
       case 'retryBackgroundGateCleanup':
         return onRetryGateCleanup?.call(args) ?? results[call.method] ?? {'ok': false};
       case 'setBackgroundMode':

@@ -189,7 +189,8 @@ class SafetyGate(
     sealed interface Verdict {
         object Allow : Verdict
         class Refuse(val message: String, val rule: String) : Verdict
-        class Confirm(val request: ConfirmRequest, val packageName: String?, val reason: String) : Verdict
+        class Confirm(val request: ConfirmRequest, val packageName: String?, val reason: String,
+                      internal val onlyOnce: Boolean = false) : Verdict
     }
 
     /** The outcome of asking (or of not needing to ask). */
@@ -320,6 +321,13 @@ class SafetyGate(
         return Verdict.Confirm(request, pkg, reason)
     }
 
+    /** Independent operation consent only; callers must check target/policy hard rules first.
+     * This never grants authority over a new target or waives subsequent checks.
+     */
+    internal fun confirmationOnce(sentence: String, pkg: String?, appLabel: String?, reason: String): Verdict =
+        Verdict.Confirm(ConfirmRequest(sentence = sentence, appLabel = appLabel ?: pkg,
+            packageName = pkg, firstInApp = false, offerTaskWaiver = false), pkg, reason, onlyOnce = true)
+
     /** Resolves a verdict, asking the person if needed. InterruptedException means stop. */
     fun resolve(verdict: Verdict, scope: SerialWorker.Scope, owner: PhoneTasks.Owner? = null): Result = when (verdict) {
         Verdict.Allow -> Result.Go("allowed")
@@ -337,6 +345,8 @@ class SafetyGate(
         val decision = scope.userWait { g.confirm(v.request.copy(owner = owner)) }
         // A real tap is not authority over a task that replaced the one being asked about.
         if (!tasks.isCurrent(owner)) return stopped()
+        if (v.onlyOnce && decision in setOf(Decision.ALLOW_APP_FOR_TASK, Decision.ALLOW_ALL_FOR_TASK, Decision.ALLOW_VISUAL_FOR_TASK))
+            return Result.No("确认返回了本请求不提供的权限，未继续操作；不要自动重试。", "denied") // l10n:keep
         if (v.request.visualScope != null && decision in setOf(Decision.ALLOW_APP_FOR_TASK, Decision.ALLOW_ALL_FOR_TASK))
             return Result.No("确认返回了本请求不提供的权限，未继续操作；不要自动重试。", "denied") // l10n:keep
         return when (decision) {
@@ -385,6 +395,9 @@ class SafetyGate(
             sourceRefusal != null -> sourceRefusal.message
             // l10n:keep agent safety result
             s.secure -> "安全窗口（禁止截屏 / 读取）。要操作请 handoff。"
+            s.image != null && s.imageReadPackages.any { checkRead(p, it, null) != null } ->
+                // l10n:keep agent safety result
+                return s.copy(text = s.text + "\n提示：截图范围包含当前不允许读取的应用，这次没有附截图。", image = null, imageMime = null)
             // l10n:keep agent safety result
             s.image != null && ("«银行卡" in s.text || "«身份证" in s.text) ->
                 // l10n:keep agent safety result
@@ -393,7 +406,7 @@ class SafetyGate(
         }
         val app = s.appLabel?.let { " · $it" } ?: ""
         // l10n:keep agent safety result
-        return s.copy(text = "屏幕 ${s.id}$app\n$refusal", image = null, imageMime = null)
+        return s.copy(text = "屏幕 ${s.id}$app\n$refusal", image = null, imageMime = null, focus = null)
     }
 
     private fun describe(kind: WriteKind, t: TargetInfo?, app: String, typed: String?, submit: Boolean, point: Pair<Int, Int>?, coordinate: PhoneAction.TapXY?): String {

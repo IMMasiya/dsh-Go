@@ -188,6 +188,7 @@ class _PhoneBackgroundPreviewDialogState extends State<PhoneBackgroundPreviewDia
             ? IgnorePointer(child: RawImage(image: _image, fit: BoxFit.contain, filterQuality: FilterQuality.low))
             : Center(child: Text(switch (_state) {
                 'off' => l10n.phonePreviewOff,
+                'inUse' => l10n.phonePreviewInUse,
                 'unavailable' || 'protected' => l10n.phonePreviewUnavailable,
                 _ => l10n.phonePreviewWaiting,
               }, textAlign: TextAlign.center)),

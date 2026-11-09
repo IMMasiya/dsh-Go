@@ -273,6 +273,12 @@ class PhoneController extends Notifier<PhoneState> {
   Future<PhoneResult> setBackgroundViewport(PhoneBackgroundViewport preset) =>
       _thenRefresh(_channel.setBackgroundViewport(preset));
 
+  Future<PhoneResult> setBackgroundParallelLimit(int limit) async {
+    final result = await _channel.setBackgroundParallelLimit(limit);
+    if (ref.mounted) await refreshStatus();
+    return result;
+  }
+
   Future<bool> setBackgroundPreview(bool enabled) => _thenRefresh(_channel.setBackgroundPreview(enabled));
 
   /// Refused before any channel call when the native side doesn't offer [mode].

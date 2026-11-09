@@ -9,6 +9,7 @@ class PhoneCallWork(
     private val invoke: () -> String,
     private val remainingMs: (() -> Long)? = null,
     private val expiredReply: (() -> String)? = null,
+    private val nativeReplyCommit: PhoneReplyCommit? = null,
 ) {
     private val lock = Any()
     private var committed = false
@@ -20,7 +21,10 @@ class PhoneCallWork(
             if (committed) null else {
                 committed = true
                 timer?.cancel(false)
-                if (remainingMs != null && remainingMs.invoke() <= 0) checkNotNull(expiredReply).invoke() else reply
+                if (remainingMs != null && remainingMs.invoke() <= 0) checkNotNull(expiredReply).invoke() else {
+                    nativeReplyCommit?.commitIfEncoded()
+                    reply
+                }
             }
         }
     }

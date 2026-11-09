@@ -87,4 +87,30 @@ class MainVisualStateTest {
         assertNull(state.scope("s1")); assertFalse(state.imageAccepted("s1")); assertFalse(state.isCurrent(old, state.transitions()))
         assertNotEquals(old, MainVisualState(Any()).observed(1, "example.app"))
     }
+    @Test fun candidateResultReportsObservedTransitionWithoutRevivingOldImage() {
+        val state = MainVisualState(Any())
+        state.observed(1, "example.app")
+        state.publish("s1")
+        val captured = state.transitions()
+        state.windowChanged()
+        assertFalse(state.candidate("s1", captured))
+        state.accept("s1")
+        assertFalse(state.imageAccepted("s1"))
+        state.publish("s2")
+        assertTrue(state.candidate("s2", state.transitions()))
+        assertFalse(state.imageAccepted("s2"))
+        state.accept("s2")
+        assertTrue(state.consume("s2"))
+    }
+
+    @Test fun candidateResultRejectsReplacedPublishAndInvalidation() {
+        val state = MainVisualState(Any())
+        state.publish("s1")
+        val captured = state.transitions()
+        state.publish("s2")
+        assertFalse(state.candidate("s1", captured))
+        assertTrue(state.candidate("s2", captured))
+        state.invalidate()
+        assertFalse(state.candidate("s2", captured))
+    }
 }

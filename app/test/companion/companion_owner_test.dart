@@ -106,6 +106,7 @@ class _Chat extends ChatController {
     SendMode mode = SendMode.now,
     bool verbatim = false,
     Future<bool> Function(String requestId)? beforeDeliver,
+    bool Function()? deliveryAllowed,
   }) async {
     sent.add(text);
     return true;

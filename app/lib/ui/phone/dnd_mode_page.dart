@@ -190,10 +190,19 @@ class _PhoneDndPageState extends ConsumerState<PhoneDndPage> {
     await _run(() => _phone.adbConnect(port: port), done: l10n.phoneDndConnected);
   }
 
+  bool _hasSlotMetadata(PhoneStatus status) => status.background.parallelism != null ||
+      status.task.backgroundSlot != null || status.tasks.any((task) => task.backgroundSlot != null);
+
+  Iterable<PhoneTaskStatus> _previewTasks(PhoneStatus status) {
+    final modern = _hasSlotMetadata(status);
+    return (modern ? status.tasks : [status.task]).where((task) =>
+      task.active && task.id != null && task.id! > 0 && (!modern || task.backgroundSlot == true));
+  }
+
   Future<void> _showPreview(int taskId) async {
     final status = ref.read(phoneProvider).status;
-    if (_previewOpen || !status.ready || status.task.id != taskId ||
-        !status.task.active || !status.background.previewEnabled) {
+    if (_previewOpen || !status.ready || !status.background.previewEnabled ||
+        !_previewTasks(status).any((task) => task.id == taskId)) {
       return;
     }
     _previewOpen = true;
@@ -212,7 +221,8 @@ class _PhoneDndPageState extends ConsumerState<PhoneDndPage> {
     final l10n = context.l10n;
     final status = ref.watch(phoneProvider.select((s) => s.status));
     final bg = status.background;
-    final task = status.task;
+    final hasSlotMetadata = _hasSlotMetadata(status);
+    final previewTasks = _previewTasks(status);
     final using = bg.effectiveMode;
     final waiting = using == PhonePrivilegedMode.root && bg.root.starting;
     final open = _open ?? (bg.effectiveReady ? PhonePrivilegedMode.off : using);
@@ -287,9 +297,16 @@ class _PhoneDndPageState extends ConsumerState<PhoneDndPage> {
                   trailing: Switch(value: bg.previewEnabled, onChanged: !_ready || _busy ? null : (enabled) =>
                     unawaited(_run(() async => PhoneResult(await _phone.setBackgroundPreview(enabled))))),
                 ),
-                if (task.id case final taskId? when bg.previewEnabled && task.active)
-                  ListPageRow(leading: const SizedBox(), title: l10n.phonePreviewOpen,
-                    onTap: _ready ? () => unawaited(_showPreview(taskId)) : null),
+                if (bg.previewEnabled)
+                  for (final candidate in previewTasks)
+                    ListPageRow(
+                      key: ValueKey('phone-preview-task-${candidate.id}'),
+                      leading: const SizedBox(),
+                      title: !hasSlotMetadata ? l10n.phonePreviewOpen
+                          : l10n.phonePreviewTask(candidate.id!.toString()),
+                      subtitle: candidate.app,
+                      onTap: _ready ? () => unawaited(_showPreview(candidate.id!)) : null,
+                    ),
               ],
             ],
           ),
@@ -297,6 +314,40 @@ class _PhoneDndPageState extends ConsumerState<PhoneDndPage> {
           if (!bg.effectiveReady && !waiting)
             PhoneNote(tone: NoteTone.warn, text: bg.effectiveReason ?? l10n.phoneNotReadyYet),
         ],
+        if (bg.parallelism case final capacity? when status.ready)
+          ListPageCard(
+            margin: _groupMargin,
+            title: l10n.phoneBackgroundParallelTitle,
+            children: [
+              ListPageRow(
+                title: l10n.phoneBackgroundParallelStatus(capacity.configuredLimit, capacity.effectiveLimit, capacity.heldSlots),
+                titleMaxLines: 4,
+                subtitle: switch (capacity.reason) {
+                  'off' => l10n.phoneBackgroundParallelOff,
+                  'unsupported' => l10n.phoneBackgroundParallelUnsupported,
+                  'connectionRequired' => l10n.phoneBackgroundParallelConnection,
+                  'busy' => l10n.phoneBackgroundParallelBusy,
+                  'resourceRecovery' => l10n.phoneBackgroundParallelRecovery,
+                  'peerUnsupported' => l10n.phoneBackgroundParallelPeer,
+                  'transportSerial' => l10n.phoneBackgroundParallelSerial,
+                  _ => l10n.phoneBackgroundParallelDescription,
+                },
+                subtitleMaxLines: 5,
+              ),
+              for (final limit in const [1, 2, 3])
+                Semantics(
+                  selected: capacity.configuredLimit == limit,
+                  inMutuallyExclusiveGroup: true,
+                  child: ListPageRow(
+                    key: ValueKey('phone-background-limit-$limit'),
+                    leading: Icon(capacity.configuredLimit == limit ? AppIcons.radioOn : AppIcons.radioOff),
+                    title: l10n.phoneBackgroundParallelChoice(limit),
+                    onTap: !_ready || _busy || capacity.configuredLimit == limit ? null : () =>
+                      unawaited(_run(() => _phone.setBackgroundParallelLimit(limit))),
+                  ),
+                ),
+            ],
+          ),
         if (bg.viewport case final viewport? when bg.androidOk)
           ListPageCard(
             margin: _groupMargin,

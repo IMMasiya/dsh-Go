@@ -72,7 +72,7 @@ internal class PrivilegedDisplayHost(private val context: Context) {
             } finally { scopes.leaveGlobal() }
         }
         if (!request.containsKey(Proto.OWNER_SCOPE_VERSION)) {
-            if (op == Proto.OP_ALLOCATE || request.containsKey(Proto.RESOURCE_RECOVERY_VERSION)) return failure("invalidArguments")
+            if (op == Proto.OP_ALLOCATE || op == Proto.OP_REPLAY_NAVIGATION || request.containsKey(Proto.RESOURCE_RECOVERY_VERSION)) return failure("invalidArguments")
             scopes.enterGlobal(legacyResource = true)?.let { return failure(it) }
             return try { legacy.handle(request) } finally { scopes.leaveGlobal() }
         }

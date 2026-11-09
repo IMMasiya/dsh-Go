@@ -22,6 +22,7 @@ class BackgroundPostActionInvalidationTest : AndroidTestCase() {
         var replyUid = 10123
         val sends = AtomicInteger()
         val peer = object : PrivilegedChannel {
+            override val backgroundLimit = 1
             override fun alive() = true
             override fun close() {}
             override fun execute(request: Bundle, beforeSend: () -> Unit): Bundle {

@@ -1248,6 +1248,7 @@ class ChatController extends Notifier<ChatState> {
     SendMode mode = SendMode.now,
     bool verbatim = false,
     Future<bool> Function(String requestId)? beforeDeliver,
+    bool Function()? deliveryAllowed,
   }) async {
     final client = _client;
     final trimmed = text.trim();
@@ -1315,7 +1316,8 @@ class ChatController extends Notifier<ChatState> {
           state = state.copyWith(pending: _placePending());
         }
       }
-      final notice = await _deliver(operation, body, attachments, receipts, requestId: requestId, mode: promptMode);
+      final notice = await _deliver(operation, body, attachments, receipts, requestId: requestId, mode: promptMode,
+        deliveryAllowed: deliveryAllowed);
       _sent();
       if (!_currentOperation(operation)) return false;
       state = state.copyWith(error: stopFailed, notice: notice);
@@ -1432,6 +1434,7 @@ class ChatController extends Notifier<ChatState> {
     ({List<String> receipts, List<String> paths}) staged, {
     required String requestId,
     required PromptMode mode,
+    bool Function()? deliveryAllowed,
   }) async {
     final client = operation.client;
     final images = [
@@ -1440,6 +1443,9 @@ class ChatController extends Notifier<ChatState> {
     ];
     Future<void> prompt(List<PromptImage> images, ({List<String> receipts, List<String> paths}) files) {
       _requireCurrent(operation);
+      if (deliveryAllowed != null && !deliveryAllowed()) {
+        throw const DshClosedException('Prepared phone route source changed');
+      }
       final paths = files.paths.map((path) => '- ${jsonEncode(path)}').join('\n');
       final content = paths.isEmpty
           ? text

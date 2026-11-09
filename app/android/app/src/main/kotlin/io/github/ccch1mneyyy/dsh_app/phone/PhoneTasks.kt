@@ -160,9 +160,11 @@ class PhoneTasks(
 
     internal fun publish(change: Change) = fire(change.snapshot)
 
+    /** Commit a stop without listeners; callers publish only after their admission lock is released. */
+    internal fun stopDeferred(reason: String): Change = synchronized(lock) { stopLocked(reason) }
+
     fun stop(reason: String) {
-        val change = synchronized(lock) { stopLocked(reason) }
-        publish(change)
+        publish(stopDeferred(reason))
     }
 
     /** Ends the task without a stop hold (the engine went away). */
