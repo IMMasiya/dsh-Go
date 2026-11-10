@@ -54,6 +54,15 @@ internal sealed interface SystemResolution {
 
 /** Used by the Android preparation path and its final filter recheck. Null means missing evidence. */
 internal object SystemHandlers {
+    /** ActivityInfo.enabled may still be the manifest flag for a runtime-enabled launcher alias. */
+    fun componentEnabled(manifestEnabled: Boolean, readSetting: () -> Int): Boolean = try {
+        when (readSetting()) {
+            0 -> manifestEnabled // PackageManager.COMPONENT_ENABLED_STATE_DEFAULT
+            1 -> true // PackageManager.COMPONENT_ENABLED_STATE_ENABLED
+            else -> false // Explicitly disabled or unknown: never fall back to the manifest.
+        }
+    } catch (_: Exception) { false }
+
     fun valid(candidates: List<SystemHandler>, packageName: String?): Boolean =
         candidates.isNotEmpty() && candidates.all {
             it.packageName.isNotBlank() && it.component.isNotBlank() && it.uid >= 0 &&
