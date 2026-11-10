@@ -58,11 +58,15 @@ void main() {
     expect((await container.read(provider.future))!.windows.single.usedPercent, 75);
     expect(firstCarrier.calls, 1);
 
+    // Deliberately model the retained data produced by a Riverpod host rebuild.
+    // ignore: invalid_use_of_internal_member
     active = const AsyncLoading<HostConnection?>().copyWithPrevious(AsyncData(first));
     container.invalidate(activeConnectionProvider);
     expect(await container.read(provider.future), isNull);
     expect(firstCarrier.calls, 1);
 
+    // Exercise the same retained-data guard after a failed rebuild.
+    // ignore: invalid_use_of_internal_member
     active = AsyncError<HostConnection?>(StateError('offline'), StackTrace.current).copyWithPrevious(AsyncData(first));
     container.invalidate(activeConnectionProvider);
     expect(await container.read(provider.future), isNull);
