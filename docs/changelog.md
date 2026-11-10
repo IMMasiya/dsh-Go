@@ -2,6 +2,28 @@
 
 每个版本先中文、后英文。发版时把对应版本的正文（不含版本标题）作为 Release 正文，见 `docs/release.md`。
 
+## 1.0.15 · 2026-11-10
+
+### 中文
+
+- **从这一版起，更新引擎不再清空 Linux 环境。** 这次运行时又有改动，所以还是下整包；但更新时只替换 App 管理的引擎部分（DSH、Node、pnpm、桥接和它们的目录），用 `apt` 装的工具、默认位置的 npm 全局包、Python / pip 包、配置和工作区都会保留。从 1.0.14 升上来就生效。Node 版本变了时，第三方原生扩展仍可能要重新编译。
+- **如果更新停下来了，先别重置。** App 确认不了现有环境和新引擎兼容、更新清单损坏，或者旧进程没停干净时，会停止更新并说明原因，原环境原样保留。按提示重试；还不行就导出诊断并开 issue，不要重置环境或卸载 App。
+- **这一版没有在真机上验证过。** 上面这套保留环境的更新流程和扫码配对只经过自动测试和编译检查。遇到问题请开 issue 反馈。
+- 扫码配对电脑：修好相机打不开、从相册识码报 `MlKitContext has not been initialized` 的问题（#802）。扫码前会按需准备 ML Kit，不需要打开手机操控的「本机文字识别」，也不会改它的开关；SDK 出错和图里没有二维码会分开提示。
+- 引擎和运行环境：上一次启动迟到的日志不再混进这次的故障快照和诊断；停止和自动安全模式同时发生时，状态不会被旧的「正在停止」盖回去；停止后迟到的刷新不会把已撤掉的前台通知发回来；持久终端的就绪判断不再受系统时间跳变影响。
+- 通知和视频：审批点过、结果还没回来时重发的通知保留你的决定，显示「正在处理」，不再给按钮；上一次申请迟到的失焦回调不会再暂停刚恢复的视频。
+- 其他修复：永久删除对话时一并删掉迁移留下的临时正文；最近会话的桌面快捷方式迁移失败时保留旧入口，下次再试（#22）；Agent Team 冷恢复时，子 agent 已领取的初始输入不再被判失败（实验功能）。
+
+### English
+
+- **From this version on, updating the engine no longer wipes the Linux environment.** The runtime changed again, so this is still a full download, but an update now replaces only the engine parts the app manages (DSH, Node, pnpm, the bridge and their folders). Tools installed with `apt`, npm global packages in the default location, Python and pip packages, configuration and workspaces are kept. This already applies when updating from 1.0.14. When the Node version changes, third-party native extensions may still need rebuilding.
+- **If the update stops, don't reset.** When the app can't confirm the existing environment works with the new engine, the update manifest is damaged, or old processes haven't stopped, it stops the update, says why and leaves the environment as it was. Retry as it suggests; if it still fails, export diagnostics and open an issue rather than resetting the environment or uninstalling the app.
+- **This version hasn't been verified on a real phone.** The update flow that keeps the environment and pairing by scanning have only been through automated tests and compile checks. If you hit a problem, please open an issue.
+- Pair a computer by scanning: fixed the camera not opening and gallery scans failing with `MlKitContext has not been initialized` (#802). ML Kit is prepared on demand before scanning; you don't need to turn on the phone control's on-device text recognition, and its switch isn't changed. An SDK failure and an image with no QR code are now reported differently.
+- Engine and runtime: late log lines from the previous start no longer end up in this start's failure snapshot and diagnostics. When stopping and automatic safe mode happen together, an old Stopping state no longer overwrites the current one. A late refresh after stopping no longer brings back a foreground notification that was already removed. The persistent terminal's readiness checks are no longer thrown off by the system clock jumping.
+- Notifications and video: a notification re-sent after you answered an approval but before the result came back keeps your decision and shows Processing, with no buttons. A late focus-loss callback from an earlier request no longer pauses a video you just resumed.
+- Other fixes: deleting a chat for good also removes the temporary text left by migration. If moving the recent-chat home screen shortcuts fails, the old entry stays and it tries again later (#22). In Agent Team cold recovery, initial input a sub-agent had already taken is no longer marked failed (experimental feature).
+
 ## 1.0.14 · 2026-11-09
 
 ### 中文
