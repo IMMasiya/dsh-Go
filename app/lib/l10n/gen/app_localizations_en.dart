@@ -16822,6 +16822,104 @@ class L10nEn extends L10n {
   String get searchKwQuickPanel => 'swipe,left swipe,shortcuts,gesture,quick panel,quick access';
 
   @override
+  String get selfUpdateTransport => 'Installation route';
+
+  @override
+  String get selfUpdateSystem => 'Normal installation (default)';
+
+  @override
+  String get selfUpdateShizuku => 'Shizuku';
+
+  @override
+  String get selfUpdateAdb => 'Local ADB';
+
+  @override
+  String get selfUpdateSecurityNote =>
+      'Every route remains subject to APK signatures and Android/vendor security policies. Skipping scans is not guaranteed. Root is unsupported; routes never switch automatically after a failure.';
+
+  @override
+  String get selfUpdateNativeConfirm =>
+      'Only a verified update for this app is installed, with native confirmation still required. Authorizing Shizuku does not approve installation. Phone control and AI Shell can remain off.';
+
+  @override
+  String get selfUpdateAuthorize => 'Request Shizuku authorization for updates';
+
+  @override
+  String get selfUpdateRefresh => 'Refresh transport status';
+
+  @override
+  String selfUpdateShizukuStatus(String status) {
+    return 'Shizuku: $status';
+  }
+
+  @override
+  String get selfUpdateReady => 'Authorized';
+
+  @override
+  String get selfUpdatePermissionRequired => 'Install, start, and authorize Shizuku first';
+
+  @override
+  String get selfUpdateUnsupportedIdentity =>
+      'Only shell UID 2000 is supported; root and other identities are unsupported';
+
+  @override
+  String get selfUpdateAdbHint =>
+      'Use this phone\'s paired wireless-debugging identity; connection starts only when you press Install. If unpaired, open the existing Android Shell pairing page without enabling Phone control or AI Shell. Pairing codes and ports are not saved or logged.';
+
+  @override
+  String get selfUpdatePairing => 'Open Android Shell pairing guidance';
+
+  @override
+  String get selfUpdateAdbPaired => 'Local ADB paired';
+
+  @override
+  String get selfUpdateAdbNotPaired => 'Local ADB not paired';
+
+  @override
+  String get selfUpdatePendingTitle => 'Verifying installation outcome';
+
+  @override
+  String get selfUpdatePendingMessage =>
+      'The installation may still be running. There is no automatic retry or route switch. Check system prompts, then read the actual installed state.';
+
+  @override
+  String get selfUpdateUnknownTitle => 'Installation outcome unknown';
+
+  @override
+  String get selfUpdateUnknownMessage =>
+      'A timeout, lost connection, or exited process does not prove failure. There is no automatic retry or route switch. Read the actual installed state first.';
+
+  @override
+  String get selfUpdateReadResult => 'Read actual installed state';
+
+  @override
+  String get selfUpdateVerifiedTitle => 'Installed version verified';
+
+  @override
+  String selfUpdateVerifiedVersion(String version, int code) {
+    return 'Current version $version (build $code), verified by the native layer.';
+  }
+
+  @override
+  String get selfUpdateFailedTitle => 'Installation did not complete';
+
+  @override
+  String get selfUpdateFailedMessage =>
+      'The native layer reported this installation failed. Check system prompts and the error code, then explicitly choose an installation route.';
+
+  @override
+  String selfUpdateErrorCode(String code) {
+    return 'Error code: $code';
+  }
+
+  @override
+  String get selfUpdateEndWaiting => 'End this wait';
+
+  @override
+  String get selfUpdateEndWaitingNote =>
+      'End this wait only after confirming the system is no longer installing. Clearing the record does not cancel a system installation or retry/switch routes. Native confirmation is required again.';
+
+  @override
   String get shellDeletePermanently => 'Delete permanently';
 
   @override

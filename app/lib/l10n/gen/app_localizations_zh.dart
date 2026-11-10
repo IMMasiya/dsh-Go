@@ -15992,6 +15992,97 @@ class L10nZh extends L10n {
   String get searchKwQuickPanel => '左滑,快捷入口,手势,滑动,目录,自定义目录,快捷,常用入口';
 
   @override
+  String get selfUpdateTransport => '安装路线';
+
+  @override
+  String get selfUpdateSystem => '正常安装（默认）';
+
+  @override
+  String get selfUpdateShizuku => 'Shizuku';
+
+  @override
+  String get selfUpdateAdb => '本机 ADB';
+
+  @override
+  String get selfUpdateSecurityNote => '各路线仍受 APK 签名、Android 与厂商安全策略约束，不保证跳过扫描。不支持 root，也不会在失败后自动切换路线。';
+
+  @override
+  String get selfUpdateNativeConfirm => '只安装已校验的本应用更新；稍后仍需原生安装确认。授权 Shizuku 不等于同意安装，不需要开启手机操控或 AI Shell。';
+
+  @override
+  String get selfUpdateAuthorize => '申请更新用 Shizuku 授权';
+
+  @override
+  String get selfUpdateRefresh => '刷新通道状态';
+
+  @override
+  String selfUpdateShizukuStatus(String status) {
+    return 'Shizuku：$status';
+  }
+
+  @override
+  String get selfUpdateReady => '已授权';
+
+  @override
+  String get selfUpdatePermissionRequired => '请先安装、启动并授权 Shizuku';
+
+  @override
+  String get selfUpdateUnsupportedIdentity => '仅支持 shell UID 2000；root 与其他身份不受支持';
+
+  @override
+  String get selfUpdateAdbHint =>
+      '使用已配对的本机无线调试身份；点击安装才连接。未配对时可打开现有 Android Shell 配对页，无需开启手机操控或 AI Shell。配对码和端口不保存、不写入日志。';
+
+  @override
+  String get selfUpdatePairing => '打开 Android Shell 配对引导';
+
+  @override
+  String get selfUpdateAdbPaired => '本机 ADB 已配对';
+
+  @override
+  String get selfUpdateAdbNotPaired => '本机 ADB 尚未配对';
+
+  @override
+  String get selfUpdatePendingTitle => '正在核实安装结果';
+
+  @override
+  String get selfUpdatePendingMessage => '安装请求可能仍在处理。不会自动重试或切换路线；请查看系统提示，再读取实际安装状态。';
+
+  @override
+  String get selfUpdateUnknownTitle => '安装结果未知';
+
+  @override
+  String get selfUpdateUnknownMessage => '超时、失联或进程退出不能证明失败。不会自动重试或切换路线；请先读取实际安装状态。';
+
+  @override
+  String get selfUpdateReadResult => '读取实际安装状态';
+
+  @override
+  String get selfUpdateVerifiedTitle => '已核实当前安装版本';
+
+  @override
+  String selfUpdateVerifiedVersion(String version, int code) {
+    return '当前版本 $version（构建 $code），已由原生层核验。';
+  }
+
+  @override
+  String get selfUpdateFailedTitle => '安装未完成';
+
+  @override
+  String get selfUpdateFailedMessage => '原生层报告本次安装失败。请检查系统提示和错误码，再明确选择安装路线。';
+
+  @override
+  String selfUpdateErrorCode(String code) {
+    return '错误码：$code';
+  }
+
+  @override
+  String get selfUpdateEndWaiting => '结束本次等待';
+
+  @override
+  String get selfUpdateEndWaitingNote => '只有确认系统已不在安装时才结束等待。清除本次记录不等于取消系统安装；不会自动重试或切换路线，仍需再次原生确认。';
+
+  @override
   String get shellDeletePermanently => '永久删除';
 
   @override

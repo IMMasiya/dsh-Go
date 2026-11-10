@@ -111,6 +111,7 @@ class ProcessLaunchGuardTest {
     private val cLanguages = setOf("c", "cc", "cpp", "cxx", "h", "hpp")
     private val nativeLanguages = cLanguages + setOf("kt", "java")
     private val diagnosticJavaOwner = "app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/diagnostics/SystemImeLogcat.kt"
+    private val updateJavaOwner = "app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/update/privileged/SelfUpdateInstallerService.kt"
     private val allowedNative = setOf(
         "app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/runtime/DshProcess.kt",
         // The explicit root channel's `su -c <fixed command>` (argv from RootCommands): also a
@@ -121,6 +122,8 @@ class ProcessLaunchGuardTest {
         // The bounded privileged logcat reader also uses Java's fd-closing launcher.
         // The test below restricts this owner to one fixed-command ProcessBuilder.
         diagnosticJavaOwner,
+        // Only the standard fixed-argv self-update command, separately constrained below.
+        updateJavaOwner,
     )
     private val localHelper = "app/lib/remote/ssh/remote_shell.dart"
 
@@ -262,6 +265,18 @@ class ProcessLaunchGuardTest {
             Code(source.substring(reference.offset), "kt").read().take(5).map { it.text })
         assertTrue(source.contains("\"/system/bin/app_process\", \"/system/bin\", AndroidShellJobMain::class.java.name"))
         assertTrue(source.contains("ProcessBuilder(\"/system/bin/sh\", \"-c\", args[1])"))
+    }
+
+    @Test fun selfUpdateOwnerOnlyLaunchesTheReviewedSystemInstaller() {
+        val source = File(repository(), updateJavaOwner).readText()
+        val calls = nativeCalls(source, "kt")
+        assertEquals(listOf("ProcessBuilder"), calls.map { it.text })
+        val expected = listOf("ProcessBuilder", "(", "SelfUpdatePolicy", ".", "installArgv", "(",
+            "userId", ",", "size", ")", ")")
+        assertEquals(expected, Code(source.substring(calls.single().offset), "kt").read()
+            .take(expected.size).map { it.text })
+        assertTrue(source.contains("environment().clear()"))
+        assertTrue(source.contains("redirectErrorStream(true)"))
     }
 
     @Test fun productionDartCannotLaunchOrConstructTheLocalTestShell() {

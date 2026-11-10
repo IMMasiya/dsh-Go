@@ -29252,6 +29252,174 @@ abstract class L10n {
   /// **'左滑,快捷入口,手势,滑动,目录,自定义目录,快捷,常用入口'**
   String get searchKwQuickPanel;
 
+  /// No description provided for @selfUpdateTransport.
+  ///
+  /// In zh, this message translates to:
+  /// **'安装路线'**
+  String get selfUpdateTransport;
+
+  /// No description provided for @selfUpdateSystem.
+  ///
+  /// In zh, this message translates to:
+  /// **'正常安装（默认）'**
+  String get selfUpdateSystem;
+
+  /// No description provided for @selfUpdateShizuku.
+  ///
+  /// In zh, this message translates to:
+  /// **'Shizuku'**
+  String get selfUpdateShizuku;
+
+  /// No description provided for @selfUpdateAdb.
+  ///
+  /// In zh, this message translates to:
+  /// **'本机 ADB'**
+  String get selfUpdateAdb;
+
+  /// No description provided for @selfUpdateSecurityNote.
+  ///
+  /// In zh, this message translates to:
+  /// **'各路线仍受 APK 签名、Android 与厂商安全策略约束，不保证跳过扫描。不支持 root，也不会在失败后自动切换路线。'**
+  String get selfUpdateSecurityNote;
+
+  /// No description provided for @selfUpdateNativeConfirm.
+  ///
+  /// In zh, this message translates to:
+  /// **'只安装已校验的本应用更新；稍后仍需原生安装确认。授权 Shizuku 不等于同意安装，不需要开启手机操控或 AI Shell。'**
+  String get selfUpdateNativeConfirm;
+
+  /// No description provided for @selfUpdateAuthorize.
+  ///
+  /// In zh, this message translates to:
+  /// **'申请更新用 Shizuku 授权'**
+  String get selfUpdateAuthorize;
+
+  /// No description provided for @selfUpdateRefresh.
+  ///
+  /// In zh, this message translates to:
+  /// **'刷新通道状态'**
+  String get selfUpdateRefresh;
+
+  /// No description provided for @selfUpdateShizukuStatus.
+  ///
+  /// In zh, this message translates to:
+  /// **'Shizuku：{status}'**
+  String selfUpdateShizukuStatus(String status);
+
+  /// No description provided for @selfUpdateReady.
+  ///
+  /// In zh, this message translates to:
+  /// **'已授权'**
+  String get selfUpdateReady;
+
+  /// No description provided for @selfUpdatePermissionRequired.
+  ///
+  /// In zh, this message translates to:
+  /// **'请先安装、启动并授权 Shizuku'**
+  String get selfUpdatePermissionRequired;
+
+  /// No description provided for @selfUpdateUnsupportedIdentity.
+  ///
+  /// In zh, this message translates to:
+  /// **'仅支持 shell UID 2000；root 与其他身份不受支持'**
+  String get selfUpdateUnsupportedIdentity;
+
+  /// No description provided for @selfUpdateAdbHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'使用已配对的本机无线调试身份；点击安装才连接。未配对时可打开现有 Android Shell 配对页，无需开启手机操控或 AI Shell。配对码和端口不保存、不写入日志。'**
+  String get selfUpdateAdbHint;
+
+  /// No description provided for @selfUpdatePairing.
+  ///
+  /// In zh, this message translates to:
+  /// **'打开 Android Shell 配对引导'**
+  String get selfUpdatePairing;
+
+  /// No description provided for @selfUpdateAdbPaired.
+  ///
+  /// In zh, this message translates to:
+  /// **'本机 ADB 已配对'**
+  String get selfUpdateAdbPaired;
+
+  /// No description provided for @selfUpdateAdbNotPaired.
+  ///
+  /// In zh, this message translates to:
+  /// **'本机 ADB 尚未配对'**
+  String get selfUpdateAdbNotPaired;
+
+  /// No description provided for @selfUpdatePendingTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'正在核实安装结果'**
+  String get selfUpdatePendingTitle;
+
+  /// No description provided for @selfUpdatePendingMessage.
+  ///
+  /// In zh, this message translates to:
+  /// **'安装请求可能仍在处理。不会自动重试或切换路线；请查看系统提示，再读取实际安装状态。'**
+  String get selfUpdatePendingMessage;
+
+  /// No description provided for @selfUpdateUnknownTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'安装结果未知'**
+  String get selfUpdateUnknownTitle;
+
+  /// No description provided for @selfUpdateUnknownMessage.
+  ///
+  /// In zh, this message translates to:
+  /// **'超时、失联或进程退出不能证明失败。不会自动重试或切换路线；请先读取实际安装状态。'**
+  String get selfUpdateUnknownMessage;
+
+  /// No description provided for @selfUpdateReadResult.
+  ///
+  /// In zh, this message translates to:
+  /// **'读取实际安装状态'**
+  String get selfUpdateReadResult;
+
+  /// No description provided for @selfUpdateVerifiedTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'已核实当前安装版本'**
+  String get selfUpdateVerifiedTitle;
+
+  /// No description provided for @selfUpdateVerifiedVersion.
+  ///
+  /// In zh, this message translates to:
+  /// **'当前版本 {version}（构建 {code}），已由原生层核验。'**
+  String selfUpdateVerifiedVersion(String version, int code);
+
+  /// No description provided for @selfUpdateFailedTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'安装未完成'**
+  String get selfUpdateFailedTitle;
+
+  /// No description provided for @selfUpdateFailedMessage.
+  ///
+  /// In zh, this message translates to:
+  /// **'原生层报告本次安装失败。请检查系统提示和错误码，再明确选择安装路线。'**
+  String get selfUpdateFailedMessage;
+
+  /// No description provided for @selfUpdateErrorCode.
+  ///
+  /// In zh, this message translates to:
+  /// **'错误码：{code}'**
+  String selfUpdateErrorCode(String code);
+
+  /// No description provided for @selfUpdateEndWaiting.
+  ///
+  /// In zh, this message translates to:
+  /// **'结束本次等待'**
+  String get selfUpdateEndWaiting;
+
+  /// No description provided for @selfUpdateEndWaitingNote.
+  ///
+  /// In zh, this message translates to:
+  /// **'只有确认系统已不在安装时才结束等待。清除本次记录不等于取消系统安装；不会自动重试或切换路线，仍需再次原生确认。'**
+  String get selfUpdateEndWaitingNote;
+
   /// No description provided for @shellDeletePermanently.
   ///
   /// In zh, this message translates to:
