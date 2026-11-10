@@ -54,5 +54,21 @@ Scoped Dart formatting also parsed the changed source and widget test files.
 It reported unresolved lint-package includes because this isolated worktree has
 no resolved package configuration; this is not a Dart type-analysis or lint pass.
 
-Real-account queries, Flutter tests, APK builds, and device validation have not
-been performed. Remote CI has not been triggered; its results are still pending.
+## Remote CI record
+
+The source-only implementation did not run tests on the phone. Remote CI for
+`37dc9884e8c735bb9853ba16963df9972b6e3da2` ran at
+https://github.com/ccch1mneyyy/dsh-Go/actions/runs/42872439645 .
+Dart packages, Runtime and bridge, Android JVM, generated resources/tooling, and
+Flutter shard 1 passed. Flutter analysis and generated-localization consistency
+also passed. The new subscription state regression passed in shard 2.
+
+The overall workflow failed on four existing tests: `notice_action_test.dart`,
+`phone_floating_bar_test.dart`, and both language cases in `guide_nav_test.dart`.
+The same four failures are present in the unmodified baseline `8f31b2ed` run:
+https://github.com/ccch1mneyyy/dsh-Go/actions/runs/42782302996 .
+This is not a claim that the full CI suite is green. The initial feature run also
+found two internal-member warnings in deliberate retained-AsyncValue test fixtures;
+those were annotated locally in the test and the next analysis pass succeeded.
+
+Real-account queries, APK builds, and device validation have not been performed.
