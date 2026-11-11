@@ -1,0 +1,215 @@
+name: Build APK & Draft Release
+
+# 手动触发：在「Run workflow」对话框顶部选要构建的分支（或填版本号）。
+# 构建 arm64 APK 后创建草稿 release 并上传，tag 随草稿一起创建。
+# 标题用 8 位 versionCode（构建那分钟，见 tooling/build_number.py），
+# 正文由本次新增的 commit log 自动生成中文摘要，无需手写更新内容。
+#
+# 不监听 push tags：本工作流创建的草稿 tag（v<version>-<versionCode>）在草稿
+# 被发布时会当作 tag push，若监听就会把同一次发版再构建一遍。发版只走手动触发。
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: '版本号（如 1.0.9；留空用 app/pubspec.yaml）'
+        required: false
+        default: ''
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    env:
+      # GitHub Actions 在美国：用国际源；国内本地构建保持脚本默认镜像
+      FLUTTER_BASE_URL: https://storage.googleapis.com/flutter_infra_release/releases/stable/linux
+      PUB_HOSTED_URL: https://pub.dev
+      FLUTTER_STORAGE_BASE_URL: https://storage.googleapis.com
+      NODE_MIRROR: https://nodejs.org/dist
+      NPM_REGISTRY: https://registry.npmjs.org
+      UBUNTU_MIRROR: https://cdimage.ubuntu.com/ubuntu-base/releases/24.04/release
+      UBUNTU_ARCHIVE_AMD64: https://archive.ubuntu.com/ubuntu
+      UBUNTU_ARCHIVE_ARM64: https://ports.ubuntu.com/ubuntu-ports
+      PBS_MIRROR: https://github.com/astral-sh/python-build-standalone/releases/download
+      SKIP_EMULATOR: "1"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # 「Run workflow」对话框顶部选的分支（workflow_dispatch 的 github.ref）；
+          # 推 v*.*.* tag 时则构建该 tag。选哪个分支，就用哪个分支的代码出安装包。
+          ref: ${{ github.ref }}
+          # 正文要从 commit log 生成中文摘要，需要完整历史才能和上一个 tag 对比。
+          fetch-depth: 0
+
+      - name: Cache toolchain (JDK/Flutter/Android SDK)
+        uses: actions/cache@v4
+        with:
+          # setup-toolchain.sh 装在 $HOME/dev；可重跑，命中缓存就跳过重新下载。
+          path: ~/dev
+          key: toolchain-${{ hashFiles('tooling/setup-toolchain.sh') }}
+          restore-keys: |
+            toolchain-
+
+      - name: Cache Gradle & pub
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle
+            ~/.pub-cache
+          key: gradle-${{ hashFiles('app/pubspec.lock', 'app/pubspec.yaml') }}
+          restore-keys: |
+            gradle-
+
+      - name: Set up toolchain
+        run: bash tooling/setup-toolchain.sh
+
+      - name: Set Android NDK path
+        run: |
+          source tooling/env.sh
+          # tawcroot 的 build.py 优先读 ANDROID_NDK_HOME；显式钉到 SDK 里那个
+          # 和 runtime/tawcroot/source.json 的 ndkVersion 一致的目录，避免它
+          # 解析到别的 NDK（否则 toolchain() 会报 "needs NDK ..."）。
+          echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/28.2.13676358" >> "$GITHUB_ENV"
+
+      - name: Verify Android NDK
+        run: |
+          source tooling/env.sh
+          echo "ANDROID_HOME=$ANDROID_HOME"
+          echo "ANDROID_NDK_HOME=$ANDROID_NDK_HOME"
+          # 确认钉死的 NDK 真的是 source.json 要求的版本：读实际 Pkg.Revision 比对，
+          # 不一致就立刻失败（而不是等 build.py 抛 "needs NDK" 再猜路径）。
+          WANT=28.2.13676358
+          echo "--- \$ANDROID_HOME/ndk 实际内容 ---"
+          ls -la "$ANDROID_HOME/ndk/" || echo "(ndk 目录不存在)"
+          echo "--- 目标 NDK 目录是否存在 ---"
+          if [[ ! -d "$ANDROID_NDK_HOME" ]]; then
+            echo "::error::NDK dir missing: $ANDROID_NDK_HOME (sdkmanager may not have finished installing ndk;$WANT)"
+            exit 1
+          fi
+          echo "--- source.properties 原文 ---"
+          if [[ ! -f "$ANDROID_NDK_HOME/source.properties" ]]; then
+            echo "::error::NDK source.properties missing at $ANDROID_NDK_HOME (install incomplete)"
+            exit 1
+          fi
+          cat "$ANDROID_NDK_HOME/source.properties"
+          GOT=$(grep -E '^Pkg\.Revision[[:space:]]*=' "$ANDROID_NDK_HOME/source.properties" | head -1 | cut -d= -f2 | tr -d '[:space:]')
+          echo "Pkg.Revision=$GOT (want $WANT)"
+          if [[ "$GOT" != "$WANT" ]]; then
+            echo "::error::NDK at $ANDROID_NDK_HOME is revision '$GOT', need '$WANT'. See runtime/tawcroot/source.json."
+            exit 1
+          fi
+          test -x "$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/clang" \
+            || { echo "::error::NDK clang not found/executable at $ANDROID_NDK_HOME (install incomplete)"; exit 1; }
+
+      - name: Build runtime (arm64)
+        run: |
+          source tooling/env.sh
+          bash runtime/build-runtime.sh arm64-v8a
+
+      - name: Determine version
+        id: version
+        run: |
+          if [[ "$GITHUB_EVENT_NAME" == "push" ]]; then
+            V="${GITHUB_REF_NAME#v}"
+          elif [[ -n "${{ inputs.version }}" ]]; then
+            V="${{ inputs.version }}"
+          else
+            V="$(sed -n 's/^version:[[:space:]]*\([^+[:space:]]*\).*/\1/p' app/pubspec.yaml)"
+          fi
+          if [[ ! "$V" =~ ^[0-9]+\.[0-9]+\.[0-9]+([-+][0-9A-Za-z.+-]+)?$ ]]; then
+            echo "::error::Invalid version '$V'. Use 1.2.3."
+            exit 1
+          fi
+          echo "version=$V" >> "$GITHUB_OUTPUT"
+
+      - name: Configure release signing
+        env:
+          MA_JKS: ${{ secrets.MA_JKS }}
+          MA_STORE_PASSWORD: ${{ secrets.MA_STORE_PASSWORD }}
+          MA_KEY_ALIAS: ${{ secrets.MA_KEY_ALIAS }}
+          MA_KEY_PASSWORD: ${{ secrets.MA_KEY_PASSWORD }}
+        run: |
+          if [[ -z "$MA_JKS" || -z "$MA_STORE_PASSWORD" || -z "$MA_KEY_ALIAS" || -z "$MA_KEY_PASSWORD" ]]; then
+            echo "::error::Signing secrets not configured. Add MA_JKS (base64 of ma.jks), MA_STORE_PASSWORD, MA_KEY_ALIAS and MA_KEY_PASSWORD to repository secrets."
+            exit 1
+          fi
+          echo "$MA_JKS" | base64 -d > app/android/ma.jks
+          chmod 600 app/android/ma.jks
+          printf 'storeFile=../ma.jks\nstorePassword=%s\nkeyAlias=%s\nkeyPassword=%s\n' \
+            "$MA_STORE_PASSWORD" "$MA_KEY_ALIAS" "$MA_KEY_PASSWORD" > app/android/key.properties
+          echo "::notice::Release signing configured (alias=$MA_KEY_ALIAS)."
+
+      - name: Build APK (arm64)
+        run: |
+          source tooling/env.sh
+          # --build-name 让 APK 内部 versionName = 输入版本；versionCode 由
+          # build-apk.sh 按构建分钟自动生成，并通过 --write-version-code 回传，
+          # 供下面的草稿标题使用。
+          DSH_BETA_TOKEN_FILE= bash tooling/build-apk.sh -f arm64 --keep-daemon \
+            --build-name "${{ steps.version.outputs.version }}" \
+            --write-version-code app/build/app/outputs/flutter-apk/VERSION_CODE
+
+      - name: Read versionCode
+        id: code
+        run: |
+          CODE="$(cat app/build/app/outputs/flutter-apk/VERSION_CODE)"
+          [[ "$CODE" =~ ^[0-9]+$ ]] || { echo "::error::versionCode not a number: '$CODE'"; exit 1; }
+          echo "code=$CODE" >> "$GITHUB_OUTPUT"
+
+      - name: Rename APK with version
+        run: |
+          V="${{ steps.version.outputs.version }}"
+          CODE="${{ steps.code.outputs.code }}"
+          APK="app/build/app/outputs/flutter-apk/app-arm64-release.apk"
+          NEW="app/build/app/outputs/flutter-apk/DSH-Go-${V}-${CODE}-arm64.apk"
+          cp "$APK" "$NEW"
+          echo "::notice::APK renamed to ${NEW##*/}"
+
+      - name: Build release notes from commit log
+        id: notes
+        run: |
+          V="${{ steps.version.outputs.version }}"
+          CODE="${{ steps.code.outputs.code }}"
+          # 正文只列这个 fork 自己的改动，不把上游的提交卷进来：
+          # 先取上游 main，再算分叉点（merge-base），范围就是「分叉点..HEAD」。
+          # 之前用「上一个 tag」做范围，tag 在 fork 里稀疏，范围会落得很远，
+          # 把上游几十个提交全列进正文，又长又没用。
+          git remote add upstream https://github.com/ccch1mneyyy/dsh-Go.git 2>/dev/null || true
+          git fetch upstream main --quiet
+          BASE="$(git merge-base upstream/main HEAD)"
+          if [[ -z "$BASE" ]]; then
+            # 拿不到分叉点（极端情况）才退回全部历史。
+            RANGE="HEAD"
+            HEADER="## 更新内容（首次发布）"
+          else
+            RANGE="$BASE..HEAD"
+            HEADER="## 本次更新（相对上游的新增改动）"
+          fi
+          {
+            echo "BODY<<EOF_DSH_NOTES"
+            echo "$HEADER"
+            echo
+            git log "$RANGE" --no-merges --date=short \
+              --pretty=format:'- %s (`%h`)' | sed 's/^$/- （空）/'
+            echo
+            echo
+            echo "---"
+            echo "版本：$V · versionCode：$CODE"
+            echo "EOF_DSH_NOTES"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Create Draft Release
+        uses: softprops/action-gh-release@v3
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          # tag 带上 8 位 versionCode，既唯一又可读，且相邻发布可对比。
+          tag_name: v${{ steps.version.outputs.version }}-${{ steps.code.outputs.code }}
+          # 草稿标题用 8 位 versionCode（构建那分钟）。
+          name: DSH Go ${{ steps.code.outputs.code }}
+          draft: true
+          prerelease: false
+          # 正文用上一步从 commit log 生成的中文摘要，不手写。
+          body: ${{ steps.notes.outputs.BODY }}
+          files: app/build/app/outputs/flutter-apk/DSH-Go-${{ steps.version.outputs.version }}-${{ steps.code.outputs.code }}-arm64.apk
