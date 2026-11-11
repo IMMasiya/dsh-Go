@@ -34,7 +34,7 @@ HERE="$(CDPATH= cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CACHE="$HERE/.cache"
 WORK="$HERE/.work"
 OUT="${RUNTIME_OUT:-$HERE/out}"   # the app build reads runtime/out; RUNTIME_OUT stages a build elsewhere
-RUNTIME_LAYERS="${RUNTIME_LAYERS:-0}"  # opt in until Android/host validation completes
+RUNTIME_LAYERS="${RUNTIME_LAYERS:-1}"  # fork default: layered base + engine assets
 BASE_LAYER_CACHE="${BASE_LAYER_CACHE:-$CACHE/base-layers}"
 LOCKS="$HERE/locks"
 PY=(python3 -I "$HERE/lib/rtbuild.py")
