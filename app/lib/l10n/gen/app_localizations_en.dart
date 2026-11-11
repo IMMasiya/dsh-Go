@@ -4634,7 +4634,7 @@ class L10nEn extends L10n {
   String get chatBranchHint => 'Continue in a new chat. The original stays as is.';
 
   @override
-  String get chatEditResendHint => 'Rewrite in a new chat. The original stays as is.';
+  String get chatEditResendHint => 'Rewrite in a new chat. Reattach images and files; the original stays as is.';
 
   @override
   String get chatSaveToPhotos => 'Save to Photos';

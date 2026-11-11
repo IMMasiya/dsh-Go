@@ -4364,7 +4364,7 @@ class L10nZh extends L10n {
   String get chatBranchHint => '在新对话中继续，原对话不变';
 
   @override
-  String get chatEditResendHint => '在新对话中改写，原对话不变';
+  String get chatEditResendHint => '在新对话中改写，图片和文件需重新添加；原对话不变';
 
   @override
   String get chatSaveToPhotos => '保存到相册';
