@@ -45,7 +45,7 @@ class TarExtractor(
 
     private val rootCanonical: String = root.canonicalPath
     private val deferredDirModes = ArrayList<Pair<File, Int>>()
-    private val copyBuffer = ByteArray(1 shl 16)
+    private val copyBuffer = ByteArray(1 shl 18)
 
     fun extract(raw: InputStream, fileName: String) {
         val counting = CountingStream(raw.buffered(1 shl 16), onProgress)
