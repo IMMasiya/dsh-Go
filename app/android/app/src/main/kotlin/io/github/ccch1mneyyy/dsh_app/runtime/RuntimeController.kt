@@ -529,8 +529,19 @@ class RuntimeController private constructor(private val app: Context) : DshProce
                     return@execute
                 }
                 timeline.spawned()
-                val direct = directEngine()
-                p.start(env, if (storage) PhoneStorage.binds() else emptyList(), safe, phone, direct.requested, direct.failed, searchOverlay, authOverlay, speechOverlay) { actualDirect ->
+                // This fork intentionally uses PRoot only.
+                // Keep the Direct implementation in the source tree, but never select it at runtime.
+                p.start(
+                    env,
+                    if (storage) PhoneStorage.binds() else emptyList(),
+                    safe,
+                    phone,
+                    directEngine = false,
+                    directFailed = false,
+                    searchOverlay = searchOverlay,
+                    authOverlay = authOverlay,
+                    speechOverlay = speechOverlay,
+                ) { actualDirect ->
                     // SafeMode.prepare writes its own briefing; leave the original home untouched.
                     if (!safe) GuestSetup.writeAgentsMd(installer.rootfs, storage, phone, pendingVisualReplies, actualDirect)
                 }

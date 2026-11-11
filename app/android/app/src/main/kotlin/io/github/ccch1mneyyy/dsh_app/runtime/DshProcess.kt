@@ -75,6 +75,13 @@ class DshProcess(
     var directFallbackReason: String? = null
         private set
 
+    /** Elapsed-realtime marker at the start of [start]; 0 until then. */
+    @Volatile private var launchStartedAtMs: Long = 0L
+
+    private fun startupElapsedMs(): Long =
+        if (launchStartedAtMs == 0L) 0L
+        else android.os.SystemClock.elapsedRealtime() - launchStartedAtMs
+
     /**
      * [binds] are extra proot `-b host:guest` mounts, inserted before the guest command.
      * [safe] boots the rescue profile instead of `web` (see [SafeMode.profileArg]).
@@ -182,7 +189,10 @@ class DshProcess(
             return
         }
         onLaunchMethod?.invoke(direct)
+        launchStartedAtMs = android.os.SystemClock.elapsedRealtime()
+        listener.onLog("[dsh-app] startup prepare: ${startupElapsedMs()} ms", "system")
         val p = builder.start()
+        listener.onLog("[dsh-app] startup proot spawned: ${startupElapsedMs()} ms", "system")
         process = p
         launchDiagnostics.spawned()
         val out = pump(p.inputStream.bufferedReader(), "stdout")
@@ -355,11 +365,13 @@ class DshProcess(
         val token = TOKEN_PARAM.find(url)?.groupValues?.get(1) ?: return
         readyReported = true
         startupSignal.countDown()
+        listener.onLog("[dsh-app] startup token received: ${startupElapsedMs()} ms", "system")
         val base = "http://127.0.0.1:$port"
         thread(name = "dsh-ready", isDaemon = true) {
             val deadline = System.currentTimeMillis() + 90_000
             while (System.currentTimeMillis() < deadline && !stopping && process?.isAlive == true) {
                 if (canConnect(port)) {
+                    listener.onLog("[dsh-app] startup port ready: ${startupElapsedMs()} ms", "system")
                     listener.onReady(this, base, token)
                     return@thread
                 }
