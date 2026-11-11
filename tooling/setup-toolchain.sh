@@ -32,7 +32,7 @@ download_cached() (
 
 install_jdk() {
   if [ -x "$JDK_DIR/bin/java" ] && [ ! -f "$JDK_DIR/.dsh-toolchain-incomplete" ]; then log "JDK present"; return; fi
-  local base="https://mirrors.tuna.tsinghua.edu.cn/Adoptium/17/jdk/x64/linux/"
+  local base="${JAVA_BASE_URL:-https://mirrors.tuna.tsinghua.edu.cn/Adoptium/17/jdk/x64/linux/}"
   local name
   name=$(curl -fsSL "$base" | grep -oE 'OpenJDK17U-jdk_x64_linux_hotspot_[0-9._]+\.tar\.gz' | sort -uV | tail -1)
   [ -n "$name" ] || { log "could not find JDK tarball"; return 1; }
@@ -48,7 +48,7 @@ install_jdk() {
 install_flutter() {
   if [ -x "$FLUTTER_DIR/bin/flutter" ] && [ ! -f "$FLUTTER_DIR/.dsh-toolchain-incomplete" ]; then log "Flutter present"; return; fi
   local name="flutter_linux_${FLUTTER_VERSION}-stable.tar.xz"
-  local url="https://storage.flutter-io.cn/flutter_infra_release/releases/stable/linux/$name"
+  local url="${FLUTTER_BASE_URL:-https://storage.flutter-io.cn/flutter_infra_release/releases/stable/linux}/$name"
   log "Flutter: $name"
   download_cached "$DL/$name" "$url"
   echo "$FLUTTER_SHA256  $DL/$name" | sha256sum -c -
@@ -81,19 +81,35 @@ done
 export JAVA_HOME="$JDK_DIR"
 export ANDROID_HOME="$SDK_DIR" ANDROID_SDK_ROOT="$SDK_DIR"
 export PATH="$JDK_DIR/bin:$FLUTTER_DIR/bin:$SDK_DIR/cmdline-tools/latest/bin:$SDK_DIR/platform-tools:$SDK_DIR/emulator:$PATH"
-export PUB_HOSTED_URL="https://pub.flutter-io.cn" FLUTTER_STORAGE_BASE_URL="https://storage.flutter-io.cn"
+export PUB_HOSTED_URL="${PUB_HOSTED_URL:-https://pub.flutter-io.cn}" FLUTTER_STORAGE_BASE_URL="${FLUTTER_STORAGE_BASE_URL:-https://storage.flutter-io.cn}"
 
 # Versions Flutter's Gradle plugin defaults to (compileSdk / NDK).
-GRADLE_EXT=$(find "$FLUTTER_DIR/packages/flutter_tools/gradle/src/main" -name 'FlutterExtension.*' -print -quit)
-NDK_VERSION=$(grep -oE 'ndkVersion[^"]*"[0-9.]+"' "$GRADLE_EXT" | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1)
-COMPILE_SDK=$(grep -oE 'compileSdkVersion[^0-9]*[0-9]+' "$GRADLE_EXT" | grep -oE '[0-9]+$' | head -1)
-log "Flutter defaults: compileSdk=$COMPILE_SDK ndk=$NDK_VERSION"
+# Grep the whole tree for the *value* declarations, not a single file picked by
+# `grep -rl | head -1`: since Flutter 3.47 the constants live in
+# FlutterExtension.kt (`val ndkVersion: String = "28.2.13676358"`), while the
+# first file that merely mentions `ndkVersion` is AgpCommonExtensionWrapper.kt,
+# which only has `var ndkVersion: String` (no version). The old code grepped the
+# wrong file, matched nothing, and under `set -euo pipefail` the failing grep
+# aborted the whole script with exit 1 (silently, no log line).
+GRADLE_SRC="$FLUTTER_DIR/packages/flutter_tools/gradle/src/main"
+NDK_VERSION=$(grep -rhoE 'ndkVersion[^=]*=[[:space:]]*"[0-9.]+"' "$GRADLE_SRC" 2>/dev/null \
+  | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1 || true)
+COMPILE_SDK=$(grep -rhoE 'compileSdkVersion[^=]*=[[:space:]]*[0-9]+' "$GRADLE_SRC" 2>/dev/null \
+  | grep -oE '[0-9]+$' | head -1 || true)
+log "Flutter defaults: compileSdk=${COMPILE_SDK:-36} ndk=${NDK_VERSION:-<sdkmanager default>}"
 
 # Building the app requires accepting the Android SDK licenses.
 yes | sdkmanager --sdk_root="$SDK_DIR" --licenses >/dev/null || true
-sdkmanager --sdk_root="$SDK_DIR" \
-  "platform-tools" "platforms;android-${COMPILE_SDK:-36}" "build-tools;${COMPILE_SDK:-36}.0.0" \
-  "ndk;${NDK_VERSION}" "cmake;3.22.1" "emulator" "$SYSTEM_IMAGE"
+if [ "${SKIP_EMULATOR:-}" = "1" ]; then
+  # CI 构建不需要模拟器镜像（省 ~1 GB 下载）。
+  sdkmanager --sdk_root="$SDK_DIR" \
+    "platform-tools" "platforms;android-${COMPILE_SDK:-36}" "build-tools;${COMPILE_SDK:-36}.0.0" \
+    "ndk;${NDK_VERSION}" "cmake;3.22.1"
+else
+  sdkmanager --sdk_root="$SDK_DIR" \
+    "platform-tools" "platforms;android-${COMPILE_SDK:-36}" "build-tools;${COMPILE_SDK:-36}.0.0" \
+    "ndk;${NDK_VERSION}" "cmake;3.22.1" "emulator" "$SYSTEM_IMAGE"
+fi
 
 flutter config --no-analytics --android-sdk "$SDK_DIR" --jdk-dir "$JDK_DIR" >/dev/null
 flutter precache --android
@@ -105,8 +121,8 @@ cat > "$(dirname "$0")/env.sh" <<EOF
 export JAVA_HOME="$JDK_DIR"
 export ANDROID_HOME="$SDK_DIR"
 export ANDROID_SDK_ROOT="$SDK_DIR"
-export PUB_HOSTED_URL="https://pub.flutter-io.cn"
-export FLUTTER_STORAGE_BASE_URL="https://storage.flutter-io.cn"
+export PUB_HOSTED_URL="\${PUB_HOSTED_URL:-https://pub.flutter-io.cn}"
+export FLUTTER_STORAGE_BASE_URL="\${FLUTTER_STORAGE_BASE_URL:-https://storage.flutter-io.cn}"
 export PATH="$JDK_DIR/bin:$FLUTTER_DIR/bin:$SDK_DIR/cmdline-tools/latest/bin:$SDK_DIR/platform-tools:$SDK_DIR/emulator:\$PATH"
 EOF
 log "done; source tooling/env.sh"

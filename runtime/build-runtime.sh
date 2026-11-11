@@ -60,15 +60,15 @@ XZ_THREADS="${XZ_THREADS:-4}"       # xz 5.8.1 -6, 136704-byte sample: -T1=408 B
 PRUNE_DEV_METADATA="${PRUNE_DEV_METADATA:-1}"   # drop *.map / *.d.ts from node_modules
 SOURCE_DATE_EPOCH="${SOURCE_DATE_EPOCH:-1767225600}"  # 2026-01-01T00:00:00Z, fixed tar mtimes
 
-UBUNTU_MIRROR="https://mirrors.tuna.tsinghua.edu.cn/ubuntu-cdimage/ubuntu-base/releases/24.04/release"
-NODE_MIRROR="https://npmmirror.com/mirrors/node"
-NPM_REGISTRY="https://registry.npmmirror.com"
-TERMUX_REPO="https://packages.termux.dev/apt/termux-main"
-UBUNTU_ARCHIVE_AMD64="https://mirrors.tuna.tsinghua.edu.cn/ubuntu"        # InRelease verified with gpgv
-UBUNTU_ARCHIVE_ARM64="https://mirrors.tuna.tsinghua.edu.cn/ubuntu-ports"
-UBUNTU_DEB_FALLBACK="https://launchpad.net/ubuntu/+archive/primary/+files"
-PBS_OFFICIAL="https://github.com/astral-sh/python-build-standalone/releases/download"
-PBS_MIRROR="https://registry.npmmirror.com/-/binary/python-build-standalone"
+UBUNTU_MIRROR="${UBUNTU_MIRROR:-https://mirrors.tuna.tsinghua.edu.cn/ubuntu-cdimage/ubuntu-base/releases/24.04/release}"
+NODE_MIRROR="${NODE_MIRROR:-https://npmmirror.com/mirrors/node}"
+NPM_REGISTRY="${NPM_REGISTRY:-https://registry.npmmirror.com}"
+TERMUX_REPO="${TERMUX_REPO:-https://packages.termux.dev/apt/termux-main}"
+UBUNTU_ARCHIVE_AMD64="${UBUNTU_ARCHIVE_AMD64:-https://mirrors.tuna.tsinghua.edu.cn/ubuntu}"        # InRelease verified with gpgv
+UBUNTU_ARCHIVE_ARM64="${UBUNTU_ARCHIVE_ARM64:-https://mirrors.tuna.tsinghua.edu.cn/ubuntu-ports}"
+UBUNTU_DEB_FALLBACK="${UBUNTU_DEB_FALLBACK:-https://launchpad.net/ubuntu/+archive/primary/+files}"
+PBS_OFFICIAL="${PBS_OFFICIAL:-https://github.com/astral-sh/python-build-standalone/releases/download}"
+PBS_MIRROR="${PBS_MIRROR:-https://registry.npmmirror.com/-/binary/python-build-standalone}"
 
 # sha256 pins, cross-checked against cdimage.ubuntu.com / nodejs.org / the Termux Packages
 # index. Unpinned version overrides still resolve the upstream checksum metadata.
