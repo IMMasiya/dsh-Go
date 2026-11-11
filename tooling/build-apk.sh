@@ -16,6 +16,7 @@
 #   -t, --target FILE                Dart entry point, relative to app/
 #   -n, --build-number N             use 2..2100000000 instead of the build minute (never lower than installed)
 #   --build-name X.Y.Z               version name instead of app/pubspec.yaml's
+#   --write-version-code FILE        write the 8-digit versionCode to FILE after a successful build
 #   --keep-daemon                    leave the Gradle daemon running afterwards
 #   --beta                           embed the beta channel token (internal builds only)
 #   --dry-run                        print what would run
@@ -35,7 +36,7 @@ OUT="$APP/build/app/outputs/flutter-apk"
 usage() { sed -n '2,23p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; }
 die() { echo "build-apk: $*" >&2; exit 1; }
 
-flavor=arm64 mode=release target='' code='' name='' dry=0 keep_daemon=0 want_beta=0
+flavor=arm64 mode=release target='' code='' name='' dry=0 keep_daemon=0 want_beta=0 write_code=''
 extra=()
 while (($#)); do
   case "$1" in
@@ -48,6 +49,10 @@ while (($#)); do
     --build-number=*) code=${1#*=}; shift ;;
     --build-name) name=${2:?--build-name needs a version}; shift 2 ;;
     --build-name=*) name=${1#*=}; shift ;;
+    # CI reads the 8-digit versionCode back for the release title/tag, since it is
+    # derived from the build minute here (not known before the build).
+    --write-version-code) write_code=${2:?--write-version-code needs a path}; shift 2 ;;
+    --write-version-code=*) write_code=${1#*=}; shift ;;
     --keep-daemon) keep_daemon=1; shift ;;
     --beta) want_beta=1; shift ;;
     --dry-run) dry=1; shift ;;
@@ -189,3 +194,11 @@ done
 echo
 echo "dsh-go $name ($code, $when)"
 for apk in "${built[@]}"; do echo "  ${apk#"$ROOT/"}"; done
+
+# Hand the 8-digit versionCode to the caller (CI release title/tag). Written only
+# after the builds above succeeded, so a failed build never publishes a code.
+if [[ -n $write_code ]]; then
+  mkdir -p "$(dirname "$write_code")"
+  printf '%s\n' "$code" > "$write_code"
+  echo "versionCode $code → ${write_code#"$ROOT/"}"
+fi
