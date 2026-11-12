@@ -63,6 +63,24 @@ class RuntimeManifestTest {
         blocked(missingTarDigest)
     }
 
+    @Test fun zstdLayersAreAcceptedAndSelectedLikeXz() {
+        val zstdLayer = { name: String -> layer(name, 100, 1000).put("asset", "$name-arm64-v8a.tar.zstd") }
+        val zstd = metadata().put("schema", 2).put("layers", JSONObject()
+            .put("base", zstdLayer("base")).put("engine", zstdLayer("engine")))
+        val manifest = RuntimeManifest.fromJson(zstd)
+        assertEquals(listOf("base-arm64-v8a.tar.zstd", "engine-arm64-v8a.tar.zstd"),
+            manifest.archivesForInstall(false).map { it.asset })
+        assertEquals(listOf("engine-arm64-v8a.tar.zstd"), manifest.archivesForInstall(true).map { it.asset })
+    }
+
+    @Test fun mixedXzBaseWithZstdEngineIsAcceptedForLayeredUpgrade() {
+        val mixed = layered()
+        mixed.getJSONObject("layers").getJSONObject("engine").put("asset", "engine-arm64-v8a.tar.zstd")
+        val manifest = RuntimeManifest.fromJson(mixed)
+        // An upgrade with a rootfs present still takes only the final (zstd) layer.
+        assertEquals(listOf("engine-arm64-v8a.tar.zstd"), manifest.archivesForInstall(true).map { it.asset })
+    }
+
     @Test fun legacyUnknownUnpackedSizeKeepsTheExistingSpaceEstimate() {
         val manifest = RuntimeManifest.fromJson(metadata().put("rootfs", "rootfs.tar.gz"))
         assertEquals(600L * 1024 * 1024 * 115 / 100, requiredRuntimeInstallSpace(manifest.archives))

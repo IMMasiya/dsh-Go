@@ -54,6 +54,13 @@ ABI = {
     "x86_64": {"machine": 62, "npm_cpu": "x64", "node": "x64", "ubuntu": "amd64", "termux": "x86_64"},
 }
 
+# Archive suffix per compression format. .tar.zstd needs a Zstd decoder on the
+# installing side; the Android RuntimeInstaller must know it before we ship it.
+COMPRESS_SUFFIX = {"xz": ".tar.xz", "gz": ".tar.gz", "zstd": ".tar.zstd"}
+# Zstd --long window (2^27 = 128 MiB) bounds what a decoder must allocate. The
+# tar members are far smaller, so this only caps pathological frames.
+ZSTD_WINDOW_LOG = 27
+
 
 # ---------------------------------------------------------------------------
 # ELF
@@ -994,6 +1001,15 @@ def write_archive(entries, out, args, *, layered=False):
         with open(out_tmp, "wb") as compressed:
             comp = subprocess.Popen(command, stdin=subprocess.PIPE, stdout=compressed, env=environment)
         sink = comp.stdin
+    elif args.compress == "zstd":
+        # Single-frame Zstd stream. The window bound keeps a phone decoder from
+        # having to allocate for a huge frame; the tar members are far smaller.
+        command = ["zstd", "-T%d" % args.zstd_threads, "-%d" % args.zstd_level,
+                   "--long=%d" % ZSTD_WINDOW_LOG, "--no-progress", "-c"]
+        environment = {k: v for k, v in os.environ.items() if k not in ("ZSTD_NBTHREADS", "ZSTD_CLEVEL")}
+        with open(out_tmp, "wb") as compressed:
+            comp = subprocess.Popen(command, stdin=subprocess.PIPE, stdout=compressed, env=environment)
+        sink = comp.stdin
     else:
         comp = None
         raw = open(out_tmp, "wb")
@@ -1025,7 +1041,7 @@ def write_archive(entries, out, args, *, layered=False):
     if comp is not None:
         comp.stdin.close()
         if comp.wait() != 0:
-            raise SystemExit("xz failed")
+            raise SystemExit("%s failed" % args.compress)
     else:
         sink.close()
         raw.close()
@@ -1133,6 +1149,9 @@ def base_cache_identity(entries, args, sources):
     if args.compress == "xz":
         compression.update(preset=args.xz_preset, threads=args.threads,
                            check="crc64", blockBytes=25165824)
+    elif args.compress == "zstd":
+        compression.update(level=args.zstd_level, threads=args.zstd_threads,
+                           windowLog=ZSTD_WINDOW_LOG, longMode=True)
     else:
         compression.update(level=args.gzip_level, mtime=0, filename="")
     # Version the serialization policy, not this whole script or host tool versions:
@@ -1173,9 +1192,20 @@ def write_base_archive(entries, out, args, sources):
             archive_sha, archive_bytes = stream_digest(source)
         if (archive_sha, archive_bytes) != (previous["archiveSha256"], previous["archiveBytes"]):
             raise ValueError("compressed SHA256 or size differs")
-        decoder = lzma.open if args.compress == "xz" else gzip.open
-        with decoder(cached, "rb") as source:
-            tar_sha, tar_bytes = stream_digest(source)
+        if args.compress == "xz":
+            with lzma.open(cached, "rb") as source:
+                tar_sha, tar_bytes = stream_digest(source)
+        elif args.compress == "zstd":
+            with open(cached, "rb") as compressed:
+                proc = subprocess.Popen(["zstd", "-dc"], stdin=compressed,
+                                        stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+                tar_sha, tar_bytes = stream_digest(proc.stdout)
+                proc.stdout.close()
+                if proc.wait() != 0:
+                    raise ValueError("zstd decoder failed")
+        else:
+            with gzip.open(cached, "rb") as source:
+                tar_sha, tar_bytes = stream_digest(source)
         if (tar_sha, tar_bytes) != (previous["tarSha256"], previous["tarBytes"]):
             raise ValueError("tar SHA256 or size differs")
         provenance = record["compressor"]
@@ -1200,6 +1230,10 @@ def write_base_archive(entries, out, args, sources):
         environment = {k: v for k, v in os.environ.items() if k not in ("XZ_OPT", "XZ_DEFAULTS")}
         provenance["xz"] = subprocess.check_output(["xz", "--version"], text=True,
                                                     env=environment).splitlines()[0]
+    elif args.compress == "zstd":
+        environment = {k: v for k, v in os.environ.items() if k not in ("ZSTD_NBTHREADS", "ZSTD_CLEVEL")}
+        provenance["zstd"] = subprocess.check_output(["zstd", "--version"], text=True,
+                                                     env=environment).splitlines()[0]
     else:
         provenance["zlib"] = zlib.ZLIB_RUNTIME_VERSION
     record = {"schema": 1, "key": key, "identity": identity, "archive": stats, "compressor": provenance}
@@ -1226,7 +1260,7 @@ def cmd_assemble(args):
         if args.out or not (args.base_out and args.engine_out and args.base_cache):
             raise SystemExit("use --base-out, --engine-out and --base-cache together, without --out")
         for kind, out in (("base", args.base_out), ("engine", args.engine_out)):
-            expected = "%s-%s.tar.%s" % (kind, abi, args.compress)
+            expected = kind + "-" + abi + COMPRESS_SUFFIX[args.compress]
             if os.path.basename(out) != expected:
                 raise SystemExit("layer output must use basename " + expected)
     elif not args.out or args.base_cache:
@@ -1674,7 +1708,7 @@ def cmd_manifest(args):
         if set(report["layers"]) != {"base", "engine"} or "archive" in report or "archiveSha256" in report:
             raise SystemExit("layer report must contain only base and engine, without a single archive")
         for kind, layer in report["layers"].items():
-            names = {"%s-%s.tar.%s" % (kind, args.abi, suffix) for suffix in ("xz", "gz")}
+            names = {kind + "-" + args.abi + suffix for suffix in COMPRESS_SUFFIX.values()}
             if layer["asset"] not in names:
                 raise SystemExit("invalid %s asset name for ABI %s" % (kind, args.abi))
     m = {
@@ -1684,7 +1718,8 @@ def cmd_manifest(args):
         "abi": args.abi,
         **({"layers": report["layers"], "baseCompatibility": report["baseCompatibility"]} if layered else {
             "rootfs": report["archive"],
-            "rootfsFormat": "tar.xz" if report["archive"].endswith(".xz") else "tar.gz",
+            "rootfsFormat": {".xz": "tar.xz", ".zstd": "tar.zstd"}.get(
+                os.path.splitext(report["archive"])[1], "tar.gz"),
             "rootfsSha256": report["archiveSha256"],
         }),
         "rootfsBytes": report["archiveBytes"],
@@ -1788,9 +1823,11 @@ def main():
     p.add_argument("--base-cache", help="explicit directory for validated base archive reuse")
     p.add_argument("--report", required=True)
     p.add_argument("--runtime-info", required=True)
-    p.add_argument("--compress", choices=("xz", "gz"), default="xz")
+    p.add_argument("--compress", choices=sorted(COMPRESS_SUFFIX), default="xz")
     p.add_argument("--xz-preset", default="6")
     p.add_argument("--gzip-level", type=int, default=9)
+    p.add_argument("--zstd-level", type=int, default=3)
+    p.add_argument("--zstd-threads", type=int, default=4)
     p.add_argument("--threads", type=int, default=0)
     p.add_argument("--epoch", type=int, default=1767225600)
     p.add_argument("--prune-dev-metadata", action="store_true")
