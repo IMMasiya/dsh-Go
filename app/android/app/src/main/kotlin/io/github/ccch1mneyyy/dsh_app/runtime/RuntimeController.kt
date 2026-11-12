@@ -166,7 +166,7 @@ class RuntimeController private constructor(private val app: Context) : DshProce
         runtime = runCatching { manifest.runtimeVersion }.getOrNull(),
     )
     private fun tawcEngine() = DirectLaunch.Preference(
-        saved = prefs.getBoolean(K_TAWC_ENGINE, false),
+        saved = prefs.getBoolean(K_TAWC_ENGINE, true),
         available = tawcEngineUnavailable() == null,
         failedRuntime = prefs.getString(K_TAWC_FAILED, null),
         runtime = runCatching { manifest.runtimeVersion }.getOrNull(),
@@ -192,7 +192,7 @@ class RuntimeController private constructor(private val app: Context) : DshProce
     }
 
     /**
-     * The opt-in tawcroot launch, off by default; same rules as [setDirectEngine]. Only one
+     * The tawcroot launch, on by default; same rules as [setDirectEngine]. Only one
      * of the two is on at a time. Turning it on forgets an earlier failed tawcroot start.
      */
     @Synchronized fun setTawcEngine(enabled: Boolean) {
