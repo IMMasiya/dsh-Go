@@ -21,7 +21,7 @@ val hasWholeReleaseKey = listOf("storeFile", "keyAlias").all { !keyProps.getProp
 
 // Per-ABI runtime bundles produced by runtime/build-runtime.sh.
 val runtimeOut = rootProject.file("../../runtime/out")
-// libtawcroot.so for the opt-in tawcroot launch method (runtime/tawcroot/build.py; missing = unavailable).
+// libtawcroot.so for the tawcroot launch method, on by default (runtime/tawcroot/build.py; missing = unavailable).
 val tawcrootOut = rootProject.file("../../runtime/out-tawcroot")
 
 // versionCode is the build minute, same encoding as tooling/build_number.py:
