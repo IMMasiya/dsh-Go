@@ -101,14 +101,22 @@ class RuntimeInstaller(
             }
             timed("extract") {
                 val extractor = TarExtractor(staging, progress)
-                if (archive.asset.endsWith(".xz") && assetLengths[index] > 0) {
-                    val decoded = ParallelXZInputStream.open(
-                        { AssetSeekableInputStream(context.assets.openFd(assetPath)) }, progress,
-                    )
-                    extractor.extractDecoded(decoded)
-                } else {
-                    context.assets.open(assetPath, AssetManager.ACCESS_STREAMING).use { raw ->
-                        extractor.extract(raw, archive.asset)
+                when {
+                    archive.asset.endsWith(".xz") && assetLengths[index] > 0 -> {
+                        val decoded = ParallelXZInputStream.open(
+                            { AssetSeekableInputStream(context.assets.openFd(assetPath)) }, progress,
+                        )
+                        extractor.extractDecoded(decoded)
+                    }
+                    archive.asset.endsWith(".zstd") -> {
+                        context.assets.open(assetPath, AssetManager.ACCESS_STREAMING).use { raw ->
+                            extractor.extractDecoded(ZstdDecodedStream.open(raw, progress))
+                        }
+                    }
+                    else -> {
+                        context.assets.open(assetPath, AssetManager.ACCESS_STREAMING).use { raw ->
+                            extractor.extract(raw, archive.asset)
+                        }
                     }
                 }
             }

@@ -199,6 +199,19 @@ class LayerPackaging(unittest.TestCase):
             self.assertEqual(layer['tarBytes'], len(tar))
             self.assertEqual(layer['tarSha256'], hashlib.sha256(tar).hexdigest())
 
+    @unittest.skipUnless(shutil.which('zstd'), 'zstd is unavailable')
+    def test_real_zstd_layer_cli_and_manifest(self):
+        out, _ = self.build('zstd-layers', compress='zstd')
+        manifest = self.manifest(out)
+        for kind, layer in manifest['layers'].items():
+            self.assertEqual(layer['asset'], kind + '-arm64-v8a.tar.zstd')
+            data = (out / layer['asset']).read_bytes()
+            self.assertEqual(layer['sha256'], hashlib.sha256(data).hexdigest())
+            tar = subprocess.run(['zstd', '-dc'], input=data, stdout=subprocess.PIPE,
+                                 check=True).stdout
+            self.assertEqual(layer['tarBytes'], len(tar))
+            self.assertEqual(layer['tarSha256'], hashlib.sha256(tar).hexdigest())
+
     def test_engine_only_changes_reuse_base_bytes(self):
         out, first = self.build('first')
         base_bytes = (out / first['layers']['base']['asset']).read_bytes()

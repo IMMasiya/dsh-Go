@@ -104,7 +104,9 @@ android {
     }
 
     androidResources {
-        noCompress += listOf("gz", "xz", "zst", "tar")
+        // .tar.zstd assets must ship uncompressed so ParallelXZInputStream-style
+        // random access and zstd seek are not defeated by the APK's own deflate.
+        noCompress += listOf("gz", "xz", "zst", "zstd", "tar")
     }
 
     signingConfigs {
@@ -167,6 +169,14 @@ dependencies {
 
     // .tar.xz support for the rootfs bundle.
     implementation("org.tukaani:xz:1.10")
+
+    // .tar.zstd support for the rootfs bundle. The @aar suffix is required: the
+    // plain JAR only carries desktop JNI natives, while the AAR ships
+    // arm64-v8a/x86_64/armeabi-v7a/x86 .so files.
+    // Pinned to 1.5.7-12: the newest AAR that declares no minCompileSdk, so it
+    // builds at the Flutter-pinned compileSdk 36. From 1.5.7-13 on, the AAR
+    // declares minCompileSdk=37, which would force an app-wide compileSdk bump.
+    implementation("com.github.luben:zstd-jni:1.5.7-12@aar")
 
     // 不打扰模式 (phone/background): a shell-uid privileged display via Shizuku or self-ADB.
     implementation("dev.rikka.shizuku:api:13.1.5")       // MIT
