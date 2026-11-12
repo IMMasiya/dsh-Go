@@ -4,7 +4,7 @@ import java.io.File
 import java.nio.file.Files
 
 /**
- * The opt-in tawcroot launch: the same prepared PRoot command, run by tawc's
+ * The tawcroot launch (on by default): the same prepared PRoot command, run by tawc's
  * libtawcroot.so (seccomp + SIGSYS path translation, no ptrace). The guest tree
  * and command are unchanged; hard links live in a store next to the rootfs
  * ([TawcrootLinks] turns them back into files before PRoot or Direct run).
