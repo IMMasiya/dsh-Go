@@ -22,3 +22,10 @@
 -dontwarn org.bouncycastle.**
 -keep class org.conscrypt.** { *; }
 -keep class io.github.muntashirakon.adb.** { *; }
+
+# Zstd Runtime decoder (zstd-jni). Its AAR ships no consumer R8 rules, but the
+# JNI bridge binds native methods by name: util.Native loads libzstd-jni.so in a
+# static initializer and RegisterNatives resolves the native methods on the
+# stream classes. Renaming or stripping either side breaks the first .tar.zstd
+# install with UnsatisfiedLinkError, so keep the whole package.
+-keep class com.github.luben.zstd.** { *; }
