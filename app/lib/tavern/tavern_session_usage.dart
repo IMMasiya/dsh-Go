@@ -96,59 +96,30 @@ double tavernReplyCost(TavernUsage usage, TavernModelPrice price, DateTime at) {
 /// of a cent), two above.
 String tavernUsd(double usd) => usd < 1 ? usd.toStringAsFixed(4) : usd.toStringAsFixed(2);
 
-/// Each tavern's last sum by chat: the newest message then, and the sum of
-/// everything before it (that one may have been a reply still being written).
-final _lastSums = Expando<Map<String, (String, TavernSessionUsage)>>();
-
-/// Drops [chatId]'s kept sum: a message before the newest was deleted, so
-/// the sum of what came before the newest is no longer right.
-void tavernForgetSessionUsage(Tavern tavern, String chatId) => _lastSums[tavern]?.remove(chatId);
-
-/// [chatId]'s current line, all of it (the engine hands it out a page at a
-/// time, newest first), its replies' usage summed.
-///
-/// A long chat is thousands of messages read on the UI isolate, so the sum is
-/// kept: on a line that still passes through the newest message counted last
-/// time (replies added since), only what came after it is read. A line that
-/// no longer does (another branch, a deletion) is read whole. Between pages a
-/// frame may run, so a drawer opening over it keeps moving.
-Future<TavernSessionUsage> tavernSessionUsage(Tavern tavern, String chatId, {int page = 200}) async {
-  final sums = _lastSums[tavern] ??= {};
-  final last = sums[chatId];
-  // The newest message alone (it may be a reply still being written, so it
-  // is read every time), and everything before it.
-  var head = const TavernSessionUsage();
-  var rest = const TavernSessionUsage();
-  String? newest;
-  String? before;
-  // With a sum kept, the new part is usually a few messages.
-  var limit = last == null ? page : 20;
-  scan:
-  while (true) {
-    final messages = await tavern.path(chatId, limit: limit, beforeNodeId: before);
-    for (final m in messages.reversed) {
-      if (newest == null) {
-        newest = m.nodeId;
-        head = head.plus(m);
-        if (m.nodeId == last?.$1) {
-          rest = last!.$2;
-          break scan;
-        }
-        continue;
-      }
-      if (m.nodeId == last?.$1) {
-        rest = rest.plus(m) + last!.$2;
-        break scan;
-      }
-      rest = rest.plus(m);
-    }
-    if (messages.length < limit) break;
-    before = messages.first.nodeId;
-    limit = page;
-    await Future<void>.delayed(Duration.zero);
+/// [chatId]'s current line, its replies' usage summed: the engine adds it up
+/// in one query ([Tavern.pathUsage]), by model and by the UTC weekday and
+/// hour, which is all DeepSeek's peak and off-peak prices need.
+Future<TavernSessionUsage> tavernSessionUsage(Tavern tavern, String chatId) async {
+  var total = const TavernSessionUsage();
+  for (final bucket in await tavern.pathUsage(chatId)) {
+    final usage = TavernUsage(
+      promptTokens: bucket.promptTokens,
+      cacheHitTokens: bucket.cacheHitTokens,
+      completionTokens: bucket.completionTokens,
+      model: bucket.model,
+    );
+    final price = tavernModelPrice(bucket.model);
+    total += TavernSessionUsage(
+      replies: bucket.replyCount,
+      prompt: usage.promptTokens,
+      cacheHit: usage.cacheHitTokens,
+      completion: usage.completionTokens,
+      // 2024-01-01 was a Monday: day N of that month is weekday N.
+      cost: price == null ? 0 : tavernReplyCost(usage, price, DateTime.utc(2024, 1, bucket.utcWeekday, bucket.utcHour)),
+      unpriced: price == null ? bucket.replyCount : 0,
+    );
   }
-  if (newest != null) sums[chatId] = (newest, rest);
-  return head + rest;
+  return total;
 }
 
 /// A token count at a glance: 8,421 as it is; 12,345 as 1.2万 (or 12.3k).

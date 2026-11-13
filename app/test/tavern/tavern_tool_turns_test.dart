@@ -61,15 +61,8 @@ class _Tools extends PreviewTavern {
   };
 
   @override
-  Future<List<TavernAgentRun>> readAgentRuns(String chatId, {String? nodeId, int limit = 50}) async => [
-    TavernAgentRun(
-      id: 'lt1:tool-turn',
-      chatId: chatId,
-      nodeId: null,
-      kind: 'tool.turn',
-      at: DateTime.utc(2026, 11, 13),
-      result: {'version': 1, 'logicalTurnId': 'lt1'},
-    ),
+  Future<List<TavernToolTurnSummary>> recentToolTurns(String chatId, {int limit = 20}) async => [
+    TavernToolTurnSummary(logicalTurnId: 'lt1', replyNodeId: reply),
   ];
 
   @override

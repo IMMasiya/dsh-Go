@@ -44,16 +44,8 @@ class _GroupTools extends PreviewTavern {
   Map<String, Object?> _anchor(String node) => {'chatId': chat, 'selectedLeaf': _token(node), 'treeRevision': 1};
 
   @override
-  Future<List<TavernAgentRun>> readAgentRuns(String chatId, {String? nodeId, int limit = 50}) async => [
-    for (final id in known)
-      TavernAgentRun(
-        id: '$id:tool-turn',
-        chatId: chatId,
-        nodeId: null,
-        kind: 'tool.turn',
-        at: DateTime.utc(2026, 11, 13),
-        result: {'version': 1, 'logicalTurnId': id},
-      ),
+  Future<List<TavernToolTurnSummary>> recentToolTurns(String chatId, {int limit = 20}) async => [
+    for (final id in known) TavernToolTurnSummary(logicalTurnId: id, replyNodeId: replies[id]),
   ];
 
   @override
