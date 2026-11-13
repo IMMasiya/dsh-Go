@@ -1,6 +1,7 @@
-// 语音通话: one quiet page over the conversation. A round light in the middle
-// breathes while it waits and swells with whoever is speaking
-// (call/call_visuals.dart). Behind it a dark field, the person's own picture,
+// 语音通话: one page over the conversation, lit like Siri but quieter: a
+// sphere of clear glass with soft colour drifting inside, the same colour
+// running faintly round the screen's edge, all of it made from the theme's
+// colour and following its light or dark (call/call_visuals.dart). Behind it a dark field, the person's own picture,
 // or 伙伴小屋's character mouthing the reply (call/call_backdrop.dart). What was
 // heard and what she says arrive underneath; mute, hang up and loudspeaker sit
 // at the bottom; an approval or question the conversation waits on comes up
@@ -268,22 +269,23 @@ class _VoiceCallPageState extends ConsumerState<VoiceCallPage> with WidgetsBindi
       _ => null,
     };
     final width = MediaQuery.sizeOf(context).width;
+    // Light or dark as the theme is; a picture or her behind always reads as dark.
+    final dark = theme.brightness == Brightness.dark || image != null || her;
+    final palette = CallPalette.of(theme.colorScheme, light: !dark);
+    final ink = CallInk(dark: dark, child: const SizedBox());
 
     return AnnotatedRegion<SystemUiOverlayStyle>(
-      value: SystemUiOverlayStyle.light,
-      child: Theme(
-        data: theme.copyWith(
-          brightness: Brightness.dark,
-          colorScheme: theme.colorScheme.copyWith(brightness: Brightness.dark),
-        ),
+      value: dark ? SystemUiOverlayStyle.light : SystemUiOverlayStyle.dark,
+      child: CallInk(
+        dark: dark,
         child: Scaffold(
-          backgroundColor: const Color(0xFF02040B),
+          backgroundColor: palette.field,
           body: CallClock(
             onTick: _tick,
             child: Stack(
               fit: StackFit.expand,
               children: [
-                CallField(scene: _scene, center: her ? 0.66 : 0.4),
+                CallField(scene: _scene, palette: palette, center: her ? 0.66 : 0.4),
                 // A new backdrop fades in over the old one.
                 AnimatedSwitcher(
                   duration: AppMotion.of(context, AppMotion.slow),
@@ -311,6 +313,7 @@ class _VoiceCallPageState extends ConsumerState<VoiceCallPage> with WidgetsBindi
                     _ => const SizedBox.expand(key: ValueKey('sea')),
                   },
                 ),
+                CallEdgeGlow(scene: _scene, palette: palette),
                 if (her)
                   // Her feet fade into the water so the words below stay readable.
                   const IgnorePointer(
@@ -364,7 +367,11 @@ class _VoiceCallPageState extends ConsumerState<VoiceCallPage> with WidgetsBindi
                                         _pressed ? AppMotion.press : const Duration(milliseconds: 420),
                                       ),
                                       curve: _pressed ? Curves.easeOut : Curves.elasticOut,
-                                      child: CallLight(scene: _scene, size: math.min(340, width * 0.86)),
+                                      child: CallLight(
+                                        scene: _scene,
+                                        palette: palette,
+                                        size: math.min(340, width * 0.86),
+                                      ),
                                     ),
                                   ),
                                 ),
@@ -375,7 +382,7 @@ class _VoiceCallPageState extends ConsumerState<VoiceCallPage> with WidgetsBindi
                         CallStatus(
                           text: status,
                           dots: dots,
-                          color: ended && _call.ended != CallEnd.hungUp ? const Color(0xFFFF9AA8) : null,
+                          color: ended && _call.ended != CallEnd.hungUp ? ink.warn : null,
                         ),
                       ),
                       const SizedBox(height: 14),
@@ -391,7 +398,7 @@ class _VoiceCallPageState extends ConsumerState<VoiceCallPage> with WidgetsBindi
                                     speechErrorText(l10n, error, listening: true),
                                     key: const ValueKey('call-error'),
                                     textAlign: TextAlign.center,
-                                    style: theme.textTheme.bodyMedium?.copyWith(color: const Color(0xFFFF9AA8)),
+                                    style: theme.textTheme.bodyMedium?.copyWith(color: ink.warn),
                                   ),
                                 ),
                               )
@@ -399,7 +406,7 @@ class _VoiceCallPageState extends ConsumerState<VoiceCallPage> with WidgetsBindi
                                 key: const ValueKey('call-reply'),
                                 text: speakable(_call.reply).replaceAll('\n', ' '),
                                 style: theme.textTheme.bodyLarge?.copyWith(
-                                  color: Colors.white.withValues(alpha: 0.94),
+                                  color: ink.fg.withValues(alpha: 0.92),
                                   height: 1.55,
                                   fontSize: 17,
                                 ),
@@ -491,7 +498,7 @@ class _TopBar extends StatelessWidget {
                   overflow: TextOverflow.ellipsis,
                   textAlign: TextAlign.center,
                   style: theme.textTheme.titleMedium?.copyWith(
-                    color: Colors.white,
+                    color: CallInk.of(context).fg,
                     fontWeight: FontWeight.w600,
                     letterSpacing: 0.2,
                   ),
@@ -517,13 +524,13 @@ class _TopBar extends StatelessWidget {
                 height: 40,
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
-                  color: Colors.white.withValues(alpha: 0.1),
-                  border: Border.all(color: Colors.white.withValues(alpha: 0.14)),
+                  color: CallInk.of(context).glass,
+                  border: Border.all(color: CallInk.of(context).glassBorder),
                 ),
                 child: Icon(
                   AppIcons.theme,
                   size: 18,
-                  color: Colors.white.withValues(alpha: onBackdrop == null ? 0.4 : 0.85),
+                  color: CallInk.of(context).fg.withValues(alpha: onBackdrop == null ? 0.35 : 0.8),
                 ),
               ),
             ),

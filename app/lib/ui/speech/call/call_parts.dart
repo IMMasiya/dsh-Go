@@ -11,6 +11,7 @@ import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
 
 import '../../theme/theme.dart';
+import 'call_visuals.dart';
 
 /// A round key on frosted glass; [on] fills it white. Gives a little under
 /// the finger and springs back.
@@ -42,6 +43,7 @@ class _CallKeyState extends State<CallKey> {
   @override
   Widget build(BuildContext context) {
     final on = widget.on;
+    final ink = CallInk.of(context);
     final duration = AppMotion.of(context, AppMotion.standard);
     final disc = AnimatedContainer(
       duration: duration,
@@ -50,8 +52,8 @@ class _CallKeyState extends State<CallKey> {
       height: widget.size,
       decoration: BoxDecoration(
         shape: BoxShape.circle,
-        color: on ? Colors.white.withValues(alpha: 0.94) : Colors.white.withValues(alpha: 0.11),
-        border: Border.all(color: Colors.white.withValues(alpha: on ? 0 : 0.16)),
+        color: on ? ink.on : ink.glass,
+        border: Border.all(color: on ? Colors.transparent : ink.glassBorder),
       ),
       child: Center(
         child: AnimatedSwitcher(
@@ -67,7 +69,7 @@ class _CallKeyState extends State<CallKey> {
             widget.icon,
             key: ValueKey(widget.icon),
             size: widget.size * 0.38,
-            color: on ? const Color(0xFF0B1020) : Colors.white,
+            color: on ? ink.onGlyph : ink.fg,
           ),
         ),
       ),
@@ -104,8 +106,7 @@ class _CallKeyState extends State<CallKey> {
             ExcludeSemantics(
               child: Text(
                 widget.label,
-                style: Theme.of(context).textTheme.labelSmall
-                    ?.copyWith(color: Colors.white.withValues(alpha: 0.72), letterSpacing: 0.3),
+                style: Theme.of(context).textTheme.labelSmall?.copyWith(color: ink.dim, letterSpacing: 0.3),
               ),
             ),
           ],
@@ -176,7 +177,7 @@ class _HangUpKeyState extends State<HangUpKey> {
             ExcludeSemantics(
               child: Text(
                 widget.label,
-                style: Theme.of(context).textTheme.labelSmall?.copyWith(color: Colors.white.withValues(alpha: 0.72)),
+                style: Theme.of(context).textTheme.labelSmall?.copyWith(color: CallInk.of(context).dim),
               ),
             ),
           ],
@@ -196,11 +197,8 @@ class CallStatus extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final style = Theme.of(context).textTheme.titleSmall?.copyWith(
-      color: color ?? Colors.white.withValues(alpha: 0.78),
-      letterSpacing: 1.2,
-      fontWeight: FontWeight.w500,
-    );
+    final style = Theme.of(context).textTheme.titleSmall
+        ?.copyWith(color: color ?? CallInk.of(context).dim, letterSpacing: 1.2, fontWeight: FontWeight.w500);
     return AnimatedSwitcher(
       duration: AppMotion.of(context, AppMotion.standard),
       switchInCurve: AppMotion.enter,
@@ -217,7 +215,7 @@ class CallStatus extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           Text(text, style: style),
-          if (dots) _Dots(color: style?.color ?? Colors.white),
+          if (dots) _Dots(color: style?.color ?? CallInk.of(context).dim),
         ],
       ),
     );
@@ -324,7 +322,7 @@ class _CallTimerState extends State<CallTimer> with SingleTickerProviderStateMix
             height: 6,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
-              color: widget.live ? const Color(0xFF52E3A4) : Colors.white38,
+              color: widget.live ? const Color(0xFF3FCB8E) : CallInk.of(context).faint,
               boxShadow: widget.live ? const [BoxShadow(color: Color(0x8852E3A4), blurRadius: 6)] : null,
             ),
           ),
@@ -333,7 +331,7 @@ class _CallTimerState extends State<CallTimer> with SingleTickerProviderStateMix
         Text(
           widget.since == null ? '--:--' : text,
           style: Theme.of(context).textTheme.labelMedium?.copyWith(
-            color: Colors.white.withValues(alpha: 0.6),
+            color: CallInk.of(context).faint,
             fontFeatures: const [FontFeature.tabularFigures()],
             letterSpacing: 0.8,
           ),
@@ -368,15 +366,15 @@ class HeardLine extends StatelessWidget {
             constraints: const BoxConstraints(maxWidth: 320),
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
             decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.09),
+              color: CallInk.of(context).glass,
               borderRadius: BorderRadius.circular(18),
-              border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
+              border: Border.all(color: CallInk.of(context).glassBorder),
             ),
             child: Text(
               text,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Colors.white.withValues(alpha: 0.75)),
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(color: CallInk.of(context).dim),
             ),
           ),
   );
