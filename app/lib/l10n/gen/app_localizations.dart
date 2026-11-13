@@ -21404,12 +21404,6 @@ abstract class L10n {
   /// **'请求取消'**
   String get phoneSelfCheckCancel;
 
-  /// No description provided for @phoneSelfCheckRetry.
-  ///
-  /// In zh, this message translates to:
-  /// **'仅重试清理'**
-  String get phoneSelfCheckRetry;
-
   /// No description provided for @phoneSelfCheckRefresh.
   ///
   /// In zh, this message translates to:
@@ -21449,7 +21443,7 @@ abstract class L10n {
   /// No description provided for @phoneSelfCheckRunState.
   ///
   /// In zh, this message translates to:
-  /// **'{state, select, idle{尚未开始} running{部分自检进行中} cleaning{正在清理；取消不代表已撤销派发的输入} done{检查已结束，结果见技术详情} cancelled{已取消，已观察到的操作仍保留} cleanup_pending{清理尚未确认，资源仍保留} other{状态不可用}}'**
+  /// **'{state, select, idle{尚未开始} running{部分自检进行中} cleaning{正在清理；取消不代表已撤销派发的输入} done{检查已结束，结果见技术详情} cancelled{已取消，已观察到的操作仍保留} other{状态不可用}}'**
   String phoneSelfCheckRunState(String state);
 
   /// No description provided for @phoneSelfCheckStepState.
@@ -21650,17 +21644,11 @@ abstract class L10n {
   /// **'后台通道正在准备或维护，暂不能接纳新任务。'**
   String get phoneBackgroundParallelBusy;
 
-  /// No description provided for @phoneBackgroundParallelRecovery.
+  /// No description provided for @phoneGateRetest.
   ///
   /// In zh, this message translates to:
-  /// **'请先处理未完成的后台资源恢复，再开始新任务。'**
-  String get phoneBackgroundParallelRecovery;
-
-  /// No description provided for @phoneBackgroundParallelPeer.
-  ///
-  /// In zh, this message translates to:
-  /// **'当前连接的服务不支持所需的后台能力。'**
-  String get phoneBackgroundParallelPeer;
+  /// **'重新检查此通道'**
+  String get phoneGateRetest;
 
   /// No description provided for @phoneBackgroundParallelSerial.
   ///
@@ -21878,42 +21866,6 @@ abstract class L10n {
   /// **'root 管理器（Magisk、KernelSU 或 APatch）会弹窗问你。允许后，DSH Go 以 root 运行自己的后台服务；只有打开「保持 root 通道」，断开或重启后才会自己再去申请。'**
   String get phonePrivilegedRootRiskBody;
 
-  /// No description provided for @phoneGateCleanupTitle.
-  ///
-  /// In zh, this message translates to:
-  /// **'探针清理尚未确认'**
-  String get phoneGateCleanupTitle;
-
-  /// No description provided for @phoneGateCleanupUnknown.
-  ///
-  /// In zh, this message translates to:
-  /// **'新后台资源已被阻止。原通道仍可用时，只能重试原清理，不会重跑探针。'**
-  String get phoneGateCleanupUnknown;
-
-  /// No description provided for @phoneGateCleanupRunning.
-  ///
-  /// In zh, this message translates to:
-  /// **'正在等待原探针及清理完成；清理确认前保留原通道。'**
-  String get phoneGateCleanupRunning;
-
-  /// No description provided for @phoneGateCleanupRetry.
-  ///
-  /// In zh, this message translates to:
-  /// **'仅重试清理'**
-  String get phoneGateCleanupRetry;
-
-  /// No description provided for @phoneGateCleanupDone.
-  ///
-  /// In zh, this message translates to:
-  /// **'清理已确认。请再次明确选择通道，重新检查。'**
-  String get phoneGateCleanupDone;
-
-  /// No description provided for @phoneGateRetest.
-  ///
-  /// In zh, this message translates to:
-  /// **'重新检查此通道'**
-  String get phoneGateRetest;
-
   /// No description provided for @phoneKeepTitle.
   ///
   /// In zh, this message translates to:
@@ -21979,36 +21931,6 @@ abstract class L10n {
   /// In zh, this message translates to:
   /// **'没连上；下次打开 App 或开始操控时再试'**
   String get phoneKeepFailed;
-
-  /// No description provided for @phoneResourceRecoveryTitle.
-  ///
-  /// In zh, this message translates to:
-  /// **'后台资源待核验'**
-  String get phoneResourceRecoveryTitle;
-
-  /// No description provided for @phoneResourceRecoveryRunning.
-  ///
-  /// In zh, this message translates to:
-  /// **'正在核对原资源记录，完成前不能开始新的手机任务。'**
-  String get phoneResourceRecoveryRunning;
-
-  /// No description provided for @phoneResourceRecoveryStorage.
-  ///
-  /// In zh, this message translates to:
-  /// **'无法读取或保存资源记录。可重试保存或读取；已确认的释放不会重复执行，也不会重放旧操作。'**
-  String get phoneResourceRecoveryStorage;
-
-  /// No description provided for @phoneResourceRecoveryPending.
-  ///
-  /// In zh, this message translates to:
-  /// **'旧后台资源尚未核验，新的手机任务暂被阻止。请选择原授权通道后重试；仍无法核验时，可重启设备后再次检查。旧操作结果可能已经发生。确认任务中断提示不会清除这些资源。'**
-  String get phoneResourceRecoveryPending;
-
-  /// No description provided for @phoneResourceRecoveryRetry.
-  ///
-  /// In zh, this message translates to:
-  /// **'重试资源核验'**
-  String get phoneResourceRecoveryRetry;
 
   /// No description provided for @phoneSkillSectionTitle.
   ///
