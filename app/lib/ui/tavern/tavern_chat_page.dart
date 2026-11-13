@@ -1425,8 +1425,16 @@ class _TavernChatPageState extends ConsumerState<TavernChatPage> {
         ? null
         : ref.watch(tavernLive2dProvider(characterId)).value;
     final revealRate = ref.watch(tavernSettingsProvider.select((s) => s.textSpeed.charactersPerSecond));
+    // The character's own way to show the card (角色页 › 配置), else 酒馆设置's;
+    // a group follows the settings.
+    final render = characterId == null || _groupChat ? null : ref.watch(tavernCharacterRenderProvider(characterId));
     // 整页画布 (a trial, 酒馆设置): the story in one web page; not for 视觉小说.
-    final canvas = layout != TavernLayout.visualNovel && ref.watch(tavernSettingsProvider.select((s) => s.canvas));
+    final canvas =
+        layout != TavernLayout.visualNovel &&
+        (render == null ? ref.watch(tavernSettingsProvider.select((s) => s.canvas)) : render == TavernRender.canvas);
+    final islands = render == null
+        ? ref.watch(tavernSettingsProvider.select((s) => s.islands))
+        : render != TavernRender.text;
     _canvasOn = canvas;
     _canvasSpeaker = name;
     _canvasNames = names;
@@ -1477,306 +1485,327 @@ class _TavernChatPageState extends ConsumerState<TavernChatPage> {
       onSuggest: _suggest,
       onStateChanged: () => unawaited(_readPinned()),
     );
-    return BotChatFrame(
-      // The chat's picture, when it has one; the page's gradient otherwise.
-      backdrop: (child) => WallpaperBackdrop.scene(picture: scene, child: child),
-      scaffoldKey: _scaffold,
-      endDrawer: beside
-          ? null
-          : Drawer(
-              key: const ValueKey('tavern-stage-drawer'),
-              width: (MediaQuery.sizeOf(context).width * 0.88).clamp(0, 380),
-              backgroundColor: Colors.transparent,
-              child: AppBackdrop(glow: false, child: SafeArea(child: stage())),
+    return _IslandsScope(
+      islands: islands,
+      child: BotChatFrame(
+        // The chat's picture, when it has one; the page's gradient otherwise.
+        backdrop: (child) => WallpaperBackdrop.scene(picture: scene, child: child),
+        scaffoldKey: _scaffold,
+        endDrawer: beside
+            ? null
+            : Drawer(
+                key: const ValueKey('tavern-stage-drawer'),
+                width: (MediaQuery.sizeOf(context).width * 0.88).clamp(0, 380),
+                backgroundColor: Colors.transparent,
+                child: AppBackdrop(glow: false, child: SafeArea(child: stage())),
+              ),
+        header: _Chrome(
+          key: const ValueKey('tavern-chrome-top'),
+          hidden: _immersive,
+          top: true,
+          child: BotChatHeader(
+            face: ClipOval(
+              child: TavernPortrait(name: name, path: character?.avatarPath, radius: 0, initialSize: 16),
             ),
-      header: _Chrome(
-        key: const ValueKey('tavern-chrome-top'),
-        hidden: _immersive,
-        top: true,
-        child: BotChatHeader(
-          face: ClipOval(
-            child: TavernPortrait(name: name, path: character?.avatarPath, radius: 0, initialSize: 16),
+            title: name,
+            status: status,
+            tone: tone,
+            scrolledUnder: _scrolled,
+            // The title is the character's: its page; a group's, its settings.
+            // The chat's own things are in 舞台 › 本局.
+            onDetails: () {
+              if (group != null) {
+                unawaited(Navigator.of(context).push(TavernGroupPage.route(widget.chatId)));
+              } else if (characterId != null) {
+                unawaited(Navigator.of(context).push(TavernCharacterPage.route(characterId)));
+              }
+            },
+            // 舞台 in place of ⓘ (the title opens the quick look); beside the story
+            // on a wide screen, it needs no key.
+            action: beside ? null : (AppIcons.sidebar, l10n.tavernStage, () => _scaffold.currentState?.openEndDrawer()),
           ),
-          title: name,
-          status: status,
-          tone: tone,
-          scrolledUnder: _scrolled,
-          // The title is the character's: its page; a group's, its settings.
-          // The chat's own things are in 舞台 › 本局.
-          onDetails: () {
-            if (group != null) {
-              unawaited(Navigator.of(context).push(TavernGroupPage.route(widget.chatId)));
-            } else if (characterId != null) {
-              unawaited(Navigator.of(context).push(TavernCharacterPage.route(characterId)));
-            }
-          },
-          // 舞台 in place of ⓘ (the title opens the quick look); beside the story
-          // on a wide screen, it needs no key.
-          action: beside ? null : (AppIcons.sidebar, l10n.tavernStage, () => _scaffold.currentState?.openEndDrawer()),
         ),
-      ),
-      // The story under 酒馆设置's text size and spacing.
-      body: _beside(
-        beside ? stage(topInset: topInset) : null,
-        TavernReading(
-          accent: cardTheme?.accent,
-          names: cardTheme?.names ?? const {},
-          bodyFont: switch (cardTheme?.bodyFont) {
-            final String path => ref.watch(tavernCardFontProvider(path)).value,
-            null => null,
-          },
-          nameFont: switch (cardTheme?.nameFont) {
-            final String path => ref.watch(tavernCardFontProvider(path)).value,
-            null => null,
-          },
-          child: layout == TavernLayout.visualNovel
-              ? ListenableBuilder(
-                  listenable: _live,
-                  builder: (context, _) => TavernVisualNovelView(
-                    pages: [
-                      ...tavernPages(
-                        messages ?? const [],
-                        streamNode: _streamNode,
-                        streamText: _live.shown,
-                        shown: (m) => shownText[m.nodeId] ?? m.text,
-                      ),
-                      if (_running &&
-                          _live.shown.isNotEmpty &&
-                          !(messages?.any((m) => m.nodeId == _streamNode) ?? false))
-                        TavernPage(
-                          TavernMessage(
-                            nodeId: _streamNode ?? '',
-                            role: TavernRole.character,
-                            speaker: writer,
-                            speakerCharacterId: speaking,
-                            text: '',
-                            at: DateTime(0),
-                          ),
-                          _live.shown,
-                          streaming: true,
+        // The story under 酒馆设置's text size and spacing.
+        body: _beside(
+          beside ? stage(topInset: topInset) : null,
+          TavernReading(
+            accent: cardTheme?.accent,
+            names: cardTheme?.names ?? const {},
+            bodyFont: switch (cardTheme?.bodyFont) {
+              final String path => ref.watch(tavernCardFontProvider(path)).value,
+              null => null,
+            },
+            nameFont: switch (cardTheme?.nameFont) {
+              final String path => ref.watch(tavernCardFontProvider(path)).value,
+              null => null,
+            },
+            child: layout == TavernLayout.visualNovel
+                ? ListenableBuilder(
+                    listenable: _live,
+                    builder: (context, _) => TavernVisualNovelView(
+                      pages: [
+                        ...tavernPages(
+                          messages ?? const [],
+                          streamNode: _streamNode,
+                          streamText: _live.shown,
+                          shown: (m) => shownText[m.nodeId] ?? m.text,
                         ),
-                    ],
-                    name: name,
-                    avatarPath: character?.avatarPath,
-                    sprites: tavernSprites(character?.assets),
-                    castFor: group == null
-                        ? null
-                        : (id) => switch (characters?.where((c) => c.id == id).firstOrNull) {
-                            final c? => (name: c.name, avatarPath: c.avatarPath, sprites: tavernSprites(c.assets)),
-                            null => null,
-                          },
-                    stage: switch (live2d) {
-                      final store? => CompanionStage(
-                        key: ValueKey(store.root.path),
-                        store: store,
-                        controller: _stage,
-                        events: _stageEvents,
-                        bare: true,
-                      ),
-                      null => null,
-                    },
-                    onPage: _cue,
-                    onReadingBack: _vnReadingBack,
-                    revealRate: revealRate,
-                    topInset: topInset,
-                    onMenu: (m) => unawaited(_menu(m, last: m.nodeId == lastCharacter)),
-                    footer: (m, lastPage) =>
-                        lastPage && m.role == TavernRole.character && (m.nodeId == lastCharacter || m.siblingCount > 1)
-                        ? _Alternatives(
-                            message: m,
-                            last: m.nodeId == lastCharacter,
-                            busy: _running,
-                            onSibling: (d) => unawaited(_sibling(m, d)),
-                          )
-                        : null,
-                  ),
-                )
-              : canvas
-              ? ref.watch(tavernCanvasBuilderProvider)(
-                  entries: [
-                    for (final (i, m) in (messages ?? const <TavernMessage>[]).indexed)
-                      if (!(_running && m.nodeId == _streamNode))
-                        TavernCanvasEntry(
-                          mesid: i,
-                          nodeId: m.nodeId,
-                          name: tavernSpeaker(context, m),
-                          isUser: m.role == TavernRole.user,
-                          isSystem: m.role == TavernRole.narrator || m.role == TavernRole.system,
-                          html: tavernStoryHtml(tavernStripMarkers(shownText[m.nodeId] ?? m.text)),
-                        ),
-                  ],
-                  streaming: _canvasStream,
-                  onMenu: (node) {
-                    final m = messages?.where((m) => m.nodeId == node).firstOrNull;
-                    if (m != null) unawaited(_menu(m, last: m.nodeId == lastCharacter));
-                  },
-                  calls: _canvasCalls,
-                )
-              : NotificationListener<ScrollNotification>(
-                  onNotification: (n) {
-                    if (n.metrics.axis == Axis.vertical) {
-                      _scrolled.value = ((n.metrics.maxScrollExtent - n.metrics.pixels) / 24).clamp(0.0, 1.0);
-                      _readingBack.value = n.metrics.pixels > 240;
-                      if (novel) _immerse(n);
-                      // The list runs newest first: what is left above is older.
-                      if (n.metrics.extentAfter < 600) unawaited(_loadOlder());
-                    }
-                    return false;
-                  },
-                  child: GestureDetector(
-                    // A tap on the story brings the header and the box back.
-                    behavior: HitTestBehavior.translucent,
-                    onTap: () => _immersive.value = false,
-                    child: ListView(
-                      key: const ValueKey('tavern-transcript'),
-                      controller: _transcript,
-                      reverse: true,
-                      padding: EdgeInsets.fromLTRB(16, 12, 16, topInset + 8),
-                      children: [
-                        // Keyed by message: a new one below keeps each row's
-                        // state with its message, not with its place.
-                        for (final row in rows.reversed)
-                          Padding(
-                            key: row.key,
-                            padding: const EdgeInsets.symmetric(vertical: 6),
-                            // The message gone to, marked for a moment.
-                            child: _jumpTarget != null && row.key == ValueKey<String>(_jumpTarget!)
-                                ? _JumpMark(key: _jumpKey, child: row)
-                                : row,
-                          ),
-                        if (_hasOlder)
-                          const Padding(
-                            key: ValueKey('tavern-older'),
-                            padding: EdgeInsets.symmetric(vertical: 16),
-                            child: Center(child: QuietSpinner()),
+                        if (_running &&
+                            _live.shown.isNotEmpty &&
+                            !(messages?.any((m) => m.nodeId == _streamNode) ?? false))
+                          TavernPage(
+                            TavernMessage(
+                              nodeId: _streamNode ?? '',
+                              role: TavernRole.character,
+                              speaker: writer,
+                              speakerCharacterId: speaking,
+                              text: '',
+                              at: DateTime(0),
+                            ),
+                            _live.shown,
+                            streaming: true,
                           ),
                       ],
+                      name: name,
+                      avatarPath: character?.avatarPath,
+                      sprites: tavernSprites(character?.assets),
+                      castFor: group == null
+                          ? null
+                          : (id) => switch (characters?.where((c) => c.id == id).firstOrNull) {
+                              final c? => (name: c.name, avatarPath: c.avatarPath, sprites: tavernSprites(c.assets)),
+                              null => null,
+                            },
+                      stage: switch (live2d) {
+                        final store? => CompanionStage(
+                          key: ValueKey(store.root.path),
+                          store: store,
+                          controller: _stage,
+                          events: _stageEvents,
+                          bare: true,
+                        ),
+                        null => null,
+                      },
+                      onPage: _cue,
+                      onReadingBack: _vnReadingBack,
+                      revealRate: revealRate,
+                      topInset: topInset,
+                      onMenu: (m) => unawaited(_menu(m, last: m.nodeId == lastCharacter)),
+                      footer: (m, lastPage) =>
+                          lastPage &&
+                              m.role == TavernRole.character &&
+                              (m.nodeId == lastCharacter || m.siblingCount > 1)
+                          ? _Alternatives(
+                              message: m,
+                              last: m.nodeId == lastCharacter,
+                              busy: _running,
+                              onSibling: (d) => unawaited(_sibling(m, d)),
+                            )
+                          : null,
                     ),
-                  ),
-                ),
-        ),
-      ),
-      bottom: [
-        _Chrome(
-          key: const ValueKey('tavern-chrome-bottom'),
-          hidden: _immersive,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              // No key yet: say so before the first line, not after it fails.
-              if (!preview && _error == null && !ref.watch(settingsProvider.select((s) => s.hasApiKey)))
-                _KeyMissing(onAdd: _openKeySettings),
-              if (_error == null && scriptsWaiting > 0 && hintCharacter != null)
-                Padding(
-                  key: const ValueKey('tavern-scripts-hint'),
-                  padding: const EdgeInsets.only(bottom: 8),
-                  child: _Notice(
-                    message: l10n.tavernCardScriptsHint(scriptsWaiting),
-                    action: (
-                      label: l10n.tavernCardScriptsHintAction,
-                      onPressed: () => unawaited(ref.read(tavernSettingsProvider.notifier).setCanvas(true)),
-                    ),
-                    onDismiss: () => unawaited(
-                      tavernPutScriptsHintAway(hintCharacter)
-                          .then((_) => ref.invalidate(tavernScriptsHintOffProvider(hintCharacter))),
-                    ),
-                  ),
-                ),
-              _ErrorSlot(
-                error: _error,
-                calm: _calm,
-                action: _action,
-                onDismiss: () => setState(() {
-                  _error = null;
-                  _action = null;
-                }),
-              ),
-              ListenableBuilder(
-                listenable: Listenable.merge([_readingBack, _focus, _input]),
-                builder: (context, _) => Composer(
-                  hardwareEnterSends: ref.watch(settingsProvider.select((s) => s.hardwareEnterSends)),
-                  // Nothing written: the character speaks next (engine send with no line).
-                  sendWhenEmpty: messages != null && messages.isNotEmpty,
-                  emptySendLabel: group != null ? l10n.tavernGroupSpeakNext : l10n.tavernSpeakNext(name),
-                  controller: _input,
-                  focusNode: _focus,
-                  connected: messages != null,
-                  running: _running,
-                  onSend: _send,
-                  // Long-pressing send, as the key beside it: the line another way.
-                  onSendOptions: _input.text.isEmpty ? null : () => unawaited(_sendOptions()),
-                  onStop: _stop,
-                  voice: _voice,
-                  placeholder: !preview && !ref.watch(settingsProvider.select((s) => s.hasApiKey))
-                      ? l10n.tavernComposerNoKey
-                      : l10n.tavernComposerHint(name),
-                  leading: TavernPersonaKey(chatId: widget.chatId, enabled: !_running),
-                  tray: !_running && messages != null && _input.text.trimLeft().startsWith('/')
-                      // Typing a command: the commands there are.
-                      ? _SlashRow(onPick: _pickSlash)
-                      : !_running && messages != null && (!_readingBack.value || _focus.hasFocus)
-                      ? _QuickReplyRow(
-                          members: [
-                            for (final m in group?.members ?? const <TavernGroupMember>[])
-                              if (names[m.characterId] case final n?) (m.characterId, n),
-                          ],
-                          onSpeak: _speak,
-                          directed: _directed,
-                          onDirected: _suggest,
-                          onDirectedSend: _sendQuick,
-                          replies: ref.watch(tavernQuickRepliesProvider),
-                          onSend: _sendQuick,
-                          onEdit: _editQuick,
-                          scriptButtons: scriptButtons,
-                          onScriptButton: _pressScriptButton,
-                          onDice: () => unawaited(_dice()),
-                          onAll: () => unawaited(_allQuick()),
-                        )
-                      : null,
-                  // While the box is empty: 帮我写 (an idea to start from) and, after
-                  // a reply, 接着写 (it goes on).
-                  accessory: ValueListenableBuilder<TextEditingValue>(
-                    valueListenable: _input,
-                    builder: (context, value, _) {
-                      if (_running || messages == null) return const SizedBox.shrink();
-                      // With a line written: other ways to send it.
-                      if (value.text.isNotEmpty) {
-                        return _ComposerKey(
-                          key: const ValueKey('tavern-send-as'),
-                          icon: AppIcons.more,
-                          label: l10n.tavernSendOptions,
-                          onPressed: () => unawaited(_sendOptions()),
-                        );
-                      }
-                      return Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          _ComposerKey(
-                            key: const ValueKey('tavern-write-for-me'),
-                            icon: AppIcons.write,
-                            label: l10n.tavernWriteForMe,
-                            onPressed: _impersonate,
+                  )
+                : canvas
+                ? ref.watch(tavernCanvasBuilderProvider)(
+                    entries: [
+                      for (final (i, m) in (messages ?? const <TavernMessage>[]).indexed)
+                        if (!(_running && m.nodeId == _streamNode))
+                          TavernCanvasEntry(
+                            mesid: i,
+                            nodeId: m.nodeId,
+                            name: tavernSpeaker(context, m),
+                            isUser: m.role == TavernRole.user,
+                            isSystem: m.role == TavernRole.narrator || m.role == TavernRole.system,
+                            html: tavernStoryHtml(tavernStripMarkers(shownText[m.nodeId] ?? m.text)),
                           ),
-                          if (messages.lastOrNull?.role == TavernRole.character)
-                            _ComposerKey(
-                              key: const ValueKey('tavern-continue'),
-                              icon: AppIcons.continueReply,
-                              label: l10n.tavernContinueReply,
-                              onPressed: _continueLast,
+                    ],
+                    streaming: _canvasStream,
+                    onMenu: (node) {
+                      final m = messages?.where((m) => m.nodeId == node).firstOrNull;
+                      if (m != null) unawaited(_menu(m, last: m.nodeId == lastCharacter));
+                    },
+                    calls: _canvasCalls,
+                  )
+                : NotificationListener<ScrollNotification>(
+                    onNotification: (n) {
+                      if (n.metrics.axis == Axis.vertical) {
+                        _scrolled.value = ((n.metrics.maxScrollExtent - n.metrics.pixels) / 24).clamp(0.0, 1.0);
+                        _readingBack.value = n.metrics.pixels > 240;
+                        if (novel) _immerse(n);
+                        // The list runs newest first: what is left above is older.
+                        if (n.metrics.extentAfter < 600) unawaited(_loadOlder());
+                      }
+                      return false;
+                    },
+                    child: GestureDetector(
+                      // A tap on the story brings the header and the box back.
+                      behavior: HitTestBehavior.translucent,
+                      onTap: () => _immersive.value = false,
+                      child: ListView(
+                        key: const ValueKey('tavern-transcript'),
+                        controller: _transcript,
+                        reverse: true,
+                        padding: EdgeInsets.fromLTRB(16, 12, 16, topInset + 8),
+                        children: [
+                          // Keyed by message: a new one below keeps each row's
+                          // state with its message, not with its place.
+                          for (final row in rows.reversed)
+                            Padding(
+                              key: row.key,
+                              padding: const EdgeInsets.symmetric(vertical: 6),
+                              // The message gone to, marked for a moment.
+                              child: _jumpTarget != null && row.key == ValueKey<String>(_jumpTarget!)
+                                  ? _JumpMark(key: _jumpKey, child: row)
+                                  : row,
+                            ),
+                          if (_hasOlder)
+                            const Padding(
+                              key: ValueKey('tavern-older'),
+                              padding: EdgeInsets.symmetric(vertical: 16),
+                              child: Center(child: QuietSpinner()),
                             ),
                         ],
-                      );
-                    },
+                      ),
+                    ),
                   ),
-                ),
-              ),
-            ],
           ),
         ),
-      ],
+        bottom: [
+          _Chrome(
+            key: const ValueKey('tavern-chrome-bottom'),
+            hidden: _immersive,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                // No key yet: say so before the first line, not after it fails.
+                if (!preview && _error == null && !ref.watch(settingsProvider.select((s) => s.hasApiKey)))
+                  _KeyMissing(onAdd: _openKeySettings),
+                if (_error == null && scriptsWaiting > 0 && hintCharacter != null)
+                  Padding(
+                    key: const ValueKey('tavern-scripts-hint'),
+                    padding: const EdgeInsets.only(bottom: 8),
+                    child: _Notice(
+                      message: l10n.tavernCardScriptsHint(scriptsWaiting),
+                      action: (
+                        label: l10n.tavernCardScriptsHintAction,
+                        // For this card: its chats on the canvas, the rest as they were.
+                        onPressed: () => unawaited(
+                          ref.read(tavernCharacterRenderProvider(hintCharacter).notifier).set(TavernRender.canvas),
+                        ),
+                      ),
+                      onDismiss: () => unawaited(
+                        tavernPutScriptsHintAway(hintCharacter)
+                            .then((_) => ref.invalidate(tavernScriptsHintOffProvider(hintCharacter))),
+                      ),
+                    ),
+                  ),
+                _ErrorSlot(
+                  error: _error,
+                  calm: _calm,
+                  action: _action,
+                  onDismiss: () => setState(() {
+                    _error = null;
+                    _action = null;
+                  }),
+                ),
+                ListenableBuilder(
+                  listenable: Listenable.merge([_readingBack, _focus, _input]),
+                  builder: (context, _) => Composer(
+                    hardwareEnterSends: ref.watch(settingsProvider.select((s) => s.hardwareEnterSends)),
+                    // Nothing written: the character speaks next (engine send with no line).
+                    sendWhenEmpty: messages != null && messages.isNotEmpty,
+                    emptySendLabel: group != null ? l10n.tavernGroupSpeakNext : l10n.tavernSpeakNext(name),
+                    controller: _input,
+                    focusNode: _focus,
+                    connected: messages != null,
+                    running: _running,
+                    onSend: _send,
+                    // Long-pressing send, as the key beside it: the line another way.
+                    onSendOptions: _input.text.isEmpty ? null : () => unawaited(_sendOptions()),
+                    onStop: _stop,
+                    voice: _voice,
+                    placeholder: !preview && !ref.watch(settingsProvider.select((s) => s.hasApiKey))
+                        ? l10n.tavernComposerNoKey
+                        : l10n.tavernComposerHint(name),
+                    leading: TavernPersonaKey(chatId: widget.chatId, enabled: !_running),
+                    tray: !_running && messages != null && _input.text.trimLeft().startsWith('/')
+                        // Typing a command: the commands there are.
+                        ? _SlashRow(onPick: _pickSlash)
+                        : !_running && messages != null && (!_readingBack.value || _focus.hasFocus)
+                        ? _QuickReplyRow(
+                            members: [
+                              for (final m in group?.members ?? const <TavernGroupMember>[])
+                                if (names[m.characterId] case final n?) (m.characterId, n),
+                            ],
+                            onSpeak: _speak,
+                            directed: _directed,
+                            onDirected: _suggest,
+                            onDirectedSend: _sendQuick,
+                            replies: ref.watch(tavernQuickRepliesProvider),
+                            onSend: _sendQuick,
+                            onEdit: _editQuick,
+                            scriptButtons: scriptButtons,
+                            onScriptButton: _pressScriptButton,
+                            onDice: () => unawaited(_dice()),
+                            onAll: () => unawaited(_allQuick()),
+                          )
+                        : null,
+                    // While the box is empty: 帮我写 (an idea to start from) and, after
+                    // a reply, 接着写 (it goes on).
+                    accessory: ValueListenableBuilder<TextEditingValue>(
+                      valueListenable: _input,
+                      builder: (context, value, _) {
+                        if (_running || messages == null) return const SizedBox.shrink();
+                        // With a line written: other ways to send it.
+                        if (value.text.isNotEmpty) {
+                          return _ComposerKey(
+                            key: const ValueKey('tavern-send-as'),
+                            icon: AppIcons.more,
+                            label: l10n.tavernSendOptions,
+                            onPressed: () => unawaited(_sendOptions()),
+                          );
+                        }
+                        return Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            _ComposerKey(
+                              key: const ValueKey('tavern-write-for-me'),
+                              icon: AppIcons.write,
+                              label: l10n.tavernWriteForMe,
+                              onPressed: _impersonate,
+                            ),
+                            if (messages.lastOrNull?.role == TavernRole.character)
+                              _ComposerKey(
+                                key: const ValueKey('tavern-continue'),
+                                icon: AppIcons.continueReply,
+                                label: l10n.tavernContinueReply,
+                                onPressed: _continueLast,
+                              ),
+                          ],
+                        );
+                      },
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
+}
+
+/// Whether this chat's messages put their HTML in islands: the character's
+/// own choice or 酒馆设置's, decided once by the page for every message.
+class _IslandsScope extends InheritedWidget {
+  const _IslandsScope({required this.islands, required super.child});
+
+  final bool islands;
+
+  static bool? of(BuildContext context) => context.dependOnInheritedWidgetOfExactType<_IslandsScope>()?.islands;
+
+  @override
+  bool updateShouldNotify(_IslandsScope old) => old.islands != islands;
 }
 
 final _none = TavernMessage(nodeId: '', role: TavernRole.system, speaker: '', text: '', at: DateTime(0));
@@ -2373,7 +2402,10 @@ class _Shown extends ConsumerWidget {
         MarkdownBody(text: indent ? tavernIndentParagraphs(markdown) : markdown, selectable: false);
     // HTML in it: those parts in islands of their own (酒馆设置 › 显示);
     // component tags (<dsh-letter>…) as cards, either way.
-    final parts = tavernParts(shown, islands: ref.watch(tavernSettingsProvider.select((s) => s.islands)));
+    final parts = tavernParts(
+      shown,
+      islands: _IslandsScope.of(context) ?? ref.watch(tavernSettingsProvider.select((s) => s.islands)),
+    );
     if (parts case [TavernTextPart()]) return text(shown);
     final island = ref.watch(tavernIslandBuilderProvider);
     return Column(

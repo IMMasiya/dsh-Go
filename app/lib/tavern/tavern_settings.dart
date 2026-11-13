@@ -315,3 +315,53 @@ class TavernChatLayoutController extends Notifier<TavernLayout?> {
 final tavernChatLayoutProvider = NotifierProvider.autoDispose.family<TavernChatLayoutController, TavernLayout?, String>(
   TavernChatLayoutController.new,
 );
+
+/// How a character's chats show what the card writes (docs/design/
+/// roleplay-roadmap.md P1, 渲染级别): as text, HTML in islands of its own
+/// within each message, or the whole story on one page (整页画布).
+enum TavernRender { text, islands, canvas }
+
+/// A character's own [TavernRender], over 酒馆设置 › 显示; null follows those.
+/// Its chats with others (a group) follow the settings.
+class TavernCharacterRenderController extends Notifier<TavernRender?> {
+  TavernCharacterRenderController(this.characterId);
+
+  final String characterId;
+  var _chosen = false;
+
+  static String keyFor(String characterId) => 'tavern.render.$characterId';
+
+  @override
+  TavernRender? build() {
+    unawaited(_load());
+    return null;
+  }
+
+  Future<void> _load() async {
+    try {
+      final stored = (await SharedPreferences.getInstance()).getString(keyFor(characterId));
+      if (!_chosen && ref.mounted) state = TavernRender.values.asNameMap()[stored];
+    } catch (_) {}
+  }
+
+  Future<void> set(TavernRender? render) async {
+    _chosen = true;
+    state = render;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      render == null
+          ? await prefs.remove(keyFor(characterId))
+          : await prefs.setString(keyFor(characterId), render.name);
+    } catch (_) {}
+  }
+}
+
+final tavernCharacterRenderProvider = NotifierProvider.autoDispose
+    .family<TavernCharacterRenderController, TavernRender?, String>(TavernCharacterRenderController.new);
+
+/// What [settings] come to as one [TavernRender]: the canvas over islands.
+TavernRender tavernRenderOf(TavernSettings settings) => settings.canvas
+    ? TavernRender.canvas
+    : settings.islands
+    ? TavernRender.islands
+    : TavernRender.text;

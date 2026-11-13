@@ -21228,6 +21228,21 @@ class L10nZh extends L10n {
   String get tavernCardScriptsHintAction => '打开';
 
   @override
+  String get tavernRender => '显示方式';
+
+  @override
+  String get tavernRenderSubtitle => '只管这个角色的单人对话：卡里的状态栏、美化要选网页或画布才显示，脚本只在画布里运行';
+
+  @override
+  String get tavernRenderText => '文字';
+
+  @override
+  String get tavernRenderIslands => '消息网页';
+
+  @override
+  String get tavernRenderCanvas => '整页画布';
+
+  @override
   String get tavernCanvasSubtitle =>
       '整段对话放进一张网页，按 SillyTavern 的结构排，卡写给 ST 的样式能跨消息生效。卡里的脚本会运行，不想让它跑就打开「网页里不运行卡的脚本」。视觉小说不用它。';
 

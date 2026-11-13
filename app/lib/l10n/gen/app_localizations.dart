@@ -38786,6 +38786,36 @@ abstract class L10n {
   /// **'打开'**
   String get tavernCardScriptsHintAction;
 
+  /// No description provided for @tavernRender.
+  ///
+  /// In zh, this message translates to:
+  /// **'显示方式'**
+  String get tavernRender;
+
+  /// No description provided for @tavernRenderSubtitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'只管这个角色的单人对话：卡里的状态栏、美化要选网页或画布才显示，脚本只在画布里运行'**
+  String get tavernRenderSubtitle;
+
+  /// No description provided for @tavernRenderText.
+  ///
+  /// In zh, this message translates to:
+  /// **'文字'**
+  String get tavernRenderText;
+
+  /// No description provided for @tavernRenderIslands.
+  ///
+  /// In zh, this message translates to:
+  /// **'消息网页'**
+  String get tavernRenderIslands;
+
+  /// No description provided for @tavernRenderCanvas.
+  ///
+  /// In zh, this message translates to:
+  /// **'整页画布'**
+  String get tavernRenderCanvas;
+
   /// No description provided for @tavernCanvasSubtitle.
   ///
   /// In zh, this message translates to:

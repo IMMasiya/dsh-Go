@@ -22407,6 +22407,22 @@ class L10nEn extends L10n {
   String get tavernCardScriptsHintAction => 'Turn on';
 
   @override
+  String get tavernRender => 'How it shows';
+
+  @override
+  String get tavernRenderSubtitle =>
+      'Only this character\'s own chats: a card\'s status bars and styling need pages or the canvas, and its scripts run only on the canvas';
+
+  @override
+  String get tavernRenderText => 'Text';
+
+  @override
+  String get tavernRenderIslands => 'Pages';
+
+  @override
+  String get tavernRenderCanvas => 'Canvas';
+
+  @override
   String get tavernCanvasSubtitle =>
       'The whole chat in one web page laid out as SillyTavern does, so a card\'s ST styles reach across messages. Card scripts run here; turn on \"No card scripts in those pages\" to stop them. Not for visual novel.';
 
