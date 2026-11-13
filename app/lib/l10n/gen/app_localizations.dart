@@ -39041,7 +39041,7 @@ abstract class L10n {
   /// No description provided for @tavernGroupHelperModelNote.
   ///
   /// In zh, this message translates to:
-  /// **'用便宜快的模型说（DeepSeek 是 flash、不思考），适合配角。'**
+  /// **'用辅助模型说（自动时 DeepSeek 用 flash、其他渠道用主模型，都不思考），适合配角。'**
   String get tavernGroupHelperModelNote;
 
   /// No description provided for @tavernGroupMoveUp.
@@ -39341,7 +39341,7 @@ abstract class L10n {
   /// No description provided for @tavernToolPolicyDiagnostics.
   ///
   /// In zh, this message translates to:
-  /// **'设置里有一部分读不懂，那部分按默认处理'**
+  /// **'设置里有一部分读不懂，对应的工具先关着'**
   String get tavernToolPolicyDiagnostics;
 
   /// No description provided for @tavernToolPolicyNote.
@@ -39805,6 +39805,18 @@ abstract class L10n {
   /// In zh, this message translates to:
   /// **'DeepSeek Flash'**
   String get tavernAuxiliaryDeepSeek;
+
+  /// No description provided for @tavernChannelKeyClear.
+  ///
+  /// In zh, this message translates to:
+  /// **'清除'**
+  String get tavernChannelKeyClear;
+
+  /// No description provided for @tavernChannelKeyCleared.
+  ///
+  /// In zh, this message translates to:
+  /// **'Key 会在保存时清除'**
+  String get tavernChannelKeyCleared;
 
   /// No description provided for @updateCheck.
   ///

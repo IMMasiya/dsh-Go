@@ -1134,7 +1134,7 @@
   "tavernGroupTalkativeness": "Talkativeness",
   "tavernGroupTalkativenessNote": "In natural turns, the higher, the likelier to speak.",
   "tavernGroupHelperModel": "Helper model",
-  "tavernGroupHelperModelNote": "Speaks with the cheaper, faster model (DeepSeek flash, no thinking): for side characters.",
+  "tavernGroupHelperModelNote": "Speaks with the helper model (automatic: flash on DeepSeek, the main model elsewhere; no thinking): for side characters.",
   "tavernGroupMoveUp": "Move up",
   "tavernGroupMoveDown": "Move down",
   "tavernGroupRemove": "Remove from the group",
@@ -1192,7 +1192,7 @@
   "tavernToolPolicyMode": "Keeping notes",
   "tavernToolPolicyModeAsk": "Ask me first",
   "tavernToolPolicyModeAuto": "Automatically",
-  "tavernToolPolicyDiagnostics": "Part of this setting couldn't be read and uses the default",
+  "tavernToolPolicyDiagnostics": "Part of this setting couldn't be read; the tool it belongs to is off for now",
   "tavernToolPolicyNote": "Replies only use these with DeepSeek and thinking off; a change applies from the next turn, and a character card can turn them off",
   "tavernToolPolicyFailed": "Didn't change: {detail}",
   "@tavernToolPolicyFailed": {"placeholders": {"detail": {"type": "String"}}},
@@ -1286,5 +1286,7 @@
   "tavernAuxiliaryNote": "Used for the director, picking who speaks in a group, and secrets",
   "tavernAuxiliaryAuto": "Automatic",
   "tavernAuxiliaryAutoNote": "Follows the main channel: Flash on DeepSeek, the same model elsewhere",
-  "tavernAuxiliaryDeepSeek": "DeepSeek Flash"
+  "tavernAuxiliaryDeepSeek": "DeepSeek Flash",
+  "tavernChannelKeyClear": "Clear",
+  "tavernChannelKeyCleared": "The key is cleared when you save"
 }

@@ -22550,7 +22550,7 @@ class L10nEn extends L10n {
 
   @override
   String get tavernGroupHelperModelNote =>
-      'Speaks with the cheaper, faster model (DeepSeek flash, no thinking): for side characters.';
+      'Speaks with the helper model (automatic: flash on DeepSeek, the main model elsewhere; no thinking): for side characters.';
 
   @override
   String get tavernGroupMoveUp => 'Move up';
@@ -22719,7 +22719,8 @@ class L10nEn extends L10n {
   String get tavernToolPolicyModeAuto => 'Automatically';
 
   @override
-  String get tavernToolPolicyDiagnostics => 'Part of this setting couldn\'t be read and uses the default';
+  String get tavernToolPolicyDiagnostics =>
+      'Part of this setting couldn\'t be read; the tool it belongs to is off for now';
 
   @override
   String get tavernToolPolicyNote =>
@@ -22988,6 +22989,12 @@ class L10nEn extends L10n {
 
   @override
   String get tavernAuxiliaryDeepSeek => 'DeepSeek Flash';
+
+  @override
+  String get tavernChannelKeyClear => 'Clear';
+
+  @override
+  String get tavernChannelKeyCleared => 'The key is cleared when you save';
 
   @override
   String get updateCheck => 'Check for updates';

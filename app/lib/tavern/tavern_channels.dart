@@ -225,15 +225,18 @@ Future<List<String>> fetchTavernModels(
   http.Client? client,
 }) async {
   final own = client == null;
+  final hasKey = key != null && key.isNotEmpty;
   final http.Client c = client ?? http.Client();
   try {
     final response = await c
         .get(
           tavernModelsUrl(baseUrl),
           headers: {
+            // The key is the Authorization when there is one; a keyless
+            // channel may bring its own (Basic, say).
             for (final MapEntry(:key, :value) in headers.entries)
-              if (key.toLowerCase() != 'authorization') key: value,
-            if (key != null && key.isNotEmpty) 'Authorization': 'Bearer $key',
+              if (!hasKey || key.toLowerCase() != 'authorization') key: value,
+            if (hasKey) 'Authorization': 'Bearer $key',
           },
         )
         .timeout(const Duration(seconds: 20));

@@ -137,6 +137,9 @@ class _TavernChannelEditPageState extends ConsumerState<TavernChannelEditPage> {
   /// The stored key of the channel being edited, so the field can say so.
   bool _keyStored = false;
 
+  /// 清除 was tapped: saving removes the stored key.
+  bool _clearKey = false;
+
   @override
   void initState() {
     super.initState();
@@ -162,6 +165,7 @@ class _TavernChannelEditPageState extends ConsumerState<TavernChannelEditPage> {
       (_name.text != (widget.channel?.name ?? '') ||
           _baseUrl.text != (widget.channel?.baseUrl ?? '') ||
           _key.text.isNotEmpty ||
+          _clearKey ||
           _model.text != (widget.channel?.model ?? '') ||
           _headers.text != tavernHeaderLines(widget.channel?.headers ?? const {}) ||
           _deepseek != (widget.channel?.deepseek ?? false));
@@ -247,7 +251,7 @@ class _TavernChannelEditPageState extends ConsumerState<TavernChannelEditPage> {
     // A new channel saves whatever key was typed (none for a local server);
     // an edit keeps the stored key unless a new one was typed.
     try {
-      await controller.saveChannel(channel, key: widget.channel == null || key.isNotEmpty ? key : null);
+      await controller.saveChannel(channel, key: widget.channel == null || key.isNotEmpty || _clearKey ? key : null);
       if (widget.channel == null) await controller.setChannel(channel.id);
     } finally {
       if (mounted) setState(() => _saving = false);
@@ -333,8 +337,26 @@ class _TavernChannelEditPageState extends ConsumerState<TavernChannelEditPage> {
                 ),
                 FormFieldBlock(
                   label: 'API Key',
-                  helper: _keyStored ? l10n.tavernChannelKeyKept : l10n.tavernChannelKeyOptional,
-                  trailing: FormSmallButton(label: l10n.commonPaste, onPressed: () => unawaited(_paste())),
+                  helper: _clearKey
+                      ? l10n.tavernChannelKeyCleared
+                      : _keyStored
+                      ? l10n.tavernChannelKeyKept
+                      : l10n.tavernChannelKeyOptional,
+                  trailing: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      if (_keyStored && !_clearKey)
+                        FormSmallButton(
+                          key: const ValueKey('tavern-channel-key-clear'),
+                          label: l10n.tavernChannelKeyClear,
+                          onPressed: () => setState(() {
+                            _clearKey = true;
+                            _key.clear();
+                          }),
+                        ),
+                      FormSmallButton(label: l10n.commonPaste, onPressed: () => unawaited(_paste())),
+                    ],
+                  ),
                   child: TextField(
                     key: const ValueKey('tavern-channel-key'),
                     controller: _key,

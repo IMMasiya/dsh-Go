@@ -426,6 +426,22 @@ void main() {
     expect(find.descendant(of: row, matching: find.text('自动')), findsOneWidget);
   });
 
+  testWidgets('a stored key can be cleared on the channel page', (tester) async {
+    SharedPreferences.setMockInitialValues({
+      TavernSettingsController.channelsKey: TavernChannel.listToJson([_relay]),
+    });
+    _phone(tester);
+    final keys = _Keys()..stored['c1'] = 'sk-old';
+    await tester.pumpWidget(_app(keys, const TavernChannelEditPage(channel: _relay)));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('tavern-channel-key-clear')));
+    await tester.pumpAndSettle();
+    expect(find.text('Key 会在保存时清除'), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('tavern-channel-save')));
+    await tester.pumpAndSettle();
+    expect(keys.stored, isEmpty);
+  });
+
   testWidgets('a channel keeps the headers typed on its page; a malformed line is said', (tester) async {
     SharedPreferences.setMockInitialValues({
       TavernSettingsController.channelsKey: TavernChannel.listToJson([_relay]),

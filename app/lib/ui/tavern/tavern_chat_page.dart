@@ -60,6 +60,7 @@ import '../theme/app_icons.dart';
 import '../theme/theme.dart';
 import '../wallpaper/wallpaper_backdrop.dart';
 import 'tavern_arrive.dart';
+import 'tavern_channels_page.dart' show TavernChannelEditPage;
 import 'tavern_canvas_view.dart';
 import 'tavern_component_view.dart';
 import 'tavern_group_page.dart';
@@ -766,6 +767,8 @@ class _TavernChatPageState extends ConsumerState<TavernChatPage> {
     try {
       final intent = TavernMemoryIntent.of(proposal, decision, tavernNewId());
       await tavernKeepMemoryIntent(intent);
+      // Left the page meanwhile: the kept decision is offered again (重试).
+      if (!mounted) return;
       await _submitDecision(intent);
     } finally {
       _deciding.remove(proposal.proposalId);
@@ -1130,8 +1133,12 @@ class _TavernChatPageState extends ConsumerState<TavernChatPage> {
 
   /// Where the DeepSeek key is set (as 酒馆设置 opens it); the line waits in
   /// the composer.
+  /// Where the key in use is set: the app's DeepSeek key, or the channel's own.
   void _openKeySettings() => unawaited(
-    Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => const ApiKeyPage(onboarding: false))),
+    Navigator.of(context).push(switch (ref.read(tavernSettingsProvider).activeChannel) {
+      final channel? => TavernChannelEditPage.route(channel),
+      null => MaterialPageRoute<void>(builder: (_) => const ApiKeyPage(onboarding: false)),
+    }),
   );
 
   Future<void> _sibling(TavernMessage message, int delta) async {
@@ -1704,7 +1711,14 @@ class _TavernChatPageState extends ConsumerState<TavernChatPage> {
                         onRetry: _submitDecision,
                       )
                       case final strips?)
-                    Padding(padding: const EdgeInsets.only(bottom: 8), child: strips),
+                    // At most a third of the screen: the composer stays in view.
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 8),
+                      child: ConstrainedBox(
+                        constraints: BoxConstraints(maxHeight: MediaQuery.sizeOf(context).height / 3),
+                        child: SingleChildScrollView(child: strips),
+                      ),
+                    ),
                 if (_error == null && scriptsWaiting > 0 && hintCharacter != null)
                   Padding(
                     key: const ValueKey('tavern-scripts-hint'),

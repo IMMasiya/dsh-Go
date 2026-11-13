@@ -38,7 +38,8 @@ Future<num?> showTavernNumberPrompt(
   final text = await showTextPrompt(
     context,
     title: title,
-    initial: initial == null ? '' : tavernNumberText(initial),
+    // As stored, every digit: confirming unchanged must not round it.
+    initial: initial == null ? '' : (initial == initial.roundToDouble() ? '${initial.round()}' : '$initial'),
     caption: range,
     keyboardType: TextInputType.numberWithOptions(decimal: !integer, signed: min < 0),
     validate: (text) => switch (parse(text)) {

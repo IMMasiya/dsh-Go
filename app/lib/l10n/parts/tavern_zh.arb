@@ -1134,7 +1134,7 @@
   "tavernGroupTalkativeness": "话多话少",
   "tavernGroupTalkativenessNote": "「自然」轮流时，越高越容易开口。",
   "tavernGroupHelperModel": "用辅助模型",
-  "tavernGroupHelperModelNote": "用便宜快的模型说（DeepSeek 是 flash、不思考），适合配角。",
+  "tavernGroupHelperModelNote": "用辅助模型说（自动时 DeepSeek 用 flash、其他渠道用主模型，都不思考），适合配角。",
   "tavernGroupMoveUp": "往前挪",
   "tavernGroupMoveDown": "往后挪",
   "tavernGroupRemove": "移出群聊",
@@ -1192,7 +1192,7 @@
   "tavernToolPolicyMode": "记事方式",
   "tavernToolPolicyModeAsk": "先问我",
   "tavernToolPolicyModeAuto": "自动",
-  "tavernToolPolicyDiagnostics": "设置里有一部分读不懂，那部分按默认处理",
+  "tavernToolPolicyDiagnostics": "设置里有一部分读不懂，对应的工具先关着",
   "tavernToolPolicyNote": "只在用 DeepSeek、不开思考时，回复里才会用上这些；改了从下一回合起生效，角色卡也可以关掉它们",
   "tavernToolPolicyFailed": "没改成：{detail}",
   "@tavernToolPolicyFailed": {"placeholders": {"detail": {"type": "String"}}},
@@ -1286,5 +1286,7 @@
   "tavernAuxiliaryNote": "导演、群聊选人、秘密这些后台请求用它",
   "tavernAuxiliaryAuto": "自动",
   "tavernAuxiliaryAutoNote": "跟着主渠道：DeepSeek 用 Flash，其他渠道用同一个模型",
-  "tavernAuxiliaryDeepSeek": "DeepSeek Flash"
+  "tavernAuxiliaryDeepSeek": "DeepSeek Flash",
+  "tavernChannelKeyClear": "清除",
+  "tavernChannelKeyCleared": "Key 会在保存时清除"
 }

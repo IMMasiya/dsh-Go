@@ -67,6 +67,24 @@ void main() {
     expect(empty.replies, 0);
   });
 
+  test('the newest reply is read again each time: its usage may come in after a sum', () async {
+    final tavern = _LongChat(3)
+      ..line.add(
+        TavernMessage(nodeId: 'writing', role: TavernRole.character, speaker: '林晚', text: '…', at: DateTime(2026)),
+      );
+    expect((await tavernSessionUsage(tavern, 'chat')).replies, 3);
+    tavern.line[tavern.line.length - 1] = TavernMessage(
+      nodeId: 'writing',
+      role: TavernRole.character,
+      speaker: '林晚',
+      text: '写完了',
+      at: DateTime(2026),
+      reportedUsage: const TavernUsage(promptTokens: 500, cacheHitTokens: 0, completionTokens: 50),
+    );
+    final again = await tavernSessionUsage(tavern, 'chat');
+    expect((again.replies, again.prompt), (4, 3500));
+  });
+
   test('summed again, only what came since is read; another line is read whole', () async {
     final tavern = _LongChat(150);
     await tavernSessionUsage(tavern, 'chat');

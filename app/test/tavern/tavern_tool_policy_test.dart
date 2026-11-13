@@ -156,7 +156,7 @@ void main() {
       ];
     await _settings(tester, DeferredTavern(Future.value(engine)));
     await _show(tester, 'tavern-tool-remember');
-    expect(find.text('设置里有一部分读不懂，那部分按默认处理'), findsOneWidget);
+    expect(find.text('设置里有一部分读不懂，对应的工具先关着'), findsOneWidget);
   });
 
   testWidgets('the preview keeps no tools, so there is no 工具', (tester) async {

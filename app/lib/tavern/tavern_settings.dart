@@ -230,7 +230,7 @@ class TavernSettingsController extends Notifier<TavernSettings> {
       final keys = ref.read(tavernChannelKeysProvider);
       final channels = [
         for (final c in TavernChannel.listFromJson(prefs.getString(channelsKey)))
-          c.copyWith(headers: await keys.readHeaders(c.id)),
+          c.copyWith(headers: await _headersOf(keys, c.id)),
       ];
       final channel = prefs.getString(channelKey);
       final auxiliary = prefs.getString(auxiliaryKey);
@@ -373,6 +373,17 @@ class TavernSettingsController extends Notifier<TavernSettings> {
   Future<void> setCostAlert(double usd) async {
     state = state.copyWith(costAlert: usd);
     await _save((prefs) => prefs.setDouble(costAlertKey, usd));
+  }
+
+  /// [id]'s headers; none when the secure storage cannot be read (the
+  /// channel then fails at its endpoint, rather than every setting going and
+  /// DeepSeek's own being used instead).
+  static Future<Map<String, String>> _headersOf(TavernChannelKeys keys, String id) async {
+    try {
+      return await keys.readHeaders(id);
+    } on Exception {
+      return const {};
+    }
   }
 
   /// [stored] when it is within [range]; else [fallback].

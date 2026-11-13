@@ -21367,7 +21367,7 @@ class L10nZh extends L10n {
   String get tavernGroupHelperModel => '用辅助模型';
 
   @override
-  String get tavernGroupHelperModelNote => '用便宜快的模型说（DeepSeek 是 flash、不思考），适合配角。';
+  String get tavernGroupHelperModelNote => '用辅助模型说（自动时 DeepSeek 用 flash、其他渠道用主模型，都不思考），适合配角。';
 
   @override
   String get tavernGroupMoveUp => '往前挪';
@@ -21535,7 +21535,7 @@ class L10nZh extends L10n {
   String get tavernToolPolicyModeAuto => '自动';
 
   @override
-  String get tavernToolPolicyDiagnostics => '设置里有一部分读不懂，那部分按默认处理';
+  String get tavernToolPolicyDiagnostics => '设置里有一部分读不懂，对应的工具先关着';
 
   @override
   String get tavernToolPolicyNote => '只在用 DeepSeek、不开思考时，回复里才会用上这些；改了从下一回合起生效，角色卡也可以关掉它们';
@@ -21800,6 +21800,12 @@ class L10nZh extends L10n {
 
   @override
   String get tavernAuxiliaryDeepSeek => 'DeepSeek Flash';
+
+  @override
+  String get tavernChannelKeyClear => '清除';
+
+  @override
+  String get tavernChannelKeyCleared => 'Key 会在保存时清除';
 
   @override
   String get updateCheck => '检查更新';

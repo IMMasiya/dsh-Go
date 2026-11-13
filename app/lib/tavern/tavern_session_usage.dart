@@ -96,7 +96,8 @@ double tavernReplyCost(TavernUsage usage, TavernModelPrice price, DateTime at) {
 /// of a cent), two above.
 String tavernUsd(double usd) => usd < 1 ? usd.toStringAsFixed(4) : usd.toStringAsFixed(2);
 
-/// Each tavern's last sum by chat: the newest message it counted, and the sum.
+/// Each tavern's last sum by chat: the newest message then, and the sum of
+/// everything before it (that one may have been a reply still being written).
 final _lastSums = Expando<Map<String, (String, TavernSessionUsage)>>();
 
 /// [chatId]'s current line, all of it (the engine hands it out a page at a
@@ -110,7 +111,10 @@ final _lastSums = Expando<Map<String, (String, TavernSessionUsage)>>();
 Future<TavernSessionUsage> tavernSessionUsage(Tavern tavern, String chatId, {int page = 200}) async {
   final sums = _lastSums[tavern] ??= {};
   final last = sums[chatId];
-  var total = const TavernSessionUsage();
+  // The newest message alone (it may be a reply still being written, so it
+  // is read every time), and everything before it.
+  var head = const TavernSessionUsage();
+  var rest = const TavernSessionUsage();
   String? newest;
   String? before;
   // With a sum kept, the new part is usually a few messages.
@@ -118,21 +122,29 @@ Future<TavernSessionUsage> tavernSessionUsage(Tavern tavern, String chatId, {int
   scan:
   while (true) {
     final messages = await tavern.path(chatId, limit: limit, beforeNodeId: before);
-    newest ??= messages.lastOrNull?.nodeId;
     for (final m in messages.reversed) {
+      if (newest == null) {
+        newest = m.nodeId;
+        head = head.plus(m);
+        if (m.nodeId == last?.$1) {
+          rest = last!.$2;
+          break scan;
+        }
+        continue;
+      }
       if (m.nodeId == last?.$1) {
-        total += last!.$2;
+        rest = rest.plus(m) + last!.$2;
         break scan;
       }
-      total = total.plus(m);
+      rest = rest.plus(m);
     }
     if (messages.length < limit) break;
     before = messages.first.nodeId;
     limit = page;
     await Future<void>.delayed(Duration.zero);
   }
-  if (newest != null) sums[chatId] = (newest, total);
-  return total;
+  if (newest != null) sums[chatId] = (newest, rest);
+  return head + rest;
 }
 
 /// A token count at a glance: 8,421 as it is; 12,345 as 1.2万 (or 12.3k).
