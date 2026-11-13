@@ -4246,6 +4246,60 @@
       }
     }
   },
+  "engineProviderExportImport": "导出 / 导入",
+  "engineProviderExportTitle": "导出配置",
+  "engineProviderExportButton": "导出到文件",
+  "engineProviderExportDoneTitle": "已导出",
+  "engineProviderExportDoneWithKeys": "已导出到 {path}\n（含 API Key，请妥善保管文件）",
+  "@engineProviderExportDoneWithKeys": {
+    "placeholders": {
+      "path": {
+        "type": "String"
+      }
+    }
+  },
+  "engineProviderExportDoneNoKeys": "已导出到 {path}\n（不含 API Key，导入后需重新填写）",
+  "@engineProviderExportDoneNoKeys": {
+    "placeholders": {
+      "path": {
+        "type": "String"
+      }
+    }
+  },
+  "engineProviderExportSubject": "dsh-Go 模型配置",
+  "engineProviderExportFailed": "导出失败",
+  "engineProviderIncludeKeys": "包含 API Key",
+  "engineProviderIncludeKeysHint": "导出文件将包含明文 API Key，请勿随意分享",
+  "engineProviderIncludeKeysOff": "导出文件不含 API Key，导入后需重新填写",
+  "engineProviderImportTitle": "导入配置",
+  "engineProviderImportButton": "从文件导入",
+  "engineProviderImporting": "正在导入…",
+  "engineProviderImportInvalidFormat": "文件格式无效，请选择 dsh-Go 导出的 JSON 文件",
+  "engineProviderImportEmpty": "文件中没有渠道配置",
+  "engineProviderImportConfirmTitle": "导入 {count} 个渠道？",
+  "@engineProviderImportConfirmTitle": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "engineProviderImportConfirmWithKeys": "将导入渠道配置和 API Key",
+  "engineProviderImportConfirmNoKeys": "将导入渠道配置（不含 API Key，导入后需重新填写）",
+  "engineProviderImportConfirmOk": "确认导入",
+  "engineProviderImportWillReplace": "同名渠道将被覆盖，无法恢复",
+  "engineProviderImportDoneTitle": "导入完成",
+  "engineProviderImportDoneBody": "已导入 {count} 个渠道",
+  "@engineProviderImportDoneBody": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "engineProviderImportFailed": "导入失败",
+  "engineProviderExportImportNote": "导出文件保存到「下载 / DSH-Go /」，可用「分享」发送到其他设备后导入。",
+  "engineProviderExportImportWarning": "包含 API Key 的导出文件等于账号凭据，请勿通过不可信渠道传输。",
   "featuresCordisSubtitle": "动态插件 · 引擎重启后清空",
   "featuresCordisUnavailable": "这个连接看不到 Cordis",
   "featuresCordisRemoteUnavailable": "经 DSH Remote 中转时不可用",
