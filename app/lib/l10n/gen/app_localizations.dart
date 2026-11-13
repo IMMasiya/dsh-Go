@@ -31919,7 +31919,7 @@ abstract class L10n {
   /// No description provided for @speechSignIn.
   ///
   /// In zh, this message translates to:
-  /// **'DeepSeek 账号登录已失效，请重新登录'**
+  /// **'DeepSeek 账号用不了语音（可能已退出登录，或语音只认 API Key）。在设置里填上 API Key 就能用'**
   String get speechSignIn;
 
   /// No description provided for @speechUnauthorized.

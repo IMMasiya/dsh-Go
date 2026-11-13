@@ -5304,7 +5304,7 @@
   "speechVoiceFollowHint": "The reading voice in Settings › Voice",
   "speechNotSetUp": "The reading voice isn't set up yet. See Settings › Voice",
   "speechNoCredential": "Sign in to DeepSeek or add an API key in Settings first",
-  "speechSignIn": "Your DeepSeek sign-in has expired. Please sign in again",
+  "speechSignIn": "Your DeepSeek account can't pay for speech (signed out, or speech takes only an API key). Add an API key in Settings",
   "speechUnauthorized": "The DeepSeek API key was refused. Check it in Settings",
   "speechBalance": "Not enough DeepSeek balance",
   "speechRateLimited": "Too many requests. Try again shortly",

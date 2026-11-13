@@ -339,6 +339,70 @@ Future<DeepSeekSpeechRoute?> _bridgeRoute(DshClient client) async {
 /// (through the engine), else the API key in 设置, else the host's own key.
 typedef DeepSeekSpeechResolver = Future<DeepSeekSpeech?> Function();
 
+/// The account was turned away by the speech endpoints (signed out, or they
+/// take only a platform API key): from then on, while the app runs, speech
+/// goes straight to the API key in 设置.
+bool _accountRefused = false;
+
+@visibleForTesting
+void resetDeepSeekAccountRefusal() => _accountRefused = false;
+
+/// The signed-in account first; if it is turned away (401) before any audio
+/// came, the API key in 设置 for this request and every later one.
+class AccountThenKeySpeech implements DeepSeekSpeech {
+  AccountThenKeySpeech(this._account, this._key);
+
+  final DeepSeekSpeech _account;
+  final DeepSeekSpeech Function() _key;
+  DeepSeekSpeech? _fallback;
+
+  @override
+  DeepSeekSpeechRoute get route => (_fallback ?? _account).route;
+
+  static bool _refused(DeepSeekSpeechError error) => error.failure == DeepSeekSpeechFailure.signIn;
+
+  DeepSeekSpeech _toKey() {
+    _accountRefused = true;
+    _account.close();
+    return _fallback ??= _key();
+  }
+
+  @override
+  Stream<Uint8List> synthesize(String text, {String voice = 'stella'}) async* {
+    if (_fallback case final key?) {
+      yield* key.synthesize(text, voice: voice);
+      return;
+    }
+    var heard = false;
+    try {
+      await for (final pcm in _account.synthesize(text, voice: voice)) {
+        heard = true;
+        yield pcm;
+      }
+    } on DeepSeekSpeechError catch (error) {
+      if (heard || !_refused(error)) rethrow;
+      yield* _toKey().synthesize(text, voice: voice);
+    }
+  }
+
+  @override
+  Future<String> transcribe(Uint8List wav) async {
+    if (_fallback case final key?) return key.transcribe(wav);
+    try {
+      return await _account.transcribe(wav);
+    } on DeepSeekSpeechError catch (error) {
+      if (!_refused(error)) rethrow;
+      return _toKey().transcribe(wav);
+    }
+  }
+
+  @override
+  void close() {
+    _account.close();
+    _fallback?.close();
+  }
+}
+
 final deepSeekSpeechHttpProvider = Provider<http.Client Function()>((ref) => http.Client.new);
 
 final deepSeekSpeechProvider = Provider<DeepSeekSpeechResolver>((ref) {
@@ -346,11 +410,13 @@ final deepSeekSpeechProvider = Provider<DeepSeekSpeechResolver>((ref) {
     final client = ref.read(activeConnectionProvider).value?.client;
     final bridge = client == null ? null : await _bridgeRoute(client);
     final carrier = client?.carrier;
-    if (bridge == DeepSeekSpeechRoute.account && carrier is DshHttpCarrier) {
-      return BridgeDeepSeekSpeech(carrier.connection, bridge!);
-    }
     final key = ref.read(settingsProvider).apiKey.trim();
-    if (key.isNotEmpty) return DirectDeepSeekSpeech(key, client: ref.read(deepSeekSpeechHttpProvider));
+    DeepSeekSpeech direct() => DirectDeepSeekSpeech(key, client: ref.read(deepSeekSpeechHttpProvider));
+    if (bridge == DeepSeekSpeechRoute.account && carrier is DshHttpCarrier && !(_accountRefused && key.isNotEmpty)) {
+      final account = BridgeDeepSeekSpeech(carrier.connection, bridge!);
+      return key.isEmpty ? account : AccountThenKeySpeech(account, direct);
+    }
+    if (key.isNotEmpty) return direct();
     if (bridge == DeepSeekSpeechRoute.hostKey && carrier is DshHttpCarrier) {
       return BridgeDeepSeekSpeech(carrier.connection, bridge!);
     }
