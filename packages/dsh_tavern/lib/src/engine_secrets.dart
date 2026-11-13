@@ -823,19 +823,40 @@ void _bindSecretTurn(
     },
   );
   final committedTrace = <String, Object?>{...turn.secretAttempt!, 'committed': true, 'bindReceiptId': receiptId};
-  engine._store.transaction(
-    () {
-      turn.cancellation.check();
-      if (_secretBindingReason(engine, turn, data, anchor, proposal) != null ||
-          !_stateJsonEqual(engine._store.rawNodeExtra(turn.chat.id, anchor), rawExtra)) {
-        throw StateError('Secret source changed after preparation.');
-      }
-      engine._store.updateMessage(turn.chat.id, anchor, extra: extra);
-      engine._store.writeAgentRun(audit);
-    },
-    onCommitted: () {
-      adopt(generation, restored);
-      turn.secretAttempt = committedTrace;
-    },
-  );
+  void checkBinding() {
+    turn.cancellation.check();
+    if (_secretBindingReason(engine, turn, data, anchor, proposal) != null ||
+        !_stateJsonEqual(engine._store.rawNodeExtra(turn.chat.id, anchor), rawExtra)) {
+      throw StateError('Secret source changed after preparation.');
+    }
+  }
+
+  if (turn.toolOwner case final owner?) {
+    engine._store.commitToolSecretBinding(
+      owner,
+      anchorNodeId: anchor,
+      expectedExtra: rawExtra,
+      extra: extra,
+      audit: audit,
+      checkBinding: checkBinding,
+      prepared: (generation, restored, committedTrace),
+      onCommitted: (committed) {
+        turn.toolPhase = committed.ownership.phase;
+        turn.secretAttempt = committed.value.$3;
+        adopt(committed.value.$1, committed.value.$2);
+      },
+    );
+  } else {
+    engine._store.transaction(
+      () {
+        checkBinding();
+        engine._store.updateMessage(turn.chat.id, anchor, extra: extra);
+        engine._store.writeAgentRun(audit);
+      },
+      onCommitted: () {
+        turn.secretAttempt = committedTrace;
+        adopt(generation, restored);
+      },
+    );
+  }
 }
