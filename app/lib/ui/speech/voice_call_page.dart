@@ -93,6 +93,10 @@ class _VoiceCallPageState extends ConsumerState<VoiceCallPage> with WidgetsBindi
   /// A finger on the light: it gives a little.
   bool _pressed = false;
 
+  /// The system asks for less motion (read each build): the light holds still
+  /// and the page comes in without its staggered rise.
+  bool _still = false;
+
   @override
   void initState() {
     super.initState();
@@ -174,7 +178,14 @@ class _VoiceCallPageState extends ConsumerState<VoiceCallPage> with WidgetsBindi
   }
 
   void _tick(double seconds) {
-    _scene.tick(seconds, phase: _call.phase, mic: _call.micLevel, voice: _call.voiceLevel, isMuted: _call.muted);
+    _scene.tick(
+      seconds,
+      phase: _call.phase,
+      mic: _call.micLevel,
+      voice: _call.voiceLevel,
+      isMuted: _call.muted,
+      still: _still,
+    );
     // Her mouth follows the voice, twenty times a second at most.
     if (_stageReady && seconds - _mouthAt > 0.05) {
       final speaking = _call.phase == CallPhase.speaking;
@@ -238,6 +249,7 @@ class _VoiceCallPageState extends ConsumerState<VoiceCallPage> with WidgetsBindi
 
   /// [child] coming in with the page: a fade and a short rise, starting at [from] (0–1).
   Widget _rise(double from, Widget child, {double distance = 18}) {
+    if (_still) return child;
     final curve = CurvedAnimation(
       parent: _enter,
       curve: Interval(from, math.min(1, from + 0.5), curve: Curves.easeOutCubic),
@@ -256,6 +268,7 @@ class _VoiceCallPageState extends ConsumerState<VoiceCallPage> with WidgetsBindi
   Widget build(BuildContext context) {
     final l10n = context.l10n;
     final theme = Theme.of(context);
+    _still = AppMotion.reduced(context);
     final settings = ref.watch(callSettingsProvider);
     final blur = ref.watch(performanceDefaultsProvider).blur;
     final ended = _call.phase == CallPhase.ended;

@@ -3,9 +3,12 @@
 // running faintly round the edge of the screen. The colours come from the
 // app's theme colour — a few neighbouring hues, pale and low in saturation — so
 // a blue theme gives blue light and a green one green, never a rainbow. Light
-// and dark follow the theme too. Only how fast and how bright the colour flows
-// changes: slow and calm while it waits, a little brighter with a voice,
-// turning while it thinks, grey when muted. Every motion eases in and out.
+// and dark follow the theme too. It breathes the whole time, and keeps time with
+// whoever is speaking: it gathers in and swells with the person's syllables,
+// throws its colour out with hers, breathes quick and shallow while it thinks,
+// and goes grey and slow when muted. Every motion eases in and out.
+// When the system asks for less motion the colours hold still and the sphere
+// neither breathes nor grows in; only a voice still changes its size.
 // One clock ([CallScene]) drives it all; the painters repaint from it.
 
 import 'dart:math' as math;
@@ -94,6 +97,14 @@ class CallInk extends InheritedWidget {
 }
 
 /// The clock and the smoothed state the painters draw from. [tick] once a frame.
+///
+/// Three rhythms move the light:
+/// - a breath under everything — in a little quicker than out, then a short
+///   rest, never two quite alike: slow while it waits, quick and shallow while
+///   it thinks, giving way to a voice when there is one;
+/// - a voice's syllables ([level]) and its stresses ([accent]), the person's
+///   while they speak and hers while she does;
+/// - how much is being said ([energy]), which sets how fast the colours flow.
 class CallScene extends ChangeNotifier {
   /// Seconds since the call page opened.
   double time = 0;
@@ -102,8 +113,20 @@ class CallScene extends ChangeNotifier {
   /// change of speed never makes the colours jump.
   double flow = 0;
 
-  /// The voice now (the person's or hers), smoothed: rises quickly, settles slowly.
+  /// The voice now (the person's or hers), syllable by syllable: rises at once,
+  /// falls away within a syllable.
   double level = 0;
+
+  /// The voice over the last second or so: how much is being said, not each syllable.
+  double energy = 0;
+
+  /// A stressed syllable: how far the voice has just leapt above its run (0–1).
+  double accent = 0;
+
+  /// The breath, 0 (out) to 1 (in), and how deep it goes now (0–1).
+  double breath = 0;
+  double depth = 1;
+  double _breathAt = 0;
 
   /// How much it is thinking, listening to the person, or speaking (0–1, eased).
   double think = 0;
@@ -114,37 +137,74 @@ class CallScene extends ChangeNotifier {
   /// 0 → 1 as the call opens, back to 0 as it ends.
   double appear = 0;
 
+  /// The system asks for less motion: the colours stop flowing, the sphere
+  /// neither breathes nor grows in. A voice still changes its size, so the
+  /// person can see they are heard.
+  bool still = false;
+
   void tick(
     double seconds, {
     required CallPhase phase,
     required double mic,
     required double voice,
     required bool isMuted,
+    bool still = false,
   }) {
     final dt = (seconds - time).clamp(0.0, 0.1);
     time = seconds;
+    this.still = still;
     final target = switch (phase) {
       CallPhase.hearing => mic,
       CallPhase.speaking => voice,
       _ => 0.0,
     }.clamp(0.0, 1.0);
     double ease(double from, double to, double rate) => from + (to - from) * (1 - math.exp(-rate * dt));
-    level = ease(level, target, target > level ? 9 : 3);
+    level = ease(level, target, target > level ? 22 : 8);
+    energy = ease(energy, target, 1.4);
+    accent = ease(accent, ((level - energy - 0.1) * 2.4).clamp(0.0, 1.0), 16);
     think = ease(think, phase == CallPhase.thinking || phase == CallPhase.starting ? 1 : 0, 2.5);
     hearing = ease(hearing, phase == CallPhase.hearing ? 1 : 0, 3);
     speaking = ease(speaking, phase == CallPhase.speaking ? 1 : 0, 3);
     muted = ease(muted, isMuted && phase != CallPhase.speaking ? 1 : 0, 4);
     appear = ease(appear, phase == CallPhase.ended ? 0 : 1, phase == CallPhase.ended ? 5 : 2.4);
-    flow += dt * (0.28 + think * 0.6 + level * 0.8 + (hearing + speaking) * 0.15) * (1 - muted * 0.7);
+    if (!still) {
+      // Slow while it waits, a little quicker with a voice, quick while it thinks;
+      // a slow drift so no two breaths are quite alike.
+      final period = (5.4 - think * 3.0 - hearing * 1.0 - speaking * 1.4).clamp(2.2, 6.0);
+      final drift = 1 + 0.09 * math.sin(time * 0.21) + 0.05 * math.sin(time * 0.57 + 1.3);
+      _breathAt = (_breathAt + dt / (period * drift)) % 1;
+      flow += dt * (0.26 + think * 0.7 + energy * 0.7 + accent * 0.6 + (hearing + speaking) * 0.1) * (1 - muted * 0.7);
+    }
+    breath = _breathShape(_breathAt);
+    depth = (1 - energy * 0.6) * (1 - think * 0.35) * (1 - muted * 0.5);
     notifyListeners();
   }
 
-  /// How big the sphere is now, relative to its resting size: it breathes,
-  /// and swells a little with the voice.
+  /// How big the sphere is now, relative to its resting size: it breathes, and
+  /// a voice's syllables swell it — hers a little more than the person's.
   double get scale {
-    final breath = math.sin(time * (1.3 + think * 1.4)) * 0.012;
-    return (0.86 + 0.14 * appear) * (1 + breath + level * 0.08);
+    if (still) return 1 + level * 0.08;
+    final breathing = (breath - 0.5) * 0.05 * depth;
+    final voice = level * (0.04 + 0.04 * speaking) + accent * 0.04;
+    return (0.86 + 0.14 * appear) * (1 + breathing + voice);
   }
+
+  /// How much brighter than at rest the colour inside is now.
+  double get glow => breath * (0.07 + think * 0.05) * depth + level * 0.14 + accent * 0.14 + think * 0.04;
+
+  /// How far the colours sit from the middle, against the radius: out with each
+  /// breath, gathered in while it listens, thrown out with her syllables.
+  double get spread =>
+      0.48 + (breath - 0.5) * 0.05 * depth + think * 0.04 - hearing * 0.05 + speaking * (level * 0.06 + accent * 0.06);
+}
+
+/// The breath [at] a point through one breath (0–1): in over the first 40%,
+/// out over the next 48%, then resting.
+double _breathShape(double at) {
+  double s(double x) => 0.5 - 0.5 * math.cos(math.pi * x);
+  if (at < 0.4) return s(at / 0.4);
+  if (at < 0.88) return 1 - s((at - 0.4) / 0.48);
+  return 0;
 }
 
 /// [c] drained toward grey by [amount] (muted).
@@ -189,9 +249,9 @@ class _FieldPainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     canvas.drawRect(Offset.zero & size, Paint()..color = palette.field);
     final at = Offset(size.width / 2, size.height * center);
-    final radius = size.width * (0.9 + scene.level * 0.1);
+    final radius = size.width * (0.9 + scene.energy * 0.1 + (scene.breath - 0.5) * 0.04 * scene.depth);
     final tint = _drain(palette.main, scene.muted);
-    final strength = (palette.light ? 0.2 : 0.12) + scene.level * 0.06;
+    final strength = (palette.light ? 0.2 : 0.12) + scene.energy * 0.05 + scene.breath * 0.025 * scene.depth;
     canvas.drawCircle(
       at,
       radius,
@@ -250,7 +310,7 @@ class _GlassPainter extends CustomPainter {
     final fade = scene.appear;
     final muted = scene.muted;
     final tones = [for (final t in palette.tones) _drain(t, muted)];
-    final strength = ((light ? 0.6 : 0.52) + scene.level * 0.18 + scene.think * 0.06) * fade;
+    final strength = ((light ? 0.58 : 0.5) + scene.glow * 0.6) * fade;
     final disc = Rect.fromCircle(center: center, radius: r);
 
     // Outside: a soft halo of the theme's colour.
@@ -258,7 +318,7 @@ class _GlassPainter extends CustomPainter {
       center,
       r * 1.02,
       Paint()
-        ..color = tones[2].withValues(alpha: ((light ? 0.3 : 0.2) + scene.level * 0.15) * fade)
+        ..color = tones[2].withValues(alpha: ((light ? 0.28 : 0.18) + scene.glow * 0.45) * fade)
         ..maskFilter = MaskFilter.blur(BlurStyle.normal, r * 0.45),
     );
 
@@ -269,8 +329,15 @@ class _GlassPainter extends CustomPainter {
     // The colour drifting inside, overlapping softly.
     canvas.saveLayer(disc, Paint());
     for (final (i, (a, b, phase, reach)) in _paths.indexed) {
-      final at = center + _wander(scene.flow, a, b, phase) * r * (0.48 + scene.think * 0.05);
-      final radius = r * reach * (1 + scene.level * 0.22 + 0.05 * math.sin(scene.flow * 1.7 + i));
+      final at = center + _wander(scene.flow, a, b, phase) * r * scene.spread;
+      final radius =
+          r *
+          reach *
+          (1 +
+              scene.level * 0.18 +
+              scene.accent * 0.1 +
+              (scene.breath - 0.5) * 0.06 * scene.depth +
+              0.05 * math.sin(scene.flow * 1.7 + i));
       final tone = tones[i];
       canvas.drawCircle(
         at,
@@ -364,7 +431,11 @@ class _EdgePainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     final strength =
-        (0.06 + (scene.hearing + scene.speaking).clamp(0.0, 1.0) * 0.1 + scene.level * 0.25) *
+        (0.05 +
+            scene.breath * 0.02 * scene.depth +
+            (scene.hearing + scene.speaking).clamp(0.0, 1.0) * 0.08 +
+            scene.energy * 0.16 +
+            scene.accent * 0.18) *
         scene.appear *
         (1 - scene.muted * 0.85);
     if (strength < 0.01) return;
@@ -377,7 +448,7 @@ class _EdgePainter extends CustomPainter {
       frame,
       Paint()
         ..style = PaintingStyle.stroke
-        ..strokeWidth = 10 + scene.level * 8
+        ..strokeWidth = 10 + scene.energy * 6 + scene.accent * 5
         ..shader = shader
         ..color = Colors.white.withValues(alpha: strength.clamp(0.0, 1.0))
         ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 16),

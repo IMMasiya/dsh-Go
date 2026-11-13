@@ -3,10 +3,12 @@ import 'dart:typed_data';
 import 'package:dsh_app/speech/deepseek_speech.dart';
 import 'package:dsh_app/speech/speech_audio.dart';
 import 'package:dsh_app/speech/speech_settings.dart';
+import 'package:dsh_app/speech/call/voice_call.dart';
 import 'package:dsh_app/speech/voice_cloud.dart';
 import 'package:dsh_app/state/voice_state.dart';
 import 'package:dsh_app/ui/speech/call/call_backdrop.dart';
 import 'package:dsh_app/ui/speech/call/call_parts.dart';
+import 'package:dsh_app/ui/speech/call/call_visuals.dart';
 import 'package:dsh_app/ui/speech/voice_call_page.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -21,7 +23,13 @@ import 'speech_fakes.dart';
 void main() {
   setUp(() => SharedPreferences.setMockInitialValues({}));
 
-  Future<(FakeAudio, FakeConversation)> pumpCall(WidgetTester tester, {List<Override> extra = const []}) async {
+  /// [still]: the system asks for less motion. [opened] runs on the page's first frame.
+  Future<(FakeAudio, FakeConversation)> pumpCall(
+    WidgetTester tester, {
+    List<Override> extra = const [],
+    bool still = false,
+    void Function()? opened,
+  }) async {
     tester.view.physicalSize = const Size(1170, 2532);
     tester.view.devicePixelRatio = 3;
     addTearDown(tester.view.reset);
@@ -36,7 +44,10 @@ void main() {
                 child: TextButton(
                   onPressed: () => Navigator.of(context).push(
                     MaterialPageRoute<void>(
-                      builder: (_) => VoiceCallPage(title: '周末去哪儿玩', conversation: conversation),
+                      builder: (context) => MediaQuery(
+                        data: MediaQuery.of(context).copyWith(disableAnimations: still),
+                        child: VoiceCallPage(title: '周末去哪儿玩', conversation: conversation),
+                      ),
                     ),
                   ),
                   child: const Text('open'),
@@ -55,6 +66,9 @@ void main() {
       ),
     );
     await tester.tap(find.text('open'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 16));
+    opened?.call();
     for (var i = 0; i < 25; i++) {
       await tester.pump(const Duration(milliseconds: 60));
       // The saved voice is read with real async work before the call starts listening.
@@ -123,6 +137,45 @@ void main() {
     await tester.pump(const Duration(milliseconds: 600));
     await tester.tap(find.byKey(const ValueKey('call-hang-up')));
     await tester.pump(const Duration(seconds: 1));
+  });
+
+  for (final still in [false, true]) {
+    testWidgets(still ? 'less motion: the keys are there at once' : 'the keys rise in with the page', (tester) async {
+      final hangUp = find.byKey(const ValueKey('call-hang-up'));
+      double? first;
+      await pumpCall(
+        tester,
+        still: still,
+        opened: () => first = tester
+            .widgetList<Opacity>(find.ancestor(of: hangUp, matching: find.byType(Opacity)))
+            .fold<double>(1.0, (low, o) => o.opacity < low ? o.opacity : low),
+      );
+      expect(first, still ? 1.0 : lessThan(0.5));
+      await tester.tap(hangUp);
+      await tester.pump(const Duration(seconds: 1));
+    });
+  }
+
+  test('less motion: the colours hold still; only a voice changes the size', () {
+    final scene = CallScene();
+    addTearDown(scene.dispose);
+    for (var t = 0.0; t < 2; t += 0.05) {
+      scene.tick(t, phase: CallPhase.listening, mic: 0, voice: 0, isMuted: false, still: true);
+    }
+    expect(scene.flow, 0);
+    expect(scene.scale, 1);
+    for (var t = 2.0; t < 3; t += 0.05) {
+      scene.tick(t, phase: CallPhase.hearing, mic: 0.8, voice: 0, isMuted: false, still: true);
+    }
+    expect(scene.flow, 0);
+    expect(scene.scale, greaterThan(1.05));
+
+    final moving = CallScene();
+    addTearDown(moving.dispose);
+    for (var t = 0.0; t < 2; t += 0.05) {
+      moving.tick(t, phase: CallPhase.listening, mic: 0, voice: 0, isMuted: false);
+    }
+    expect(moving.flow, greaterThan(0.4));
   });
 
   test('a backdrop choice is kept', () async {
