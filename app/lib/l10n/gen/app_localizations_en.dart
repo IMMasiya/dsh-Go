@@ -12153,9 +12153,6 @@ class L10nEn extends L10n {
   String get phoneSelfCheckCancel => 'Request cancellation';
 
   @override
-  String get phoneSelfCheckRetry => 'Retry cleanup only';
-
-  @override
   String get phoneSelfCheckRefresh => 'Refresh status';
 
   @override
@@ -12182,7 +12179,6 @@ class L10nEn extends L10n {
       'cleaning': 'Cleaning up; cancellation does not undo sent input',
       'done': 'Check ended; see Technical details for results',
       'cancelled': 'Cancelled; observed actions remain recorded',
-      'cleanup_pending': 'Cleanup unconfirmed — resources remain reserved',
       'other': 'Status unavailable',
     });
     return '$_temp0';
@@ -12391,12 +12387,7 @@ class L10nEn extends L10n {
       'The background channel is being prepared or maintained. New tasks cannot start yet.';
 
   @override
-  String get phoneBackgroundParallelRecovery =>
-      'Resolve unfinished background resource recovery before starting new tasks.';
-
-  @override
-  String get phoneBackgroundParallelPeer =>
-      'The connected service does not support the required background capabilities.';
+  String get phoneGateRetest => 'Check this channel again';
 
   @override
   String get phoneBackgroundParallelSerial =>
@@ -12525,26 +12516,6 @@ class L10nEn extends L10n {
       'Your root manager (Magisk, KernelSU or APatch) will ask you. If you allow it, DSH Go runs its own background service as root. It asks again on its own after a disconnect or restart only with “Keep root channel” on.';
 
   @override
-  String get phoneGateCleanupTitle => 'Probe cleanup not confirmed';
-
-  @override
-  String get phoneGateCleanupUnknown =>
-      'New background resources are blocked. Retry only the original cleanup if its channel is still available. This does not rerun the probe.';
-
-  @override
-  String get phoneGateCleanupRunning =>
-      'Waiting for the original probe and its cleanup. The channel stays pinned until cleanup is confirmed.';
-
-  @override
-  String get phoneGateCleanupRetry => 'Retry cleanup only';
-
-  @override
-  String get phoneGateCleanupDone => 'Cleanup confirmed. Choose the channel again explicitly to run a fresh check.';
-
-  @override
-  String get phoneGateRetest => 'Check this channel again';
-
-  @override
   String phoneKeepTitle(String mode) {
     String _temp0 = intl.Intl.selectLogic(mode, {
       'shizuku': 'Keep Shizuku channel',
@@ -12588,24 +12559,6 @@ class L10nEn extends L10n {
 
   @override
   String get phoneKeepFailed => 'Couldn’t reconnect. Tries again when you open the app or start a task.';
-
-  @override
-  String get phoneResourceRecoveryTitle => 'Background resources need verification';
-
-  @override
-  String get phoneResourceRecoveryRunning =>
-      'Checking the original resource records. New phone tasks will wait until this finishes.';
-
-  @override
-  String get phoneResourceRecoveryStorage =>
-      'The resource record could not be read or saved. Retry saving or reading it. A confirmed release is not repeated, and past actions are not replayed.';
-
-  @override
-  String get phoneResourceRecoveryPending =>
-      'Old background resources have not been verified. New phone tasks are blocked. Choose the original authorized channel and retry; if verification remains unavailable, restart the device and check again. Past actions may already have happened. Reading the task interruption notice does not clear these resources.';
-
-  @override
-  String get phoneResourceRecoveryRetry => 'Retry resource verification';
 
   @override
   String get phoneSkillSectionTitle => 'Completed tasks and skills';

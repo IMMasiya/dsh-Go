@@ -11545,9 +11545,6 @@ class L10nZh extends L10n {
   String get phoneSelfCheckCancel => '请求取消';
 
   @override
-  String get phoneSelfCheckRetry => '仅重试清理';
-
-  @override
   String get phoneSelfCheckRefresh => '刷新状态';
 
   @override
@@ -11573,7 +11570,6 @@ class L10nZh extends L10n {
       'cleaning': '正在清理；取消不代表已撤销派发的输入',
       'done': '检查已结束，结果见技术详情',
       'cancelled': '已取消，已观察到的操作仍保留',
-      'cleanup_pending': '清理尚未确认，资源仍保留',
       'other': '状态不可用',
     });
     return '$_temp0';
@@ -11777,10 +11773,7 @@ class L10nZh extends L10n {
   String get phoneBackgroundParallelBusy => '后台通道正在准备或维护，暂不能接纳新任务。';
 
   @override
-  String get phoneBackgroundParallelRecovery => '请先处理未完成的后台资源恢复，再开始新任务。';
-
-  @override
-  String get phoneBackgroundParallelPeer => '当前连接的服务不支持所需的后台能力。';
+  String get phoneGateRetest => '重新检查此通道';
 
   @override
   String get phoneBackgroundParallelSerial => '此连接支持一个后台槽位，设置偏好仍会保留。';
@@ -11896,24 +11889,6 @@ class L10nZh extends L10n {
       'root 管理器（Magisk、KernelSU 或 APatch）会弹窗问你。允许后，DSH Go 以 root 运行自己的后台服务；只有打开「保持 root 通道」，断开或重启后才会自己再去申请。';
 
   @override
-  String get phoneGateCleanupTitle => '探针清理尚未确认';
-
-  @override
-  String get phoneGateCleanupUnknown => '新后台资源已被阻止。原通道仍可用时，只能重试原清理，不会重跑探针。';
-
-  @override
-  String get phoneGateCleanupRunning => '正在等待原探针及清理完成；清理确认前保留原通道。';
-
-  @override
-  String get phoneGateCleanupRetry => '仅重试清理';
-
-  @override
-  String get phoneGateCleanupDone => '清理已确认。请再次明确选择通道，重新检查。';
-
-  @override
-  String get phoneGateRetest => '重新检查此通道';
-
-  @override
   String phoneKeepTitle(String mode) {
     String _temp0 = intl.Intl.selectLogic(mode, {
       'shizuku': '保持 Shizuku 通道',
@@ -11954,22 +11929,6 @@ class L10nZh extends L10n {
 
   @override
   String get phoneKeepFailed => '没连上；下次打开 App 或开始操控时再试';
-
-  @override
-  String get phoneResourceRecoveryTitle => '后台资源待核验';
-
-  @override
-  String get phoneResourceRecoveryRunning => '正在核对原资源记录，完成前不能开始新的手机任务。';
-
-  @override
-  String get phoneResourceRecoveryStorage => '无法读取或保存资源记录。可重试保存或读取；已确认的释放不会重复执行，也不会重放旧操作。';
-
-  @override
-  String get phoneResourceRecoveryPending =>
-      '旧后台资源尚未核验，新的手机任务暂被阻止。请选择原授权通道后重试；仍无法核验时，可重启设备后再次检查。旧操作结果可能已经发生。确认任务中断提示不会清除这些资源。';
-
-  @override
-  String get phoneResourceRecoveryRetry => '重试资源核验';
 
   @override
   String get phoneSkillSectionTitle => '成功任务与技能';
