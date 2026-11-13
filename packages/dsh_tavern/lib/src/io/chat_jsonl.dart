@@ -147,10 +147,17 @@ final class ChatJsonlCodec {
   Map<String, Object?> metadataForNode(ChatStore store, String chatId, {String? nodeId}) {
     final chat = store.chat(chatId);
     final id = nodeId ?? chat.currentLeafId;
-    if (id == null) {
+    return metadataForCapturedNode(store, chat, id == null ? null : store.node(chatId, id));
+  }
+
+  /// Projects a fully read [chat] and a fully read [node] from that same chat.
+  /// The caller has already resolved the store boundary; null means an empty
+  /// captured path. Does not mutate either snapshot or reread its full row.
+  Map<String, Object?> metadataForCapturedNode(ChatStore store, StoredChat chat, StoredNode? node) {
+    if (node == null) {
       return {..._clone(chat.metadata), 'variables': _clone(chat.variables)};
     }
-    final state = _effectiveState(store, chatId, store.node(chatId, id));
+    final state = _effectiveState(store, chat.id, node);
     return metadataForState(chat, state);
   }
 

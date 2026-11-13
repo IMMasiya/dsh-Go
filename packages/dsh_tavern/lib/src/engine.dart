@@ -3018,13 +3018,18 @@ class TavernEngine implements Tavern {
 
   Map<String, Object?> _stateAt(String chatId, String? nodeId) {
     if (nodeId == null) return _store.groupInitialState(chatId);
-    final node = _store.node(chatId, nodeId);
-    final override = _map(node.extra['dshgo'])['tavernState'];
-    final state = override is Map<String, Object?> ? _copy(override) : _store.nodeState(chatId, nodeId);
+    return _stateFromNode(chatId, _store.node(chatId, nodeId));
+  }
+
+  // Only full store.node snapshots belong here, never display/prompt views.
+  Map<String, Object?> _stateFromNode(String chatId, StoredNode node, {StoredChat? chat}) {
+    final own = node.extra['dshgo'];
+    final override = own is Map<String, Object?> ? own['tavernState'] : null;
+    final state = override is Map<String, Object?> ? _copy(override) : _store.nodeState(chatId, node.message.nodeId);
     // Older snapshots predate the explicit cache marker. Resolve their own
     // source header before a selection can replace the chat's current cache.
     if (!state.containsKey('stChatIdHash')) {
-      _withStateHash(_store.chat(chatId), state);
+      _withStateHash(chat ?? _store.chat(chatId), state);
     }
     return state;
   }
@@ -3327,8 +3332,12 @@ class TavernEngine implements Tavern {
             return;
           }
           final contextStarted = profile?.now;
-          final metadata = _chatCodec.metadataForNode(_store, chatId, nodeId: nodeId);
-          final sourceState = _stateAt(chatId, nodeId ?? chat.currentLeafId);
+          final sourceNodeId = nodeId ?? chat.currentLeafId;
+          final sourceNode = sourceNodeId == null ? null : _store.node(chatId, sourceNodeId);
+          final metadata = _chatCodec.metadataForCapturedNode(_store, chat, sourceNode);
+          final sourceState = sourceNode == null
+              ? _store.groupInitialState(chatId)
+              : _stateFromNode(chatId, sourceNode, chat: chat);
           final sourceFile =
               sourceState['chatJsonlSourceFile'] ?? _map(_map(chat.metadata['dshgo'])['chatJsonl'])['rootFile'];
           profile?.record('admission_context', contextStarted!);

@@ -390,6 +390,7 @@ class _DirectorCoordinator {
         turn.reply == null) {
       return;
     }
+    final started = turn.profile?.now;
     try {
       final chat = engine._store.chat(turn.chat.id);
       final selection = engine._personas.resolve(personaId: chat.personaId);
@@ -471,6 +472,8 @@ class _DirectorCoordinator {
       // cannot be undone by an optional background-trigger storage failure.
       _transientIssues[turn.chat.id] = [_directorIssue('director_trigger_failed')];
       changed(turn.chat.id);
+    } finally {
+      turn.profile?.record('director_after_turn', started!);
     }
   }
 

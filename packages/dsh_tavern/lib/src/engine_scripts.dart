@@ -1469,10 +1469,15 @@ class _ScriptCoordinator implements TavernScriptBridge {
       if (!turn.cancellation.isCancelled) {
         await drainWrites(turn.chat.id, turn.cancellation);
       }
-      final current = engine._store.node(turn.chat.id, reply.nodeId);
-      turn.lastCommitted = current.message;
-      turn.state = engine._stateAt(turn.chat.id, reply.nodeId);
-      turn.variables = _runtimeCopy(_map(turn.state['variables']));
+      final refreshStarted = turn.profile?.now;
+      try {
+        final current = engine._store.node(turn.chat.id, reply.nodeId);
+        turn.lastCommitted = current.message;
+        turn.state = engine._stateAt(turn.chat.id, reply.nodeId);
+        turn.variables = _runtimeCopy(_map(turn.state['variables']));
+      } finally {
+        turn.profile?.record('after_message_refresh', refreshStarted!);
+      }
     } catch (error) {
       turn.hookIssues.add(
         TavernScriptIssue(

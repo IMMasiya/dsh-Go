@@ -12,6 +12,67 @@ Map<String, Object?> emptyToolUsageLedger() => {
   'reportedUsageObserved': false,
 };
 
+/// Coalesces provider streaming snapshots until the request is sealed. Keep
+/// the last normalized evidence as well: a later null/invalid raw report must
+/// select incomplete fields without erasing the compatibility counters.
+final class StreamingToolUsage {
+  ModelUsageReport? _report, _normalizedReport;
+  TavernUsage? _normalizedUsage;
+
+  bool get isEmpty => _report == null;
+  TavernUsage? get normalizedUsage => _normalizedUsage;
+
+  bool observe(ModelUsageReport report, {TavernUsage? normalizedUsage}) {
+    final incoming = report.toJson();
+    final normalized = _usageJson(normalizedUsage);
+    final sameNormalizedReport = _normalizedReport != null && _equal(_normalizedReport!.toJson(), incoming);
+    final sameNormalized = sameNormalizedReport && _equal(_usageJson(_normalizedUsage), normalized);
+    if (_report != null && _equal(_report!.toJson(), incoming)) {
+      if (normalizedUsage == null || sameNormalized) return false;
+    } else if (sameNormalizedReport && (normalizedUsage == null || sameNormalized)) {
+      // Finished may repeat the retained earlier normalized report after a
+      // newer raw-only report. That duplicate cannot select it again.
+      return false;
+    }
+    _report = report;
+    if (normalizedUsage != null) {
+      _normalizedReport = report;
+      _normalizedUsage = normalizedUsage;
+    }
+    return true;
+  }
+
+  ({Map<String, Object?> ledger, List<Map<String, Object?>> diagnostics}) record(Map<String, Object?> previous) {
+    final report = _report;
+    if (report == null) return (ledger: previous, diagnostics: <Map<String, Object?>>[]);
+    final normalizedReport = _normalizedReport;
+    if (normalizedReport == null) return recordToolUsageObservation(previous, report: report);
+    final normalized = recordToolUsageObservation(
+      previous,
+      report: normalizedReport,
+      normalizedUsage: _normalizedUsage,
+    );
+    if (_equal(normalizedReport.toJson(), report.toJson())) return normalized;
+    final latest = recordToolUsageObservation(normalized.ledger, report: report);
+    return (ledger: latest.ledger, diagnostics: [...normalized.diagnostics, ...latest.diagnostics]);
+  }
+
+  void clear() {
+    _report = null;
+    _normalizedReport = null;
+    _normalizedUsage = null;
+  }
+}
+
+Map<String, Object?>? _usageJson(TavernUsage? usage) => usage == null
+    ? null
+    : {
+        'promptTokens': usage.promptTokens,
+        'cacheHitTokens': usage.cacheHitTokens,
+        'completionTokens': usage.completionTokens,
+        'model': usage.model,
+      };
+
 /// Appends actual new evidence without changing an earlier observation. A
 /// provider/custom observation index is a correlation hint, not ordering power.
 ({Map<String, Object?> ledger, List<Map<String, Object?>> diagnostics}) recordToolUsageObservation(
@@ -22,14 +83,7 @@ Map<String, Object?> emptyToolUsageLedger() => {
   final ledger = _ledger(previous);
   final observations = ledger['observations']! as List<Object?>;
   final incoming = report.toJson();
-  final normalized = normalizedUsage == null
-      ? null
-      : <String, Object?>{
-          'promptTokens': normalizedUsage.promptTokens,
-          'cacheHitTokens': normalizedUsage.cacheHitTokens,
-          'completionTokens': normalizedUsage.completionTokens,
-          'model': normalizedUsage.model,
-        };
+  final normalized = _usageJson(normalizedUsage);
   var provenanceConflict = false;
   var normalizedConflict = false;
   var addedNormalized = false;

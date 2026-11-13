@@ -451,8 +451,8 @@ class TavernModelConfig {
   final bool thinking;
 
   /// Additional HTTP headers, never included in inspection data or logs.
-  /// Authorization is supplied by [apiKey], including its absence for local
-  /// OpenAI-compatible services that do not require a key.
+  /// A non-empty [apiKey] overrides Authorization with Bearer authentication.
+  /// Otherwise OpenAI-compatible channels keep any supplied Authorization.
   final Map<String, String> headers;
 
   /// Configuration for director, secret and other helper requests. Null keeps

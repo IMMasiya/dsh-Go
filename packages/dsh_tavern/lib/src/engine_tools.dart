@@ -407,6 +407,7 @@ class _OrdinaryToolRequest {
   final ToolWireAuthorization authorization;
   final bool stateAllowed;
   final accumulator = ModelToolAccumulator();
+  final streamingUsage = StreamingToolUsage();
   late TavernToolRequestSnapshot snapshot;
   Map<String, Object?> usage = emptyToolUsageLedger();
   Map<String, Object?> diagnostics = {};
@@ -463,11 +464,29 @@ void _recordOrdinaryUsage(
 }) {
   final started = turn.profile?.now;
   try {
-    final next = recordToolUsageObservation(request.usage, report: report, normalizedUsage: normalizedUsage);
-    if (_stateJsonEqual(next.ledger, request.usage)) return;
+    if (report.transport == 'streaming' && report.origin != 'legacy_normalized') {
+      if (!request.streamingUsage.observe(report, normalizedUsage: normalizedUsage)) return;
+      if (turn.toolRequests.length > 1) {
+        final latest = request.streamingUsage.record(request.usage);
+        _adoptOrdinaryUsage(
+          engine,
+          turn,
+          _prepareOrdinaryUsage(turn, request, latest.ledger, normalizedUsage: normalizedUsage),
+        );
+      }
+      return;
+    }
+    // A custom/nonstream observation keeps its immediate adoption contract.
+    // Include any earlier streaming snapshots in that same write, in order.
+    final pending = request.streamingUsage.record(request.usage);
+    final next = recordToolUsageObservation(pending.ledger, report: report, normalizedUsage: normalizedUsage);
+    if (_stateJsonEqual(next.ledger, request.usage)) {
+      request.streamingUsage.clear();
+      return;
+    }
     final diagnostics = <String, Object?>{
       ...request.diagnostics,
-      'usage': [..._stateRows(request.diagnostics['usage']), ...next.diagnostics],
+      'usage': [..._stateRows(request.diagnostics['usage']), ...pending.diagnostics, ...next.diagnostics],
     };
     final preparedUsage = _prepareOrdinaryUsage(turn, request, next.ledger, normalizedUsage: normalizedUsage);
     engine._store.observeToolRequest(
@@ -477,6 +496,7 @@ void _recordOrdinaryUsage(
       onCommitted: (snapshot) {
         request.snapshot = snapshot;
         request.usage = next.ledger;
+        request.streamingUsage.clear();
         request.diagnostics = diagnostics;
         _adoptOrdinaryUsage(engine, turn, preparedUsage);
         if (normalizedUsage != null) turn.hasOutput = true;
@@ -530,12 +550,20 @@ void _finishOrdinaryRequest(TavernEngine engine, _Turn turn, _OrdinaryToolReques
   try {
     final batch = request.batch ??= request.accumulator.finish();
     final rejection = _ordinaryBatchRejection(request);
+    final pending = request.streamingUsage.record(request.usage);
     final diagnostics = <String, Object?>{
       ...request.diagnostics,
       'batch': batch.toJson(),
+      if (!request.streamingUsage.isEmpty)
+        'usage': [..._stateRows(request.diagnostics['usage']), ...pending.diagnostics],
       if (rejection != null) 'outcome': rejection.outcome,
     };
-    final preparedUsage = _prepareOrdinaryUsage(turn, request, request.usage);
+    final preparedUsage = _prepareOrdinaryUsage(
+      turn,
+      request,
+      pending.ledger,
+      normalizedUsage: request.streamingUsage.normalizedUsage,
+    );
     try {
       engine._store.finishToolRequest(
         request.snapshot.requestId,
@@ -547,7 +575,7 @@ void _finishOrdinaryRequest(TavernEngine engine, _Turn turn, _OrdinaryToolReques
         responseComplete: request.responseComplete,
         providerFinishReason: request.finishReason,
         responseSnapshot: request.assistant?.toJson(),
-        usage: request.usage,
+        usage: pending.ledger,
         batchDiagnostics: diagnostics,
         error: error == null
             ? null
@@ -557,6 +585,8 @@ void _finishOrdinaryRequest(TavernEngine engine, _Turn turn, _OrdinaryToolReques
               },
         onCommitted: (snapshot) {
           request.snapshot = snapshot;
+          request.usage = pending.ledger;
+          request.streamingUsage.clear();
           request.diagnostics = diagnostics;
           request.rowFinished = true;
           _adoptOrdinaryUsage(engine, turn, preparedUsage);
