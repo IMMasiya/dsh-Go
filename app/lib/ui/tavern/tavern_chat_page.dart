@@ -125,8 +125,15 @@ class _TavernChatPageState extends ConsumerState<TavernChatPage> {
   /// when it can no longer read providers.
   late final ReadAloudController _readAloud = ref.read(readAloudProvider.notifier);
 
-  /// Stops reading aloud if what is being read is one of the tavern's lines.
-  void _quietTavern() => _readAloud.stopWhere((id) => id.startsWith('tavern:'));
+  /// Stops reading aloud if what is being read is one of the tavern's lines,
+  /// and drops a read still waiting for its display text.
+  void _quietTavern() {
+    _readAsk++;
+    _readAloud.stopWhere((id) => id.startsWith('tavern:'));
+  }
+
+  /// Counts read-aloud asks: one overtaken while its text was made is dropped.
+  int _readAsk = 0;
   StreamSubscription<void>? _changes;
   StreamSubscription<Object?>? _turn;
 
@@ -1173,8 +1180,9 @@ class _TavernChatPageState extends ConsumerState<TavernChatPage> {
         await Clipboard.setData(ClipboardData(text: message.text));
       case _MessageAction.readAloud:
         // What the bubble shows (through the display regex), not what is stored.
+        final ask = ++_readAsk;
         final shown = await _tavern.displayText(widget.chatId, nodeId: message.nodeId, text: message.text);
-        if (!mounted) return;
+        if (!mounted || ask != _readAsk) return;
         readAloudReply(context, readId, tavernStripMarkers(shown.superseded ? message.text : shown.text));
       case _MessageAction.edit:
         await _edit(message);

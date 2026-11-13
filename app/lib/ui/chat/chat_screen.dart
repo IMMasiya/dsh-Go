@@ -1455,7 +1455,8 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
         context,
         title: title,
         session: () async {
-          if (!mounted) return null;
+          // Another host now: its conversation of the same id is not this call's.
+          if (!mounted || ref.read(activeHostProvider) != host) return null;
           final id = pinned;
           if (id == null) return pinned = await _ensureSession(isCurrent: () => mounted);
           // Picks it still owes (a failed apply on the new-chat screen) are settled before it is spoken to.
