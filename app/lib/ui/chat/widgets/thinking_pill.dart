@@ -145,22 +145,11 @@ class _ThinkingPillState extends State<ThinkingPill> {
               shape: Squircle.border(StreamRow.lead * 0.32),
             ),
             child: Center(
-              // 思考中是一颗慢慢变形的点阵小光球(Libraries.dev 思考光球),想完换回静止的图形。
-              child: AnimatedSwitcher(
-                duration: AppMotion.of(context, AppMotion.quick),
-                child: active
-                    ? ThinkingOrb(
-                        key: const ValueKey('orb'),
-                        state: OrbState.breathing,
-                        size: OrbSize.px20,
-                        displaySize: 18,
-                        ink: OrbInk.tint(brand),
-                      )
-                    : RepaintBoundary(
-                        key: const ValueKey('glyph'),
-                        child: ThinkGlyph(size: 15, color: brand),
-                      ),
-              ),
+              // 思考中是一颗慢慢变形的点阵小光球(Libraries.dev 思考光球),想完换回静止的图形
+              // (和标签一样直接换,不叠着淡入淡出)。
+              child: active
+                  ? ThinkingOrb(state: OrbState.breathing, size: OrbSize.px20, displaySize: 18, ink: OrbInk.tint(brand))
+                  : ThinkGlyph(size: 15, color: brand),
             ),
           ),
         ),
