@@ -125,6 +125,9 @@ flutter:
     # Distortion waves (lib/ui/fx/waves); both include distortion_wave_field.glsl.
     - shaders/fx/distortion_wave_lens.frag
     - shaders/fx/distortion_wave_band.frag
+    # Image generation placeholder (lib/ui/fx/image_gen), two passes.
+    - shaders/fx/img_fx_field.frag
+    - shaders/fx/img_fx_mosaic.frag
 
   fonts:
     # App icons: a Phosphor subset made by tool/make_icon_font.py; use AppIcons.
