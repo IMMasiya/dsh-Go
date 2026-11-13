@@ -185,6 +185,40 @@ class PreviewTavern implements Tavern, TavernPreview {
   Future<TavernAuthoringDraft?> readAuthoringDraft(String draftId) async => null;
 
   @override
+  TavernAuthoringRun startAuthoringRun(TavernAuthoringRunRequest request) =>
+      throw UnsupportedError('The preview runs no authoring.');
+
+  @override
+  Future<TavernAuthoringRunSnapshot?> readAuthoringRun(String runId) async => null;
+
+  @override
+  Future<List<TavernAuthoringRunSummary>> listAuthoringRuns({
+    String? draftId,
+    int limit = 30,
+    String? beforeRunId,
+  }) async => const [];
+
+  @override
+  Future<TavernAuthoringToolReceipt?> readAuthoringToolReceipt(String runId, String receiptId) async => null;
+
+  @override
+  Future<void> cancelAuthoringRun(String runId) => _noDraft();
+
+  @override
+  Future<TavernAuthoringDraft> createAuthoringSeed(TavernAuthoringSeedInput input) => _noDraft();
+
+  @override
+  Future<TavernAuthoringSaveAsReceipt> saveAuthoringAsNew(
+    String draftId, {
+    required int draftRevision,
+    required String physicalResourceId,
+    required List<String> changeIds,
+    required String operationId,
+    required TavernAuthoringMediaSelection media,
+    String? domainId,
+  }) => _noDraft();
+
+  @override
   Future<TavernAuthoringReceipt> applyAuthoringChanges(
     String draftId, {
     required int draftRevision,

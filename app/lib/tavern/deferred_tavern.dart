@@ -133,6 +133,51 @@ class DeferredTavern implements Tavern {
   @override
   Future<TavernAuthoringDraft?> readAuthoringDraft(String draftId) async => (await _ready).readAuthoringDraft(draftId);
 
+  /// Returned at once with its id; the run itself starts once the engine is open.
+  @override
+  TavernAuthoringRun startAuthoringRun(TavernAuthoringRunRequest request) =>
+      _DeferredAuthoringRun(request.runId, _ready.then((t) => t.startAuthoringRun(request)));
+
+  @override
+  Future<TavernAuthoringRunSnapshot?> readAuthoringRun(String runId) async => (await _ready).readAuthoringRun(runId);
+
+  @override
+  Future<List<TavernAuthoringRunSummary>> listAuthoringRuns({
+    String? draftId,
+    int limit = 30,
+    String? beforeRunId,
+  }) async => (await _ready).listAuthoringRuns(draftId: draftId, limit: limit, beforeRunId: beforeRunId);
+
+  @override
+  Future<TavernAuthoringToolReceipt?> readAuthoringToolReceipt(String runId, String receiptId) async =>
+      (await _ready).readAuthoringToolReceipt(runId, receiptId);
+
+  @override
+  Future<void> cancelAuthoringRun(String runId) async => (await _ready).cancelAuthoringRun(runId);
+
+  @override
+  Future<TavernAuthoringDraft> createAuthoringSeed(TavernAuthoringSeedInput input) async =>
+      (await _ready).createAuthoringSeed(input);
+
+  @override
+  Future<TavernAuthoringSaveAsReceipt> saveAuthoringAsNew(
+    String draftId, {
+    required int draftRevision,
+    required String physicalResourceId,
+    required List<String> changeIds,
+    required String operationId,
+    required TavernAuthoringMediaSelection media,
+    String? domainId,
+  }) async => (await _ready).saveAuthoringAsNew(
+    draftId,
+    draftRevision: draftRevision,
+    physicalResourceId: physicalResourceId,
+    changeIds: changeIds,
+    operationId: operationId,
+    media: media,
+    domainId: domainId,
+  );
+
   @override
   Future<TavernAuthoringReceipt> applyAuthoringChanges(
     String draftId, {
@@ -982,4 +1027,23 @@ Object? _held(Object? value, String operation, [Set<Object>? seen]) {
   } finally {
     active.remove(value);
   }
+}
+
+/// An authoring run asked for before the engine opened: its id now, the rest
+/// from the engine's own run once there is one.
+class _DeferredAuthoringRun implements TavernAuthoringRun {
+  _DeferredAuthoringRun(this.runId, this._run);
+
+  @override
+  final String runId;
+  final Future<TavernAuthoringRun> _run;
+
+  @override
+  Stream<TavernAuthoringRunEvent> get events => Stream.fromFuture(_run).asyncExpand((run) => run.events);
+
+  @override
+  Future<TavernAuthoringRunSnapshot> get result => _run.then((run) => run.result);
+
+  @override
+  Future<void> cancel() async => (await _run).cancel();
 }
