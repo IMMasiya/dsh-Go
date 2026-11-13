@@ -39326,6 +39326,42 @@ abstract class L10n {
   /// **'没改成：{detail}'**
   String tavernToolPolicyFailed(String detail);
 
+  /// No description provided for @tavernChatTools.
+  ///
+  /// In zh, this message translates to:
+  /// **'这局的工具'**
+  String get tavernChatTools;
+
+  /// No description provided for @tavernChatToolFollow.
+  ///
+  /// In zh, this message translates to:
+  /// **'跟设置'**
+  String get tavernChatToolFollow;
+
+  /// No description provided for @tavernChatToolOn.
+  ///
+  /// In zh, this message translates to:
+  /// **'开'**
+  String get tavernChatToolOn;
+
+  /// No description provided for @tavernChatToolOff.
+  ///
+  /// In zh, this message translates to:
+  /// **'关'**
+  String get tavernChatToolOff;
+
+  /// No description provided for @tavernChatToolNow.
+  ///
+  /// In zh, this message translates to:
+  /// **'这局实际：掷骰{roll}，记事{remember}'**
+  String tavernChatToolNow(String roll, String remember);
+
+  /// No description provided for @tavernChatToolHeld.
+  ///
+  /// In zh, this message translates to:
+  /// **'酒馆设置里关着的，这里打开也不算'**
+  String get tavernChatToolHeld;
+
   /// No description provided for @tavernToolFailBudget.
   ///
   /// In zh, this message translates to:

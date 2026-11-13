@@ -21531,6 +21531,26 @@ class L10nZh extends L10n {
   }
 
   @override
+  String get tavernChatTools => '这局的工具';
+
+  @override
+  String get tavernChatToolFollow => '跟设置';
+
+  @override
+  String get tavernChatToolOn => '开';
+
+  @override
+  String get tavernChatToolOff => '关';
+
+  @override
+  String tavernChatToolNow(String roll, String remember) {
+    return '这局实际：掷骰$roll，记事$remember';
+  }
+
+  @override
+  String get tavernChatToolHeld => '酒馆设置里关着的，这里打开也不算';
+
+  @override
   String get tavernToolFailBudget => '这一回合用工具的次数用完了，停在这里；之前已经掷的骰子照样算数';
 
   @override

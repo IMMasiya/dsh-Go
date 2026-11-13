@@ -22715,6 +22715,26 @@ class L10nEn extends L10n {
   }
 
   @override
+  String get tavernChatTools => 'Tools in this chat';
+
+  @override
+  String get tavernChatToolFollow => 'As set';
+
+  @override
+  String get tavernChatToolOn => 'On';
+
+  @override
+  String get tavernChatToolOff => 'Off';
+
+  @override
+  String tavernChatToolNow(String roll, String remember) {
+    return 'In this chat: dice $roll, memories $remember';
+  }
+
+  @override
+  String get tavernChatToolHeld => 'What tavern settings turned off stays off, even if on here';
+
+  @override
   String get tavernToolFailBudget =>
       'This turn has used up its tool requests and stops here; dice already rolled still count';
 
