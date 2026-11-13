@@ -16872,7 +16872,7 @@ class L10nEn extends L10n {
   String get searchKwPerformance => 'battery,smooth,lag,lite,full,speed';
 
   @override
-  String get searchKwVoice => 'speech recognition,dictation,microphone,mic,voice';
+  String get searchKwVoice => 'speech recognition,dictation,microphone,mic,voice,read aloud,voice call,call,TTS,speech';
 
   @override
   String get searchKwNotifications => 'alerts,push,banner,sound';
@@ -18404,6 +18404,189 @@ class L10nEn extends L10n {
   String shellQuickPanelHint(String path) {
     return 'Change these in $path';
   }
+
+  @override
+  String get speechReadAloud => 'Read aloud';
+
+  @override
+  String get speechReadAloudStop => 'Stop reading';
+
+  @override
+  String get speechReadSection => 'Read aloud';
+
+  @override
+  String get speechReadFooter => 'Used by the read-aloud key under replies, the companion room and voice calls.';
+
+  @override
+  String get speechVoiceTitle => 'Reading voice';
+
+  @override
+  String get speechVoiceHello => 'Hello, this is the reading voice.';
+
+  @override
+  String get speechVoiceDeepseek => 'DeepSeek';
+
+  @override
+  String get speechVoiceDeepseekHint =>
+      'Paid by your signed-in DeepSeek account, or the API key in Settings when signed out. Nothing to set up';
+
+  @override
+  String get speechVoiceDeepseekFooter =>
+      'Billed by the number of characters read; see the DeepSeek platform for prices. Code blocks, tables and link addresses are left out.';
+
+  @override
+  String get speechVoiceStella => 'Stella (female)';
+
+  @override
+  String get speechVoiceTide => 'Tide (male)';
+
+  @override
+  String get speechVoiceStellaShort => 'Stella';
+
+  @override
+  String get speechVoiceTideShort => 'Tide';
+
+  @override
+  String get speechVoiceFollow => 'Same as read aloud';
+
+  @override
+  String get speechVoiceFollowHint => 'The reading voice in Settings › Voice';
+
+  @override
+  String get speechNotSetUp => 'The reading voice isn\'t set up yet. See Settings › Voice';
+
+  @override
+  String get speechNoCredential => 'Sign in to DeepSeek or add an API key in Settings first';
+
+  @override
+  String get speechSignIn => 'Your DeepSeek sign-in has expired. Please sign in again';
+
+  @override
+  String get speechUnauthorized => 'The DeepSeek API key was refused. Check it in Settings';
+
+  @override
+  String get speechBalance => 'Not enough DeepSeek balance';
+
+  @override
+  String get speechRateLimited => 'Too many requests. Try again shortly';
+
+  @override
+  String get speechNothingToRead => 'This reply has no text to read';
+
+  @override
+  String get speechNotHeard => 'Didn\'t catch that. Say it again';
+
+  @override
+  String get speechTooLong => 'That recording is too long. Try shorter parts';
+
+  @override
+  String get speechBusy => 'The speech service is busy. Try again shortly';
+
+  @override
+  String get speechNetwork => 'Can\'t reach the speech service. Check the network';
+
+  @override
+  String get speechReadFailed => 'Couldn\'t read it aloud';
+
+  @override
+  String get speechListenFailed => 'Couldn\'t recognize it';
+
+  @override
+  String get speechCloudNotice =>
+      'Your voice is sent to DeepSeek to be recognized. To recognize on the phone, switch to the voice model.';
+
+  @override
+  String get speechCloudNotSetUp => 'No cloud recognition service is set up';
+
+  @override
+  String get speechCallTile => 'Voice call';
+
+  @override
+  String get speechCallSection => 'Voice calls';
+
+  @override
+  String get speechCallFooter =>
+      'In a call, pause after you speak and it is sent; the answer is read while it is written.';
+
+  @override
+  String get speechCallBargeIn => 'Interrupt by speaking';
+
+  @override
+  String get speechCallBargeInHint => 'Start talking while the AI speaks and it stops to listen';
+
+  @override
+  String get speechCallSpoken => 'Spoken answers';
+
+  @override
+  String get speechCallSpokenHint => 'The call\'s first message asks for short, conversational answers';
+
+  @override
+  String get speechCallSpeaker => 'Speakerphone by default';
+
+  @override
+  String get speechCallSpeakerHint => 'Headphones always win when connected';
+
+  @override
+  String get speechCallHint =>
+      '(This is a voice call; what I say comes through speech recognition. Please answer briefly and conversationally, without Markdown, lists, tables or code blocks.)';
+
+  @override
+  String get speechCallStarting => 'Connecting…';
+
+  @override
+  String get speechCallListening => 'Listening';
+
+  @override
+  String get speechCallHearing => 'You\'re speaking';
+
+  @override
+  String get speechCallThinking => 'Thinking…';
+
+  @override
+  String get speechCallSpeaking => 'Speaking. Tap the light to skip';
+
+  @override
+  String get speechCallMuted => 'Muted';
+
+  @override
+  String get speechCallEnded => 'Call ended';
+
+  @override
+  String get speechCallEndPermission => 'No microphone permission';
+
+  @override
+  String get speechCallEndMicrophone => 'The microphone is busy or can\'t be opened';
+
+  @override
+  String get speechCallEndNoRecognizer =>
+      'A call needs a recognizer that takes recordings: sign in to DeepSeek, add an API key, or download the voice model';
+
+  @override
+  String get speechCallEndBackground => 'Calls end when the app goes to the background';
+
+  @override
+  String get speechCallEndFailed => 'Recording failed; the call has ended';
+
+  @override
+  String get speechCallSendFailed => 'That didn\'t go through. Say it again';
+
+  @override
+  String get speechCallSkipHint => 'Skip this answer';
+
+  @override
+  String get speechCallMute => 'Mute';
+
+  @override
+  String get speechCallUnmute => 'Unmute';
+
+  @override
+  String get speechCallHangUp => 'Hang up';
+
+  @override
+  String get speechCallSpeakerOn => 'Speaker';
+
+  @override
+  String get speechCallEarpiece => 'Earpiece';
 
   @override
   String starPromptTitle(int hours) {
@@ -24430,7 +24613,7 @@ class L10nEn extends L10n {
   String get viewUiDialectNote => 'Shown in DSH Web';
 
   @override
-  String get voiceSettingsTitle => 'Voice input';
+  String get voiceSettingsTitle => 'Voice';
 
   @override
   String get voiceModeAuto => 'Automatic';
@@ -24442,7 +24625,8 @@ class L10nEn extends L10n {
   String get voiceModeEngine => 'Voice model';
 
   @override
-  String get voiceModeAutoHint => 'Uses the voice model when it’s ready, otherwise the phone’s service';
+  String get voiceModeAutoHint =>
+      'Uses DeepSeek when you’re signed in or have an API key, otherwise the voice model or the phone’s service';
 
   @override
   String get voiceModeSystemHint => 'Use the recognition service selected on this phone';
@@ -24648,6 +24832,30 @@ class L10nEn extends L10n {
 
   @override
   String get voiceModelNoticeFailed => 'Voice model download failed. Open the app to retry.';
+
+  @override
+  String get voiceModeDeepseek => 'DeepSeek';
+
+  @override
+  String get voiceModeDeepseekHint => 'DeepSeek’s recognizer, paid by your signed-in account or API key';
+
+  @override
+  String get voiceModeCloud => 'Another cloud service';
+
+  @override
+  String get voiceModeCloudHint => 'An OpenAI-compatible transcription API, such as Whisper or SiliconFlow';
+
+  @override
+  String get voiceCloudSection => 'Cloud recognition service';
+
+  @override
+  String get voiceCloudFooter => 'Recordings are sent to this service. The key stays on this phone.';
+
+  @override
+  String get voiceCloudBaseHelper => 'Up to /v1; the app calls …/audio/transcriptions';
+
+  @override
+  String get voiceCloudModelHelper => 'For example whisper-1 or FunAudioLLM/SenseVoiceSmall';
 
   @override
   String get voiceScribeReadFailed => 'Could not read voice settings. Retry.';

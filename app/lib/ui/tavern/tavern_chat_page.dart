@@ -13,6 +13,9 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../l10n/l10n.dart';
+import '../../speech/read_aloud.dart';
+import '../../speech/voice_cloud.dart';
+import '../speech/speech_ui.dart';
 import '../../state/connection_state.dart';
 import '../../state/settings_state.dart';
 import '../../state/voice_model_state.dart';
@@ -269,6 +272,7 @@ class _TavernChatPageState extends ConsumerState<TavernChatPage> {
       input: _input,
       bridge: ref.read(voiceBridgeProvider),
       mode: () => ref.read(voiceSettingsProvider.notifier).ready(),
+      cloud: (mode) => ref.read(voiceCloudProvider)(mode),
       // The voice model lives in the on-device engine: it counts for that host only.
       modelReady: () =>
           (_connection?.isLocal ?? false) && ref.read(voiceModelProvider).status == VoiceModelStatus.ready,
@@ -1097,6 +1101,8 @@ class _TavernChatPageState extends ConsumerState<TavernChatPage> {
     final l10n = context.l10n;
     final character = message.role == TavernRole.character;
     final marked = ref.read(tavernBookmarksProvider(widget.chatId).notifier).has(message.nodeId);
+    final readId = 'tavern:${message.nodeId}';
+    final reading = ref.read(readAloudProvider).id == readId;
     final action = await showAppSheet<_MessageAction>(
       context,
       // As tall as its rows: eight of them pass the default cap on a phone.
@@ -1118,6 +1124,12 @@ class _TavernChatPageState extends ConsumerState<TavernChatPage> {
               margin: const EdgeInsets.fromLTRB(16, 16, 16, 12),
               children: [
                 row(_MessageAction.copy, AppIcons.copy, l10n.commonCopy),
+                if (character)
+                  row(
+                    _MessageAction.readAloud,
+                    reading ? AppIcons.stop : AppIcons.readAloud,
+                    reading ? l10n.speechReadAloudStop : l10n.speechReadAloud,
+                  ),
                 row(_MessageAction.edit, AppIcons.edit, l10n.commonEdit),
                 if (marked)
                   row(_MessageAction.bookmark, AppIcons.bookmarkActive, l10n.tavernBookmarkRemove)
@@ -1146,6 +1158,8 @@ class _TavernChatPageState extends ConsumerState<TavernChatPage> {
     switch (action) {
       case _MessageAction.copy:
         await Clipboard.setData(ClipboardData(text: message.text));
+      case _MessageAction.readAloud:
+        readAloudReply(context, readId, message.text);
       case _MessageAction.edit:
         await _edit(message);
       case _MessageAction.bookmark:
@@ -1750,7 +1764,19 @@ class _ComposerKey extends StatelessWidget {
   }
 }
 
-enum _MessageAction { copy, edit, bookmark, regenerate, continueReply, inspect, branchHere, hide, deleteOne, delete }
+enum _MessageAction {
+  copy,
+  readAloud,
+  edit,
+  bookmark,
+  regenerate,
+  continueReply,
+  inspect,
+  branchHere,
+  hide,
+  deleteOne,
+  delete,
+}
 
 /// A message on the path: the user's in a bubble, the character's as text;
 /// the last character message carries its alternatives.

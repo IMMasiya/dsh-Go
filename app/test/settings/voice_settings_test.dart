@@ -59,7 +59,9 @@ void main() {
           expect(tester.getRect(row).left, greaterThanOrEqualTo(0));
           expect(tester.getRect(row).right, lessThanOrEqualTo(320));
         }
-        await tester.tap(rows.last);
+        await tester.ensureVisible(find.byKey(const ValueKey('voice-mode-engine')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const ValueKey('voice-mode-engine')));
         await tester.pumpAndSettle();
         final container = ProviderScope.containerOf(tester.element(find.byType(VoiceSettingsPage)));
         expect(container.read(voiceSettingsProvider), VoiceMode.engine);

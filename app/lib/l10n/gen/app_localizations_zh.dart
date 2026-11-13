@@ -16024,7 +16024,7 @@ class L10nZh extends L10n {
   String get searchKwPerformance => '省电,流畅,卡顿,发热,轻量,完整';
 
   @override
-  String get searchKwVoice => '语音识别,麦克风,听写,说话,语音';
+  String get searchKwVoice => '语音识别,麦克风,听写,说话,语音,朗读,语音通话,打电话,TTS,声音';
 
   @override
   String get searchKwNotifications => '提醒,推送,横幅,消息,铃声';
@@ -17431,6 +17431,183 @@ class L10nZh extends L10n {
   String shellQuickPanelHint(String path) {
     return '在「$path」里调整';
   }
+
+  @override
+  String get speechReadAloud => '朗读';
+
+  @override
+  String get speechReadAloudStop => '停止朗读';
+
+  @override
+  String get speechReadSection => '朗读';
+
+  @override
+  String get speechReadFooter => '回复下方的朗读键、伙伴小屋和语音通话都用这个声音。';
+
+  @override
+  String get speechVoiceTitle => '朗读的声音';
+
+  @override
+  String get speechVoiceHello => '你好，这是朗读的声音。';
+
+  @override
+  String get speechVoiceDeepseek => 'DeepSeek';
+
+  @override
+  String get speechVoiceDeepseekHint => '登录的 DeepSeek 账号付费，没登录时用设置里的 API Key，不用另外配置';
+
+  @override
+  String get speechVoiceDeepseekFooter => '按朗读的字数计费，价格见 DeepSeek 开放平台。读出前会去掉代码块、表格和链接地址。';
+
+  @override
+  String get speechVoiceStella => '海星（女声）';
+
+  @override
+  String get speechVoiceTide => '暗潮（男声）';
+
+  @override
+  String get speechVoiceStellaShort => '海星';
+
+  @override
+  String get speechVoiceTideShort => '暗潮';
+
+  @override
+  String get speechVoiceFollow => '跟朗读一样';
+
+  @override
+  String get speechVoiceFollowHint => '用设置 › 语音里朗读的声音';
+
+  @override
+  String get speechNotSetUp => '朗读的声音还没设置好，去设置 › 语音看看';
+
+  @override
+  String get speechNoCredential => '要先登录 DeepSeek 账号，或在设置里填 API Key';
+
+  @override
+  String get speechSignIn => 'DeepSeek 账号登录已失效，请重新登录';
+
+  @override
+  String get speechUnauthorized => 'DeepSeek API Key 无效，请在设置里检查';
+
+  @override
+  String get speechBalance => 'DeepSeek 余额不足';
+
+  @override
+  String get speechRateLimited => '请求太频繁，稍后再试';
+
+  @override
+  String get speechNothingToRead => '这条回复没有可以朗读的文字';
+
+  @override
+  String get speechNotHeard => '没听清，再说一次';
+
+  @override
+  String get speechTooLong => '录音太长了，分几段说吧';
+
+  @override
+  String get speechBusy => '语音服务正忙，稍后再试';
+
+  @override
+  String get speechNetwork => '连不上语音服务，请检查网络';
+
+  @override
+  String get speechReadFailed => '朗读失败';
+
+  @override
+  String get speechListenFailed => '识别失败';
+
+  @override
+  String get speechCloudNotice => '语音会发给 DeepSeek 识别。想在手机上识别，可以换成语音模型。';
+
+  @override
+  String get speechCloudNotSetUp => '还没设置云端识别服务';
+
+  @override
+  String get speechCallTile => '语音通话';
+
+  @override
+  String get speechCallSection => '语音通话';
+
+  @override
+  String get speechCallFooter => '通话时说完一句停一下，就会发出去；回答边写边读。';
+
+  @override
+  String get speechCallBargeIn => '插话打断';
+
+  @override
+  String get speechCallBargeInHint => 'AI 说话时你一开口，它就停下来听你说';
+
+  @override
+  String get speechCallSpoken => '口语回答';
+
+  @override
+  String get speechCallSpokenHint => '通话的第一条消息会请 AI 简短、口语化地回答';
+
+  @override
+  String get speechCallSpeaker => '默认免提';
+
+  @override
+  String get speechCallSpeakerHint => '接上耳机时总用耳机';
+
+  @override
+  String get speechCallHint => '（这是语音通话，我说的话由语音识别转成文字。请用简短、口语化的中文回答，不要用 Markdown、列表、表格和代码块。）';
+
+  @override
+  String get speechCallStarting => '正在接通…';
+
+  @override
+  String get speechCallListening => '在听';
+
+  @override
+  String get speechCallHearing => '你在说';
+
+  @override
+  String get speechCallThinking => '想一想…';
+
+  @override
+  String get speechCallSpeaking => '正在说，轻点光球可以跳过';
+
+  @override
+  String get speechCallMuted => '已静音';
+
+  @override
+  String get speechCallEnded => '通话已结束';
+
+  @override
+  String get speechCallEndPermission => '没有麦克风权限';
+
+  @override
+  String get speechCallEndMicrophone => '麦克风被占用或打不开';
+
+  @override
+  String get speechCallEndNoRecognizer => '通话需要能识别录音的方式：登录 DeepSeek 账号、填 API Key，或下载语音模型';
+
+  @override
+  String get speechCallEndBackground => '切到后台时通话会结束';
+
+  @override
+  String get speechCallEndFailed => '录音出错，通话已结束';
+
+  @override
+  String get speechCallSendFailed => '没发出去，再说一次';
+
+  @override
+  String get speechCallSkipHint => '跳过这段回答';
+
+  @override
+  String get speechCallMute => '静音';
+
+  @override
+  String get speechCallUnmute => '取消静音';
+
+  @override
+  String get speechCallHangUp => '挂断';
+
+  @override
+  String get speechCallSpeakerOn => '免提';
+
+  @override
+  String get speechCallEarpiece => '听筒';
 
   @override
   String starPromptTitle(int hours) {
@@ -23129,7 +23306,7 @@ class L10nZh extends L10n {
   String get viewUiDialectNote => '在网页版查看';
 
   @override
-  String get voiceSettingsTitle => '语音输入';
+  String get voiceSettingsTitle => '语音';
 
   @override
   String get voiceModeAuto => '自动';
@@ -23141,7 +23318,7 @@ class L10nZh extends L10n {
   String get voiceModeEngine => '语音模型';
 
   @override
-  String get voiceModeAutoHint => '有语音模型时用它，否则用系统识别';
+  String get voiceModeAutoHint => '有 DeepSeek 账号或 API Key 时用 DeepSeek，否则用语音模型或系统识别';
 
   @override
   String get voiceModeSystemHint => '使用手机设置中的识别服务';
@@ -23345,6 +23522,30 @@ class L10nZh extends L10n {
 
   @override
   String get voiceModelNoticeFailed => '语音模型下载失败，打开 App 重试';
+
+  @override
+  String get voiceModeDeepseek => 'DeepSeek';
+
+  @override
+  String get voiceModeDeepseekHint => '用 DeepSeek 的语音识别，登录的账号或 API Key 付费';
+
+  @override
+  String get voiceModeCloud => '其他云端服务';
+
+  @override
+  String get voiceModeCloudHint => 'OpenAI 兼容的语音转写接口，例如 Whisper、硅基流动';
+
+  @override
+  String get voiceCloudSection => '云端识别服务';
+
+  @override
+  String get voiceCloudFooter => '录音会发给这个服务识别。Key 只存在这台手机上。';
+
+  @override
+  String get voiceCloudBaseHelper => '填到 /v1 为止，App 会请求 …/audio/transcriptions';
+
+  @override
+  String get voiceCloudModelHelper => '例如 whisper-1、FunAudioLLM/SenseVoiceSmall';
 
   @override
   String get voiceScribeReadFailed => '没能读取语音设置，请重试。';
