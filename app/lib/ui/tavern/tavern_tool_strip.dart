@@ -119,7 +119,10 @@ class _Proposal extends ConsumerWidget {
     final theme = Theme.of(context);
     final quiet = theme.textTheme.bodySmall?.copyWith(color: DshColors.of(context).textTertiary);
     final open = proposal.workflow == 'pending_confirmation' && proposal.eligible;
-    final waiting = open ? ref.watch(tavernMemoryIntentProvider(proposal.proposalId)).value : null;
+    // A decision kept from before is read first: until it is, no buttons,
+    // so a tap cannot replace it.
+    final kept = open ? ref.watch(tavernMemoryIntentProvider(proposal.proposalId)) : null;
+    final waiting = kept?.value;
     final state = switch (proposal.workflow) {
       'staged' => l10n.tavernToolMemoryStaged,
       'pending_confirmation' when !proposal.eligible => l10n.tavernToolMemoryIneligible(
@@ -158,7 +161,7 @@ class _Proposal extends ConsumerWidget {
                   ),
                 ],
               )
-            else if (open)
+            else if (open && kept?.isLoading != true)
               Row(
                 mainAxisAlignment: MainAxisAlignment.end,
                 children: [

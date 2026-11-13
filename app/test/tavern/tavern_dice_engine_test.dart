@@ -56,7 +56,7 @@ class _Roller extends PreviewTavern {
       },
       'committed': committed,
       'capturedParameters': {'dice': dice},
-      if (committed == true) 'result': {'dice': dice, 'values': _faces, 'total': _faces.reduce((a, b) => a + b)},
+      if (committed == true) 'result': {'dice': dice, ..._faces(dice)},
       if (committed == false) 'error': {'message': 'dice_invalid'},
       'createdAt': _at,
       'updatedAt': _at,
@@ -64,8 +64,18 @@ class _Roller extends PreviewTavern {
   }
 }
 
-/// What the engine lands on: not what the sheet's own dice (seed 7) would.
-const _faces = [19];
+/// What the engine lands on, faces the dice can show and the total with the
+/// modifier: not what the sheet's own dice (seed 7) would.
+Map<String, Object?> _faces(String dice) => switch (dice) {
+  '2d6+1' => {
+    'values': [4, 5],
+    'total': 10,
+  },
+  _ => {
+    'values': [19],
+    'total': 19,
+  },
+};
 
 TavernToolException _refused(TavernToolErrorCode code) =>
     TavernToolException(code: code, operation: 'rollDice', message: code.name, committed: false);
@@ -155,7 +165,7 @@ void main() {
 
     await _tap(tester, 'tavern-dice-recheck');
     expect(engine.asked.single, (chatId: _chat, actionId: 'dshgo-earlier', dice: '2d6+1'));
-    expect(_total(tester), '20');
+    expect(_total(tester), '10');
   });
 
   testWidgets('放弃这次 lets the unsettled roll go', (tester) async {

@@ -691,7 +691,7 @@ class _TavernChatPageState extends ConsumerState<TavernChatPage> {
   /// nothing; muted or not.
   void _speak(String characterId) {
     if (_running) return;
-    if (_tavern is! TavernPreview && !ref.read(settingsProvider).hasApiKey) {
+    if (_tavern is! TavernPreview && ref.read(tavernNeedsKeyProvider)) {
       _openKeySettings();
       return;
     }
@@ -761,10 +761,19 @@ class _TavernChatPageState extends ConsumerState<TavernChatPage> {
   /// is sent (STAGE1-APP-INTEGRATION §5.2).
   Future<void> _decide(TavernMemoryProposalSnapshot proposal, TavernMemoryDecision decision) async {
     if (proposal.workflow != 'pending_confirmation' || !proposal.eligible) return;
-    final intent = TavernMemoryIntent.of(proposal, decision, tavernNewId());
-    await tavernKeepMemoryIntent(intent);
-    await _submitDecision(intent);
+    // A second tap while the first is out would replace the kept decision.
+    if (!_deciding.add(proposal.proposalId)) return;
+    try {
+      final intent = TavernMemoryIntent.of(proposal, decision, tavernNewId());
+      await tavernKeepMemoryIntent(intent);
+      await _submitDecision(intent);
+    } finally {
+      _deciding.remove(proposal.proposalId);
+    }
   }
+
+  /// Proposals whose decision is being kept and sent.
+  final _deciding = <String>{};
 
   /// Sends [intent] (again, unchanged, for 重试). Its record is what it is:
   /// not applied says why. Kept only while it may yet go through (the engine
@@ -839,7 +848,7 @@ class _TavernChatPageState extends ConsumerState<TavernChatPage> {
       return;
     }
     // No key yet: the line would only fail. Keep it, and go and add one.
-    if (_tavern is! TavernPreview && !ref.read(settingsProvider).hasApiKey) {
+    if (_tavern is! TavernPreview && ref.read(tavernNeedsKeyProvider)) {
       _openKeySettings();
       return;
     }
@@ -1406,7 +1415,7 @@ class _TavernChatPageState extends ConsumerState<TavernChatPage> {
             lead: name,
             bookmarked: marked.contains(m.nodeId),
             showName: group != null,
-            tools: toolTurns[m.nodeId],
+            tools: toolTurns[m.nodeId] ?? const [],
             onDecide: _decide,
             onRetryDecision: _submitDecision,
           ),
@@ -1683,8 +1692,19 @@ class _TavernChatPageState extends ConsumerState<TavernChatPage> {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 // No key yet: say so before the first line, not after it fails.
-                if (!preview && _error == null && !ref.watch(settingsProvider.select((s) => s.hasApiKey)))
+                if (!preview && _error == null && ref.watch(tavernNeedsKeyProvider))
                   _KeyMissing(onAdd: _openKeySettings),
+                // 视觉小说 and the canvas draw no message rows: the newest
+                // reply's dice and what it asks to remember sit here instead.
+                if ((layout == TavernLayout.visualNovel || canvas) && !_running)
+                  if (_toolStrips(
+                        lastCharacter ?? '',
+                        toolTurns[lastCharacter] ?? const [],
+                        onDecide: _decide,
+                        onRetry: _submitDecision,
+                      )
+                      case final strips?)
+                    Padding(padding: const EdgeInsets.only(bottom: 8), child: strips),
                 if (_error == null && scriptsWaiting > 0 && hintCharacter != null)
                   Padding(
                     key: const ValueKey('tavern-scripts-hint'),
@@ -1729,7 +1749,7 @@ class _TavernChatPageState extends ConsumerState<TavernChatPage> {
                     onSendOptions: _input.text.isEmpty ? null : () => unawaited(_sendOptions()),
                     onStop: _stop,
                     voice: _voice,
-                    placeholder: !preview && !ref.watch(settingsProvider.select((s) => s.hasApiKey))
+                    placeholder: !preview && ref.watch(tavernNeedsKeyProvider)
                         ? l10n.tavernComposerNoKey
                         : l10n.tavernComposerHint(name),
                     leading: TavernPersonaKey(chatId: widget.chatId, enabled: !_running),
@@ -1864,26 +1884,21 @@ class _MessageRow extends StatelessWidget {
     this.lead = '',
     this.bookmarked = false,
     this.showName = false,
-    this.tools,
+    this.tools = const [],
     this.onDecide,
     this.onRetryDecision,
   });
 
-  /// What this reply's turn did with tools, when there is something to show.
-  final TavernToolTurnView? tools;
+  /// What this reply's turns did with tools (a continuation is a turn of its
+  /// own), oldest first; empty when there is nothing to show.
+  final List<TavernToolTurnView> tools;
   final void Function(TavernMemoryProposalSnapshot proposal, TavernMemoryDecision decision)? onDecide;
   final void Function(TavernMemoryIntent intent)? onRetryDecision;
 
   /// The dice the model rolled and what it proposed to remember, under it.
-  Widget? _tools() => switch (tools) {
-    final view? when message.role == TavernRole.character => TavernToolStrip(
-      key: ValueKey('tavern-tools-${message.nodeId}'),
-      view: view,
-      onDecide: (proposal, decision) => onDecide?.call(proposal, decision),
-      onRetry: (intent) => onRetryDecision?.call(intent),
-    ),
-    _ => null,
-  };
+  Widget? _tools() => message.role == TavernRole.character
+      ? _toolStrips(message.nodeId, tools, onDecide: onDecide, onRetry: onRetryDecision)
+      : null;
 
   final String chatId;
   final TavernMessage message;
@@ -2385,6 +2400,30 @@ class _JumpMark extends StatelessWidget {
       borderRadius: BorderRadius.circular(AppShape.lg),
     ),
     child: child,
+  );
+}
+
+/// A reply's tool turns, oldest first: each its dice and what it asks to
+/// remember. Null when there are none.
+Widget? _toolStrips(
+  String nodeId,
+  List<TavernToolTurnView> tools, {
+  void Function(TavernMemoryProposalSnapshot proposal, TavernMemoryDecision decision)? onDecide,
+  void Function(TavernMemoryIntent intent)? onRetry,
+}) {
+  if (tools.isEmpty) return null;
+  Widget strip(TavernToolTurnView view, Key key) => TavernToolStrip(
+    key: key,
+    view: view,
+    onDecide: (proposal, decision) => onDecide?.call(proposal, decision),
+    onRetry: (intent) => onRetry?.call(intent),
+  );
+  final key = ValueKey('tavern-tools-$nodeId');
+  if (tools case [final only]) return strip(only, key);
+  return Column(
+    key: key,
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [for (final view in tools) strip(view, ValueKey('tavern-tools-${view.turn.logicalTurnId}'))],
   );
 }
 

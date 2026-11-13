@@ -103,3 +103,11 @@ final tavernPersonaSelectionProvider = FutureProvider.family<PersonaSelection, S
   ref.watch(tavernPersonasProvider);
   return ref.watch(tavernProvider).personaSelection(chatId: chatId);
 });
+
+/// No reply can be asked for until a key is in: only DeepSeek's own channel
+/// needs the app's key; an added one brings its own (or needs none).
+final tavernNeedsKeyProvider = Provider<bool>(
+  (ref) =>
+      ref.watch(tavernSettingsProvider.select((s) => s.activeChannel == null)) &&
+      !ref.watch(settingsProvider.select((s) => s.hasApiKey)),
+);

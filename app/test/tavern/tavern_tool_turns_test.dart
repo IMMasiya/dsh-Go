@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'package:dsh_app/tavern/deferred_tavern.dart';
 import 'package:dsh_app/tavern/tavern_preview.dart';
 import 'package:dsh_app/tavern/tavern_provider.dart';
+import 'package:dsh_app/tavern/tavern_settings.dart';
 import 'package:dsh_app/tavern/tavern_tool_turns.dart';
 import 'package:dsh_app/ui/tavern/tavern_chat_page.dart';
 import 'package:dsh_app/ui/tavern/tavern_tool_strip.dart';
@@ -185,8 +186,8 @@ class _Tools extends PreviewTavern {
   }
 }
 
-Future<_Tools> _open(WidgetTester tester, [void Function(_Tools)? setUp]) async {
-  SharedPreferences.setMockInitialValues({});
+Future<_Tools> _open(WidgetTester tester, [void Function(_Tools)? setUp, Map<String, Object> prefs = const {}]) async {
+  SharedPreferences.setMockInitialValues(prefs);
   final tavern = _Tools();
   tavern.chat = (await tester.runAsync(() => tavern.createChat('sample-innkeeper')))!;
   final path = (await tester.runAsync(() => tavern.path(tavern.chat)))!;
@@ -225,6 +226,13 @@ void main() {
     expect(_in(tools, find.text('想记住：「她怕打雷」')), findsOneWidget);
     expect(find.byKey(const ValueKey('tavern-tool-memory-accept-p1')), findsOneWidget);
     expect(find.byKey(const ValueKey('tavern-tool-memory-reject-p1')), findsOneWidget);
+  });
+
+  testWidgets("视觉小说 draws no message rows: the newest reply's dice and memory sit over the composer", (tester) async {
+    final tavern = await _open(tester, null, {TavernSettingsController.layoutKey: TavernLayout.visualNovel.name});
+    final tools = 'tavern-tools-${tavern.reply}';
+    expect(_in(tools, find.text('想记住：「她怕打雷」')), findsOneWidget);
+    expect(find.byKey(const ValueKey('tavern-tool-memory-accept-p1')), findsOneWidget);
   });
 
   testWidgets('记住 sends the proposal as it is, under a new id, kept until it goes through', (tester) async {

@@ -57,7 +57,7 @@ const tavernToolTurnDiscovery = 50;
 /// runs, read without a node filter). Read afresh when invalidated — after a
 /// turn ends, on a tool activity, after a decision. The preview keeps no tool
 /// turns, so it is not asked.
-final tavernChatToolTurnsProvider = FutureProvider.autoDispose.family<Map<String, TavernToolTurnView>, String>((
+final tavernChatToolTurnsProvider = FutureProvider.autoDispose.family<Map<String, List<TavernToolTurnView>>, String>((
   ref,
   chatId,
 ) async {
@@ -69,11 +69,13 @@ final tavernChatToolTurnsProvider = FutureProvider.autoDispose.family<Map<String
     if (run.kind != 'tool.turn') continue;
     if (run.result['logicalTurnId'] case final String id when id.isNotEmpty) ids.add(id);
   }
-  final byReply = <String, TavernToolTurnView>{};
+  // A continuation is a turn of its own on the reply it continues: a reply
+  // can have several. [ids] runs newest first; each reply's list, oldest first.
+  final byReply = <String, List<TavernToolTurnView>>{};
   for (final id in ids) {
     final view = await tavernReadToolTurn(tavern, id);
     if (view == null || view.turn.chatId != chatId || !view.shows) continue;
-    if (view.replyNodeId case final node?) byReply[node] = view;
+    if (view.replyNodeId case final node?) (byReply[node] ??= []).insert(0, view);
   }
   return byReply;
 }, retry: (_, _) => null);

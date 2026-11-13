@@ -21781,7 +21781,7 @@ class L10nZh extends L10n {
   String get tavernChannelHeaders => '请求头（可选）';
 
   @override
-  String get tavernChannelHeadersNote => '每行一个，写成「名称: 值」。存在普通设置里，别放密钥，密钥填 API Key。';
+  String get tavernChannelHeadersNote => '每行一个，写成「名称: 值」。和 Key 一样存在这台手机的安全存储里。';
 
   @override
   String get tavernChannelHeadersInvalid => '每行写成「名称: 值」';

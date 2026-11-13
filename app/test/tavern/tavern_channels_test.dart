@@ -23,6 +23,7 @@ import '../support/test_fonts.dart';
 
 class _Keys implements TavernChannelKeys {
   final stored = <String, String>{};
+  final headers = <String, Map<String, String>>{};
 
   @override
   Future<String?> read(String id) async => stored[id];
@@ -31,7 +32,17 @@ class _Keys implements TavernChannelKeys {
   Future<void> write(String id, String key) async => stored[id] = key;
 
   @override
-  Future<void> delete(String id) async => stored.remove(id);
+  Future<Map<String, String>> readHeaders(String id) async => headers[id] ?? const {};
+
+  @override
+  Future<void> writeHeaders(String id, Map<String, String> value) async =>
+      value.isEmpty ? headers.remove(id) : headers[id] = value;
+
+  @override
+  Future<void> delete(String id) async {
+    stored.remove(id);
+    headers.remove(id);
+  }
 }
 
 const _relay = TavernChannel(id: 'c1', name: 'Relay', baseUrl: 'https://relay.example/v1', model: 'gpt-x');
@@ -153,9 +164,10 @@ void main() {
         TavernSettingsController.textSizeKey: 17.0,
         TavernSettingsController.costAlertKey: 0.3,
       });
-      final container = ProviderContainer();
+      final container = ProviderContainer(overrides: [tavernChannelKeysProvider.overrideWithValue(_Keys())]);
       addTearDown(container.dispose);
       container.read(tavernSettingsProvider);
+      await Future<void>.delayed(Duration.zero);
       await Future<void>.delayed(Duration.zero);
       final settings = container.read(tavernSettingsProvider);
       expect(settings.activeChannel, _relay);
@@ -324,9 +336,42 @@ void main() {
     expect(tavernParseHeaders(''), isEmpty);
     expect(tavernParseHeaders('no colon here'), isNull);
     expect(tavernParseHeaders('Bad Name: x'), isNull);
-    final relay = _relay.copyWith(headers: {'X-Title': 'T'});
-    expect(TavernChannel.listFromJson(TavernChannel.listToJson([relay])), [relay]);
-    expect(tavernHeaderLines(relay.headers), 'X-Title: T');
+    final relay = _relay.copyWith(headers: {'api-key': 'secret'});
+    expect(tavernHeaderLines(relay.headers), 'api-key: secret');
+    // Preferences never see them: they go beside the key.
+    expect(TavernChannel.listToJson([relay]), isNot(contains('secret')));
+  });
+
+  test('headers are kept beside the key and read back with the channel', () async {
+    SharedPreferences.setMockInitialValues({});
+    final keys = _Keys();
+    final container = ProviderContainer(overrides: [tavernChannelKeysProvider.overrideWithValue(keys)]);
+    addTearDown(container.dispose);
+    container.read(tavernSettingsProvider);
+    await Future<void>.delayed(Duration.zero);
+    await container.read(tavernSettingsProvider.notifier).saveChannel(_relay.copyWith(headers: {'api-key': 'secret'}));
+    expect(keys.headers['c1'], {'api-key': 'secret'});
+
+    final again = ProviderContainer(overrides: [tavernChannelKeysProvider.overrideWithValue(keys)]);
+    addTearDown(again.dispose);
+    again.read(tavernSettingsProvider);
+    await Future<void>.delayed(Duration.zero);
+    await Future<void>.delayed(Duration.zero);
+    expect(again.read(tavernSettingsProvider).channels.single.headers, {'api-key': 'secret'});
+  });
+
+  test('a channel of its own needs no DeepSeek key to send', () async {
+    SharedPreferences.setMockInitialValues({
+      TavernSettingsController.channelsKey: TavernChannel.listToJson([_relay]),
+    });
+    final container = ProviderContainer(overrides: [tavernChannelKeysProvider.overrideWithValue(_Keys())]);
+    addTearDown(container.dispose);
+    container.read(tavernSettingsProvider);
+    await Future<void>.delayed(Duration.zero);
+    await Future<void>.delayed(Duration.zero);
+    expect(container.read(tavernNeedsKeyProvider), isTrue); // DeepSeek's own, no key in the app
+    await container.read(tavernSettingsProvider.notifier).setChannel('c1');
+    expect(container.read(tavernNeedsKeyProvider), isFalse);
   });
 
   test('the engine is told the channel in use, its headers, and the helper model', () async {

@@ -1280,7 +1280,7 @@
   "tavernFrequencyPenalty": "Frequency penalty",
   "tavernPresetSampling": "Sampling",
   "tavernChannelHeaders": "Request headers (optional)",
-  "tavernChannelHeadersNote": "One per line, as “Name: value”. Kept in plain settings: put secrets in the API key, not here.",
+  "tavernChannelHeadersNote": "One per line, as “Name: value”. Kept in this phone's secure storage, like the key.",
   "tavernChannelHeadersInvalid": "Write each line as “Name: value”",
   "tavernAuxiliary": "Helper model",
   "tavernAuxiliaryNote": "Used for the director, picking who speaks in a group, and secrets",

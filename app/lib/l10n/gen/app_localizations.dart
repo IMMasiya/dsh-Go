@@ -39767,7 +39767,7 @@ abstract class L10n {
   /// No description provided for @tavernChannelHeadersNote.
   ///
   /// In zh, this message translates to:
-  /// **'每行一个，写成「名称: 值」。存在普通设置里，别放密钥，密钥填 API Key。'**
+  /// **'每行一个，写成「名称: 值」。和 Key 一样存在这台手机的安全存储里。'**
   String get tavernChannelHeadersNote;
 
   /// No description provided for @tavernChannelHeadersInvalid.

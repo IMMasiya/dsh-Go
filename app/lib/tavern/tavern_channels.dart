@@ -40,9 +40,9 @@ class TavernChannel {
   /// on `/beta` and the 思考 switch. Off, a plain Chat Completions endpoint.
   final bool deepseek;
 
-  /// Sent with every request (OpenRouter's `HTTP-Referer`, a gateway's
-  /// tenant). Kept in preferences with the channel: not for secrets, which go
-  /// in the key.
+  /// Sent with every request (OpenRouter's `HTTP-Referer`, Azure's
+  /// `api-key`). They may carry a secret, so they are kept beside the key in
+  /// [TavernChannelKeys], never in preferences.
   final Map<String, String> headers;
 
   /// `api.example.com`, for a row's second line.
@@ -63,32 +63,13 @@ class TavernChannel {
     headers: headers ?? this.headers,
   );
 
-  Map<String, Object?> toJson() => {
-    'id': id,
-    'name': name,
-    'baseUrl': baseUrl,
-    'model': model,
-    'deepseek': deepseek,
-    if (headers.isNotEmpty) 'headers': headers,
-  };
+  /// What preferences keep: everything but [headers].
+  Map<String, Object?> toJson() => {'id': id, 'name': name, 'baseUrl': baseUrl, 'model': model, 'deepseek': deepseek};
 
   /// Null for an entry that is not a channel (preferences written by hand).
   static TavernChannel? fromJson(Object? json) => switch (json) {
     {'id': final String id, 'name': final String name, 'baseUrl': final String baseUrl, 'model': final String model} =>
-      TavernChannel(
-        id: id,
-        name: name,
-        baseUrl: baseUrl,
-        model: model,
-        deepseek: json['deepseek'] == true,
-        headers: switch (json['headers']) {
-          final Map<String, Object?> headers => {
-            for (final MapEntry(:key, :value) in headers.entries)
-              if (value is String) key: value,
-          },
-          _ => const {},
-        },
-      ),
+      TavernChannel(id: id, name: name, baseUrl: baseUrl, model: model, deepseek: json['deepseek'] == true),
     _ => null,
   };
 
@@ -153,9 +134,17 @@ String? tavernBaseUrlProblem(String text) {
 }
 
 /// The channels' keys, by channel id.
+/// The channels' secrets by channel id: the key, and the request headers.
 abstract class TavernChannelKeys {
   Future<String?> read(String id);
   Future<void> write(String id, String key);
+
+  Future<Map<String, String>> readHeaders(String id);
+
+  /// Empty removes them.
+  Future<void> writeHeaders(String id, Map<String, String> headers);
+
+  /// Both the key and the headers.
   Future<void> delete(String id);
 }
 
@@ -163,6 +152,7 @@ class SecureTavernChannelKeys implements TavernChannelKeys {
   const SecureTavernChannelKeys([this._storage = const FlutterSecureStorage()]);
 
   static const prefix = 'tavern_channel_key_';
+  static const headersPrefix = 'tavern_channel_headers_';
   final FlutterSecureStorage _storage;
 
   @override
@@ -172,7 +162,34 @@ class SecureTavernChannelKeys implements TavernChannelKeys {
   Future<void> write(String id, String key) => _storage.write(key: '$prefix$id', value: key);
 
   @override
-  Future<void> delete(String id) => _storage.delete(key: '$prefix$id');
+  Future<Map<String, String>> readHeaders(String id) async =>
+      switch (_decode(await _storage.read(key: '$headersPrefix$id'))) {
+        final Map<String, Object?> headers => {
+          for (final MapEntry(:key, :value) in headers.entries)
+            if (value is String) key: value,
+        },
+        _ => const {},
+      };
+
+  @override
+  Future<void> writeHeaders(String id, Map<String, String> headers) => headers.isEmpty
+      ? _storage.delete(key: '$headersPrefix$id')
+      : _storage.write(key: '$headersPrefix$id', value: jsonEncode(headers));
+
+  @override
+  Future<void> delete(String id) async {
+    await _storage.delete(key: '$prefix$id');
+    await _storage.delete(key: '$headersPrefix$id');
+  }
+
+  static Object? _decode(String? stored) {
+    if (stored == null) return null;
+    try {
+      return jsonDecode(stored);
+    } on FormatException {
+      return null;
+    }
+  }
 }
 
 final tavernChannelKeysProvider = Provider<TavernChannelKeys>((ref) => const SecureTavernChannelKeys());
@@ -200,12 +217,25 @@ class TavernModelsException implements Exception {
 
 /// The model ids the endpoint lists, sorted; an endpoint without `/models`
 /// (some relays) fails, and the person types the model instead.
-Future<List<String>> fetchTavernModels(String baseUrl, String? key, {http.Client? client}) async {
+/// [headers] go with it, as with every request; the key is the Authorization.
+Future<List<String>> fetchTavernModels(
+  String baseUrl,
+  String? key, {
+  Map<String, String> headers = const {},
+  http.Client? client,
+}) async {
   final own = client == null;
   final http.Client c = client ?? http.Client();
   try {
     final response = await c
-        .get(tavernModelsUrl(baseUrl), headers: {if (key != null && key.isNotEmpty) 'Authorization': 'Bearer $key'})
+        .get(
+          tavernModelsUrl(baseUrl),
+          headers: {
+            for (final MapEntry(:key, :value) in headers.entries)
+              if (key.toLowerCase() != 'authorization') key: value,
+            if (key != null && key.isNotEmpty) 'Authorization': 'Bearer $key',
+          },
+        )
         .timeout(const Duration(seconds: 20));
     if (response.statusCode != 200) throw TavernModelsException('HTTP ${response.statusCode}');
     final body = jsonDecode(utf8.decode(response.bodyBytes));

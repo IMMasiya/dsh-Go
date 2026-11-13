@@ -227,7 +227,11 @@ class TavernSettingsController extends Notifier<TavernSettings> {
     try {
       final prefs = await SharedPreferences.getInstance();
       final model = prefs.getString(modelKey)?.trim() ?? '';
-      final channels = TavernChannel.listFromJson(prefs.getString(channelsKey));
+      final keys = ref.read(tavernChannelKeysProvider);
+      final channels = [
+        for (final c in TavernChannel.listFromJson(prefs.getString(channelsKey)))
+          c.copyWith(headers: await keys.readHeaders(c.id)),
+      ];
       final channel = prefs.getString(channelKey);
       final auxiliary = prefs.getString(auxiliaryKey);
       loaded = TavernSettings(
@@ -278,10 +282,12 @@ class TavernSettingsController extends Notifier<TavernSettings> {
   /// Adds [channel], or replaces the one with its id. [key] replaces its key
   /// when given; empty removes it (an endpoint that needs none).
   Future<void> saveChannel(TavernChannel channel, {String? key}) async {
+    final keys = ref.read(tavernChannelKeysProvider);
+    // A key cleared clears the headers too: they are written after it.
     if (key != null) {
-      final keys = ref.read(tavernChannelKeysProvider);
       key.isEmpty ? await keys.delete(channel.id) : await keys.write(channel.id, key);
     }
+    await keys.writeHeaders(channel.id, channel.headers);
     final channels = [...state.channels];
     final at = channels.indexWhere((c) => c.id == channel.id);
     at < 0 ? channels.add(channel) : channels[at] = channel;

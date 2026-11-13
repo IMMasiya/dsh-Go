@@ -126,6 +126,9 @@ class _TavernChannelEditPageState extends ConsumerState<TavernChannelEditPage> {
   var _obscure = true;
   var _fetching = false;
   var _saved = false;
+
+  /// A save under way: Save waits, so two taps make one channel.
+  var _saving = false;
   String? _baseUrlError;
   String? _modelError;
   String? _headersError;
@@ -181,7 +184,9 @@ class _TavernChannelEditPageState extends ConsumerState<TavernChannelEditPage> {
       _fetchNote = null;
     });
     try {
-      final models = await fetchTavernModels(_baseUrl.text.trim(), await _currentKey());
+      final headers = tavernParseHeaders(_headers.text);
+      if (headers == null) return setState(() => _headersError = l10n.tavernChannelHeadersInvalid);
+      final models = await fetchTavernModels(_baseUrl.text.trim(), await _currentKey(), headers: headers);
       if (!mounted) return;
       if (models.isEmpty) return setState(() => _fetchNote = l10n.tavernChannelNoModels);
       final picked = await _pickModel(context, models, _model.text.trim());
@@ -198,6 +203,7 @@ class _TavernChannelEditPageState extends ConsumerState<TavernChannelEditPage> {
 
   Future<void> _paste() async {
     final text = (await Clipboard.getData(Clipboard.kTextPlain))?.text?.trim();
+    if (!mounted) return;
     if (text != null && text.isNotEmpty) _key.text = text;
   }
 
@@ -225,7 +231,8 @@ class _TavernChannelEditPageState extends ConsumerState<TavernChannelEditPage> {
       _modelError = model.isEmpty ? l10n.tavernChannelModelMissing : null;
       _headersError = headers == null ? l10n.tavernChannelHeadersInvalid : null;
     });
-    if (_baseUrlError != null || _modelError != null || headers == null) return;
+    if (_baseUrlError != null || _modelError != null || headers == null || _saving) return;
+    setState(() => _saving = true);
     final name = _name.text.trim();
     final channel = TavernChannel(
       id: widget.channel?.id ?? 'c${DateTime.now().microsecondsSinceEpoch}',
@@ -239,8 +246,12 @@ class _TavernChannelEditPageState extends ConsumerState<TavernChannelEditPage> {
     final key = _key.text.trim();
     // A new channel saves whatever key was typed (none for a local server);
     // an edit keeps the stored key unless a new one was typed.
-    await controller.saveChannel(channel, key: widget.channel == null || key.isNotEmpty ? key : null);
-    if (widget.channel == null) await controller.setChannel(channel.id);
+    try {
+      await controller.saveChannel(channel, key: widget.channel == null || key.isNotEmpty ? key : null);
+      if (widget.channel == null) await controller.setChannel(channel.id);
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
     _saved = true;
     if (mounted) Navigator.of(context).pop();
   }
@@ -432,7 +443,7 @@ class _TavernChannelEditPageState extends ConsumerState<TavernChannelEditPage> {
             child: FormBottomBar(
               child: FilledButton(
                 key: const ValueKey('tavern-channel-save'),
-                onPressed: () => unawaited(_save()),
+                onPressed: _saving ? null : () => unawaited(_save()),
                 child: Text(l10n.commonSave),
               ),
             ),

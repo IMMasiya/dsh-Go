@@ -13434,7 +13434,7 @@
   "tavernFrequencyPenalty": "频率惩罚",
   "tavernPresetSampling": "采样",
   "tavernChannelHeaders": "请求头（可选）",
-  "tavernChannelHeadersNote": "每行一个，写成「名称: 值」。存在普通设置里，别放密钥，密钥填 API Key。",
+  "tavernChannelHeadersNote": "每行一个，写成「名称: 值」。和 Key 一样存在这台手机的安全存储里。",
   "tavernChannelHeadersInvalid": "每行写成「名称: 值」",
   "tavernAuxiliary": "辅助模型",
   "tavernAuxiliaryNote": "导演、群聊选人、秘密这些后台请求用它",

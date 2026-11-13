@@ -22969,7 +22969,7 @@ class L10nEn extends L10n {
 
   @override
   String get tavernChannelHeadersNote =>
-      'One per line, as “Name: value”. Kept in plain settings: put secrets in the API key, not here.';
+      'One per line, as “Name: value”. Kept in this phone\'s secure storage, like the key.';
 
   @override
   String get tavernChannelHeadersInvalid => 'Write each line as “Name: value”';

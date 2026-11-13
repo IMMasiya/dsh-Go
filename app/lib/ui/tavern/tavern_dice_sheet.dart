@@ -94,6 +94,8 @@ class _TavernDiceSheetState extends ConsumerState<TavernDiceSheet> {
   bool get _rolling => _tumble != null || _waiting;
 
   void _choose(TavernDice dice) {
+    // A roll still out lands as the dice it was asked with, not as these.
+    if (_rolling) return;
     ref.read(tavernDiceProvider.notifier).set(dice);
     // A new choice: what was rolled before no longer goes with it.
     _tumble?.cancel();
@@ -162,11 +164,13 @@ class _TavernDiceSheetState extends ConsumerState<TavernDiceSheet> {
       }
     });
     final shortest = Future<void>.delayed(reduced ? Duration.zero : TavernDiceSheet.tumble);
-    if (keep) await tavernKeepRollIntent(intent);
     TavernRoll? landed;
     String? note;
     var pending = false;
     try {
+      // Not sent unless kept: a roll the app could not keep could not be
+      // asked about again.
+      if (keep) await tavernKeepRollIntent(intent);
       final receipt = await intent.submit(tavern);
       switch (receipt.committed) {
         case true:
@@ -194,6 +198,9 @@ class _TavernDiceSheetState extends ConsumerState<TavernDiceSheet> {
           _ => l10n.tavernDiceFailed(e.message),
         };
       }
+    } on Exception catch (e) {
+      // Keeping it failed (the app's storage), before anything was sent.
+      note = l10n.tavernDiceNotSaved('$e');
     }
     await shortest;
     if (!mounted) return;

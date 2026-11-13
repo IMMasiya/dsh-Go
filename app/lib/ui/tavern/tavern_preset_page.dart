@@ -102,9 +102,13 @@ List<TavernPresetPrompt> tavernPresetPrompts(Map<String, Object?> raw) {
 }
 
 /// A sampling number as a preset has it; ST writes some as strings ("0.9").
+/// An imported preset can say "Infinity": that is no setting either.
 num _number(Object? value, num fallback) => switch (value) {
-  final num n => n,
-  final String s => num.tryParse(s) ?? fallback,
+  final num n when n.isFinite => n,
+  final String s => switch (num.tryParse(s)) {
+    final n? when n.isFinite => n,
+    _ => fallback,
+  },
   _ => fallback,
 };
 
