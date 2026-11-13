@@ -50,6 +50,8 @@ class AgentAvatar extends StatelessWidget {
       id: name.trim(),
       size: disc == null ? size : size * 0.82,
       state: working ? fx.BotAvatarState.working : fx.BotAvatarState.idle,
+      // Glossy plastic: drawn on the first frame; plush fur bakes in the background.
+      shading: fx.BotAvatarShading.plastic,
       excludeFromSemantics: true,
     );
     if (disc == null) return bot;

@@ -68,13 +68,15 @@ class BotAvatarBakery extends ChangeNotifier {
   /// Whether any bake is still under way.
   bool get pending => _formJobs.isNotEmpty || _furJobs.isNotEmpty;
 
-  /// The form for an outline, or null while it bakes (the bake starts here).
+  /// The form for an outline. A form takes a few milliseconds, so it is made
+  /// here: the first frame already has the body (only the fur waits).
   BotAvatarForm? form(String key, List<Float64List> polys, int n, double halfDepth) {
     final id = '$key|$n|${_jsRound(halfDepth)}';
     final hit = _forms[id];
     if (hit != null) return hit;
-    formAsync(key, polys, n, halfDepth);
-    return null;
+    final made = _bakeForm(_FormJob(polys, n, halfDepth));
+    if (_forms.length >= 48) _forms.clear();
+    return _forms[id] = made;
   }
 
   /// The form for an outline, when it lands.

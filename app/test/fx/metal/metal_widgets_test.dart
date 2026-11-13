@@ -103,7 +103,10 @@ void main() {
 
   testWidgets('MetalBadge keeps the Figma size and grows for longer labels', (tester) async {
     await tester.pumpWidget(_host(const MetalBadge()));
-    expect(tester.getSize(find.byType(MetalBadge)), const Size(45, 25));
+    // Within half a pixel: label widths differ a little between font builds.
+    final first = tester.getSize(find.byType(MetalBadge));
+    expect(first.width, moreOrLessEquals(45, epsilon: 0.5));
+    expect(first.height, 25);
     await tester.pumpWidget(_host(const MetalBadge(text: '新版本可用', scale: 1.2)));
     final size = tester.getSize(find.byType(MetalBadge));
     expect(size.height, 30);

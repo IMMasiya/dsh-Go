@@ -47,6 +47,8 @@ class BotAvatar extends ConsumerWidget {
             size: size,
             color: botInk(context, bot.ink),
             state: working ? fx.BotAvatarState.working : fx.BotAvatarState.idle,
+            // Glossy plastic: drawn on the first frame; plush fur bakes in the background.
+            shading: fx.BotAvatarShading.plastic,
             excludeFromSemantics: true,
           )
         : BotMonogram(name: bot.name, color: bot.ink, size: size);
