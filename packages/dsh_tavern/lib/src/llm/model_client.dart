@@ -162,7 +162,8 @@ class TavernModelClient {
   final Duration idleTimeout;
 
   /// [body] is the final, inspected request from the assembler. This method
-  /// only supplies the configured model and transport stream setting.
+  /// supplies transport settings and removes DeepSeek-only wire fields for
+  /// an OpenAI-compatible endpoint.
   /// `stream: false` presets are also supported: one text/reasoning delta.
   /// Connection errors while sending and HTTP 5xx get at most two retries,
   /// after 250 and 500 ms. Accepted responses and 4xx are not retried; waiting
@@ -179,16 +180,19 @@ class TavernModelClient {
     String? key;
     try {
       cancellation.check();
+      final headers = Map<String, String>.of(config.headers);
       key = await cancellation.wait(config.apiKey());
       cancellation.check();
       key = key?.trim();
-      if (key == null || key.isEmpty) {
+      if (config.deepseek && (key == null || key.isEmpty)) {
         throw const TavernModelException(TavernFailure.noKey, 'no_api_key');
       }
       final payload = <String, Object?>{...body, 'model': config.model};
       payload.putIfAbsent('stream', () => true);
       if (config.deepseek) {
         payload.putIfAbsent('thinking', () => {'type': config.thinking ? 'enabled' : 'disabled'});
+      } else {
+        _normalizeOpenAiBody(payload);
       }
       final encodedBody = jsonEncode(payload);
       final uri = endpoint(config);
@@ -198,6 +202,7 @@ class TavernModelClient {
             config,
             uri,
             key,
+            headers,
             encodedBody,
             payload['stream'] != false,
             cancellation,
@@ -237,7 +242,8 @@ class TavernModelClient {
   Stream<ModelDelta> _generateAttempt(
     TavernModelConfig config,
     Uri uri,
-    String key,
+    String? key,
+    Map<String, String> headers,
     String encodedBody,
     bool streaming,
     ModelCancellation cancellation, {
@@ -248,7 +254,12 @@ class TavernModelClient {
     try {
       cancellation.check();
       final request = http.AbortableRequest('POST', uri, abortTrigger: cancellation.whenCancelled)
-        ..headers.addAll({'Content-Type': 'application/json', 'Authorization': 'Bearer $key'})
+        ..headers.addAll({
+          'Content-Type': 'application/json',
+          for (final entry in headers.entries)
+            if (entry.key.toLowerCase() != 'authorization') entry.key: entry.value,
+          if (key != null && key.isNotEmpty) 'Authorization': 'Bearer $key',
+        })
         ..body = encodedBody;
       client = _clientFactory();
       cancellation.check();
@@ -285,7 +296,7 @@ class TavernModelClient {
           // interrupted. Do not substitute raw transport exception messages.
           error = 'error_response_body_unavailable';
         }
-        final failure = _apiError(response.statusCode, error, key);
+        final failure = _apiError(response.statusCode, error, key, headers.values);
         if (response.statusCode >= 500 && response.statusCode < 600) {
           throw _RetryableModelException(failure);
         }
@@ -306,7 +317,7 @@ class TavernModelClient {
           );
           _observeUsage(cancellation, usageReport);
         }
-        if (result['error'] != null) throw _apiError(200, text, key);
+        if (result['error'] != null) throw _apiError(200, text, key, headers.values);
         final choice = _firstChoice(result);
         final message = _object(choice['message']);
         // The complete nonstream body and actual message are already present.
@@ -316,7 +327,7 @@ class TavernModelClient {
           _observeUsage(cancellation, usageReport);
         }
         final assistant = _AssistantCollector('nonstream_message')..add(message, streaming: false);
-        if (message['reasoning_content'] case final String reasoning when reasoning.isNotEmpty) {
+        if (_reasoningText(message) case final String reasoning when reasoning.isNotEmpty) {
           cancellation.check();
           yield ModelReasoning(reasoning);
         }
@@ -375,11 +386,11 @@ class TavernModelClient {
           );
           _observeUsage(cancellation, usageReport);
         }
-        if (data['error'] != null) throw _apiError(200, event, key);
+        if (data['error'] != null) throw _apiError(200, event, key, headers.values);
         final choice = _firstChoice(data);
         final delta = _object(choice['delta']);
         assistant.add(delta, streaming: true);
-        if (delta['reasoning_content'] case final String reasoning when reasoning.isNotEmpty) {
+        if (_reasoningText(delta) case final String reasoning when reasoning.isNotEmpty) {
           cancellation.check();
           yield ModelReasoning(reasoning);
         }
@@ -471,6 +482,40 @@ Stream<String> decodeServerSentEvents(Stream<List<int>> bytes) async* {
 Map<String, Object?> _object(Object? value) {
   if (value is Map<String, dynamic>) return value;
   return const {};
+}
+
+// The transport boundary also covers custom callers of TavernModelClient.
+// Copy message/tool maps without mutating the caller's inspected body.
+void _normalizeOpenAiBody(Map<String, Object?> body) {
+  body.remove('thinking');
+  if (body['messages'] case final List<Object?> messages) {
+    body['messages'] = [
+      for (final message in messages)
+        if (message is Map<String, Object?>)
+          Map<String, Object?>.of(message)
+            ..remove('prefix')
+            ..remove('reasoning_content')
+            ..remove('reasoning')
+        else
+          message,
+    ];
+  }
+  if (body['tools'] case final List<Object?> tools) {
+    body['tools'] = [
+      for (final tool in tools)
+        if (tool is Map<String, Object?> && tool['function'] is Map<String, Object?>)
+          {...tool, 'function': Map<String, Object?>.of(tool['function']! as Map<String, Object?>)..remove('strict')}
+        else
+          tool,
+    ];
+  }
+}
+
+String? _reasoningText(Map<String, Object?> message) {
+  final content = message['reasoning_content'];
+  if (content is String && content.isNotEmpty) return content;
+  final alias = message['reasoning'];
+  return alias is String ? alias : null;
 }
 
 Map<String, Object?> _firstChoice(Map<String, Object?> response) {
@@ -635,7 +680,7 @@ bool _isContextLengthError(String body) {
   }
 }
 
-TavernModelException _apiError(int status, String body, String key) {
+TavernModelException _apiError(int status, String body, String? key, Iterable<String> headerValues) {
   final kind = switch (status) {
     401 || 403 => TavernFailure.badKey,
     402 => TavernFailure.insufficientBalance,
@@ -645,7 +690,12 @@ TavernModelException _apiError(int status, String body, String key) {
     400 || 422 => TavernFailure.invalidParameters,
     _ => TavernFailure.server,
   };
-  var detail = body.replaceAll(key, '[redacted]');
+  var detail = body;
+  for (final value in [?key, ...headerValues]) {
+    if (value.isEmpty) continue;
+    final encoded = jsonEncode(value);
+    detail = detail.replaceAll(value, '[redacted]').replaceAll(encoded.substring(1, encoded.length - 1), '[redacted]');
+  }
   detail = detail.replaceAll(RegExp(r'Bearer\s+[^\s"<>]+', caseSensitive: false), 'Bearer [redacted]');
   if (detail.length > 512) detail = detail.substring(0, 512);
   return TavernModelException(kind, 'HTTP $status: $detail');

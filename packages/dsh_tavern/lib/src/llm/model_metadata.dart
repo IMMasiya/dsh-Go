@@ -299,12 +299,10 @@ class _AssistantCollector {
   final String source;
   final _calls = <int, _AssistantCallBuffer>{};
   final _content = StringBuffer();
-  final _reasoning = StringBuffer();
+  final _reasoning = <String, StringBuffer?>{};
   String? _role;
   var _contentPresent = false;
   var _contentString = false;
-  var _reasoningPresent = false;
-  var _reasoningString = false;
   var _toolsPresent = false;
   var _toolsArrayObserved = false;
   var _bytes = 0;
@@ -317,7 +315,7 @@ class _AssistantCollector {
 
   void add(Map<String, Object?> message, {required bool streaming, List<int>? callIndexes}) {
     for (final key in message.keys) {
-      if (!const ['role', 'content', 'reasoning_content', 'tool_calls'].contains(key)) _unsupported = true;
+      if (!const ['role', 'content', 'reasoning_content', 'reasoning', 'tool_calls'].contains(key)) _unsupported = true;
     }
     if (message.containsKey('role')) {
       final role = message['role'];
@@ -339,14 +337,14 @@ class _AssistantCollector {
         _invalidMessage = true;
       }
     }
-    if (message.containsKey('reasoning_content')) {
-      _reasoningPresent = true;
-      final reasoning = message['reasoning_content'];
+    for (final field in const ['reasoning_content', 'reasoning']) {
+      if (!message.containsKey(field)) continue;
+      final reasoning = message[field];
       if (reasoning is String) {
-        _reasoningString = true;
-        _reasoning.write(reasoning);
-      } else if (reasoning != null) {
-        _invalidMessage = true;
+        (_reasoning[field] ??= StringBuffer()).write(reasoning);
+      } else {
+        _reasoning.putIfAbsent(field, () => null);
+        if (reasoning != null) _invalidMessage = true;
       }
     }
     final tools = message['tool_calls'];
@@ -481,7 +479,7 @@ class _AssistantCollector {
       'wireMessage': {
         if (_role != null) 'role': _role,
         if (_contentPresent) 'content': _contentString ? _content.toString() : null,
-        if (_reasoningPresent) 'reasoning_content': _reasoningString ? _reasoning.toString() : null,
+        for (final entry in _reasoning.entries) entry.key: entry.value?.toString(),
         if (_toolsPresent) 'tool_calls': _toolsArrayObserved ? wireCalls : null,
       },
       'calls': calls,

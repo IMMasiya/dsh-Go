@@ -1,5 +1,15 @@
 part of 'engine.dart';
 
+TavernModelConfig _auxiliaryModelConfig(TavernModelConfig config) =>
+    config.auxiliary ??
+    TavernModelConfig(
+      apiKey: config.apiKey,
+      baseUrl: config.baseUrl,
+      model: config.deepseek ? 'deepseek-flash' : config.model,
+      deepseek: config.deepseek,
+      headers: config.headers,
+    );
+
 Map<String, Object?> _directorIssue(String code, {String? id}) => {'kind': 'director', 'code': code, 'id': ?id};
 
 Object? _directorCanonical(Object? value) {
@@ -615,14 +625,7 @@ class _DirectorCoordinator {
       if (input.length > 1024 * 1024 || utf8.encode(input).length > 1024 * 1024) {
         throw const TavernModelException(TavernFailure.contextTooLong, 'director_input_limit');
       }
-      final original = job.originalConfig;
-      final config = TavernModelConfig(
-        apiKey: original.apiKey,
-        baseUrl: original.baseUrl,
-        model: original.deepseek ? 'deepseek-flash' : original.model,
-        deepseek: original.deepseek,
-        thinking: false,
-      );
+      final config = _auxiliaryModelConfig(job.originalConfig);
       final body = <String, Object?>{
         'messages': [
           {'role': 'system', 'content': director_core.directorSystemPrompt},
@@ -630,12 +633,14 @@ class _DirectorCoordinator {
         ],
         'stream': false,
         'max_tokens': 4096,
-        if (config.deepseek) 'thinking': {'type': 'disabled'},
+        if (config.deepseek) 'thinking': {'type': config.thinking ? 'enabled' : 'disabled'},
         'tools': [director_core.directToolDefinition(strict: config.deepseek)],
-        'tool_choice': {
-          'type': 'function',
-          'function': {'name': 'direct'},
-        },
+        'tool_choice': config.deepseek && config.thinking
+            ? 'auto'
+            : {
+                'type': 'function',
+                'function': {'name': 'direct'},
+              },
       };
       final batch = await _receive(job, config, body);
       job.cancellation.check();

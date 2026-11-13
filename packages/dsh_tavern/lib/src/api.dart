@@ -397,6 +397,8 @@ class TavernModelConfig {
     this.model = 'deepseek-flash',
     this.deepseek = true,
     this.thinking = false,
+    this.headers = const {},
+    this.auxiliary,
   });
 
   final Future<String?> Function() apiKey;
@@ -408,6 +410,16 @@ class TavernModelConfig {
   /// endpoint.
   final bool deepseek;
   final bool thinking;
+
+  /// Additional HTTP headers, never included in inspection data or logs.
+  /// Authorization is supplied by [apiKey], including its absence for local
+  /// OpenAI-compatible services that do not require a key.
+  final Map<String, String> headers;
+
+  /// Configuration for director, secret and other helper requests. Null keeps
+  /// the current channel, using DeepSeek flash or the configured generic model
+  /// with thinking disabled. An explicit configuration is used as supplied.
+  final TavernModelConfig? auxiliary;
 }
 
 /// The tavern. One per app; [open] it on the app's support directory.

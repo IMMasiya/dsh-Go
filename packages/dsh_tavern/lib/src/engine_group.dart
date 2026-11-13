@@ -43,15 +43,7 @@ TavernGroupChat _groupCopy(
 );
 
 TavernModelConfig _groupModelConfig(TavernModelConfig config, TavernGroupModelRole role) =>
-    role == TavernGroupModelRole.main
-    ? config
-    : TavernModelConfig(
-        apiKey: config.apiKey,
-        baseUrl: config.baseUrl,
-        model: config.deepseek ? 'deepseek-flash' : config.model,
-        deepseek: config.deepseek,
-        thinking: false,
-      );
+    role == TavernGroupModelRole.main ? config : _auxiliaryModelConfig(config);
 
 class _GroupCoordinator {
   _GroupCoordinator(this.engine);

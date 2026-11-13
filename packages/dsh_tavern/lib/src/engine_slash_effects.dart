@@ -773,6 +773,8 @@ extension _ScriptMacroEffects on _ScriptCoordinator {
       model: config.model,
       deepseek: config.deepseek,
       thinking: config.thinking,
+      headers: config.headers,
+      auxiliary: config.auxiliary,
     );
     late final Map<String, Object?> settings, card, regexPreset;
     late final ChatPreset promptPreset;

@@ -185,6 +185,8 @@ extension _ScriptGenerationOperations on _ScriptCoordinator {
         model: config.model,
         deepseek: config.deepseek,
         thinking: config.thinking,
+        headers: config.headers,
+        auxiliary: config.auxiliary,
       ),
       engine._clock(),
     );
@@ -389,6 +391,8 @@ extension _ScriptGenerationOperations on _ScriptCoordinator {
       model: config.model,
       deepseek: config.deepseek,
       thinking: config.thinking,
+      headers: config.headers,
+      auxiliary: config.auxiliary,
     );
     try {
       record.cancellation.check();

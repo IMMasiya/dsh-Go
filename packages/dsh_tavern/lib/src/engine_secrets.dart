@@ -544,14 +544,7 @@ Future<void> _runSecretDirector(_DirectorCoordinator coordinator, _DirectorJob j
     'slots': capability.catalog,
   });
   if (utf8.encode(input).length > 1024 * 1024) throw const FormatException('Secret input exceeds 1 MiB.');
-  final original = job.originalConfig;
-  final config = TavernModelConfig(
-    apiKey: original.apiKey,
-    baseUrl: original.baseUrl,
-    model: original.deepseek ? 'deepseek-flash' : original.model,
-    deepseek: original.deepseek,
-    thinking: false,
-  );
+  final config = _auxiliaryModelConfig(job.originalConfig);
   final tool = capability.strictTool();
   if (tool == null) throw const FormatException('No secret slot is available.');
   if (!config.deepseek) tool['function'] = _map(tool['function'])..remove('strict');
@@ -568,12 +561,14 @@ Future<void> _runSecretDirector(_DirectorCoordinator coordinator, _DirectorJob j
     ],
     'stream': false,
     'max_tokens': 4096,
-    if (config.deepseek) 'thinking': {'type': 'disabled'},
+    if (config.deepseek) 'thinking': {'type': config.thinking ? 'enabled' : 'disabled'},
     'tools': [tool],
-    'tool_choice': {
-      'type': 'function',
-      'function': {'name': 'propose_secrets'},
-    },
+    'tool_choice': config.deepseek && config.thinking
+        ? 'auto'
+        : {
+            'type': 'function',
+            'function': {'name': 'propose_secrets'},
+          },
   };
   final batch = await coordinator._receive(job, config, body);
   job.cancellation.check();
