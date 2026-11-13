@@ -13,6 +13,9 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../l10n/l10n.dart';
+import '../../speech/read_aloud.dart';
+import '../../speech/voice_cloud.dart';
+import '../speech/speech_ui.dart';
 import '../../state/connection_state.dart';
 import '../../state/settings_state.dart';
 import '../../state/voice_model_state.dart';
@@ -117,6 +120,20 @@ class _TavernChatPageState extends ConsumerState<TavernChatPage> {
   /// The page the stage last played, played again when it (re)loads.
   TavernPage? _staged;
   late final Tavern _tavern = ref.read(tavernProvider);
+
+  /// Held from the start: the page stops what it read aloud as it closes,
+  /// when it can no longer read providers.
+  late final ReadAloudController _readAloud = ref.read(readAloudProvider.notifier);
+
+  /// Stops reading aloud if what is being read is one of the tavern's lines,
+  /// and drops a read still waiting for its display text.
+  void _quietTavern() {
+    _readAsk++;
+    _readAloud.stopWhere((id) => id.startsWith('tavern:'));
+  }
+
+  /// Counts read-aloud asks: one overtaken while its text was made is dropped.
+  int _readAsk = 0;
   StreamSubscription<void>? _changes;
   StreamSubscription<Object?>? _turn;
 
@@ -246,6 +263,7 @@ class _TavernChatPageState extends ConsumerState<TavernChatPage> {
   @override
   void initState() {
     super.initState();
+    _readAloud; // Bound now: dispose can't read providers.
     _changes = _tavern.pathChanges(widget.chatId).listen((_) => unawaited(_reload()));
     _director = _tavern.watchDirector(widget.chatId).listen(
       (view) {
@@ -269,6 +287,8 @@ class _TavernChatPageState extends ConsumerState<TavernChatPage> {
       input: _input,
       bridge: ref.read(voiceBridgeProvider),
       mode: () => ref.read(voiceSettingsProvider.notifier).ready(),
+      cloud: (mode) => ref.read(voiceCloudProvider)(mode),
+      cloudLikely: () => ref.read(voiceCloudLikelyProvider)(),
       // The voice model lives in the on-device engine: it counts for that host only.
       modelReady: () =>
           (_connection?.isLocal ?? false) && ref.read(voiceModelProvider).status == VoiceModelStatus.ready,
@@ -287,6 +307,9 @@ class _TavernChatPageState extends ConsumerState<TavernChatPage> {
     // A reply goes on without the page (engine T24) and is picked up when it
     // opens again; a line being written into this page's box has nowhere to go.
     if (_running && _drafting) _tavern.stop(widget.chatId);
+    // Its lines are not read on after the story is left (providers change after the tree settles).
+    final readAloud = _readAloud;
+    scheduleMicrotask(() => readAloud.stopWhere((id) => id.startsWith('tavern:')));
     unawaited(_turn?.cancel());
     _stream.dispose();
     _live.removeListener(_feedCanvas);
@@ -777,6 +800,7 @@ class _TavernChatPageState extends ConsumerState<TavernChatPage> {
 
   void _send() {
     if (_running) return;
+    _quietTavern();
     // A slash command (/sys, /send: no model, so no key needed).
     final slash = tavernSlashOf(_input.text);
     if (slash case (command: TavernSlash.narrate || TavernSlash.sendOnly, :final rest)) {
@@ -1097,6 +1121,8 @@ class _TavernChatPageState extends ConsumerState<TavernChatPage> {
     final l10n = context.l10n;
     final character = message.role == TavernRole.character;
     final marked = ref.read(tavernBookmarksProvider(widget.chatId).notifier).has(message.nodeId);
+    final readId = 'tavern:${message.nodeId}';
+    final reading = ref.read(readAloudProvider).id == readId;
     final action = await showAppSheet<_MessageAction>(
       context,
       // As tall as its rows: eight of them pass the default cap on a phone.
@@ -1118,6 +1144,12 @@ class _TavernChatPageState extends ConsumerState<TavernChatPage> {
               margin: const EdgeInsets.fromLTRB(16, 16, 16, 12),
               children: [
                 row(_MessageAction.copy, AppIcons.copy, l10n.commonCopy),
+                if (character)
+                  row(
+                    _MessageAction.readAloud,
+                    reading ? AppIcons.stop : AppIcons.readAloud,
+                    reading ? l10n.speechReadAloudStop : l10n.speechReadAloud,
+                  ),
                 row(_MessageAction.edit, AppIcons.edit, l10n.commonEdit),
                 if (marked)
                   row(_MessageAction.bookmark, AppIcons.bookmarkActive, l10n.tavernBookmarkRemove)
@@ -1146,6 +1178,12 @@ class _TavernChatPageState extends ConsumerState<TavernChatPage> {
     switch (action) {
       case _MessageAction.copy:
         await Clipboard.setData(ClipboardData(text: message.text));
+      case _MessageAction.readAloud:
+        // What the bubble shows (through the display regex), not what is stored.
+        final ask = ++_readAsk;
+        final shown = await _tavern.displayText(widget.chatId, nodeId: message.nodeId, text: message.text);
+        if (!mounted || ask != _readAsk) return;
+        readAloudReply(context, readId, tavernStripMarkers(shown.superseded ? message.text : shown.text));
       case _MessageAction.edit:
         await _edit(message);
       case _MessageAction.bookmark:
@@ -1750,7 +1788,19 @@ class _ComposerKey extends StatelessWidget {
   }
 }
 
-enum _MessageAction { copy, edit, bookmark, regenerate, continueReply, inspect, branchHere, hide, deleteOne, delete }
+enum _MessageAction {
+  copy,
+  readAloud,
+  edit,
+  bookmark,
+  regenerate,
+  continueReply,
+  inspect,
+  branchHere,
+  hide,
+  deleteOne,
+  delete,
+}
 
 /// A message on the path: the user's in a bubble, the character's as text;
 /// the last character message carries its alternatives.

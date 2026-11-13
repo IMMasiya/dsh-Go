@@ -29213,8 +29213,14 @@ abstract class L10n {
   /// No description provided for @searchKwVoice.
   ///
   /// In zh, this message translates to:
-  /// **'语音识别,麦克风,听写,说话,语音'**
+  /// **'语音识别,麦克风,听写,说话,语音,朗读,语音通话,打电话,TTS,声音'**
   String get searchKwVoice;
+
+  /// No description provided for @searchKwVoiceReading.
+  ///
+  /// In zh, this message translates to:
+  /// **'朗读,朗读的声音,TTS,音色,海星,暗潮,声音'**
+  String get searchKwVoiceReading;
 
   /// No description provided for @searchKwNotifications.
   ///
@@ -31807,6 +31813,426 @@ abstract class L10n {
   /// In zh, this message translates to:
   /// **'在「{path}」里调整'**
   String shellQuickPanelHint(String path);
+
+  /// No description provided for @speechReadAloud.
+  ///
+  /// In zh, this message translates to:
+  /// **'朗读'**
+  String get speechReadAloud;
+
+  /// No description provided for @speechReadAloudStop.
+  ///
+  /// In zh, this message translates to:
+  /// **'停止朗读'**
+  String get speechReadAloudStop;
+
+  /// No description provided for @speechReadSection.
+  ///
+  /// In zh, this message translates to:
+  /// **'朗读'**
+  String get speechReadSection;
+
+  /// No description provided for @speechReadFooter.
+  ///
+  /// In zh, this message translates to:
+  /// **'回复下方的朗读键、伙伴小屋和语音通话都用这个声音。'**
+  String get speechReadFooter;
+
+  /// No description provided for @speechVoiceTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'朗读的声音'**
+  String get speechVoiceTitle;
+
+  /// No description provided for @speechVoiceHello.
+  ///
+  /// In zh, this message translates to:
+  /// **'你好，这是朗读的声音。'**
+  String get speechVoiceHello;
+
+  /// No description provided for @speechVoiceDeepseek.
+  ///
+  /// In zh, this message translates to:
+  /// **'DeepSeek'**
+  String get speechVoiceDeepseek;
+
+  /// No description provided for @speechVoiceDeepseekHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'登录的 DeepSeek 账号付费，没登录时用设置里的 API Key，不用另外配置'**
+  String get speechVoiceDeepseekHint;
+
+  /// No description provided for @speechVoiceDeepseekFooter.
+  ///
+  /// In zh, this message translates to:
+  /// **'按朗读的字数计费，价格见 DeepSeek 开放平台。读出前会去掉代码块、表格和链接地址。'**
+  String get speechVoiceDeepseekFooter;
+
+  /// No description provided for @speechVoiceStella.
+  ///
+  /// In zh, this message translates to:
+  /// **'海星（女声）'**
+  String get speechVoiceStella;
+
+  /// No description provided for @speechVoiceTide.
+  ///
+  /// In zh, this message translates to:
+  /// **'暗潮（男声）'**
+  String get speechVoiceTide;
+
+  /// No description provided for @speechVoiceStellaShort.
+  ///
+  /// In zh, this message translates to:
+  /// **'海星'**
+  String get speechVoiceStellaShort;
+
+  /// No description provided for @speechVoiceTideShort.
+  ///
+  /// In zh, this message translates to:
+  /// **'暗潮'**
+  String get speechVoiceTideShort;
+
+  /// No description provided for @speechVoiceFollow.
+  ///
+  /// In zh, this message translates to:
+  /// **'跟朗读一样'**
+  String get speechVoiceFollow;
+
+  /// No description provided for @speechVoiceFollowHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'用设置 › 语音里朗读的声音'**
+  String get speechVoiceFollowHint;
+
+  /// No description provided for @speechNotSetUp.
+  ///
+  /// In zh, this message translates to:
+  /// **'朗读的声音还没设置好，去设置 › 语音看看'**
+  String get speechNotSetUp;
+
+  /// No description provided for @speechNoCredential.
+  ///
+  /// In zh, this message translates to:
+  /// **'要先登录 DeepSeek 账号，或在设置里填 API Key'**
+  String get speechNoCredential;
+
+  /// No description provided for @speechSignIn.
+  ///
+  /// In zh, this message translates to:
+  /// **'DeepSeek 账号登录已失效，请重新登录'**
+  String get speechSignIn;
+
+  /// No description provided for @speechUnauthorized.
+  ///
+  /// In zh, this message translates to:
+  /// **'DeepSeek API Key 无效，请在设置里检查'**
+  String get speechUnauthorized;
+
+  /// No description provided for @speechBalance.
+  ///
+  /// In zh, this message translates to:
+  /// **'DeepSeek 余额不足'**
+  String get speechBalance;
+
+  /// No description provided for @speechRateLimited.
+  ///
+  /// In zh, this message translates to:
+  /// **'请求太频繁，稍后再试'**
+  String get speechRateLimited;
+
+  /// No description provided for @speechNothingToRead.
+  ///
+  /// In zh, this message translates to:
+  /// **'这条回复没有可以朗读的文字'**
+  String get speechNothingToRead;
+
+  /// No description provided for @speechNotHeard.
+  ///
+  /// In zh, this message translates to:
+  /// **'没听清，再说一次'**
+  String get speechNotHeard;
+
+  /// No description provided for @speechTooLong.
+  ///
+  /// In zh, this message translates to:
+  /// **'录音太长了，分几段说吧'**
+  String get speechTooLong;
+
+  /// No description provided for @speechBusy.
+  ///
+  /// In zh, this message translates to:
+  /// **'语音服务正忙，稍后再试'**
+  String get speechBusy;
+
+  /// No description provided for @speechNetwork.
+  ///
+  /// In zh, this message translates to:
+  /// **'连不上语音服务，请检查网络'**
+  String get speechNetwork;
+
+  /// No description provided for @speechReadFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'朗读失败'**
+  String get speechReadFailed;
+
+  /// No description provided for @speechListenFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'识别失败'**
+  String get speechListenFailed;
+
+  /// No description provided for @speechCloudNotice.
+  ///
+  /// In zh, this message translates to:
+  /// **'语音会发给 DeepSeek 识别。想在手机上识别，可以换成语音模型。'**
+  String get speechCloudNotice;
+
+  /// No description provided for @speechCloudNotSetUp.
+  ///
+  /// In zh, this message translates to:
+  /// **'还没设置云端识别服务'**
+  String get speechCloudNotSetUp;
+
+  /// No description provided for @speechCallTile.
+  ///
+  /// In zh, this message translates to:
+  /// **'语音通话'**
+  String get speechCallTile;
+
+  /// No description provided for @speechCallSection.
+  ///
+  /// In zh, this message translates to:
+  /// **'语音通话'**
+  String get speechCallSection;
+
+  /// No description provided for @speechCallFooter.
+  ///
+  /// In zh, this message translates to:
+  /// **'通话时说完一句停一下，就会发出去；回答边写边读。'**
+  String get speechCallFooter;
+
+  /// No description provided for @speechCallBargeIn.
+  ///
+  /// In zh, this message translates to:
+  /// **'插话打断'**
+  String get speechCallBargeIn;
+
+  /// No description provided for @speechCallBargeInHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'AI 说话时你一开口，它就停下来听你说'**
+  String get speechCallBargeInHint;
+
+  /// No description provided for @speechCallSpoken.
+  ///
+  /// In zh, this message translates to:
+  /// **'口语回答'**
+  String get speechCallSpoken;
+
+  /// No description provided for @speechCallSpokenHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'通话的第一条消息会请 AI 简短、口语化地回答'**
+  String get speechCallSpokenHint;
+
+  /// No description provided for @speechCallSpeaker.
+  ///
+  /// In zh, this message translates to:
+  /// **'默认免提'**
+  String get speechCallSpeaker;
+
+  /// No description provided for @speechCallSpeakerHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'接上耳机时总用耳机'**
+  String get speechCallSpeakerHint;
+
+  /// No description provided for @speechCallHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'（这是语音通话，我说的话由语音识别转成文字。请用简短、口语化的中文回答，不要用 Markdown、列表、表格和代码块。）'**
+  String get speechCallHint;
+
+  /// No description provided for @speechCallStarting.
+  ///
+  /// In zh, this message translates to:
+  /// **'正在接通'**
+  String get speechCallStarting;
+
+  /// No description provided for @speechCallListening.
+  ///
+  /// In zh, this message translates to:
+  /// **'在听'**
+  String get speechCallListening;
+
+  /// No description provided for @speechCallHearing.
+  ///
+  /// In zh, this message translates to:
+  /// **'你在说'**
+  String get speechCallHearing;
+
+  /// No description provided for @speechCallThinking.
+  ///
+  /// In zh, this message translates to:
+  /// **'想一想'**
+  String get speechCallThinking;
+
+  /// No description provided for @speechCallSpeaking.
+  ///
+  /// In zh, this message translates to:
+  /// **'正在说，轻点光球可以跳过'**
+  String get speechCallSpeaking;
+
+  /// No description provided for @speechCallMuted.
+  ///
+  /// In zh, this message translates to:
+  /// **'已静音'**
+  String get speechCallMuted;
+
+  /// No description provided for @speechCallEnded.
+  ///
+  /// In zh, this message translates to:
+  /// **'通话已结束'**
+  String get speechCallEnded;
+
+  /// No description provided for @speechCallEndPermission.
+  ///
+  /// In zh, this message translates to:
+  /// **'没有麦克风权限'**
+  String get speechCallEndPermission;
+
+  /// No description provided for @speechCallEndMicrophone.
+  ///
+  /// In zh, this message translates to:
+  /// **'麦克风被占用或打不开'**
+  String get speechCallEndMicrophone;
+
+  /// No description provided for @speechCallEndNoRecognizer.
+  ///
+  /// In zh, this message translates to:
+  /// **'通话需要能识别录音的方式：登录 DeepSeek 账号、填 API Key，或下载语音模型'**
+  String get speechCallEndNoRecognizer;
+
+  /// No description provided for @speechCallEndBackground.
+  ///
+  /// In zh, this message translates to:
+  /// **'切到后台时通话会结束'**
+  String get speechCallEndBackground;
+
+  /// No description provided for @speechCallEndFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'录音出错，通话已结束'**
+  String get speechCallEndFailed;
+
+  /// No description provided for @speechCallSendFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'没发出去，再说一次'**
+  String get speechCallSendFailed;
+
+  /// No description provided for @speechCallSkipHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'跳过这段回答'**
+  String get speechCallSkipHint;
+
+  /// No description provided for @speechCallMute.
+  ///
+  /// In zh, this message translates to:
+  /// **'静音'**
+  String get speechCallMute;
+
+  /// No description provided for @speechCallUnmute.
+  ///
+  /// In zh, this message translates to:
+  /// **'取消静音'**
+  String get speechCallUnmute;
+
+  /// No description provided for @speechCallHangUp.
+  ///
+  /// In zh, this message translates to:
+  /// **'挂断'**
+  String get speechCallHangUp;
+
+  /// No description provided for @speechCallSpeakerOn.
+  ///
+  /// In zh, this message translates to:
+  /// **'免提'**
+  String get speechCallSpeakerOn;
+
+  /// No description provided for @speechCallEarpiece.
+  ///
+  /// In zh, this message translates to:
+  /// **'听筒'**
+  String get speechCallEarpiece;
+
+  /// No description provided for @speechBackdropTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'通话背景'**
+  String get speechBackdropTitle;
+
+  /// No description provided for @speechBackdropSea.
+  ///
+  /// In zh, this message translates to:
+  /// **'深海'**
+  String get speechBackdropSea;
+
+  /// No description provided for @speechBackdropImage.
+  ///
+  /// In zh, this message translates to:
+  /// **'我的图片'**
+  String get speechBackdropImage;
+
+  /// No description provided for @speechBackdropImagePick.
+  ///
+  /// In zh, this message translates to:
+  /// **'选一张图'**
+  String get speechBackdropImagePick;
+
+  /// No description provided for @speechBackdropCompanion.
+  ///
+  /// In zh, this message translates to:
+  /// **'伙伴'**
+  String get speechBackdropCompanion;
+
+  /// No description provided for @speechBackdropHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'图片会虚化、压暗，字幕看得清。选伙伴时，她会跟着声音说话。'**
+  String get speechBackdropHint;
+
+  /// No description provided for @speechBackdropHintChange.
+  ///
+  /// In zh, this message translates to:
+  /// **'再点一次「我的图片」可以换一张。选伙伴时，她会跟着声音说话。'**
+  String get speechBackdropHintChange;
+
+  /// No description provided for @speechBackdropNoCompanion.
+  ///
+  /// In zh, this message translates to:
+  /// **'先在伙伴小屋里请她住进来，才能把她放进通话里。'**
+  String get speechBackdropNoCompanion;
+
+  /// No description provided for @speechBackdropReplace.
+  ///
+  /// In zh, this message translates to:
+  /// **'换一张图'**
+  String get speechBackdropReplace;
+
+  /// No description provided for @speechBackdropPickFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'这张图用不了，换一张试试'**
+  String get speechBackdropPickFailed;
+
+  /// No description provided for @speechInsecure.
+  ///
+  /// In zh, this message translates to:
+  /// **'这个云端服务的地址不是 https，Key 不能这样发出去'**
+  String get speechInsecure;
 
   /// The star prompt's first line. hours is the whole hours of use so far, rounded down; 0 is half an hour (the first ask comes after 30 minutes). The word joiner keeps the ~ on the line of the word before it.
   ///
@@ -41915,7 +42341,7 @@ abstract class L10n {
   /// No description provided for @voiceSettingsTitle.
   ///
   /// In zh, this message translates to:
-  /// **'语音输入'**
+  /// **'语音'**
   String get voiceSettingsTitle;
 
   /// No description provided for @voiceModeAuto.
@@ -41939,7 +42365,7 @@ abstract class L10n {
   /// No description provided for @voiceModeAutoHint.
   ///
   /// In zh, this message translates to:
-  /// **'有语音模型时用它，否则用系统识别'**
+  /// **'有 DeepSeek 账号或 API Key 时用 DeepSeek，否则用语音模型或系统识别'**
   String get voiceModeAutoHint;
 
   /// No description provided for @voiceModeSystemHint.
@@ -42307,6 +42733,54 @@ abstract class L10n {
   /// In zh, this message translates to:
   /// **'语音模型下载失败，打开 App 重试'**
   String get voiceModelNoticeFailed;
+
+  /// No description provided for @voiceModeDeepseek.
+  ///
+  /// In zh, this message translates to:
+  /// **'DeepSeek'**
+  String get voiceModeDeepseek;
+
+  /// No description provided for @voiceModeDeepseekHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'用 DeepSeek 的语音识别，登录的账号或 API Key 付费'**
+  String get voiceModeDeepseekHint;
+
+  /// No description provided for @voiceModeCloud.
+  ///
+  /// In zh, this message translates to:
+  /// **'其他云端服务'**
+  String get voiceModeCloud;
+
+  /// No description provided for @voiceModeCloudHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'OpenAI 兼容的语音转写接口，例如 Whisper、硅基流动'**
+  String get voiceModeCloudHint;
+
+  /// No description provided for @voiceCloudSection.
+  ///
+  /// In zh, this message translates to:
+  /// **'云端识别服务'**
+  String get voiceCloudSection;
+
+  /// No description provided for @voiceCloudFooter.
+  ///
+  /// In zh, this message translates to:
+  /// **'录音会发给这个服务识别。Key 只存在这台手机上。'**
+  String get voiceCloudFooter;
+
+  /// No description provided for @voiceCloudBaseHelper.
+  ///
+  /// In zh, this message translates to:
+  /// **'填到 /v1 为止，App 会请求 …/audio/transcriptions'**
+  String get voiceCloudBaseHelper;
+
+  /// No description provided for @voiceCloudModelHelper.
+  ///
+  /// In zh, this message translates to:
+  /// **'例如 whisper-1、FunAudioLLM/SenseVoiceSmall'**
+  String get voiceCloudModelHelper;
 
   /// No description provided for @voiceScribeReadFailed.
   ///
