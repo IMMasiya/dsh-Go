@@ -13,6 +13,7 @@ async function fixture(t, {connection = true, guardRoutes = false, rejection, gr
   const editor = {canWrite: () => true, entries: () => entries};
   const webServer = {
     exact: new Map(), prefixes: new Map(), upgrades: new Map(),
+    tapIndex() { return () => {}; },
     register(route) {
       const table = route.kind === 'exact' ? this.exact : this.prefixes;
       table.set(route.path, route);
