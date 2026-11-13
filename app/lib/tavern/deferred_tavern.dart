@@ -328,6 +328,78 @@ class DeferredTavern implements Tavern {
   Future<TavernTurnInspection?> inspectTurn(String chatId, {String? nodeId}) async =>
       (await _ready).inspectTurn(chatId, nodeId: nodeId);
 
+  // Stage one's tools: what the caller hands over is taken as it is at the
+  // call, before the tavern opens (STAGE1-APP-INTEGRATION §10.1).
+
+  @override
+  Future<TavernToolTurnSnapshot?> readToolTurn(String logicalTurnId) async =>
+      (await _ready).readToolTurn(logicalTurnId);
+
+  @override
+  Future<TavernToolReceipt?> readToolReceipt(String executionId) async => (await _ready).readToolReceipt(executionId);
+
+  @override
+  Future<TavernToolReceipt> rollDice(
+    String chatId, {
+    required String actionId,
+    required String dice,
+    String? label,
+    int? target,
+    String? expectedNodeId,
+  }) async => (await _ready).rollDice(
+    chatId,
+    actionId: actionId,
+    dice: dice,
+    label: label,
+    target: target,
+    expectedNodeId: expectedNodeId,
+  );
+
+  @override
+  Future<TavernMemoryDecisionReceipt> resolveMemoryProposal(
+    String proposalId, {
+    required String decisionId,
+    required int expectedVersion,
+    required TavernMemoryDecision decision,
+    required TavernToolContextAnchor expectedContextAnchor,
+  }) {
+    // The anchor as it was when clicked, apart from the caller's object.
+    final anchor = TavernToolContextAnchor.fromJson(expectedContextAnchor.toJson());
+    return _ready.then(
+      (t) => t.resolveMemoryProposal(
+        proposalId,
+        decisionId: decisionId,
+        expectedVersion: expectedVersion,
+        decision: decision,
+        expectedContextAnchor: anchor,
+      ),
+    );
+  }
+
+  @override
+  Future<TavernToolPolicySnapshot> readToolPolicy({String? chatId}) async =>
+      (await _ready).readToolPolicy(chatId: chatId);
+
+  @override
+  Future<TavernToolPolicyWriteResult> setToolPolicy(Map<String, Object?> patch, {String? chatId}) {
+    final Map<String, Object?> held;
+    try {
+      held = _held(patch, 'setToolPolicy')! as Map<String, Object?>;
+    } on TavernScriptException catch (e) {
+      return Future.error(
+        TavernToolException(
+          code: TavernToolErrorCode.invalidArgument,
+          operation: 'setToolPolicy',
+          message: e.message,
+          committed: false,
+          chatId: chatId,
+          fieldPath: 'toolPolicy',
+        ),
+      );
+    }
+    return _ready.then((t) => t.setToolPolicy(held, chatId: chatId));
+  }
+
   @override
   void configure(TavernModelConfig config) {
     _config = config;
