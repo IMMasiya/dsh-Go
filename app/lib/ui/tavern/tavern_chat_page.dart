@@ -1260,7 +1260,10 @@ class _TavernChatPageState extends ConsumerState<TavernChatPage> {
           title: l10n.tavernDeleteOneTitle,
           message: l10n.tavernDeleteOneMessage,
         );
-        if (ok && mounted && !_running) await _tavern.deleteMessage(widget.chatId, message.nodeId);
+        if (ok && mounted && !_running) {
+          await _tavern.deleteMessage(widget.chatId, message.nodeId);
+          tavernForgetSessionUsage(_tavern, widget.chatId);
+        }
       case _MessageAction.delete:
         // Gone at once, with 撤销 for a while (engine T24: hidden until the
         // library is next opened); [tavernDeleteAskFrom] or more ask first.

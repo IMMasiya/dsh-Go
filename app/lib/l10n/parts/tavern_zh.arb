@@ -1134,7 +1134,7 @@
   "tavernGroupTalkativeness": "话多话少",
   "tavernGroupTalkativenessNote": "「自然」轮流时，越高越容易开口。",
   "tavernGroupHelperModel": "用辅助模型",
-  "tavernGroupHelperModelNote": "用辅助模型说（自动时 DeepSeek 用 flash、其他渠道用主模型，都不思考），适合配角。",
+  "tavernGroupHelperModelNote": "用辅助模型说（自动时 DeepSeek 用 flash 且不思考，其他渠道用主模型），适合配角。",
   "tavernGroupMoveUp": "往前挪",
   "tavernGroupMoveDown": "往后挪",
   "tavernGroupRemove": "移出群聊",

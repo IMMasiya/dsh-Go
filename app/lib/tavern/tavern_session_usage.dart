@@ -100,6 +100,10 @@ String tavernUsd(double usd) => usd < 1 ? usd.toStringAsFixed(4) : usd.toStringA
 /// everything before it (that one may have been a reply still being written).
 final _lastSums = Expando<Map<String, (String, TavernSessionUsage)>>();
 
+/// Drops [chatId]'s kept sum: a message before the newest was deleted, so
+/// the sum of what came before the newest is no longer right.
+void tavernForgetSessionUsage(Tavern tavern, String chatId) => _lastSums[tavern]?.remove(chatId);
+
 /// [chatId]'s current line, all of it (the engine hands it out a page at a
 /// time, newest first), its replies' usage summed.
 ///

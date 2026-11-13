@@ -112,6 +112,12 @@ void main() {
     expect((more.replies, more.prompt), (136, 136000));
     expect(tavern.pages, 1);
 
+    // A message before the newest deleted: forgotten, so all of it again.
+    tavernForgetSessionUsage(tavern, 'chat');
+    tavern.pages = 0;
+    expect((await tavernSessionUsage(tavern, 'chat')).replies, 136);
+    expect(tavern.pages, greaterThan(1));
+
     // The newest counted is gone (a regenerated or deleted reply): all of it again.
     tavern.line.removeLast();
     tavern.pages = 0;

@@ -39041,7 +39041,7 @@ abstract class L10n {
   /// No description provided for @tavernGroupHelperModelNote.
   ///
   /// In zh, this message translates to:
-  /// **'用辅助模型说（自动时 DeepSeek 用 flash、其他渠道用主模型，都不思考），适合配角。'**
+  /// **'用辅助模型说（自动时 DeepSeek 用 flash 且不思考，其他渠道用主模型），适合配角。'**
   String get tavernGroupHelperModelNote;
 
   /// No description provided for @tavernGroupMoveUp.

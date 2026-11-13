@@ -174,6 +174,8 @@ class _TavernChannelEditPageState extends ConsumerState<TavernChannelEditPage> {
   Future<String?> _currentKey() async {
     final typed = _key.text.trim();
     if (typed.isNotEmpty) return typed;
+    // 清除 tapped: the channel will have none, so neither does the lookup.
+    if (_clearKey) return null;
     final channel = widget.channel;
     return channel == null ? null : ref.read(tavernChannelKeysProvider).read(channel.id);
   }

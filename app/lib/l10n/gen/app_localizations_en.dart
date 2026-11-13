@@ -22550,7 +22550,7 @@ class L10nEn extends L10n {
 
   @override
   String get tavernGroupHelperModelNote =>
-      'Speaks with the helper model (automatic: flash on DeepSeek, the main model elsewhere; no thinking): for side characters.';
+      'Speaks with the helper model (automatic: flash without thinking on DeepSeek, the main model elsewhere): for side characters.';
 
   @override
   String get tavernGroupMoveUp => 'Move up';

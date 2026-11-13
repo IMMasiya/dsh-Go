@@ -21367,7 +21367,7 @@ class L10nZh extends L10n {
   String get tavernGroupHelperModel => '用辅助模型';
 
   @override
-  String get tavernGroupHelperModelNote => '用辅助模型说（自动时 DeepSeek 用 flash、其他渠道用主模型，都不思考），适合配角。';
+  String get tavernGroupHelperModelNote => '用辅助模型说（自动时 DeepSeek 用 flash 且不思考，其他渠道用主模型），适合配角。';
 
   @override
   String get tavernGroupMoveUp => '往前挪';

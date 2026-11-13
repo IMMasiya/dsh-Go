@@ -1134,7 +1134,7 @@
   "tavernGroupTalkativeness": "Talkativeness",
   "tavernGroupTalkativenessNote": "In natural turns, the higher, the likelier to speak.",
   "tavernGroupHelperModel": "Helper model",
-  "tavernGroupHelperModelNote": "Speaks with the helper model (automatic: flash on DeepSeek, the main model elsewhere; no thinking): for side characters.",
+  "tavernGroupHelperModelNote": "Speaks with the helper model (automatic: flash without thinking on DeepSeek, the main model elsewhere): for side characters.",
   "tavernGroupMoveUp": "Move up",
   "tavernGroupMoveDown": "Move down",
   "tavernGroupRemove": "Remove from the group",
