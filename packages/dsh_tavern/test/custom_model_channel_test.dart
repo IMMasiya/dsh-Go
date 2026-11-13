@@ -14,7 +14,7 @@ typedef _Json = Map<String, Object?>;
 // The production transport, prompt assembly, engine and stores run here. Only
 // the HTTP peer, clock and dice are supplied; no external service is contacted.
 void main() {
-  test('generic local channels accept null and empty keys without Authorization', () async {
+  test('generic local channels keep supplied Authorization with null and empty keys', () async {
     final wire = _Wire((_, _) => _completion({'role': 'assistant', 'content': 'local answer'}));
     final body = <String, Object?>{
       'messages': [
@@ -48,7 +48,7 @@ void main() {
               key: key,
               baseUrl: 'http://127.0.0.1:11434/v1',
               thinking: true,
-              headers: {'X-Route': 'local-route', 'Authorization': 'Bearer must-not-be-used'},
+              headers: {'X-Route': 'local-route', 'aUtHoRiZaTiOn': 'Basic local-credential'},
             ),
             body: body,
             cancellation: ModelCancellation(),
@@ -57,7 +57,7 @@ void main() {
       expect(events.whereType<ModelText>().single.text, 'local answer');
       final request = wire.requests.last;
       expect(request.url, Uri.parse('http://127.0.0.1:11434/v1/chat/completions'));
-      expect(request.headers['authorization'], isNull);
+      expect(request.headers['authorization'], 'Basic local-credential');
       expect(request.headers['x-route'], 'local-route');
       final sent = _body(request);
       _expectGeneric(sent);
@@ -108,7 +108,15 @@ void main() {
     await expectLater(
       wire.model
           .generate(
-            config: _config(key: key, headers: {'X-Route': 'retry-route', 'X-Secret': secret}),
+            config: _config(
+              key: key,
+              headers: {
+                'X-Route': 'retry-route',
+                'X-Secret': secret,
+                'Authorization': 'Basic original-auth',
+                'aUtHoRiZaTiOn': 'Basic alternate-auth',
+              },
+            ),
             body: {'stream': false},
             cancellation: ModelCancellation(),
           )
@@ -123,6 +131,7 @@ void main() {
     expect(wire.requests, hasLength(2));
     for (final request in wire.requests) {
       expect(request.headers['authorization'], 'Bearer $key');
+      expect(request.headers.keys.where((name) => name.toLowerCase() == 'authorization'), hasLength(1));
       expect(request.headers['x-route'], 'retry-route');
       expect(request.headers['x-secret'], secret);
       expect(request.headers['content-type'], contains('application/json'));

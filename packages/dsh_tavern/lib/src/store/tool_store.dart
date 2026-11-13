@@ -505,6 +505,7 @@ extension ToolStore on ChatStore {
     required List<StoredToolStateSettlement> stateSettlements,
     required T Function() action,
     required void Function(StoredToolTerminal<T>) onCommitted,
+    void Function(String)? onTiming,
   }) {
     _toolSyncAction(action);
     final savedSummary = _toolCopy(summary);
@@ -513,60 +514,74 @@ extension ToolStore on ChatStore {
         kind == StoredToolFinishKind.modelTerminal && outcome != 'model_terminal') {
       throw ArgumentError('Final kind and outcome disagree.');
     }
-    return _toolOuter(() {
-      final before = _toolCheck(owner, StoredToolPhase.owned);
-      final value = _toolSyncValue(action());
-      final ownership = _toolAdvance(owner, before);
-      final normal = kind == StoredToolFinishKind.normal;
-      if (normal) {
-        _toolActivateProposals(owner, ownership.candidateSource!);
-        final staged = <String, Row>{
-          for (final receipt in _toolTurnReceipts(owner.logicalTurnId))
-            if (receipt['status'] == 'staged' && _toolText(receipt, 'tool_name') == 'update_state')
-              _toolText(receipt, 'id')!: receipt,
-        };
-        final seen = <String>{};
-        for (final settlement in settlements) {
-          if (!seen.add(settlement.executionId) ||
-              !staged.containsKey(settlement.executionId) ||
-              !const ['committed', 'completed_no_change', 'rejected', 'discarded'].contains(settlement.status)) {
-            throw StateError('Invalid state receipt settlement.');
+    onTiming?.call('preamble');
+    return _toolOuter(
+      () {
+        final before = _toolCheck(owner, StoredToolPhase.owned);
+        onTiming?.call('ownership');
+        final value = _toolSyncValue(action());
+        onTiming?.call('action');
+        final ownership = _toolAdvance(owner, before);
+        onTiming?.call('advance');
+        final normal = kind == StoredToolFinishKind.normal;
+        if (normal) {
+          _toolActivateProposals(owner, ownership.candidateSource!);
+          onTiming?.call('proposals');
+          final staged = <String, Row>{
+            for (final receipt in _toolTurnReceipts(owner.logicalTurnId))
+              if (receipt['status'] == 'staged' && _toolText(receipt, 'tool_name') == 'update_state')
+                _toolText(receipt, 'id')!: receipt,
+          };
+          final seen = <String>{};
+          for (final settlement in settlements) {
+            if (!seen.add(settlement.executionId) ||
+                !staged.containsKey(settlement.executionId) ||
+                !const ['committed', 'completed_no_change', 'rejected', 'discarded'].contains(settlement.status)) {
+              throw StateError('Invalid state receipt settlement.');
+            }
+            final now = _toolNow();
+            _toolUpdate(
+              'tool_receipts',
+              {
+                'status': settlement.status,
+                'committed': _toolCommitted(settlement.status),
+                'result_json': _toolResult(settlement.result, settlement.error),
+                'updated_at_ms': now,
+                'result_adopted_at_ms': settlement.status == 'committed' ? now : null,
+              },
+              'id = ?',
+              [settlement.executionId],
+            );
           }
-          final now = _toolNow();
-          _toolUpdate(
-            'tool_receipts',
-            {
-              'status': settlement.status,
-              'committed': _toolCommitted(settlement.status),
-              'result_json': _toolResult(settlement.result, settlement.error),
-              'updated_at_ms': now,
-              'result_adopted_at_ms': settlement.status == 'committed' ? now : null,
-            },
-            'id = ?',
-            [settlement.executionId],
-          );
+          if (seen.length != staged.length) throw StateError('Every staged state receipt requires a final outcome.');
+          if (_toolTurnReceipts(owner.logicalTurnId).any((receipt) => receipt['status'] == 'prepared')) {
+            throw StateError('Normal completion cannot abandon an executing tool intent.');
+          }
+        } else {
+          if (settlements.any((settlement) => settlement.status == 'committed')) {
+            throw StateError('A failed model turn cannot adopt model state.');
+          }
+          _toolDiscardStaging(owner.logicalTurnId, outcome);
         }
-        if (seen.length != staged.length) throw StateError('Every staged state receipt requires a final outcome.');
-        if (_toolTurnReceipts(owner.logicalTurnId).any((receipt) => receipt['status'] == 'prepared')) {
-          throw StateError('Normal completion cannot abandon an executing tool intent.');
-        }
-      } else {
-        if (settlements.any((settlement) => settlement.status == 'committed')) {
-          throw StateError('A failed model turn cannot adopt model state.');
-        }
-        _toolDiscardStaging(owner.logicalTurnId, outcome);
-      }
-      _toolInterruptRequests(owner.logicalTurnId, outcome);
-      _toolTerminal(
-        owner,
-        status: kind == StoredToolFinishKind.failedPartial ? 'failed' : 'completed',
-        outcome: outcome,
-        summary: savedSummary,
-        reply: true,
-        normal: normal,
-      );
-      return _toolTerminalView(owner, value);
-    }, onCommitted);
+        onTiming?.call('receipts');
+        _toolInterruptRequests(owner.logicalTurnId, outcome);
+        onTiming?.call('interrupt_requests');
+        _toolTerminal(
+          owner,
+          status: kind == StoredToolFinishKind.failedPartial ? 'failed' : 'completed',
+          outcome: outcome,
+          summary: savedSummary,
+          reply: true,
+          normal: normal,
+        );
+        onTiming?.call('terminal');
+        final result = _toolTerminalView(owner, value);
+        onTiming?.call('snapshot');
+        return result;
+      },
+      onCommitted,
+      onTiming: onTiming,
+    );
   }
 
   TavernMessage? _toolVisibleCurrent(String chatId, TavernToolSourceToken? original) {
@@ -848,6 +863,35 @@ extension ToolStore on ChatStore {
       'eligible': workflow == 'pending_confirmation' && qualification.eligible,
       'ineligibleReason': reason,
     });
+  }
+
+  /// One statement lists identities without decoding request/inspection data.
+  List<TavernToolTurnSummary> recentToolTurns(String chatId, {int limit = 20}) {
+    _ensureOpen();
+    if (limit < 0) throw ArgumentError.value(limit, 'limit', 'Must be non-negative.');
+    final rows = _db.select(
+      '''
+      WITH recent AS (
+        SELECT rowid AS ordinal, id, chat_id, reply_commit_adopted, candidate_live_node_id, candidate_seq
+        FROM tool_turns WHERE chat_id = ? ORDER BY rowid DESC LIMIT ?
+      )
+      SELECT char(1) || t.id AS logical_turn_id, char(1) || n.id AS reply_node_id
+      FROM chats c LEFT JOIN recent t ON t.chat_id = c.id
+        LEFT JOIN nodes n ON t.reply_commit_adopted = 1 AND n.id = t.candidate_live_node_id
+          AND n.chat_id = t.chat_id AND n.seq = t.candidate_seq AND n.deleted_by IS NULL
+      WHERE c.id = ? ORDER BY t.ordinal DESC
+    ''',
+      [chatId, limit, chatId],
+    );
+    if (rows.isEmpty) throw StateError('Chat not found: $chatId');
+    return [
+      for (final row in rows)
+        if (row['logical_turn_id'] != null)
+          TavernToolTurnSummary(
+            logicalTurnId: ChatStore._unguardText(row['logical_turn_id'])!,
+            replyNodeId: ChatStore._unguardText(row['reply_node_id']),
+          ),
+    ];
   }
 
   TavernToolTurnSnapshot? readToolTurn(String logicalTurnId) {
@@ -1887,18 +1931,31 @@ extension ToolStore on ChatStore {
     return value;
   }
 
-  T _toolOuter<T>(T Function() action, void Function(T) onCommitted, {bool bodyOnly = false}) {
+  T _toolOuter<T>(
+    T Function() action,
+    void Function(T) onCommitted, {
+    bool bodyOnly = false,
+    void Function(String)? onTiming,
+  }) {
     _outsideTransaction();
     if (onCommitted is Future<dynamic> Function(T)) {
       throw ArgumentError('Tool adoption must be synchronous.');
     }
     late T prepared;
-    return _withDurability(
+    final result = _withDurability(
       bodyOnly ? 1 : 2,
-      () => prepared = action(),
-      onCommitted: () => onCommitted(prepared),
+      () {
+        onTiming?.call('begin');
+        return prepared = action();
+      },
+      onCommitted: () {
+        onCommitted(prepared);
+        onTiming?.call('commit_adopt');
+      },
       bodyOnly: bodyOnly,
     );
+    onTiming?.call('publish_restore');
+    return result;
   }
 
   List<Row> _toolRows(String table, String where, List<Object?> parameters, {String suffix = ''}) {
@@ -2316,22 +2373,27 @@ extension ToolStore on ChatStore {
     StoredToolTurnOwner owner, {
     required T Function(StoredChat chat, StoredNode? operationTarget) capture,
     required void Function(StoredToolPreparation<T>) onCommitted,
-  }) => _toolOuter(() {
-    if (capture is Future<dynamic> Function(StoredChat, StoredNode?)) {
-      throw ArgumentError('Preparation capture must be synchronous.');
-    }
-    final old = _toolCheck(owner, StoredToolPhase.hooks);
-    final savedChat = chat(owner.chatId);
-    final targetId = _toolText(old, 'operation_target_node_id');
-    final target = targetId == null ? null : node(owner.chatId, targetId);
-    final value = _toolSyncValue(capture(savedChat, target));
-    return StoredToolPreparation(
-      value: value,
-      chat: savedChat,
-      operationTarget: target,
-      ownership: _toolAdvance(owner, old, phase: StoredToolPhase.native),
-    );
-  }, onCommitted);
+    void Function(String)? onTiming,
+  }) => _toolOuter(
+    () {
+      if (capture is Future<dynamic> Function(StoredChat, StoredNode?)) {
+        throw ArgumentError('Preparation capture must be synchronous.');
+      }
+      final old = _toolCheck(owner, StoredToolPhase.hooks);
+      onTiming?.call('ownership');
+      final savedChat = chat(owner.chatId);
+      final targetId = _toolText(old, 'operation_target_node_id');
+      final target = targetId == null ? null : node(owner.chatId, targetId);
+      onTiming?.call('snapshot');
+      final value = _toolSyncValue(capture(savedChat, target));
+      onTiming?.call('capture');
+      final ownership = _toolAdvance(owner, old, phase: StoredToolPhase.native);
+      onTiming?.call('advance');
+      return StoredToolPreparation(value: value, chat: savedChat, operationTarget: target, ownership: ownership);
+    },
+    onCommitted,
+    onTiming: onTiming,
+  );
 
   StoredToolCommit<T> commitToolSecretBinding<T>(
     StoredToolTurnOwner owner, {

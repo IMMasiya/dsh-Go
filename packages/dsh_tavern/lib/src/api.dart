@@ -250,6 +250,45 @@ class TavernUsage {
   final String? model;
 }
 
+/// Saved provider-reported counters grouped by model and the call's UTC hour.
+/// A null model is its own group; [replyCount] counts replies with a report,
+/// including reports whose counters are zero.
+class TavernPathUsage {
+  const TavernPathUsage({
+    required this.model,
+    required this.utcWeekday,
+    required this.utcHour,
+    required this.promptTokens,
+    required this.cacheHitTokens,
+    required this.completionTokens,
+    required this.replyCount,
+  });
+
+  final String? model;
+
+  /// Monday = 1 through Sunday = 7. Older reports without a saved call time
+  /// use the reply timestamp; a historical continuation can therefore be approximate.
+  final int utcWeekday;
+
+  /// 0 through 23. Each model has at most 168 weekday/hour groups.
+  final int utcHour;
+  final int promptTokens;
+  final int cacheHitTokens;
+  final int completionTokens;
+  final int replyCount;
+}
+
+/// The small identity view of one stored logical tool turn.
+class TavernToolTurnSummary {
+  const TavernToolTurnSummary({required this.logicalTurnId, required this.replyNodeId});
+
+  final String logicalTurnId;
+
+  /// Null until the turn adopts a reply, or after that physical reply is
+  /// deleted. This association does not assert that the turn added new text.
+  final String? replyNodeId;
+}
+
 /// A turn as it streams. A turn always ends with exactly one [TavernTurnDone]
 /// or [TavernTurnFailed].
 sealed class TavernEvent {
@@ -412,8 +451,8 @@ class TavernModelConfig {
   final bool thinking;
 
   /// Additional HTTP headers, never included in inspection data or logs.
-  /// Authorization is supplied by [apiKey], including its absence for local
-  /// OpenAI-compatible services that do not require a key.
+  /// A non-empty [apiKey] overrides Authorization with Bearer authentication.
+  /// Otherwise OpenAI-compatible channels keep any supplied Authorization.
   final Map<String, String> headers;
 
   /// Configuration for director, secret and other helper requests. Null keeps
@@ -631,6 +670,14 @@ abstract interface class Tavern {
   /// [limit] before [beforeNodeId] when paging back.
   Future<List<TavernMessage>> path(String chatId, {int limit = 60, String? beforeNodeId});
 
+  /// Totals saved reported usage for character replies from the selected leaf
+  /// to the root, grouped by model and the report's UTC weekday/hour.
+  /// Includes ST-hidden replies; excludes active replies, streaming checkpoints,
+  /// replies without reports and other branches. Reads no message bodies.
+  /// These are the latest saved node reports, not lifetime billing totals or
+  /// an overlay of uncommitted live requests. An unknown chat is an error.
+  Future<List<TavernPathUsage>> pathUsage(String chatId);
+
   /// Every visible stored node in insertion order, including inactive
   /// descendants and ST-hidden messages. Soft-deleted nodes are excluded.
   /// Previews use the saved body/checkpoint, not uncheckpointed live buffers;
@@ -655,6 +702,11 @@ abstract interface class Tavern {
   /// Most recent persistent state/agent execution records, newest first.
   /// An explicit node filter excludes records whose node was permanently deleted.
   Future<List<TavernAgentRun>> readAgentRuns(String chatId, {String? nodeId, int limit = 50});
+
+  /// Latest admitted tool turns in insertion order, newest first. Reads only
+  /// identities and reply ownership, without loading inspection or tool bodies.
+  /// An unknown chat or negative [limit] is an error; zero returns an empty list.
+  Future<List<TavernToolTurnSummary>> recentToolTurns(String chatId, {int limit = 20});
 
   /// Reads persisted facts without resuming a model request or tool execution.
   Future<TavernToolTurnSnapshot?> readToolTurn(String logicalTurnId);

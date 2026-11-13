@@ -147,10 +147,17 @@ final class ChatJsonlCodec {
   Map<String, Object?> metadataForNode(ChatStore store, String chatId, {String? nodeId}) {
     final chat = store.chat(chatId);
     final id = nodeId ?? chat.currentLeafId;
-    if (id == null) {
+    return metadataForCapturedNode(store, chat, id == null ? null : store.node(chatId, id));
+  }
+
+  /// Projects a fully read [chat] and a fully read [node] from that same chat.
+  /// The caller has already resolved the store boundary; null means an empty
+  /// captured path. Does not mutate either snapshot or reread its full row.
+  Map<String, Object?> metadataForCapturedNode(ChatStore store, StoredChat chat, StoredNode? node) {
+    if (node == null) {
       return {..._clone(chat.metadata), 'variables': _clone(chat.variables)};
     }
-    final state = _effectiveState(store, chatId, store.node(chatId, id));
+    final state = _effectiveState(store, chat.id, node);
     return metadataForState(chat, state);
   }
 
@@ -158,12 +165,9 @@ final class ChatJsonlCodec {
   /// again. Single-node deletion uses this before reparenting even children
   /// hidden by a pending subtree deletion. Does not mutate [chat] or [state].
   Map<String, Object?> metadataForState(StoredChat chat, Map<String, Object?> state) {
-    var metadata = _clone(chat.metadata);
     final source = state[_sourceKey];
     final header = _sourceFor(chat.metadata, source);
-    if (header != null) {
-      metadata = _map(header['chat_metadata']);
-    }
+    final metadata = header == null ? _clone(chat.metadata) : _map(header['chat_metadata']);
     metadata.remove('variables');
     if (state['variables'] is Map<String, Object?>) {
       metadata['variables'] = _map(state['variables']);
@@ -1604,7 +1608,7 @@ Map<String, Object?> _metadataContextDelta(
 }
 
 Map<String, Object?> _effectiveState(ChatStore store, String chatId, StoredNode node) {
-  final override = _map(node.extra['dshgo'])['tavernState'];
+  final override = _view(node.extra['dshgo'])['tavernState'];
   return override is Map<String, Object?> ? _clone(override) : store.nodeState(chatId, node.message.nodeId);
 }
 

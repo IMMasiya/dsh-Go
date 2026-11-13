@@ -18384,7 +18384,7 @@ class L10nEn extends L10n {
 
   @override
   String get speechVoiceDeepseekHint =>
-      'Paid by your signed-in DeepSeek account, or the API key in Settings when signed out. Nothing to set up';
+      'Paid by your signed-in DeepSeek account; the API key in Settings when signed out or when the account can\'t pay for speech. Nothing to set up';
 
   @override
   String get speechVoiceDeepseekFooter =>
@@ -18415,7 +18415,8 @@ class L10nEn extends L10n {
   String get speechNoCredential => 'Sign in to DeepSeek or add an API key in Settings first';
 
   @override
-  String get speechSignIn => 'Your DeepSeek sign-in has expired. Please sign in again';
+  String get speechSignIn =>
+      'Your DeepSeek account can\'t pay for speech (sign-in expired, or speech takes only an API key). Sign in again, or add an API key in Settings';
 
   @override
   String get speechUnauthorized => 'The DeepSeek API key was refused. Check it in Settings';

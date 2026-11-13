@@ -314,6 +314,43 @@ void main() {
     expect((await h.engine.readState(h.chatId)).values, {'n': 7, 'ticks': 1});
   });
 
+  test('state-only unsupported envelope is rejected despite valid identity and arguments', () async {
+    final h = await Stage1Harness.open();
+    final active = await h.start();
+    active.call.add(ModelText('retained'));
+    active.call.add(
+      ModelToolFragment(
+        index: 0,
+        id: 'unsupported-state',
+        type: 'function',
+        name: 'update_state',
+        arguments: jsonEncode({
+          'ops': [stage1Set(7)],
+        }),
+        structure: const ModelToolFragmentStructure(unsupportedEnvelope: true),
+      ),
+    );
+    await active.call.finish();
+    await active.events.done.future;
+    expect(active.events.values.whereType<TavernTurnFailed>(), isEmpty);
+    expect(active.events.values.whereType<TavernTurnDone>(), hasLength(1));
+    expect((await h.engine.readState(h.chatId)).values, {'n': 0, 'ticks': 0});
+    final turn = await h.turn(active.events);
+    final call = stage1Rows(stage1Map(turn.requests.single.batchDiagnostics['batch'])['calls']).single;
+    expect(call['valid'], isTrue);
+    expect(call['identityComplete'], isTrue);
+    expect(call['originalArgumentsStringComplete'], isTrue);
+    expect(call['unsupportedEnvelope'], isTrue);
+    expect(call['issues'], isEmpty);
+    final receipt = (await h.engine.readToolReceipt(turn.receiptIds.single))!;
+    expect(receipt.status, 'rejected');
+    expect(receipt.committed, isFalse);
+    expect(receipt.result!['acceptedCount'], 0);
+    expect(stage1Rows(receipt.result!['issues']).map((issue) => issue['code']), contains('unsupported-tool-envelope'));
+    expect(h.model.generated, 1);
+    expect(h.dice.calls, 0);
+  });
+
   for (final reason in <String?>[null, 'length', 'unknown-provider-reason']) {
     test('provider terminal $reason adopts body and retains roll but discards staged effects', () async {
       final h = await Stage1Harness.open(rules: true);

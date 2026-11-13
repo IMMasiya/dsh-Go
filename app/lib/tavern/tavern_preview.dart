@@ -171,6 +171,45 @@ class PreviewTavern implements Tavern, TavernPreview {
   Future<TavernToolReceipt?> readToolReceipt(String executionId) => _noTool('readToolReceipt');
 
   @override
+  Future<List<TavernToolTurnSummary>> recentToolTurns(String chatId, {int limit = 20}) =>
+      _noTool('recentToolTurns', chatId: chatId);
+
+  /// The engine sums in one query; the preview adds up its line, a page at
+  /// a time through [path] (as a test's line overrides it), the same way.
+  @override
+  Future<List<TavernPathUsage>> pathUsage(String chatId) async {
+    final buckets = <(String?, int, int), List<int>>{};
+    String? before;
+    while (true) {
+      final page = await path(chatId, limit: 200, beforeNodeId: before);
+      for (final m in page) {
+        final usage = m.reportedUsage;
+        if (m.role != TavernRole.character || usage == null) continue;
+        final at = m.at.toUtc();
+        final sum = buckets[(usage.model, at.weekday, at.hour)] ??= [0, 0, 0, 0];
+        sum[0] += usage.promptTokens;
+        sum[1] += usage.cacheHitTokens;
+        sum[2] += usage.completionTokens;
+        sum[3]++;
+      }
+      if (page.length < 200) break;
+      before = page.first.nodeId;
+    }
+    return [
+      for (final MapEntry(key: (model, weekday, hour), value: sum) in buckets.entries)
+        TavernPathUsage(
+          model: model,
+          utcWeekday: weekday,
+          utcHour: hour,
+          promptTokens: sum[0],
+          cacheHitTokens: sum[1],
+          completionTokens: sum[2],
+          replyCount: sum[3],
+        ),
+    ];
+  }
+
+  @override
   Future<TavernToolReceipt> rollDice(
     String chatId, {
     required String actionId,

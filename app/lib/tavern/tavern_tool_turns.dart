@@ -48,14 +48,13 @@ Future<TavernToolTurnView?> tavernReadToolTurn(Tavern tavern, String logicalTurn
   return TavernToolTurnView(turn, receipts);
 }
 
-/// How many recent agent runs the chat's tool turns are found among (the
-/// engine's readAgentRuns is the newest few, not the whole history).
+/// How many of the chat's newest tool turns are shown under their replies.
 const tavernToolTurnDiscovery = 50;
 
 /// A chat's recent tool turns that have something to show, by the reply each
-/// belongs to (§9: the latest inspection's turn, and the recent `tool.turn`
-/// runs, read without a node filter). Read afresh when invalidated — after a
-/// turn ends, on a tool activity, after a decision. The preview keeps no tool
+/// belongs to ([Tavern.recentToolTurns]: one small query, not the whole
+/// prompt of the latest turn). Read afresh when invalidated — after a turn
+/// ends, on a tool activity, after a decision. The preview keeps no tool
 /// turns, so it is not asked.
 final tavernChatToolTurnsProvider = FutureProvider.autoDispose.family<Map<String, List<TavernToolTurnView>>, String>((
   ref,
@@ -63,19 +62,17 @@ final tavernChatToolTurnsProvider = FutureProvider.autoDispose.family<Map<String
 ) async {
   final tavern = ref.watch(tavernProvider);
   if (tavern is TavernPreview) return const {};
-  final ids = <String>{};
-  if ((await tavern.inspectTurn(chatId))?.logicalTurnId case final latest? when latest.isNotEmpty) ids.add(latest);
-  for (final run in await tavern.readAgentRuns(chatId, limit: tavernToolTurnDiscovery)) {
-    if (run.kind != 'tool.turn') continue;
-    if (run.result['logicalTurnId'] case final String id when id.isNotEmpty) ids.add(id);
-  }
   // A continuation is a turn of its own on the reply it continues: a reply
-  // can have several. [ids] runs newest first; each reply's list, oldest first.
+  // can have several. The engine lists them newest first; each reply's
+  // list here, oldest first. A turn with no reply (yet, or any more) has
+  // nowhere to show.
   final byReply = <String, List<TavernToolTurnView>>{};
-  for (final id in ids) {
-    final view = await tavernReadToolTurn(tavern, id);
-    if (view == null || view.turn.chatId != chatId || !view.shows) continue;
-    if (view.replyNodeId case final node?) (byReply[node] ??= []).insert(0, view);
+  for (final summary in await tavern.recentToolTurns(chatId, limit: tavernToolTurnDiscovery)) {
+    final node = summary.replyNodeId;
+    if (node == null) continue;
+    final view = await tavernReadToolTurn(tavern, summary.logicalTurnId);
+    if (view == null || !view.shows) continue;
+    (byReply[node] ??= []).insert(0, view);
   }
   return byReply;
 }, retry: (_, _) => null);

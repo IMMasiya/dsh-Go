@@ -6,6 +6,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 
+import 'speech_fakes.dart';
+
 void main() {
   group('DirectDeepSeekSpeech', () {
     test('TTS asks for PCM with the key and the voice, and streams the audio', () async {
@@ -111,5 +113,39 @@ void main() {
     expect(data.getUint16(22, Endian.little), 1);
     expect(data.getUint32(40, Endian.little), 4); // An odd last byte is dropped.
     expect(wav.length, 48);
+  });
+
+  group('AccountThenKeySpeech', () {
+    setUp(resetDeepSeekAccountRefusal);
+
+    test('the account turned away before any audio: the key reads it, and every later request', () async {
+      final account = FakeDeepSeek(fail: const DeepSeekSpeechError(DeepSeekSpeechFailure.signIn));
+      final key = FakeDeepSeek();
+      var keys = 0;
+      final speech = AccountThenKeySpeech(account, () {
+        keys++;
+        return key;
+      });
+      expect(await speech.synthesize('你好').toList(), isNotEmpty);
+      expect(await speech.transcribe(Uint8List(4)), '你好');
+      expect(account.asked, ['你好']);
+      expect(account.heard, isEmpty);
+      expect(key.asked, ['你好']);
+      expect(keys, 1);
+      expect(account.closed, isFalse, reason: 'requests already on the account finish');
+    });
+
+    test('other failures are the account\'s own and are not retried with the key', () async {
+      final account = FakeDeepSeek(fail: const DeepSeekSpeechError(DeepSeekSpeechFailure.insufficientBalance));
+      final key = FakeDeepSeek();
+      final speech = AccountThenKeySpeech(account, () => key);
+      await expectLater(
+        speech.synthesize('你好').toList(),
+        throwsA(
+          isA<DeepSeekSpeechError>().having((e) => e.failure, 'failure', DeepSeekSpeechFailure.insufficientBalance),
+        ),
+      );
+      expect(key.asked, isEmpty);
+    });
   });
 }
