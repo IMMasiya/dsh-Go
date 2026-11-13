@@ -39260,6 +39260,72 @@ abstract class L10n {
   /// **'原因不明'**
   String get tavernToolReasonUnknown;
 
+  /// No description provided for @tavernToolPolicy.
+  ///
+  /// In zh, this message translates to:
+  /// **'工具'**
+  String get tavernToolPolicy;
+
+  /// No description provided for @tavernToolPolicyRoll.
+  ///
+  /// In zh, this message translates to:
+  /// **'让角色掷骰'**
+  String get tavernToolPolicyRoll;
+
+  /// No description provided for @tavernToolPolicyRollSubtitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'回复里要掷骰时，由酒馆来掷，点数记下来'**
+  String get tavernToolPolicyRollSubtitle;
+
+  /// No description provided for @tavernToolPolicyRemember.
+  ///
+  /// In zh, this message translates to:
+  /// **'让角色记事'**
+  String get tavernToolPolicyRemember;
+
+  /// No description provided for @tavernToolPolicyRememberSubtitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'角色觉得值得记住的事，按下面的方式记进记忆'**
+  String get tavernToolPolicyRememberSubtitle;
+
+  /// No description provided for @tavernToolPolicyMode.
+  ///
+  /// In zh, this message translates to:
+  /// **'记事方式'**
+  String get tavernToolPolicyMode;
+
+  /// No description provided for @tavernToolPolicyModeAsk.
+  ///
+  /// In zh, this message translates to:
+  /// **'先问我'**
+  String get tavernToolPolicyModeAsk;
+
+  /// No description provided for @tavernToolPolicyModeAuto.
+  ///
+  /// In zh, this message translates to:
+  /// **'自动'**
+  String get tavernToolPolicyModeAuto;
+
+  /// No description provided for @tavernToolPolicyDiagnostics.
+  ///
+  /// In zh, this message translates to:
+  /// **'设置里有一部分读不懂，那部分按默认处理'**
+  String get tavernToolPolicyDiagnostics;
+
+  /// No description provided for @tavernToolPolicyNote.
+  ///
+  /// In zh, this message translates to:
+  /// **'只在用 DeepSeek、不开思考时，回复里才会用上这些；改了从下一回合起生效，角色卡也可以关掉它们'**
+  String get tavernToolPolicyNote;
+
+  /// No description provided for @tavernToolPolicyFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'没改成：{detail}'**
+  String tavernToolPolicyFailed(String detail);
+
   /// No description provided for @updateCheck.
   ///
   /// In zh, this message translates to:

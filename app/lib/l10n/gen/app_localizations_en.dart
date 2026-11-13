@@ -22678,6 +22678,43 @@ class L10nEn extends L10n {
   String get tavernToolReasonUnknown => 'reason unknown';
 
   @override
+  String get tavernToolPolicy => 'Tools';
+
+  @override
+  String get tavernToolPolicyRoll => 'Let characters roll dice';
+
+  @override
+  String get tavernToolPolicyRollSubtitle => 'When a reply needs a roll, the tavern rolls it and keeps the result';
+
+  @override
+  String get tavernToolPolicyRemember => 'Let characters keep notes';
+
+  @override
+  String get tavernToolPolicyRememberSubtitle =>
+      'What a character finds worth remembering goes into memory, as set below';
+
+  @override
+  String get tavernToolPolicyMode => 'Keeping notes';
+
+  @override
+  String get tavernToolPolicyModeAsk => 'Ask me first';
+
+  @override
+  String get tavernToolPolicyModeAuto => 'Automatically';
+
+  @override
+  String get tavernToolPolicyDiagnostics => 'Part of this setting couldn\'t be read and uses the default';
+
+  @override
+  String get tavernToolPolicyNote =>
+      'Replies only use these with DeepSeek and thinking off; a change applies from the next turn, and a character card can turn them off';
+
+  @override
+  String tavernToolPolicyFailed(String detail) {
+    return 'Didn\'t change: $detail';
+  }
+
+  @override
   String get updateCheck => 'Check for updates';
 
   @override

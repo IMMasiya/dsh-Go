@@ -34,6 +34,7 @@ import 'tavern_presets_page.dart';
 import 'tavern_quick_replies_page.dart';
 import 'tavern_reading.dart';
 import 'tavern_usage_page.dart';
+import 'tavern_tool_policy_group.dart';
 
 class TavernSettingsPage extends ConsumerWidget {
   const TavernSettingsPage({super.key});
@@ -419,7 +420,7 @@ List<Widget> tavernSettingsGroups(BuildContext context, WidgetRef ref) {
       ),
     ],
   );
-  return [model, generating, display, safety, data, you, startupGroup];
+  return [model, generating, const TavernToolPolicyGroup(), display, safety, data, you, startupGroup];
 }
 
 /// What the room goes to, part by part.

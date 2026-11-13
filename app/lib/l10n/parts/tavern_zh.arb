@@ -1179,5 +1179,17 @@
   "tavernToolReasonBranch": "不在现在这条线上",
   "tavernToolReasonInactive": "已经失效",
   "tavernToolReasonUnknown": "原因不明",
+  "tavernToolPolicy": "工具",
+  "tavernToolPolicyRoll": "让角色掷骰",
+  "tavernToolPolicyRollSubtitle": "回复里要掷骰时，由酒馆来掷，点数记下来",
+  "tavernToolPolicyRemember": "让角色记事",
+  "tavernToolPolicyRememberSubtitle": "角色觉得值得记住的事，按下面的方式记进记忆",
+  "tavernToolPolicyMode": "记事方式",
+  "tavernToolPolicyModeAsk": "先问我",
+  "tavernToolPolicyModeAuto": "自动",
+  "tavernToolPolicyDiagnostics": "设置里有一部分读不懂，那部分按默认处理",
+  "tavernToolPolicyNote": "只在用 DeepSeek、不开思考时，回复里才会用上这些；改了从下一回合起生效，角色卡也可以关掉它们",
+  "tavernToolPolicyFailed": "没改成：{detail}",
+  "@tavernToolPolicyFailed": {"placeholders": {"detail": {"type": "String"}}},
   "@tavernGroupSaveFailed": {"placeholders": {"reason": {"type": "String"}}}
 }

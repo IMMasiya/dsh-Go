@@ -21496,6 +21496,41 @@ class L10nZh extends L10n {
   String get tavernToolReasonUnknown => '原因不明';
 
   @override
+  String get tavernToolPolicy => '工具';
+
+  @override
+  String get tavernToolPolicyRoll => '让角色掷骰';
+
+  @override
+  String get tavernToolPolicyRollSubtitle => '回复里要掷骰时，由酒馆来掷，点数记下来';
+
+  @override
+  String get tavernToolPolicyRemember => '让角色记事';
+
+  @override
+  String get tavernToolPolicyRememberSubtitle => '角色觉得值得记住的事，按下面的方式记进记忆';
+
+  @override
+  String get tavernToolPolicyMode => '记事方式';
+
+  @override
+  String get tavernToolPolicyModeAsk => '先问我';
+
+  @override
+  String get tavernToolPolicyModeAuto => '自动';
+
+  @override
+  String get tavernToolPolicyDiagnostics => '设置里有一部分读不懂，那部分按默认处理';
+
+  @override
+  String get tavernToolPolicyNote => '只在用 DeepSeek、不开思考时，回复里才会用上这些；改了从下一回合起生效，角色卡也可以关掉它们';
+
+  @override
+  String tavernToolPolicyFailed(String detail) {
+    return '没改成：$detail';
+  }
+
+  @override
   String get updateCheck => '检查更新';
 
   @override
