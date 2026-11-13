@@ -21778,6 +21778,30 @@ class L10nZh extends L10n {
   String get tavernPresetSampling => '采样';
 
   @override
+  String get tavernChannelHeaders => '请求头（可选）';
+
+  @override
+  String get tavernChannelHeadersNote => '每行一个，写成「名称: 值」。存在普通设置里，别放密钥，密钥填 API Key。';
+
+  @override
+  String get tavernChannelHeadersInvalid => '每行写成「名称: 值」';
+
+  @override
+  String get tavernAuxiliary => '辅助模型';
+
+  @override
+  String get tavernAuxiliaryNote => '导演、群聊选人、秘密这些后台请求用它';
+
+  @override
+  String get tavernAuxiliaryAuto => '自动';
+
+  @override
+  String get tavernAuxiliaryAutoNote => '跟着主渠道：DeepSeek 用 Flash，其他渠道用同一个模型';
+
+  @override
+  String get tavernAuxiliaryDeepSeek => 'DeepSeek Flash';
+
+  @override
   String get updateCheck => '检查更新';
 
   @override

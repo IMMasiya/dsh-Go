@@ -10,6 +10,9 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'tavern_channels.dart';
 
+/// [TavernSettings.auxiliary] for DeepSeek's flash with the app's key.
+const tavernAuxiliaryDeepSeek = 'deepseek';
+
 /// The DeepSeek models offered as choices, cheapest first; any other name
 /// can be typed.
 const tavernModels = ['deepseek-flash', 'deepseek-v4-pro'];
@@ -58,6 +61,7 @@ class TavernSettings {
     this.model = 'deepseek-flash',
     this.channel,
     this.channels = const [],
+    this.auxiliary,
     this.thinking = false,
     this.layout = TavernLayout.bubble,
     this.textSize = 15,
@@ -81,6 +85,12 @@ class TavernSettings {
   /// The id of the channel in use, one of [channels]; null is DeepSeek's own.
   final String? channel;
   final List<TavernChannel> channels;
+
+  /// Where the background requests (导演, picking who speaks in a group,
+  /// secrets) go: null as the engine chooses (the main channel, DeepSeek's
+  /// flash on DeepSeek), [tavernAuxiliaryDeepSeek] DeepSeek's flash with the
+  /// app's key, else one of [channels]' ids.
+  final String? auxiliary;
   final bool thinking;
   final TavernLayout layout;
 
@@ -134,10 +144,19 @@ class TavernSettings {
   /// The request speaks DeepSeek's API, so 思考 applies.
   bool get deepseekApi => activeChannel?.deepseek ?? true;
 
+  /// The added channel the background requests use, when one is chosen.
+  TavernChannel? get auxiliaryChannel {
+    for (final c in channels) {
+      if (c.id == auxiliary) return c;
+    }
+    return null;
+  }
+
   TavernSettings copyWith({
     String? model,
     Object? channel = _keep,
     List<TavernChannel>? channels,
+    Object? auxiliary = _keep,
     bool? thinking,
     TavernLayout? layout,
     double? textSize,
@@ -156,6 +175,7 @@ class TavernSettings {
     model: model ?? this.model,
     channel: identical(channel, _keep) ? this.channel : channel as String?,
     channels: channels ?? this.channels,
+    auxiliary: identical(auxiliary, _keep) ? this.auxiliary : auxiliary as String?,
     thinking: thinking ?? this.thinking,
     layout: layout ?? this.layout,
     textSize: textSize ?? this.textSize,
@@ -180,6 +200,7 @@ class TavernSettingsController extends Notifier<TavernSettings> {
   static const modelKey = 'tavern.model';
   static const channelKey = 'tavern.channel';
   static const channelsKey = 'tavern.channels';
+  static const auxiliaryKey = 'tavern.auxiliary';
   static const thinkingKey = 'tavern.thinking';
   static const layoutKey = 'tavern.layout';
   static const textSizeKey = 'tavern.textSize';
@@ -208,10 +229,12 @@ class TavernSettingsController extends Notifier<TavernSettings> {
       final model = prefs.getString(modelKey)?.trim() ?? '';
       final channels = TavernChannel.listFromJson(prefs.getString(channelsKey));
       final channel = prefs.getString(channelKey);
+      final auxiliary = prefs.getString(auxiliaryKey);
       loaded = TavernSettings(
         model: model.isEmpty ? tavernModels.first : model,
         channel: channels.any((c) => c.id == channel) ? channel : null,
         channels: channels,
+        auxiliary: auxiliary == tavernAuxiliaryDeepSeek || channels.any((c) => c.id == auxiliary) ? auxiliary : null,
         thinking: prefs.getBool(thinkingKey) ?? false,
         layout: TavernLayout.values.asNameMap()[prefs.getString(layoutKey)] ?? TavernLayout.bubble,
         textSize: _within(prefs.getDouble(textSizeKey), tavernTextSizeRange, 15),
@@ -245,6 +268,13 @@ class TavernSettingsController extends Notifier<TavernSettings> {
     await _save((prefs) => id == null ? prefs.remove(channelKey) : prefs.setString(channelKey, id));
   }
 
+  /// Background requests to [id] ([TavernSettings.auxiliary]); null leaves
+  /// them to the engine.
+  Future<void> setAuxiliary(String? id) async {
+    state = state.copyWith(auxiliary: id);
+    await _save((prefs) => id == null ? prefs.remove(auxiliaryKey) : prefs.setString(auxiliaryKey, id));
+  }
+
   /// Adds [channel], or replaces the one with its id. [key] replaces its key
   /// when given; empty removes it (an endpoint that needs none).
   Future<void> saveChannel(TavernChannel channel, {String? key}) async {
@@ -263,6 +293,7 @@ class TavernSettingsController extends Notifier<TavernSettings> {
   Future<void> deleteChannel(String id) async {
     final channels = [...state.channels]..removeWhere((c) => c.id == id);
     if (state.channel == id) await setChannel(null);
+    if (state.auxiliary == id) await setAuxiliary(null);
     state = state.copyWith(channels: channels);
     await _save((prefs) => prefs.setString(channelsKey, TavernChannel.listToJson(channels)));
     await ref.read(tavernChannelKeysProvider).delete(id);

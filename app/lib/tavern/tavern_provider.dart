@@ -22,26 +22,52 @@ final tavernProvider = Provider<Tavern>((ref) {
   }());
   ref.onDispose(tavern.close);
   final keys = ref.read(tavernChannelKeysProvider);
-  void configure(TavernSettings settings) {
-    final channel = settings.activeChannel;
-    tavern.configure(
-      TavernModelConfig(
-        apiKey: () async {
-          final key = (channel == null ? ref.read(settingsProvider).apiKey : await keys.read(channel.id))?.trim();
-          return key == null || key.isEmpty ? null : key;
-        },
-        baseUrl: channel?.baseUrl ?? tavernDeepSeekBaseUrl,
-        model: settings.activeModel,
-        deepseek: settings.deepseekApi,
-        thinking: settings.thinking,
-      ),
-    );
-  }
-
+  void configure(TavernSettings settings) =>
+      tavern.configure(tavernModelConfig(settings, appKey: () => ref.read(settingsProvider).apiKey, keys: keys));
   configure(ref.read(tavernSettingsProvider));
   ref.listen(tavernSettingsProvider, (_, next) => configure(next));
   return tavern;
 });
+
+/// What the engine talks to under [settings]: the channel in use, and the
+/// 辅助模型 when one is chosen. Each key is read on every call, the built-in
+/// channel's from the app's settings ([appKey]).
+TavernModelConfig tavernModelConfig(
+  TavernSettings settings, {
+  required String Function() appKey,
+  required TavernChannelKeys keys,
+}) {
+  // DeepSeek's own (null) or an added channel.
+  TavernModelConfig config(
+    TavernChannel? channel,
+    String model, {
+    bool thinking = false,
+    TavernModelConfig? auxiliary,
+  }) => TavernModelConfig(
+    apiKey: () async {
+      final key = (channel == null ? appKey() : await keys.read(channel.id))?.trim();
+      return key == null || key.isEmpty ? null : key;
+    },
+    baseUrl: channel?.baseUrl ?? tavernDeepSeekBaseUrl,
+    model: model,
+    deepseek: channel?.deepseek ?? true,
+    thinking: thinking,
+    headers: channel?.headers ?? const {},
+    auxiliary: auxiliary,
+  );
+  final helper = settings.auxiliaryChannel;
+  return config(
+    settings.activeChannel,
+    settings.activeModel,
+    thinking: settings.thinking,
+    // 辅助模型: thinking off, as the engine's own choice has it.
+    auxiliary: switch (settings.auxiliary) {
+      tavernAuxiliaryDeepSeek => config(null, tavernModels.first),
+      _ when helper != null => config(helper, helper.model),
+      _ => null,
+    },
+  );
+}
 
 /// The app's host for card scripts, one per tavern: what the engine delivers
 /// to a canvas page's script context goes to that page.

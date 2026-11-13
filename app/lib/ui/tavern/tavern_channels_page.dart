@@ -120,13 +120,15 @@ class _TavernChannelEditPageState extends ConsumerState<TavernChannelEditPage> {
   late final _baseUrl = TextEditingController(text: widget.channel?.baseUrl ?? '');
   final _key = TextEditingController();
   late final _model = TextEditingController(text: widget.channel?.model ?? '');
+  late final _headers = TextEditingController(text: tavernHeaderLines(widget.channel?.headers ?? const {}));
   late var _deepseek = widget.channel?.deepseek ?? false;
-  late final _edits = Listenable.merge([_name, _baseUrl, _key, _model]);
+  late final _edits = Listenable.merge([_name, _baseUrl, _key, _model, _headers]);
   var _obscure = true;
   var _fetching = false;
   var _saved = false;
   String? _baseUrlError;
   String? _modelError;
+  String? _headersError;
   String? _fetchNote;
 
   /// The stored key of the channel being edited, so the field can say so.
@@ -146,7 +148,7 @@ class _TavernChannelEditPageState extends ConsumerState<TavernChannelEditPage> {
 
   @override
   void dispose() {
-    for (final c in [_name, _baseUrl, _key, _model]) {
+    for (final c in [_name, _baseUrl, _key, _model, _headers]) {
       c.dispose();
     }
     super.dispose();
@@ -158,6 +160,7 @@ class _TavernChannelEditPageState extends ConsumerState<TavernChannelEditPage> {
           _baseUrl.text != (widget.channel?.baseUrl ?? '') ||
           _key.text.isNotEmpty ||
           _model.text != (widget.channel?.model ?? '') ||
+          _headers.text != tavernHeaderLines(widget.channel?.headers ?? const {}) ||
           _deepseek != (widget.channel?.deepseek ?? false));
 
   /// The key to use for /models: the one typed, else the stored one.
@@ -216,11 +219,13 @@ class _TavernChannelEditPageState extends ConsumerState<TavernChannelEditPage> {
     final l10n = context.l10n;
     final baseUrl = _baseUrl.text.trim();
     final model = _model.text.trim();
+    final headers = tavernParseHeaders(_headers.text);
     setState(() {
       _baseUrlError = tavernBaseUrlProblem(baseUrl) == null ? null : l10n.tavernChannelBaseUrlInvalid;
       _modelError = model.isEmpty ? l10n.tavernChannelModelMissing : null;
+      _headersError = headers == null ? l10n.tavernChannelHeadersInvalid : null;
     });
-    if (_baseUrlError != null || _modelError != null) return;
+    if (_baseUrlError != null || _modelError != null || headers == null) return;
     final name = _name.text.trim();
     final channel = TavernChannel(
       id: widget.channel?.id ?? 'c${DateTime.now().microsecondsSinceEpoch}',
@@ -228,6 +233,7 @@ class _TavernChannelEditPageState extends ConsumerState<TavernChannelEditPage> {
       baseUrl: baseUrl,
       model: model,
       deepseek: _deepseek,
+      headers: headers,
     );
     final controller = ref.read(tavernSettingsProvider.notifier);
     final key = _key.text.trim();
@@ -359,6 +365,27 @@ class _TavernChannelEditPageState extends ConsumerState<TavernChannelEditPage> {
                     ),
                   ),
                 ),
+                FormFieldBlock(
+                  label: l10n.tavernChannelHeaders,
+                  error: _headersError,
+                  helper: l10n.tavernChannelHeadersNote,
+                  child: TextField(
+                    key: const ValueKey('tavern-channel-headers'),
+                    controller: _headers,
+                    autocorrect: false,
+                    minLines: 1,
+                    maxLines: 4,
+                    keyboardType: TextInputType.multiline,
+                    style: AppType.mono(size: 13),
+                    onChanged: (_) {
+                      if (_headersError != null) setState(() => _headersError = null);
+                    },
+                    decoration: InputDecoration(
+                      hintText: 'HTTP-Referer: https://…',
+                      error: _headersError == null ? null : const SizedBox.shrink(),
+                    ),
+                  ),
+                ),
               ],
             ),
           ],
@@ -475,3 +502,76 @@ class _ModelPickerState extends State<_ModelPicker> {
     );
   }
 }
+
+/// 酒馆设置 › 辅助模型: where 导演, picking who speaks in a group and secrets
+/// go. 自动 leaves it to the engine (the main channel; DeepSeek's flash on
+/// DeepSeek); a cheaper channel saves on them.
+class TavernAuxiliaryTile extends ConsumerWidget {
+  const TavernAuxiliaryTile({super.key});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final l10n = context.l10n;
+    final settings = ref.watch(tavernSettingsProvider);
+    final helper = settings.auxiliaryChannel;
+    return SettingsTile(
+      key: const ValueKey('tavern-auxiliary'),
+      icon: AppIcons.agentLoop,
+      title: l10n.tavernAuxiliary,
+      subtitle: l10n.tavernAuxiliaryNote,
+      value: Text(switch (settings.auxiliary) {
+        tavernAuxiliaryDeepSeek => l10n.tavernAuxiliaryDeepSeek,
+        _ when helper != null => helper.name,
+        _ => l10n.tavernAuxiliaryAuto,
+      }),
+      onTap: () => unawaited(_pickAuxiliary(context)),
+    );
+  }
+}
+
+Future<void> _pickAuxiliary(BuildContext context) => showAppSheet<void>(
+  context,
+  builder: (sheet) => Consumer(
+    builder: (inner, ref, _) {
+      final l10n = inner.l10n;
+      final settings = ref.watch(tavernSettingsProvider);
+      Widget row(String key, String title, String? subtitle, String? id) => SettingsTile(
+        key: ValueKey('tavern-auxiliary-$key'),
+        title: title,
+        subtitle: subtitle,
+        trailing: SelectionTick(checked: settings.auxiliary == id),
+        onTap: () {
+          Navigator.of(sheet).pop();
+          unawaited(ref.read(tavernSettingsProvider.notifier).setAuxiliary(id));
+        },
+      );
+      return SafeArea(
+        top: false,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            SheetTitleBar(l10n.tavernAuxiliary),
+            Flexible(
+              child: SingleChildScrollView(
+                child: SheetGroup(
+                  margin: const EdgeInsets.fromLTRB(SheetTitleBar.inset, 0, SheetTitleBar.inset, 12),
+                  children: [
+                    row('auto', l10n.tavernAuxiliaryAuto, l10n.tavernAuxiliaryAutoNote, null),
+                    row(
+                      'deepseek',
+                      l10n.tavernAuxiliaryDeepSeek,
+                      l10n.tavernChannelDeepSeekNote,
+                      tavernAuxiliaryDeepSeek,
+                    ),
+                    for (final c in settings.channels) row(c.id, c.name, '${c.host} · ${c.model}', c.id),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+    },
+  ),
+);

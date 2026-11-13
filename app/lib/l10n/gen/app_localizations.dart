@@ -39758,6 +39758,54 @@ abstract class L10n {
   /// **'采样'**
   String get tavernPresetSampling;
 
+  /// No description provided for @tavernChannelHeaders.
+  ///
+  /// In zh, this message translates to:
+  /// **'请求头（可选）'**
+  String get tavernChannelHeaders;
+
+  /// No description provided for @tavernChannelHeadersNote.
+  ///
+  /// In zh, this message translates to:
+  /// **'每行一个，写成「名称: 值」。存在普通设置里，别放密钥，密钥填 API Key。'**
+  String get tavernChannelHeadersNote;
+
+  /// No description provided for @tavernChannelHeadersInvalid.
+  ///
+  /// In zh, this message translates to:
+  /// **'每行写成「名称: 值」'**
+  String get tavernChannelHeadersInvalid;
+
+  /// No description provided for @tavernAuxiliary.
+  ///
+  /// In zh, this message translates to:
+  /// **'辅助模型'**
+  String get tavernAuxiliary;
+
+  /// No description provided for @tavernAuxiliaryNote.
+  ///
+  /// In zh, this message translates to:
+  /// **'导演、群聊选人、秘密这些后台请求用它'**
+  String get tavernAuxiliaryNote;
+
+  /// No description provided for @tavernAuxiliaryAuto.
+  ///
+  /// In zh, this message translates to:
+  /// **'自动'**
+  String get tavernAuxiliaryAuto;
+
+  /// No description provided for @tavernAuxiliaryAutoNote.
+  ///
+  /// In zh, this message translates to:
+  /// **'跟着主渠道：DeepSeek 用 Flash，其他渠道用同一个模型'**
+  String get tavernAuxiliaryAutoNote;
+
+  /// No description provided for @tavernAuxiliaryDeepSeek.
+  ///
+  /// In zh, this message translates to:
+  /// **'DeepSeek Flash'**
+  String get tavernAuxiliaryDeepSeek;
+
   /// No description provided for @updateCheck.
   ///
   /// In zh, this message translates to:

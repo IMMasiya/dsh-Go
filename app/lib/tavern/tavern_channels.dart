@@ -8,6 +8,7 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart' show mapEquals;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:http/http.dart' as http;
@@ -23,6 +24,7 @@ class TavernChannel {
     required this.baseUrl,
     required this.model,
     this.deepseek = false,
+    this.headers = const {},
   });
 
   /// `c<microseconds>`, made once when it is added.
@@ -38,23 +40,55 @@ class TavernChannel {
   /// on `/beta` and the 思考 switch. Off, a plain Chat Completions endpoint.
   final bool deepseek;
 
+  /// Sent with every request (OpenRouter's `HTTP-Referer`, a gateway's
+  /// tenant). Kept in preferences with the channel: not for secrets, which go
+  /// in the key.
+  final Map<String, String> headers;
+
   /// `api.example.com`, for a row's second line.
   String get host => Uri.tryParse(baseUrl)?.host ?? baseUrl;
 
-  TavernChannel copyWith({String? name, String? baseUrl, String? model, bool? deepseek}) => TavernChannel(
+  TavernChannel copyWith({
+    String? name,
+    String? baseUrl,
+    String? model,
+    bool? deepseek,
+    Map<String, String>? headers,
+  }) => TavernChannel(
     id: id,
     name: name ?? this.name,
     baseUrl: baseUrl ?? this.baseUrl,
     model: model ?? this.model,
     deepseek: deepseek ?? this.deepseek,
+    headers: headers ?? this.headers,
   );
 
-  Map<String, Object?> toJson() => {'id': id, 'name': name, 'baseUrl': baseUrl, 'model': model, 'deepseek': deepseek};
+  Map<String, Object?> toJson() => {
+    'id': id,
+    'name': name,
+    'baseUrl': baseUrl,
+    'model': model,
+    'deepseek': deepseek,
+    if (headers.isNotEmpty) 'headers': headers,
+  };
 
   /// Null for an entry that is not a channel (preferences written by hand).
   static TavernChannel? fromJson(Object? json) => switch (json) {
     {'id': final String id, 'name': final String name, 'baseUrl': final String baseUrl, 'model': final String model} =>
-      TavernChannel(id: id, name: name, baseUrl: baseUrl, model: model, deepseek: json['deepseek'] == true),
+      TavernChannel(
+        id: id,
+        name: name,
+        baseUrl: baseUrl,
+        model: model,
+        deepseek: json['deepseek'] == true,
+        headers: switch (json['headers']) {
+          final Map<String, Object?> headers => {
+            for (final MapEntry(:key, :value) in headers.entries)
+              if (value is String) key: value,
+          },
+          _ => const {},
+        },
+      ),
     _ => null,
   };
 
@@ -78,11 +112,38 @@ class TavernChannel {
       other.name == name &&
       other.baseUrl == baseUrl &&
       other.model == model &&
-      other.deepseek == deepseek;
+      other.deepseek == deepseek &&
+      mapEquals(other.headers, headers);
 
   @override
-  int get hashCode => Object.hash(id, name, baseUrl, model, deepseek);
+  int get hashCode => Object.hash(
+    id,
+    name,
+    baseUrl,
+    model,
+    deepseek,
+    Object.hashAllUnordered(headers.entries.map((e) => '${e.key}:${e.value}')),
+  );
 }
+
+/// `Name: value` lines (one header each, blank lines skipped) as headers;
+/// null when a line is not one.
+Map<String, String>? tavernParseHeaders(String text) {
+  final headers = <String, String>{};
+  for (final line in text.split('\n')) {
+    if (line.trim().isEmpty) continue;
+    final colon = line.indexOf(':');
+    if (colon <= 0) return null;
+    final name = line.substring(0, colon).trim();
+    if (name.isEmpty || name.contains(' ')) return null;
+    headers[name] = line.substring(colon + 1).trim();
+  }
+  return headers;
+}
+
+/// [headers] as the lines [tavernParseHeaders] reads.
+String tavernHeaderLines(Map<String, String> headers) =>
+    [for (final MapEntry(:key, :value) in headers.entries) '$key: $value'].join('\n');
 
 /// Why a Base URL can't be used, or null: it must be http(s) with a host.
 String? tavernBaseUrlProblem(String text) {

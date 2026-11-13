@@ -1278,5 +1278,13 @@
   "tavernTopP": "Top P",
   "tavernPresencePenalty": "存在惩罚",
   "tavernFrequencyPenalty": "频率惩罚",
-  "tavernPresetSampling": "采样"
+  "tavernPresetSampling": "采样",
+  "tavernChannelHeaders": "请求头（可选）",
+  "tavernChannelHeadersNote": "每行一个，写成「名称: 值」。存在普通设置里，别放密钥，密钥填 API Key。",
+  "tavernChannelHeadersInvalid": "每行写成「名称: 值」",
+  "tavernAuxiliary": "辅助模型",
+  "tavernAuxiliaryNote": "导演、群聊选人、秘密这些后台请求用它",
+  "tavernAuxiliaryAuto": "自动",
+  "tavernAuxiliaryAutoNote": "跟着主渠道：DeepSeek 用 Flash，其他渠道用同一个模型",
+  "tavernAuxiliaryDeepSeek": "DeepSeek Flash"
 }

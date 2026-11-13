@@ -1278,5 +1278,13 @@
   "tavernTopP": "Top P",
   "tavernPresencePenalty": "Presence penalty",
   "tavernFrequencyPenalty": "Frequency penalty",
-  "tavernPresetSampling": "Sampling"
+  "tavernPresetSampling": "Sampling",
+  "tavernChannelHeaders": "Request headers (optional)",
+  "tavernChannelHeadersNote": "One per line, as “Name: value”. Kept in plain settings: put secrets in the API key, not here.",
+  "tavernChannelHeadersInvalid": "Write each line as “Name: value”",
+  "tavernAuxiliary": "Helper model",
+  "tavernAuxiliaryNote": "Used for the director, picking who speaks in a group, and secrets",
+  "tavernAuxiliaryAuto": "Automatic",
+  "tavernAuxiliaryAutoNote": "Follows the main channel: Flash on DeepSeek, the same model elsewhere",
+  "tavernAuxiliaryDeepSeek": "DeepSeek Flash"
 }

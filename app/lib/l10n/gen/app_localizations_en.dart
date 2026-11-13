@@ -22965,6 +22965,31 @@ class L10nEn extends L10n {
   String get tavernPresetSampling => 'Sampling';
 
   @override
+  String get tavernChannelHeaders => 'Request headers (optional)';
+
+  @override
+  String get tavernChannelHeadersNote =>
+      'One per line, as “Name: value”. Kept in plain settings: put secrets in the API key, not here.';
+
+  @override
+  String get tavernChannelHeadersInvalid => 'Write each line as “Name: value”';
+
+  @override
+  String get tavernAuxiliary => 'Helper model';
+
+  @override
+  String get tavernAuxiliaryNote => 'Used for the director, picking who speaks in a group, and secrets';
+
+  @override
+  String get tavernAuxiliaryAuto => 'Automatic';
+
+  @override
+  String get tavernAuxiliaryAutoNote => 'Follows the main channel: Flash on DeepSeek, the same model elsewhere';
+
+  @override
+  String get tavernAuxiliaryDeepSeek => 'DeepSeek Flash';
+
+  @override
   String get updateCheck => 'Check for updates';
 
   @override

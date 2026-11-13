@@ -27,6 +27,7 @@ import '../shell/page_frame.dart';
 import '../theme/app_icons.dart';
 import '../theme/theme.dart';
 import 'tavern_backup.dart';
+import 'tavern_channels_page.dart' show TavernAuxiliaryTile;
 import 'tavern_import_files.dart';
 import 'tavern_model_rows.dart';
 import 'tavern_number_tile.dart';
@@ -94,6 +95,7 @@ List<Widget> tavernSettingsGroups(BuildContext context, WidgetRef ref) {
     margin: const EdgeInsets.fromLTRB(16, 0, 16, 16),
     children: [
       ...tavernModelRows(context, ref, keyPrefix: 'tavern'),
+      const TavernAuxiliaryTile(),
       // An added channel's key is on that channel.
       if (settings.activeChannel == null)
         SettingsTile(

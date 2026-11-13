@@ -10,6 +10,7 @@ import 'package:dsh_app/ui/tavern/tavern_channels_page.dart';
 import 'package:dsh_app/ui/tavern/tavern_number_tile.dart';
 import 'package:dsh_app/ui/tavern/tavern_settings_page.dart';
 import 'package:dsh_app/ui/theme/theme.dart';
+import 'package:dsh_tavern/dsh_tavern.dart' show TavernModelConfig;
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -306,11 +307,99 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('tavern-channel-c1-edit')));
     await tester.pumpAndSettle();
     expect(find.text('已存了 Key，不填就保持原样'), findsOneWidget);
+    await _show(tester, find.byKey(const ValueKey('tavern-channel-delete')));
     await tester.tap(find.byKey(const ValueKey('tavern-channel-delete')));
     await tester.pumpAndSettle();
     await tester.tap(find.text('删除').last);
     await tester.pumpAndSettle();
     expect(_container(tester).read(tavernSettingsProvider).channels, isEmpty);
     expect(keys.stored, isEmpty);
+  });
+
+  test('request headers: one "Name: value" a line; anything else is refused', () {
+    expect(tavernParseHeaders('HTTP-Referer: https://a.example\n\nX-Title: 我的 酒馆'), {
+      'HTTP-Referer': 'https://a.example',
+      'X-Title': '我的 酒馆',
+    });
+    expect(tavernParseHeaders(''), isEmpty);
+    expect(tavernParseHeaders('no colon here'), isNull);
+    expect(tavernParseHeaders('Bad Name: x'), isNull);
+    final relay = _relay.copyWith(headers: {'X-Title': 'T'});
+    expect(TavernChannel.listFromJson(TavernChannel.listToJson([relay])), [relay]);
+    expect(tavernHeaderLines(relay.headers), 'X-Title: T');
+  });
+
+  test('the engine is told the channel in use, its headers, and the helper model', () async {
+    final keys = _Keys()..stored['c1'] = 'sk-relay';
+    final relay = _relay.copyWith(headers: {'X-Title': 'T'});
+    final local = const TavernChannel(id: 'c2', name: 'Local', baseUrl: 'http://192.168.1.2:1234/v1', model: 'qwen');
+    TavernModelConfig of(TavernSettings s) => tavernModelConfig(s, appKey: () => 'sk-app', keys: keys);
+
+    // DeepSeek's own: the app's key, no helper of ours.
+    var config = of(const TavernSettings(thinking: true));
+    expect(
+      (config.baseUrl, config.model, config.deepseek, config.thinking),
+      (tavernDeepSeekBaseUrl, 'deepseek-flash', true, true),
+    );
+    expect(await config.apiKey(), 'sk-app');
+    expect(config.auxiliary, isNull);
+
+    // A channel in use, a local one as its helper (no key: none sent).
+    config = of(TavernSettings(channel: 'c1', channels: [relay, local], auxiliary: 'c2', thinking: true));
+    expect((config.baseUrl, config.model, config.deepseek), ('https://relay.example/v1', 'gpt-x', false));
+    expect(config.headers, {'X-Title': 'T'});
+    expect(await config.apiKey(), 'sk-relay');
+    final helper = config.auxiliary!;
+    expect((helper.baseUrl, helper.model, helper.thinking), ('http://192.168.1.2:1234/v1', 'qwen', false));
+    expect(await helper.apiKey(), isNull);
+
+    // DeepSeek's flash as the helper, under any channel.
+    config = of(TavernSettings(channel: 'c1', channels: [relay], auxiliary: tavernAuxiliaryDeepSeek));
+    expect((config.auxiliary!.baseUrl, config.auxiliary!.model), (tavernDeepSeekBaseUrl, 'deepseek-flash'));
+    expect(await config.auxiliary!.apiKey(), 'sk-app');
+  });
+
+  testWidgets('辅助模型 is picked in 酒馆设置; deleting its channel sets it back to 自动', (tester) async {
+    SharedPreferences.setMockInitialValues({
+      TavernSettingsController.channelsKey: TavernChannel.listToJson([_relay]),
+    });
+    _phone(tester);
+    await tester.pumpWidget(_app(_Keys(), const TavernSettingsPage()));
+    await tester.pumpAndSettle();
+    final row = find.byKey(const ValueKey('tavern-auxiliary'));
+    expect(find.descendant(of: row, matching: find.text('自动')), findsOneWidget);
+
+    await tester.tap(row);
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('tavern-auxiliary-c1')));
+    await tester.pumpAndSettle();
+    expect(find.descendant(of: row, matching: find.text('Relay')), findsOneWidget);
+    expect((await SharedPreferences.getInstance()).getString(TavernSettingsController.auxiliaryKey), 'c1');
+
+    await _container(tester).read(tavernSettingsProvider.notifier).deleteChannel('c1');
+    await tester.pumpAndSettle();
+    expect(find.descendant(of: row, matching: find.text('自动')), findsOneWidget);
+  });
+
+  testWidgets('a channel keeps the headers typed on its page; a malformed line is said', (tester) async {
+    SharedPreferences.setMockInitialValues({
+      TavernSettingsController.channelsKey: TavernChannel.listToJson([_relay]),
+    });
+    _phone(tester);
+    await tester.pumpWidget(_app(_Keys(), TavernChannelEditPage(channel: _relay)));
+    await tester.pumpAndSettle();
+    // Saving pops this page, the only one here: hold on to the container.
+    final container = _container(tester);
+    final field = find.byKey(const ValueKey('tavern-channel-headers'));
+    await _show(tester, field);
+    await tester.enterText(field, 'not a header');
+    await tester.tap(find.byKey(const ValueKey('tavern-channel-save')));
+    await tester.pumpAndSettle();
+    expect(find.text('每行写成「名称: 值」'), findsOneWidget);
+
+    await tester.enterText(field, 'X-Title: 我的酒馆');
+    await tester.tap(find.byKey(const ValueKey('tavern-channel-save')));
+    await tester.pumpAndSettle();
+    expect(container.read(tavernSettingsProvider).channels.single.headers, {'X-Title': '我的酒馆'});
   });
 }
