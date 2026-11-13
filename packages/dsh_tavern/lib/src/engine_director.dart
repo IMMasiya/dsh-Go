@@ -1,5 +1,15 @@
 part of 'engine.dart';
 
+TavernModelConfig _auxiliaryModelConfig(TavernModelConfig config) =>
+    config.auxiliary ??
+    TavernModelConfig(
+      apiKey: config.apiKey,
+      baseUrl: config.baseUrl,
+      model: config.deepseek ? 'deepseek-flash' : config.model,
+      deepseek: config.deepseek,
+      headers: config.headers,
+    );
+
 Map<String, Object?> _directorIssue(String code, {String? id}) => {'kind': 'director', 'code': code, 'id': ?id};
 
 Object? _directorCanonical(Object? value) {
@@ -512,12 +522,21 @@ class _DirectorCoordinator {
       job.cancellation.check();
       final memory = _directorMemoryBook(engine, job.chatId, job.at);
       job.issues.addAll(memory.issues);
-      final books = [...loaded.loaded, if (memory.book != null) memory.book!];
+      final withLegacy = [...loaded.loaded, if (memory.book != null) memory.book!];
+      final remembered = _rememberMemoryBook(engine, job.chatId, job.nodeId, withLegacy);
+      job.issues.addAll(remembered.issues);
+      final books = [...withLegacy, if (remembered.book != null) remembered.book!];
+      final memoryOwners = <String, WorldInfoBook>{
+        if (memory.book case final book?)
+          for (final entry in book.entries) entry.uid: book,
+        ...remembered.owners,
+      };
       final catalog = _directorCatalog(
         books,
         job.chatId,
         strategy: WorldInfoSettings.fromJson(_map(job.settings['worldInfo'])).strategy,
         memoryBook: memory.book,
+        memoryOwners: memoryOwners,
       );
       job.catalog = catalog.entries;
       job.issues.addAll(catalog.issues);
@@ -606,14 +625,7 @@ class _DirectorCoordinator {
       if (input.length > 1024 * 1024 || utf8.encode(input).length > 1024 * 1024) {
         throw const TavernModelException(TavernFailure.contextTooLong, 'director_input_limit');
       }
-      final original = job.originalConfig;
-      final config = TavernModelConfig(
-        apiKey: original.apiKey,
-        baseUrl: original.baseUrl,
-        model: original.deepseek ? 'deepseek-flash' : original.model,
-        deepseek: original.deepseek,
-        thinking: false,
-      );
+      final config = _auxiliaryModelConfig(job.originalConfig);
       final body = <String, Object?>{
         'messages': [
           {'role': 'system', 'content': director_core.directorSystemPrompt},
@@ -621,12 +633,14 @@ class _DirectorCoordinator {
         ],
         'stream': false,
         'max_tokens': 4096,
-        if (config.deepseek) 'thinking': {'type': 'disabled'},
+        if (config.deepseek) 'thinking': {'type': config.thinking ? 'enabled' : 'disabled'},
         'tools': [director_core.directToolDefinition(strict: config.deepseek)],
-        'tool_choice': {
-          'type': 'function',
-          'function': {'name': 'direct'},
-        },
+        'tool_choice': config.deepseek && config.thinking
+            ? 'auto'
+            : {
+                'type': 'function',
+                'function': {'name': 'direct'},
+              },
       };
       final batch = await _receive(job, config, body);
       job.cancellation.check();
@@ -1214,6 +1228,39 @@ String _directorMemoryId(String chatId) => 'dshgo:memory:$chatId';
   );
 }
 
+({WorldInfoBook? book, Map<String, WorldInfoBook> owners, List<Map<String, Object?>> issues}) _rememberMemoryBook(
+  TavernEngine engine,
+  String chatId,
+  String? requestedLeafId,
+  List<WorldInfoBook> loaded,
+) {
+  final occupied = {for (final book in loaded) book.id};
+  final base = 'dshgo:remember:$chatId';
+  var id = base;
+  var suffix = 1;
+  while (occupied.contains(id)) {
+    id = '$base:${suffix++}';
+  }
+  final entries = <String, Object?>{};
+  final issues = <Map<String, Object?>>[];
+  for (final row in engine._store.rememberMemories(chatId, requestedLeafId: requestedLeafId)) {
+    if (!row.available) {
+      issues.add({..._directorIssue('remember_unavailable', id: row.id), 'reason': row.unavailableReason});
+      continue;
+    }
+    entries[row.id] = {...row.entry, 'position': 0, 'uid': row.id, 'world': id};
+  }
+  if (entries.isEmpty) return (book: null, owners: const <String, WorldInfoBook>{}, issues: issues);
+  final book = WorldInfoBook.fromJson(
+    id: id,
+    source: WorldInfoSource.memory,
+    stWorldName: id,
+    json: {'name': 'Remembered facts', 'entries': entries},
+  );
+  // Only a real row projected into this exact book can own a memory reference.
+  return (book: book, owners: {for (final entry in book.entries) entry.uid: book}, issues: issues);
+}
+
 String _directorRefKey(Map<String, Object?> reference) {
   if (reference['kind'] == 'memory' && reference.length == 2 && reference['id'] is String) {
     return jsonEncode(['memory', reference['id']]);
@@ -1242,6 +1289,7 @@ Set<String> _directorAllowedReferences(StoredAgentRun stored) {
   String chatId, {
   required WorldInfoStrategy strategy,
   WorldInfoBook? memoryBook,
+  Map<String, WorldInfoBook> memoryOwners = const {},
 }) {
   final entries = worldInfoExecutionEntries(books, strategy: strategy);
   final counts = <WorldInfoEntryRef, int>{};
@@ -1269,7 +1317,7 @@ Set<String> _directorAllowedReferences(StoredAgentRun stored) {
       continue;
     }
     result.add({
-      'reference': identical(entry.book, memoryBook)
+      'reference': identical(entry.book, memoryBook) || identical(entry.book, memoryOwners[entry.uid])
           ? {'kind': 'memory', 'id': entry.uid}
           : {'kind': 'worldInfo', 'bookId': entry.book.id, 'uid': entry.uid},
       'title': entry.comment,
@@ -1286,14 +1334,40 @@ Set<String> _directorAllowedReferences(StoredAgentRun stored) {
   return (entries: result, issues: issues);
 }
 
-List<WorldInfoBook> _directorBooks(TavernEngine engine, _Turn turn, List<WorldInfoBook> loaded) {
+List<WorldInfoBook> _directorBooks(
+  TavernEngine engine,
+  _Turn turn,
+  List<WorldInfoBook> loaded, {
+  required String? requestedLeafId,
+}) {
   final prepared = turn.directorPrepared;
-  if (prepared == null || !prepared.eligible) {
-    return loaded;
+  // Legacy eligibility is unchanged. Remembered facts also participate in an
+  // ordinary turn with no eligible director result, using its actual branch.
+  final legacy = prepared != null && prepared.eligible
+      ? _directorMemoryBook(engine, turn.chat.id, turn.at)
+      : (book: null, issues: <Map<String, Object?>>[]);
+  final withLegacy = [...loaded, if (legacy.book != null) legacy.book!];
+  final remembered = _rememberMemoryBook(engine, turn.chat.id, requestedLeafId, withLegacy);
+  final books = [...withLegacy, if (remembered.book != null) remembered.book!];
+  if (prepared != null) {
+    prepared.issues.addAll([...legacy.issues, ...remembered.issues]);
+  } else if (remembered.issues.isNotEmpty) {
+    engine._setInspection(
+      turn,
+      turn.inspection.copyWith(
+        director: {
+          ...turn.inspection.director,
+          'remember': {'issues': remembered.issues},
+        },
+      ),
+    );
   }
-  final memory = _directorMemoryBook(engine, turn.chat.id, turn.at);
-  prepared.issues.addAll(memory.issues);
-  final books = [...loaded, if (memory.book != null) memory.book!];
+  if (prepared == null || !prepared.eligible) return books;
+  final memoryOwners = <String, WorldInfoBook>{
+    if (legacy.book case final book?)
+      for (final entry in book.entries) entry.uid: book,
+    ...remembered.owners,
+  };
   final view = worldInfoExecutionEntries(
     books,
     strategy: WorldInfoSettings.fromJson(_map(turn.settings['worldInfo'])).strategy,
@@ -1310,12 +1384,20 @@ List<WorldInfoBook> _directorBooks(TavernEngine engine, _Turn turn, List<WorldIn
     final previous = seen[key];
     seen.putIfAbsent(key, () => index);
     final memoryReference = reference['kind'] == 'memory';
+    final memoryOwner = memoryReference ? memoryOwners[reference['id']] : null;
     final identity = memoryReference
-        ? (_directorMemoryId(turn.chat.id), reference['id']! as String)
+        ? (memoryOwner?.id ?? _directorMemoryId(turn.chat.id), reference['id']! as String)
         : (reference['bookId']! as String, reference['uid']! as String);
-    final matches = byIdentity[identity] ?? const <WorldInfoEntry>[];
+    final matches = memoryReference && memoryOwner == null
+        ? const <WorldInfoEntry>[]
+        : byIdentity[identity] ?? const <WorldInfoEntry>[];
     final inCatalog = prepared.allowed.contains(key);
-    final resolved = inCatalog && matches.length == 1 && identical(matches.single.book, memory.book) == memoryReference;
+    final resolved =
+        inCatalog &&
+        matches.length == 1 &&
+        (memoryReference
+            ? identical(matches.single.book, memoryOwner)
+            : !memoryOwners.values.any((book) => identical(matches.single.book, book)));
     final reason = !inCatalog
         ? 'not_in_sent_catalog'
         : matches.isEmpty

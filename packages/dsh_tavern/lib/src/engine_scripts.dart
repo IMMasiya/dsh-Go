@@ -542,12 +542,16 @@ class _ScriptCoordinator implements TavernScriptBridge {
     });
   }
 
-  Future<T> _dataWrite<T>(_ScriptChatCapture capture, FutureOr<T> Function() action) {
+  Future<T> _dataWrite<T>(_ScriptChatCapture capture, T Function(_ToolPreparationPermit? permit) action) {
     _context(capture.context.value.id);
     final turn = engine._turns[capture.chatId];
-    if (turn != null && !turn.scriptWritesAllowed && !turn.modelDrained.isCompleted) {
-      return _structureWrite(capture, action);
+    if (turn != null &&
+        !turn.scriptWritesAllowed &&
+        !turn.modelDrained.isCompleted &&
+        (!turn.toolAdmitted || turn.toolPhase == StoredToolPhase.native || turn.toolPhase == StoredToolPhase.owned)) {
+      return _structureWrite(capture, () => action(null));
     }
+    final permit = _captureToolPreparationPermit(engine, capture.chatId);
     final previous = engine._mutations[capture.chatId] ?? Future<void>.value();
     final released = Completer<void>();
     engine._mutations[capture.chatId] = released.future;
@@ -555,7 +559,8 @@ class _ScriptCoordinator implements TavernScriptBridge {
       try {
         await previous;
         _context(capture.context.value.id);
-        return await action();
+        _checkToolPreparationPermit(engine, permit);
+        return action(permit);
       } finally {
         if (identical(engine._mutations[capture.chatId], released.future)) {
           unawaited(engine._mutations.remove(capture.chatId));
@@ -1580,6 +1585,7 @@ TavernScriptException _scriptError(
   String message, {
   String? contextId,
   String? nodeId,
+  String? generationId,
   String? fieldPath,
   bool committed = false,
   List<TavernScriptIssue> issues = const [],
@@ -1590,6 +1596,7 @@ TavernScriptException _scriptError(
   message: message,
   contextId: contextId,
   nodeId: nodeId,
+  generationId: generationId,
   fieldPath: fieldPath,
   committed: committed,
   issues: issues,

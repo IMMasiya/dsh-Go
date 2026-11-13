@@ -7,6 +7,15 @@ import 'package:sqlite3/sqlite3.dart';
 
 import '../api.dart';
 import '../import_report.dart';
+import '../llm/tool_usage.dart';
+import '../tools.dart';
+
+part 'tool_store.dart';
+
+// Mark only persisted ancestor-path damage while preserving legacy StateError semantics.
+class _StoredAncestorDataError extends StateError {
+  _StoredAncestorDataError(super.message);
+}
 
 /// The chat settings and original ST metadata, separate from the selected path.
 /// JSON values returned by the store are detached copies.
@@ -179,7 +188,7 @@ class ChatStore {
     return ChatStore._(database, clock: clock, createId: createId);
   }
 
-  static const schemaVersion = 7;
+  static const schemaVersion = 8;
 
   // Keys are destination versions. Future upgrades register every successor
   // here and increase schemaVersion; no existing schema is dropped or replayed.
@@ -192,6 +201,7 @@ class ChatStore {
     5: _schemaV5,
     6: _schemaV6,
     7: _schemaV7,
+    8: _schemaV8,
   };
   final Database _db;
   final DateTime Function() _clock;
@@ -251,10 +261,12 @@ class ChatStore {
   // continuation's completed inspection or usage to a recovered partial body.
   void _recoverPendingNodes() {
     if (_db.select('SELECT 1 FROM nodes WHERE stream_text IS NOT NULL OR deleted_by IS NOT NULL LIMIT 1').isEmpty &&
-        _db.select('SELECT 1 FROM deleted_subtrees LIMIT 1').isEmpty) {
+        _db.select('SELECT 1 FROM deleted_subtrees LIMIT 1').isEmpty &&
+        !hasPendingToolRecords()) {
       return;
     }
     transaction(() {
+      recoverToolRecords();
       // Undo belongs to the previous open session. Every physical descendant
       // was marked, including descendants with an older deletion token.
       _db.execute('DELETE FROM nodes WHERE deleted_by IS NOT NULL');
@@ -786,7 +798,10 @@ class ChatStore {
   List<({String id, Map<String, Object?> entry, bool valid})> directorMemories(String chatId) {
     _chatRow(chatId);
     final result = <({String id, Map<String, Object?> entry, bool valid})>[];
-    for (final row in _db.select('SELECT id, entry_json FROM memories WHERE chat_id = ? ORDER BY rowid', [chatId])) {
+    for (final row in _db.select(
+      "SELECT id, entry_json FROM memories WHERE chat_id = ? AND origin = 'legacy' ORDER BY rowid",
+      [chatId],
+    )) {
       try {
         final entry = _map(row['entry_json']);
         // The adapter/WorldInfoBook must be able to copy the complete native
@@ -1077,7 +1092,7 @@ class ChatStore {
           _reportedUsage(extra, chatId, nodeId),
           jsonEncode(extra),
           jsonEncode(original),
-          speakerCharacterId,
+          role == TavernRole.character ? speakerCharacterId : null,
         ],
       );
       final parentSnapshot = parentId == null ? null : _nodeStateSnapshot(chatId, parentId);
@@ -1246,9 +1261,9 @@ ORDER BY n.seq
     final visited = <String>{};
     String? next = leafId;
     while (next != null && (limit == null || reversed.length < limit)) {
-      if (!visited.add(next)) throw StateError('Cycle in the ancestor path: $next');
+      if (!visited.add(next)) throw _StoredAncestorDataError('Cycle in the ancestor path: $next');
       final row = byId[next];
-      if (row == null) throw StateError('Node does not belong to chat or has a broken parent: $next');
+      if (row == null) throw _StoredAncestorDataError('Node does not belong to chat or has a broken parent: $next');
       reversed.add(row);
       next = row['parent_id'] as String?;
     }
@@ -1399,7 +1414,10 @@ ORDER BY n.seq
       // UPDATE OF text drives the FTS trigger. Metadata-only writes must not
       // name text, and must not promote an in-progress body as a side effect.
       if (text != null || promote) put('text', text ?? _unguardText(row['stream_text']));
-      if (speakerCharacterId != null || clearSpeakerCharacterId) {
+      final effectiveRole = role?.name ?? row['role'] as String;
+      if (effectiveRole != TavernRole.character.name) {
+        if (row['speaker_character_id'] != null) put('speaker_character_id', null);
+      } else if (speakerCharacterId != null || clearSpeakerCharacterId) {
         put('speaker_character_id', clearSpeakerCharacterId ? null : speakerCharacterId);
       }
       if (reasoning != null || clearReasoning || promote) {

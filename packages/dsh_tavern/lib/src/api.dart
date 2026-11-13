@@ -18,6 +18,7 @@ import 'preset_library.dart';
 import 'regex_library.dart';
 import 'scripts.dart';
 import 'state.dart';
+import 'tools.dart';
 import 'worldinfo/world_info.dart' show WorldInfoSource;
 
 part 'group.dart';
@@ -238,7 +239,8 @@ class TavernTreeNode {
   final String? speakerCharacterId;
 }
 
-/// What one model call cost, as the API reported it.
+/// Legacy normalized token counters. They do not establish whether each raw
+/// provider field was present; exact multi-request evidence lives in tool usage.
 class TavernUsage {
   const TavernUsage({this.promptTokens = 0, this.cacheHitTokens = 0, this.completionTokens = 0, this.model});
 
@@ -257,11 +259,18 @@ sealed class TavernEvent {
 /// First event when reconnecting to an active turn. This is the complete
 /// in-memory body at subscription time, including uncheckpointed text.
 class TavernTurnSnapshot extends TavernEvent {
-  const TavernTurnSnapshot({required this.chatId, required this.generationType, required this.startedAt, this.message});
+  const TavernTurnSnapshot({
+    required this.chatId,
+    required this.generationType,
+    required this.startedAt,
+    this.message,
+    this.logicalTurnId,
+  });
 
   final String chatId;
   final String generationType;
   final DateTime startedAt;
+  final String? logicalTurnId;
 
   /// Null while preparing the request, before a reply node exists. Later
   /// TavernTurnStarted supplies it. Impersonation has a temporary user node.
@@ -270,11 +279,22 @@ class TavernTurnSnapshot extends TavernEvent {
 
 /// The node the reply is written into exists (a new one, or a new sibling).
 class TavernTurnStarted extends TavernEvent {
-  const TavernTurnStarted(this.message);
+  const TavernTurnStarted(this.message, {this.logicalTurnId});
 
   /// Empty for a new reply; continuation retains its existing body. Carries
   /// the node id and its place among siblings.
   final TavernMessage message;
+  final String? logicalTurnId;
+}
+
+/// Refresh notification after actual tool audit adoption. It carries only
+/// durable identities; observing it never executes or repeats an action.
+class TavernToolActivity extends TavernEvent {
+  const TavernToolActivity(this.logicalTurnId, {this.requestId, this.executionId, this.proposalId});
+  final String logicalTurnId;
+  final String? requestId;
+  final String? executionId;
+  final String? proposalId;
 }
 
 class TavernTextDelta extends TavernEvent {
@@ -290,7 +310,7 @@ class TavernReasoningDelta extends TavernEvent {
 }
 
 class TavernTurnDone extends TavernEvent {
-  TavernTurnDone(this.message, {this.finishReason, List<TavernScriptIssue> hookIssues = const []})
+  TavernTurnDone(this.message, {this.finishReason, this.logicalTurnId, List<TavernScriptIssue> hookIssues = const []})
     : hookIssues = List.unmodifiable(hookIssues);
 
   /// As stored: write-back regex applied, usage filled in.
@@ -299,6 +319,7 @@ class TavernTurnDone extends TavernEvent {
   /// The provider's finish_reason, including length or content_filter. Null
   /// means the transport did not report one; unknown future values are kept.
   final String? finishReason;
+  final String? logicalTurnId;
   final List<TavernScriptIssue> hookIssues;
 }
 
@@ -313,12 +334,23 @@ enum TavernFailure {
   invalidCard,
   insufficientBalance,
   invalidParameters,
+  toolFailure,
 }
 
 class TavernTurnFailed extends TavernEvent {
-  TavernTurnFailed(this.kind, {this.detail, this.partial, List<TavernScriptIssue> hookIssues = const []})
-    : hookIssues = List.unmodifiable(hookIssues);
+  TavernTurnFailed(
+    this.kind, {
+    this.detail,
+    this.partial,
+    this.logicalTurnId,
+    this.toolFailureCode,
+    List<TavernScriptIssue> hookIssues = const [],
+  }) : hookIssues = List.unmodifiable(hookIssues);
   final TavernFailure kind;
+  final String? logicalTurnId;
+
+  /// Stable project terminal code for toolFailure; never a provider finish reason.
+  final String? toolFailureCode;
 
   /// For 「详情」: a status code, the first part of an error body.
   final String? detail;
@@ -365,6 +397,8 @@ class TavernModelConfig {
     this.model = 'deepseek-flash',
     this.deepseek = true,
     this.thinking = false,
+    this.headers = const {},
+    this.auxiliary,
   });
 
   final Future<String?> Function() apiKey;
@@ -376,6 +410,16 @@ class TavernModelConfig {
   /// endpoint.
   final bool deepseek;
   final bool thinking;
+
+  /// Additional HTTP headers, never included in inspection data or logs.
+  /// Authorization is supplied by [apiKey], including its absence for local
+  /// OpenAI-compatible services that do not require a key.
+  final Map<String, String> headers;
+
+  /// Configuration for director, secret and other helper requests. Null keeps
+  /// the current channel, using DeepSeek flash or the configured generic model
+  /// with thinking disabled. An explicit configuration is used as supplied.
+  final TavernModelConfig? auxiliary;
 }
 
 /// The tavern. One per app; [open] it on the app's support directory.
@@ -517,6 +561,8 @@ abstract interface class Tavern {
 
   /// A shared tree with a stable host definition and sequential actor calls.
   /// Mutable inputs are captured at invocation. See [sendGroup] for admission.
+  /// Null title uses the host name. A blank resolved title is invalidTitle;
+  /// valid titles retain their original leading and trailing characters.
   Future<String> createGroupChat(
     List<String> characterIds, {
     String? hostCharacterId,
@@ -544,6 +590,8 @@ abstract interface class Tavern {
   });
   Future<TavernGroupChat> removeGroupMember(String chatId, String characterId);
   Future<TavernGroupChat> reorderGroupMembers(String chatId, List<String> characterIds);
+
+  /// Null title keeps the old title; an explicit blank title is invalidTitle.
   Future<TavernGroupChat> updateGroupChat(
     String chatId, {
     String? title,
@@ -607,6 +655,36 @@ abstract interface class Tavern {
   /// Most recent persistent state/agent execution records, newest first.
   /// An explicit node filter excludes records whose node was permanently deleted.
   Future<List<TavernAgentRun>> readAgentRuns(String chatId, {String? nodeId, int limit = 50});
+
+  /// Reads persisted facts without resuming a model request or tool execution.
+  Future<TavernToolTurnSnapshot?> readToolTurn(String logicalTurnId);
+  Future<TavernToolReceipt?> readToolReceipt(String executionId);
+
+  /// Reuse actionId with the same complete parameters when retrying. A new
+  /// action on a busy chat fails without implicitly stopping its active turn.
+  Future<TavernToolReceipt> rollDice(
+    String chatId, {
+    required String actionId,
+    required String dice,
+    String? label,
+    int? target,
+    String? expectedNodeId,
+  });
+
+  /// A decision id identifies one immutable accept/reject attempt. Replays
+  /// return its original record beside current source and target observations.
+  Future<TavernMemoryDecisionReceipt> resolveMemoryProposal(
+    String proposalId, {
+    required String decisionId,
+    required int expectedVersion,
+    required TavernMemoryDecision decision,
+    required TavernToolContextAnchor expectedContextAnchor,
+  });
+  Future<TavernToolPolicySnapshot> readToolPolicy({String? chatId});
+
+  /// Edits only the tool-policy leaves. Adoption affects later admissions and
+  /// does not cancel the current turn; chat null leaf values restore inheritance.
+  Future<TavernToolPolicyWriteResult> setToolPolicy(Map<String, Object?> patch, {String? chatId});
 
   /// Fires whenever the current path changes (a turn, a swipe, an edit) so the
   /// screen re-reads [path].

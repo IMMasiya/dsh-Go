@@ -481,9 +481,11 @@ void main() {
       expect(request.body['temperature'], 0.4);
       expect(request.body['max_tokens'], 73);
       expect(request.body['stream'], isFalse);
-      expect(request.body.containsKey('tools'), isFalse);
-      expect(request.body.containsKey('tool_choice'), isFalse);
     }
+    expect(h.requests.first.body.containsKey('tools'), isFalse);
+    expect(h.requests.first.body.containsKey('tool_choice'), isFalse);
+    expect(_maps(h.requests[1].body['tools']).map((tool) => _map(tool['function'])['name']), ['roll']);
+    expect(h.requests[1].body.containsKey('tool_choice'), isFalse);
     await h.engine.updateGroupMember(chat, b, muted: true);
     h.json('B regenerated');
     final regenerated = await h.engine.regenerate(chat, replies[1].nodeId).toList();

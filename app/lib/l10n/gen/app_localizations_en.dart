@@ -22581,6 +22581,22 @@ class L10nEn extends L10n {
   String get tavernCardScriptsHintAction => 'Turn on';
 
   @override
+  String get tavernRender => 'How it shows';
+
+  @override
+  String get tavernRenderSubtitle =>
+      'Only this character\'s own chats: a card\'s status bars and styling need pages or the canvas, and its scripts run only on the canvas';
+
+  @override
+  String get tavernRenderText => 'Text';
+
+  @override
+  String get tavernRenderIslands => 'Pages';
+
+  @override
+  String get tavernRenderCanvas => 'Canvas';
+
+  @override
   String get tavernCanvasSubtitle =>
       'The whole chat in one web page laid out as SillyTavern does, so a card\'s ST styles reach across messages. Card scripts run here; turn on \"No card scripts in those pages\" to stop them. Not for visual novel.';
 
@@ -22708,7 +22724,7 @@ class L10nEn extends L10n {
 
   @override
   String get tavernGroupHelperModelNote =>
-      'Speaks with the cheaper, faster model (DeepSeek flash, no thinking): for side characters.';
+      'Speaks with the helper model (automatic: flash without thinking on DeepSeek, the main model elsewhere): for side characters.';
 
   @override
   String get tavernGroupMoveUp => 'Move up';
@@ -22759,6 +22775,400 @@ class L10nEn extends L10n {
 
   @override
   String get tavernGroupErrorHostInUse => 'This character hosts a group chat; delete that chat first';
+
+  @override
+  String get tavernGroupErrorInvalidTitle => 'A group chat\'s name can\'t be blank';
+
+  @override
+  String tavernToolRollUnsettled(String dice) {
+    return '🎲 $dice: result not confirmed yet';
+  }
+
+  @override
+  String tavernToolRollNotDone(String dice) {
+    return '🎲 $dice: not rolled';
+  }
+
+  @override
+  String tavernToolRollPass(int target) {
+    return 'target $target, passed';
+  }
+
+  @override
+  String tavernToolRollFail(int target) {
+    return 'target $target, missed';
+  }
+
+  @override
+  String tavernToolMemory(String text) {
+    return 'Wants to remember: \"$text\"';
+  }
+
+  @override
+  String get tavernToolMemoryAccept => 'Remember';
+
+  @override
+  String get tavernToolMemoryReject => 'No';
+
+  @override
+  String get tavernToolMemoryStaged => 'Decided once this turn is written';
+
+  @override
+  String tavernToolMemoryIneligible(String reason) {
+    return 'Can\'t be decided now: $reason';
+  }
+
+  @override
+  String get tavernToolMemoryAccepted => 'Remembered';
+
+  @override
+  String get tavernToolMemoryAuto => 'Remembered by the automatic setting';
+
+  @override
+  String get tavernToolMemoryRejected => 'Not remembered';
+
+  @override
+  String get tavernToolMemoryInactive => 'This turn didn\'t finish normally; not remembered';
+
+  @override
+  String get tavernToolMemoryWaiting => 'Your last decision hasn\'t gone through yet';
+
+  @override
+  String tavernToolMemoryNotApplied(String reason) {
+    return 'Not remembered: $reason';
+  }
+
+  @override
+  String tavernToolMemoryFailed(String detail) {
+    return 'Didn\'t go through: $detail';
+  }
+
+  @override
+  String get tavernToolReasonRevision => 'it has changed; refresh and decide again';
+
+  @override
+  String get tavernToolReasonResolved => 'already decided';
+
+  @override
+  String get tavernToolReasonContext => 'the chat has changed';
+
+  @override
+  String get tavernToolReasonDeleted => 'that reply was deleted';
+
+  @override
+  String get tavernToolReasonChanged => 'that reply was edited';
+
+  @override
+  String get tavernToolReasonBranch => 'not on the current branch';
+
+  @override
+  String get tavernToolReasonInactive => 'no longer active';
+
+  @override
+  String get tavernToolReasonUnknown => 'reason unknown';
+
+  @override
+  String get tavernToolPolicy => 'Tools';
+
+  @override
+  String get tavernToolPolicyRoll => 'Let characters roll dice';
+
+  @override
+  String get tavernToolPolicyRollSubtitle => 'When a reply needs a roll, the tavern rolls it and keeps the result';
+
+  @override
+  String get tavernToolPolicyRemember => 'Let characters keep notes';
+
+  @override
+  String get tavernToolPolicyRememberSubtitle =>
+      'What a character finds worth remembering goes into memory, as set below';
+
+  @override
+  String get tavernToolPolicyMode => 'Keeping notes';
+
+  @override
+  String get tavernToolPolicyModeAsk => 'Ask me first';
+
+  @override
+  String get tavernToolPolicyModeAuto => 'Automatically';
+
+  @override
+  String get tavernToolPolicyDiagnostics =>
+      'Part of this setting couldn\'t be read; the tool it belongs to is off for now';
+
+  @override
+  String get tavernToolPolicyNote =>
+      'Replies only use these with DeepSeek and thinking off; a change applies from the next turn, and a character card can turn them off';
+
+  @override
+  String tavernToolPolicyFailed(String detail) {
+    return 'Didn\'t change: $detail';
+  }
+
+  @override
+  String get tavernChatTools => 'Tools in this chat';
+
+  @override
+  String get tavernChatToolFollow => 'As set';
+
+  @override
+  String get tavernChatToolOn => 'On';
+
+  @override
+  String get tavernChatToolOff => 'Off';
+
+  @override
+  String tavernChatToolNow(String roll, String remember) {
+    return 'In this chat: dice $roll, memories $remember';
+  }
+
+  @override
+  String get tavernChatToolHeld => 'What tavern settings turned off stays off, even if on here';
+
+  @override
+  String tavernInspectRequests(int count) {
+    return '$count requests';
+  }
+
+  @override
+  String tavernInspectUsageTotals(String prompt, String hit, String completion) {
+    return 'In $prompt (cached $hit) · out $completion';
+  }
+
+  @override
+  String get tavernReqUsagePrompt => 'In';
+
+  @override
+  String get tavernReqUsageCache => 'Cached';
+
+  @override
+  String get tavernReqUsageCompletion => 'Out';
+
+  @override
+  String tavernReqUsageLine(String field, String parts) {
+    return '$field: $parts';
+  }
+
+  @override
+  String get tavernReqUsageJoin => ', ';
+
+  @override
+  String tavernReqUsageKnown(String known) {
+    return '$known known';
+  }
+
+  @override
+  String tavernReqUsageUnknown(int count) {
+    return '$count not known';
+  }
+
+  @override
+  String tavernReqUsageMissing(int count) {
+    return '$count not reported';
+  }
+
+  @override
+  String tavernReqUsageInvalid(int count) {
+    return '$count reported wrongly';
+  }
+
+  @override
+  String get tavernToolFailBudget =>
+      'This turn has used up its tool requests and stops here; dice already rolled still count';
+
+  @override
+  String get tavernToolFailBatch => 'The model asked for too many tools at once; that batch was not run';
+
+  @override
+  String get tavernToolFailProtocol => 'The model\'s tool call was malformed and was not run';
+
+  @override
+  String get tavernToolFailSnapshot => 'This model\'s reply can\'t continue with tools, so it stops here';
+
+  @override
+  String get tavernToolFailReceipt => 'A tool\'s result couldn\'t be saved; check this turn again shortly';
+
+  @override
+  String get tavernToolFailAnchor => 'The chat changed during this turn, so it did not go on';
+
+  @override
+  String get tavernToolFail => 'Something went wrong with a tool';
+
+  @override
+  String tavernToolFailDetail(String detail) {
+    return 'Something went wrong with a tool: $detail';
+  }
+
+  @override
+  String get tavernDiceUnsettled => 'The result is not confirmed yet; check again';
+
+  @override
+  String get tavernDicePending => 'Your last roll isn\'t confirmed yet';
+
+  @override
+  String get tavernDiceRecheck => 'Check again';
+
+  @override
+  String get tavernDiceForget => 'Let it go';
+
+  @override
+  String get tavernDiceBusy => 'Busy right now; roll once this turn is written';
+
+  @override
+  String get tavernDiceOff => 'Dice are turned off in tavern settings';
+
+  @override
+  String tavernDiceFailed(String detail) {
+    return 'Didn\'t roll: $detail';
+  }
+
+  @override
+  String tavernDiceNotSaved(String detail) {
+    return 'Didn\'t go through: $detail';
+  }
+
+  @override
+  String get tavernChannel => 'Channel';
+
+  @override
+  String get tavernChannelDeepSeek => 'DeepSeek';
+
+  @override
+  String get tavernChannelDeepSeekNote => 'Uses the app\'s DeepSeek key';
+
+  @override
+  String get tavernChannelAdd => 'Add a channel';
+
+  @override
+  String get tavernChannelEdit => 'Edit channel';
+
+  @override
+  String get tavernChannelsNote =>
+      'Any OpenAI-compatible service works: a relay, OpenRouter, a model running on your own computer. Keys stay in this phone\'s secure storage. Cost estimates know DeepSeek\'s prices only; other channels show token counts.';
+
+  @override
+  String get tavernChannelName => 'Name';
+
+  @override
+  String get tavernChannelNameHint => 'Leave empty to use the address';
+
+  @override
+  String get tavernChannelBaseUrlInvalid => 'Starts with http:// or https://';
+
+  @override
+  String get tavernChannelKeyOptional => 'A local server without a key can leave this empty';
+
+  @override
+  String get tavernChannelKeyKept => 'A key is saved; leave empty to keep it';
+
+  @override
+  String get tavernChannelFetchModels => 'Fetch list';
+
+  @override
+  String get tavernChannelFetching => 'Fetching…';
+
+  @override
+  String tavernChannelFetchFailed(String detail) {
+    return 'Couldn\'t get the model list ($detail). You can type the model name.';
+  }
+
+  @override
+  String get tavernChannelNoModels => 'This service lists no models. Type the model name.';
+
+  @override
+  String get tavernChannelModelHint => 'The model name your provider gives';
+
+  @override
+  String get tavernChannelModelMissing => 'Enter a model name';
+
+  @override
+  String get tavernChannelPickModel => 'Pick a model';
+
+  @override
+  String get tavernChannelSearchModels => 'Search models';
+
+  @override
+  String get tavernChannelDeepSeekApi => 'Send as DeepSeek\'s API';
+
+  @override
+  String get tavernChannelDeepSeekApiNote =>
+      'Uses DeepSeek\'s continuation and the Thinking switch. Turn on only for DeepSeek itself or a relay that forwards it as is.';
+
+  @override
+  String get tavernChannelDelete => 'Delete channel';
+
+  @override
+  String tavernChannelDeleteTitle(String name) {
+    return 'Delete “$name”?';
+  }
+
+  @override
+  String get tavernChannelDeleteMessage => 'Its key is deleted too. If it\'s in use, DeepSeek takes over.';
+
+  @override
+  String get tavernChannelCopyFromApp => 'Copy from the app\'s channels';
+
+  @override
+  String get tavernModelName => 'Model name';
+
+  @override
+  String get tavernNumberCustom => 'Custom';
+
+  @override
+  String get tavernNumberType => 'Enter a number';
+
+  @override
+  String tavernNumberRange(String min, String max) {
+    return 'Enter a number from $min to $max';
+  }
+
+  @override
+  String tavernNumberRangeWhole(String min, String max) {
+    return 'Enter a whole number from $min to $max';
+  }
+
+  @override
+  String get tavernTopP => 'Top P';
+
+  @override
+  String get tavernPresencePenalty => 'Presence penalty';
+
+  @override
+  String get tavernFrequencyPenalty => 'Frequency penalty';
+
+  @override
+  String get tavernPresetSampling => 'Sampling';
+
+  @override
+  String get tavernChannelHeaders => 'Request headers (optional)';
+
+  @override
+  String get tavernChannelHeadersNote =>
+      'One per line, as “Name: value”. Kept in this phone\'s secure storage, like the key.';
+
+  @override
+  String get tavernChannelHeadersInvalid => 'Write each line as “Name: value”';
+
+  @override
+  String get tavernAuxiliary => 'Helper model';
+
+  @override
+  String get tavernAuxiliaryNote => 'Used for the director, picking who speaks in a group, and secrets';
+
+  @override
+  String get tavernAuxiliaryAuto => 'Automatic';
+
+  @override
+  String get tavernAuxiliaryAutoNote => 'Follows the main channel: Flash on DeepSeek, the same model elsewhere';
+
+  @override
+  String get tavernAuxiliaryDeepSeek => 'DeepSeek Flash';
+
+  @override
+  String get tavernChannelKeyClear => 'Clear';
+
+  @override
+  String get tavernChannelKeyCleared => 'The key is cleared when you save';
 
   @override
   String get updateCheck => 'Check for updates';

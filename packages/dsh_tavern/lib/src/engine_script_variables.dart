@@ -375,9 +375,11 @@ extension _ScriptVariableOperations on _ScriptCoordinator {
             return result(value);
           });
         case TavernVariableScope.chat:
-          saved = await _dataWrite(resolved.capture!, () {
+          saved = await _dataWrite(resolved.capture!, (permit) {
             late ({String? leaf, Map<String, Object?> values}) adopted;
-            return engine._store.transaction(
+            return _toolPreparationSql(
+              engine,
+              permit,
               () {
                 final chat = engine._store.chat(target.chatId!);
                 final value = prepare(_ScriptRawVariable(true, chat.variables));
@@ -405,7 +407,9 @@ extension _ScriptVariableOperations on _ScriptCoordinator {
           final dataContext = await _prepareDataContext(ref.chatId);
           saved = await _dataWrite(
             resolved.capture!,
-            () => engine._store.transaction(
+            (permit) => _toolPreparationSql(
+              engine,
+              permit,
               () {
                 _checkChatCapture(resolved.capture!, requireSamePath: resolved.requireSamePath);
                 final baseline = engine._stateAt(ref.chatId, ref.nodeId);
