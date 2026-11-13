@@ -29294,6 +29294,12 @@ abstract class L10n {
   /// **'语音识别,麦克风,听写,说话,语音,朗读,语音通话,打电话,TTS,声音'**
   String get searchKwVoice;
 
+  /// No description provided for @searchKwVoiceReading.
+  ///
+  /// In zh, this message translates to:
+  /// **'朗读,朗读的声音,TTS,音色,海星,暗潮,声音'**
+  String get searchKwVoiceReading;
+
   /// No description provided for @searchKwNotifications.
   ///
   /// In zh, this message translates to:

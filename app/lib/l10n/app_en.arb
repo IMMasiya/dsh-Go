@@ -4867,6 +4867,7 @@
   "searchKwPets": "pet,pets,companion,whale,overlay",
   "searchKwPerformance": "battery,smooth,lag,lite,full,speed",
   "searchKwVoice": "speech recognition,dictation,microphone,mic,voice,read aloud,voice call,call,TTS,speech",
+  "searchKwVoiceReading": "read aloud,reading voice,TTS,voice,Stella,Tide,speech",
   "searchKwNotifications": "alerts,push,banner,sound",
   "searchKwReplyPrefs": "about me,style,tone,instructions,AGENTS.md",
   "searchKwSharedLinks": "links,share,shared,public link",

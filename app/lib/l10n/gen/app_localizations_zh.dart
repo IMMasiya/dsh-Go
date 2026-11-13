@@ -16027,6 +16027,9 @@ class L10nZh extends L10n {
   String get searchKwVoice => '语音识别,麦克风,听写,说话,语音,朗读,语音通话,打电话,TTS,声音';
 
   @override
+  String get searchKwVoiceReading => '朗读,朗读的声音,TTS,音色,海星,暗潮,声音';
+
+  @override
   String get searchKwNotifications => '提醒,推送,横幅,消息,铃声';
 
   @override

@@ -133,7 +133,7 @@ class _VoiceSettingsPageState extends ConsumerState<VoiceSettingsPage> {
               key: const ValueKey('speech-voice'),
               icon: AppIcons.readAloud,
               tinted: false,
-              title: l10n.speechVoiceTitle,
+              spot: SettingsIndex.entry(SettingsPageId.voiceReading),
               value: Text(speechVoiceLabel(l10n, ref.watch(speechVoiceSettingsProvider))),
               onTap: () =>
                   Navigator.of(context)

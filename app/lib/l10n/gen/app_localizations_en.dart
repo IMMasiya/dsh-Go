@@ -16875,6 +16875,9 @@ class L10nEn extends L10n {
   String get searchKwVoice => 'speech recognition,dictation,microphone,mic,voice,read aloud,voice call,call,TTS,speech';
 
   @override
+  String get searchKwVoiceReading => 'read aloud,reading voice,TTS,voice,Stella,Tide,speech';
+
+  @override
   String get searchKwNotifications => 'alerts,push,banner,sound';
 
   @override
