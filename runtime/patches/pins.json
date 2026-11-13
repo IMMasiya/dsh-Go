@@ -46,6 +46,14 @@
         }
       }
     },
+    "deepseek-attachment-error.diff": {
+      "0.2.2-rc.1": {
+        "node_modules/@deepseek-ai/dsh-llm-deepseek/lib/index.js": {
+          "after": "33932219045bc1f31f96c94ce2a18883ad108ecdf0f7f74d7911e8a7d6257917",
+          "before": "2e265c0bb1b759035682f65a8243ac8c9a33d7c6e793530fa290b48b0c55605f"
+        }
+      }
+    },
     "fs-create-exclusive.diff": {
       "0.2.1-rc.2": {
         "node_modules/@deepseek-ai/dsh-fs-local/lib/index.js": {

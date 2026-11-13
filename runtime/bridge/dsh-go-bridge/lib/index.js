@@ -23,6 +23,7 @@ import { join } from "node:path";
 import { STATUS_CODES, get as httpGet } from "node:http";
 import { get as httpsGet } from "node:https";
 import { createPluginConfig, pluginConfigUnavailable } from "./plugin-config.js";
+import { injectPromiseWithResolvers } from "./web-promise.js";
 import { createSessionDeletion, sessionDeletionUnavailable } from "./session-deletion.js";
 import { createCompanionRoutes } from "./companion/routes.js";
 import { createCompanionPromptContext, FULL_PRESET } from './companion/prompt-context.js';
@@ -322,6 +323,8 @@ export function apply(ctx, config) {
   ctx.on("internal/status", (fiber) => { native.markDirty(); pluginConfig?.statusChanged(fiber); });
 
   ctx.inject(["webServer"], (webCtx) => {
+    webCtx.effect(() => webCtx.webServer.tapIndex(injectPromiseWithResolvers),
+      "dsh-go-bridge: browser Promise.withResolvers");
     const routeGuardMode = options.guardRoutes === false ? "off" : installFallbackGuard(webCtx, open);
 
     // Guard self-test: a credential-less request to an unauthenticated route registered like any
