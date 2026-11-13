@@ -658,7 +658,10 @@ extension ToolStore on ChatStore {
         if (restored) _toolAdvance(owner, before, allowSelectionChange: true);
       }
       final visibleUser = _toolVisibleCurrent(owner.chatId, user);
-      final visibleReply = _toolVisibleCurrent(owner.chatId, candidate);
+      final visibleReply = _toolVisibleCurrent(
+        owner.chatId,
+        candidate ?? (owner.operation == StoredToolOperation.continueReply ? old.expectedOperationTarget : null),
+      );
       final facts = StoredToolCleanupFacts(
         casMatched: mismatch == null,
         userDeleted: mismatch == null && user != null && visibleUser == null,

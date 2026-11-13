@@ -3307,6 +3307,7 @@ class TavernEngine implements Tavern {
     final chatId = turn.chat.id;
     var beforeGlobals = _globalVariables.revision;
     try {
+      turn.secretCardRevision ??= _directors._cardRevisions[turn.chat.characterId] ?? 0;
       _beginOrdinaryToolTurn(this, turn);
       await _scripts.beforeTurn(turn);
       turn.cancellation.check();
@@ -3328,7 +3329,6 @@ class TavernEngine implements Tavern {
         turn.originalVariables = _runtimeCopy(_liveVariables[chatId]?.values ?? turn.chat.variables);
         turn.nativePreparationStarted = true;
       }
-      turn.secretCardRevision ??= _directors._cardRevisions[turn.chat.characterId] ?? 0;
       // Cancellation releases the turn, not its actual local file work.
       // Keep the original read owned until every character file has drained.
       if (turn.groupView == null) {
@@ -3830,7 +3830,9 @@ class TavernEngine implements Tavern {
       }
     } finally {
       turn.flushTimer?.cancel();
-      await turn.toolPolicyCapture?.drainStarted();
+      // The capture remains in _operations until its real library read ends.
+      // Its I/O must not delay the cancelled turn's terminal stream or done.
+      unawaited(turn.toolPolicyCapture?.drainStarted());
       if (!turn.modelDrained.isCompleted) {
         turn.modelDrained.complete();
       }

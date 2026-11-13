@@ -326,12 +326,8 @@ Future<void> _failOrdinaryToolTurn(TavernEngine engine, _Turn turn, Object error
       if (turn.hasOutput && turn.toolFailureCode != 'anchor_changed') {
         engine._commitTurn(turn, inspection, stateSettlement: stateSettlement, storySettlement: storySettlement);
       } else {
-        engine._rollbackEmpty(
-          turn,
-          inspection.copyWith(clearNodeId: true),
-          stateSettlement: stateSettlement,
-          storySettlement: storySettlement,
-        );
+        inspection = inspection.copyWith(clearNodeId: true);
+        engine._rollbackEmpty(turn, inspection, stateSettlement: stateSettlement, storySettlement: storySettlement);
       }
     } catch (storageError) {
       if (turn.terminalStorageAdopted) {
@@ -350,12 +346,8 @@ Future<void> _failOrdinaryToolTurn(TavernEngine engine, _Turn turn, Object error
           if (storageError is StoredToolOwnershipException) {
             // The cleanup routine checks the same old expectation and records
             // actual visible facts. It never adopts a refreshed body baseline.
-            engine._rollbackEmpty(
-              turn,
-              inspection.copyWith(clearNodeId: true),
-              stateSettlement: stateSettlement,
-              storySettlement: storySettlement,
-            );
+            inspection = inspection.copyWith(clearNodeId: true);
+            engine._rollbackEmpty(turn, inspection, stateSettlement: stateSettlement, storySettlement: storySettlement);
           } else {
             _terminateOrdinaryFailureAudit(engine, turn, inspection, stateSettlement, storySettlement);
           }
