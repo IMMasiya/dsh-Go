@@ -438,6 +438,7 @@ class ChatHarness {
     // The test key must not send dictation to DeepSeek: the phone's and the
     // engine's recognizers as before (test/speech covers the cloud ones).
     voiceCloudProvider.overrideWithValue((_) async => null),
+    voiceCloudLikelyProvider.overrideWithValue(() => false),
     balanceFetcherProvider.overrideWithValue((key) async {
       balanceRequests.add(key);
       return balance;

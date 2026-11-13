@@ -66,15 +66,17 @@ abstract class CallConversation {
   void dispose();
 }
 
+/// The person's choices for a call: speaking over her stops her; the
+/// loudspeaker or the earpiece; [spokenHint] goes before the first message.
+typedef CallChoices = ({bool bargeIn, bool speaker, String? spokenHint});
+
 class VoiceCallController extends ChangeNotifier {
   VoiceCallController({
     required this.audio,
     required this.conversation,
     required this.recognizer,
     required this.voice,
-    this.bargeIn = true,
-    this._speaker = true,
-    this.spokenHint,
+    required this.choices,
     this.permission,
   });
 
@@ -86,10 +88,14 @@ class VoiceCallController extends ChangeNotifier {
 
   /// A voice for one reply.
   final SpeechOut Function() voice;
-  final bool bargeIn;
+
+  /// The saved choices, read as the call starts (they may still be loading
+  /// when the page opens).
+  final Future<CallChoices> Function() choices;
+  bool _bargeIn = true;
 
   /// Put before the call's first message: asks for short spoken answers.
-  final String? spokenHint;
+  String? _spokenHint;
 
   /// Asks for the microphone (the system dialog); false when refused.
   final Future<bool> Function()? permission;
@@ -101,7 +107,7 @@ class VoiceCallController extends ChangeNotifier {
   CallPhase _phase = CallPhase.starting;
   CallEnd? _ended;
   bool _muted = false;
-  bool _speaker;
+  bool _speaker = true;
   double _micLevel = 0;
   double _voiceLevel = 0;
   String _heard = '';
@@ -140,6 +146,12 @@ class VoiceCallController extends ChangeNotifier {
   Future<void> start() async {
     _replySub = conversation.replies.listen(_onReply);
     _audioSub = audio.events.listen(_onAudio);
+    final chosen = await choices();
+    if (_disposed || _phase == CallPhase.ended) return;
+    _bargeIn = chosen.bargeIn;
+    _speaker = chosen.speaker;
+    _spokenHint = chosen.spokenHint;
+    notifyListeners();
     final cloud = await recognizer();
     if (_disposed || _phase == CallPhase.ended) return;
     if (cloud == null) {
@@ -158,7 +170,7 @@ class VoiceCallController extends ChangeNotifier {
         return;
       }
     }
-    final started = await audio.startCall(bargeIn: bargeIn);
+    final started = await audio.startCall(bargeIn: _bargeIn);
     if (_disposed || _phase == CallPhase.ended) {
       if (started == CallStart.ok) unawaited(audio.stopCall());
       return;
@@ -228,7 +240,7 @@ class VoiceCallController extends ChangeNotifier {
     _spoken = 0;
     _turn++;
     _replyDone = false;
-    final hint = spokenHint;
+    final hint = _spokenHint;
     final message = !_hinted && hint != null ? '$hint\n$_heard' : _heard;
     _hinted = true;
     notifyListeners();

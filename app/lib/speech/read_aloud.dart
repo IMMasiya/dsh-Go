@@ -8,7 +8,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../companion/companion_voice.dart';
 import '../companion/companion_voice_source.dart';
-import '../ui/chat/secret_mask.dart';
 import 'deepseek_speech.dart';
 import 'speech_audio.dart';
 import 'speech_out.dart';
@@ -48,8 +47,8 @@ class ReadAloudController extends Notifier<ReadAloudState> {
     final reading = state.id;
     stop();
     if (reading == messageId) return;
-    // Keys and tokens in a reply are neither sent to a voice nor spoken.
-    final text = speakable(maskSecrets(markdown, mark: ''));
+    // Keys and tokens were masked by the caller (readAloudReply).
+    final text = speakable(markdown);
     if (text.isEmpty) {
       onError?.call(const DeepSeekSpeechError(DeepSeekSpeechFailure.rejected));
       return;
@@ -103,6 +102,8 @@ class ReadAloudController extends Notifier<ReadAloudState> {
 
   /// Stops reading when what is being read is one [reading] owns (a page closing).
   void stopWhere(bool Function(String id) reading) {
+    // Called just after a page closes, by when the whole app may have gone.
+    if (!ref.mounted) return;
     final id = state.id;
     if (id != null && reading(id)) stop();
   }

@@ -10,6 +10,7 @@ import '../../l10n/l10n.dart';
 import '../../speech/call/voice_call.dart';
 import '../../speech/deepseek_speech.dart';
 import '../../speech/read_aloud.dart';
+import '../chat/secret_mask.dart';
 import '../common/brief_notice.dart';
 
 /// Why speech failed, in a sentence. [listening] for 语音输入 / 通话 (a
@@ -40,6 +41,11 @@ void readAloudReply(BuildContext context, String id, String markdown) {
   unawaited(
     ProviderScope.containerOf(context, listen: false)
         .read(readAloudProvider.notifier)
-        .toggle(id, markdown, onError: (error) => messenger?.showBriefNotice(speechErrorText(l10n, error))),
+        .toggle(
+          id,
+          // Keys and tokens in a reply are neither sent to a voice nor spoken.
+          maskSecrets(markdown, mark: ''),
+          onError: (error) => messenger?.showBriefNotice(speechErrorText(l10n, error)),
+        ),
   );
 }

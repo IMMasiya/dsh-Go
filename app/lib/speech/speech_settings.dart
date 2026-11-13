@@ -182,6 +182,12 @@ class CallSettingsController extends Notifier<CallSettings> {
     }
   }
 
+  /// The settings once the saved ones have been read.
+  Future<CallSettings> ready() async {
+    await _loaded;
+    return state;
+  }
+
   Future<void> update(CallSettings next) async {
     // After the saved settings are in: they never overwrite a change made meanwhile.
     await _loaded;

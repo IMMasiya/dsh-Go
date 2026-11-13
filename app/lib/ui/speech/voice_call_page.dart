@@ -101,7 +101,7 @@ class _VoiceCallPageState extends ConsumerState<VoiceCallPage> with WidgetsBindi
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    final settings = ref.read(callSettingsProvider);
+    final callSettings = ref.read(callSettingsProvider.notifier);
     final voices = ref.read(speechVoiceSettingsProvider.notifier);
     // The chosen voice, as soon as the settings have been read (the first reply comes later).
     var voice = ref.read(speechVoiceSettingsProvider) ?? voices.defaults;
@@ -120,9 +120,15 @@ class _VoiceCallPageState extends ConsumerState<VoiceCallPage> with WidgetsBindi
         return recognize();
       },
       voice: () => speechOutFor(voice, deepseek: deepseek, audio: audio, speaker: speaker, call: true, levels: true),
-      bargeIn: settings.bargeIn,
-      speaker: settings.speaker,
-      spokenHint: settings.spoken ? appL10n.speechCallHint : null,
+      // The saved ones, not the defaults shown while they load (a first call after launch).
+      choices: () async {
+        final saved = await callSettings.ready();
+        return (
+          bargeIn: saved.bargeIn,
+          speaker: saved.speaker,
+          spokenHint: saved.spoken ? appL10n.speechCallHint : null,
+        );
+      },
       permission: () async => await bridge.requestPermission() == VoicePermission.granted,
     )..addListener(_changed);
     HapticFeedback.mediumImpact();

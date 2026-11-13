@@ -21,8 +21,7 @@ class _Rig {
         outs.add(out);
         return out;
       },
-      bargeIn: bargeIn,
-      spokenHint: '（语音通话）',
+      choices: () async => (bargeIn: bargeIn, speaker: true, spokenHint: '（语音通话）'),
     );
   }
 

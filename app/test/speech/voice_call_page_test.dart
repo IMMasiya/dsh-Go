@@ -139,6 +139,17 @@ void main() {
     await tester.pump(const Duration(seconds: 1));
   });
 
+  testWidgets('the first call after launch keeps the saved earpiece and no barge-in', (tester) async {
+    SharedPreferences.setMockInitialValues({'speech_call_v1': '{"speaker":false,"bargeIn":false}'});
+    final (audio, _) = await pumpCall(tester);
+    expect(audio.calls, contains('callStart:bargeIn=false'));
+    expect(audio.calls, contains('speaker:false'));
+    expect(audio.calls, isNot(contains('speaker:true')));
+    expect(find.text('听筒'), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('call-hang-up')));
+    await tester.pump(const Duration(seconds: 1));
+  });
+
   for (final still in [false, true]) {
     testWidgets(still ? 'less motion: the keys are there at once' : 'the keys rise in with the page', (tester) async {
       final hangUp = find.byKey(const ValueKey('call-hang-up'));

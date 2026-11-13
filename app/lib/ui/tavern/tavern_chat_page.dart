@@ -1172,7 +1172,10 @@ class _TavernChatPageState extends ConsumerState<TavernChatPage> {
       case _MessageAction.copy:
         await Clipboard.setData(ClipboardData(text: message.text));
       case _MessageAction.readAloud:
-        readAloudReply(context, readId, tavernStripMarkers(message.text));
+        // What the bubble shows (through the display regex), not what is stored.
+        final shown = await _tavern.displayText(widget.chatId, nodeId: message.nodeId, text: message.text);
+        if (!mounted) return;
+        readAloudReply(context, readId, tavernStripMarkers(shown.superseded ? message.text : shown.text));
       case _MessageAction.edit:
         await _edit(message);
       case _MessageAction.bookmark:

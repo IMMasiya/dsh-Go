@@ -1033,7 +1033,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
         call: true,
       );
       if (choice is CallChoice) {
-        if (ownsDraft() && mounted) await _startCall();
+        if (ownsDraft() && mounted) await _startCall(ownsDraft);
         return;
       }
       if (choice is GenerateChoice) {
@@ -1439,11 +1439,12 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
   }
 
   /// 「语音通话」 with this conversation (a new chat gets its conversation
-  /// with the first thing said).
-  Future<void> _startCall() async {
+  /// with the first thing said); [ownsDraft]: still the conversation it was asked from.
+  Future<void> _startCall(bool Function() ownsDraft) async {
     // Dictation gives the microphone back first (what it heard so far goes, as on a draft switch).
     await _voice.cancel();
-    if (!mounted) return;
+    if (!mounted || !ownsDraft()) return;
+    final host = ref.read(activeHostProvider);
     final sessionId = ref.read(currentSessionProvider);
     final listed = sessionId == null ? null : ref.read(chatProvider(sessionId)).title;
     final title = listed != null && listed.trim().isNotEmpty ? chatTitleShown(listed.trim()) : appL10n.commonNewChat;
@@ -1455,7 +1456,12 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
         title: title,
         session: () async {
           if (!mounted) return null;
-          return pinned ??= await _ensureSession(isCurrent: () => mounted);
+          final id = pinned;
+          if (id == null) return pinned = await _ensureSession(isCurrent: () => mounted);
+          // Picks it still owes (a failed apply on the new-chat screen) are settled before it is spoken to.
+          final owed = ref.read(owedSetupsProvider.notifier).of(host, id);
+          if (owed != null && !await _applyOwedSetup(host, id, owed, () => mounted)) return null;
+          return id;
         },
       ),
     );
