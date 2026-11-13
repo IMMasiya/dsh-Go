@@ -132,7 +132,7 @@ void main() {
       expect(account.heard, isEmpty);
       expect(key.asked, ['你好']);
       expect(keys, 1);
-      expect(account.closed, isTrue);
+      expect(account.closed, isFalse, reason: 'requests already on the account finish');
     });
 
     test('other failures are the account\'s own and are not retried with the key', () async {

@@ -31859,7 +31859,7 @@ abstract class L10n {
   /// No description provided for @speechVoiceDeepseekHint.
   ///
   /// In zh, this message translates to:
-  /// **'登录的 DeepSeek 账号付费，没登录时用设置里的 API Key，不用另外配置'**
+  /// **'登录的 DeepSeek 账号付费；没登录，或账号不能用于语音时，用设置里的 API Key。不用另外配置'**
   String get speechVoiceDeepseekHint;
 
   /// No description provided for @speechVoiceDeepseekFooter.
@@ -31919,7 +31919,7 @@ abstract class L10n {
   /// No description provided for @speechSignIn.
   ///
   /// In zh, this message translates to:
-  /// **'DeepSeek 账号用不了语音（可能已退出登录，或语音只认 API Key）。在设置里填上 API Key 就能用'**
+  /// **'DeepSeek 账号用不了语音（可能登录过期，或语音只认 API Key）。重新登录，或在设置里填上 API Key'**
   String get speechSignIn;
 
   /// No description provided for @speechUnauthorized.

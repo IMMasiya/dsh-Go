@@ -17416,7 +17416,7 @@ class L10nZh extends L10n {
   String get speechVoiceDeepseek => 'DeepSeek';
 
   @override
-  String get speechVoiceDeepseekHint => '登录的 DeepSeek 账号付费，没登录时用设置里的 API Key，不用另外配置';
+  String get speechVoiceDeepseekHint => '登录的 DeepSeek 账号付费；没登录，或账号不能用于语音时，用设置里的 API Key。不用另外配置';
 
   @override
   String get speechVoiceDeepseekFooter => '按朗读的字数计费，价格见 DeepSeek 开放平台。读出前会去掉代码块、表格和链接地址。';
@@ -17446,7 +17446,7 @@ class L10nZh extends L10n {
   String get speechNoCredential => '要先登录 DeepSeek 账号，或在设置里填 API Key';
 
   @override
-  String get speechSignIn => 'DeepSeek 账号用不了语音（可能已退出登录，或语音只认 API Key）。在设置里填上 API Key 就能用';
+  String get speechSignIn => 'DeepSeek 账号用不了语音（可能登录过期，或语音只认 API Key）。重新登录，或在设置里填上 API Key';
 
   @override
   String get speechUnauthorized => 'DeepSeek API Key 无效，请在设置里检查';

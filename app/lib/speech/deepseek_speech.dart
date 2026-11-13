@@ -355,15 +355,18 @@ class AccountThenKeySpeech implements DeepSeekSpeech {
   final DeepSeekSpeech _account;
   final DeepSeekSpeech Function() _key;
   DeepSeekSpeech? _fallback;
+  bool _closed = false;
 
   @override
   DeepSeekSpeechRoute get route => (_fallback ?? _account).route;
 
   static bool _refused(DeepSeekSpeechError error) => error.failure == DeepSeekSpeechFailure.signIn;
 
-  DeepSeekSpeech _toKey() {
+  /// The key from now on. The account is left open: other requests already on
+  /// it finish (or are refused and come here too).
+  DeepSeekSpeech? _toKey() {
     _accountRefused = true;
-    _account.close();
+    if (_closed) return null;
     return _fallback ??= _key();
   }
 
@@ -380,8 +383,9 @@ class AccountThenKeySpeech implements DeepSeekSpeech {
         yield pcm;
       }
     } on DeepSeekSpeechError catch (error) {
-      if (heard || !_refused(error)) rethrow;
-      yield* _toKey().synthesize(text, voice: voice);
+      final key = heard || !_refused(error) ? null : _toKey();
+      if (key == null) rethrow;
+      yield* key.synthesize(text, voice: voice);
     }
   }
 
@@ -391,13 +395,15 @@ class AccountThenKeySpeech implements DeepSeekSpeech {
     try {
       return await _account.transcribe(wav);
     } on DeepSeekSpeechError catch (error) {
-      if (!_refused(error)) rethrow;
-      return _toKey().transcribe(wav);
+      final key = _refused(error) ? _toKey() : null;
+      if (key == null) rethrow;
+      return key.transcribe(wav);
     }
   }
 
   @override
   void close() {
+    _closed = true;
     _account.close();
     _fallback?.close();
   }
