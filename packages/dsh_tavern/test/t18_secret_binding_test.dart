@@ -750,7 +750,7 @@ void main() {
       // A nonempty public patch performs a real publication and revision bump
       // even when the description string equals its current value. Its first
       // card read owns the library queue; the main's cold _record waits behind.
-      final editing = f.h.engine.updateCharacterFields(f.characterId, {'description': description});
+      final editing = gate.edit(() => f.h.engine.updateCharacterFields(f.characterId, {'description': description}));
       await gate.entered.future.timeout(_deadline);
       final call = f.h.model.prepare();
       final events = T24Events(f.h.engine.continueReply(f.chatId, f.sourceId));
@@ -758,8 +758,9 @@ void main() {
       expect(call.listening.isCompleted, isFalse);
       expect(gate.byteReads, 1);
       gate.releaseEdit();
-      // The second read belongs to the queued main. Hold its real new bytes
-      // until the public edit future has completed, making the order explicit.
+      // The writer also reads its authority before-image. Identify the queued
+      // main by its operation zone, then hold its real new bytes until the
+      // public edit future has completed, making the order explicit.
       await gate.mainRead.future.timeout(_deadline);
       expect((await editing.timeout(_deadline)).id, f.characterId);
       expect(call.listening.isCompleted, isFalse);
@@ -924,14 +925,17 @@ class _ReadGate {
   Future<Uint8List> readBytes(Future<Uint8List> Function() operation) => read(operation);
 }
 
-// Unlike the existing late-proposal gate, this gate never waits for a later
-// public edit while a main library read owns the same serialized queue. The
-// edit owns read 1; the main is admitted behind it and owns read 2.
+// Hold the public edit's first card read, admit the cold main behind it, and
+// then hold the main's first card read. Additional reads within the writer
+// (including its authority before-image) retain its zone and cannot be
+// mistaken for the queued main or deadlock the shared library queue.
 class _QueuedEditGate extends _ReadGate {
   final mainRead = Completer<void>();
   final _editReleased = Completer<void>();
   final _mainReleased = Completer<void>();
   var byteReads = 0;
+
+  Future<T> edit<T>(Future<T> Function() action) => runZoned(action, zoneValues: {this: true});
 
   void releaseEdit() {
     if (!_editReleased.isCompleted) _editReleased.complete();
@@ -951,12 +955,14 @@ class _QueuedEditGate extends _ReadGate {
   Future<T> read<T>(Future<T> Function() operation) => operation();
   @override
   Future<Uint8List> readBytes(Future<Uint8List> Function() operation) async {
-    final index = ++byteReads;
+    byteReads++;
     final bytes = await operation();
-    if (index == 1) {
-      entered.complete();
-      await _editReleased.future;
-    } else if (index == 2) {
+    if (Zone.current[this] == true) {
+      if (!entered.isCompleted) {
+        entered.complete();
+        await _editReleased.future;
+      }
+    } else if (!mainRead.isCompleted) {
       mainRead.complete();
       await _mainReleased.future;
     }

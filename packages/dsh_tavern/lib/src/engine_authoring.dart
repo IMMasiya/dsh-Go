@@ -101,8 +101,11 @@ extension _AuthoringOperations on TavernEngine {
           'sourceFormat': captured.sourceFormat,
           'mediaRefs': captured.mediaRefs,
         });
+        final revision = captured.authorityRevision;
+        if (revision != null) source['authorityRevision'] = _authoringRevisionJson(revision);
       case TavernAuthoringTargetKind.lorebook:
         return _bookOperation(() async {
+          _authoringAuthority.checkWritable(target.physicalResourceId);
           final file = File('${directory.path}/lorebooks/${target.id}.json');
           final ({String text, String rawText}) text;
           try {
@@ -110,14 +113,20 @@ extension _AuthoringOperations on TavernEngine {
           } on PathNotFoundException catch (error) {
             final code = error.osError?.errorCode;
             if (code != 2 && (!Platform.isWindows || code != 3)) rethrow;
+            _authoringAuthority.observe(target.physicalResourceId, const AuthoringResourceSnapshot(present: false));
             _authoringSourceMissing(target);
           }
+          final revision = _authoringAuthority.observe(
+            target.physicalResourceId,
+            AuthoringResourceSnapshot(present: true, rawText: text.rawText),
+          );
           final document = _decodeObject(text.text, 'Lorebook');
           _authoringBook(document);
           return {
             ...source,
             'base': document,
             'rawText': text.rawText,
+            'authorityRevision': _authoringRevisionJson(revision),
             'sourceFormat': !document.containsKey('entries') && document['format'] == 'dshgo-lorebook'
                 ? 'dshgo-lorebook'
                 : 'st-json',
@@ -351,12 +360,39 @@ TavernAuthoringDraft _authoringView(StoredAuthoringDraft stored) {
   return draft;
 }
 
-TavernAuthoringSource _authoringSourceView(Map<String, Object?> data) => TavernAuthoringSource(
-  target: _authoringTarget(data['target']! as Map<String, Object?>),
-  sourceFormat: data['sourceFormat']! as String,
-  base: data['base']! as Map<String, Object?>,
-  mediaRefs: (data['mediaRefs']! as List<Object?>).cast<String>().toList(),
-);
+TavernAuthoringSource _authoringSourceView(Map<String, Object?> data) {
+  final target = _authoringTarget(data['target']! as Map<String, Object?>);
+  final token = data['authorityRevision'];
+  TavernAuthorityRevision? revision;
+  if (token != null) {
+    if (token is! Map<String, Object?> ||
+        token['domainId'] is! String ||
+        (token['domainId']! as String).isEmpty ||
+        token['revision'] is! int ||
+        (token['revision']! as int) < 1 ||
+        data['present'] != true ||
+        data['rawText'] is! String ||
+        (data['identityText'] != null && data['identityText'] is! String) ||
+        (target.kind == TavernAuthoringTargetKind.character && data['identityText'] is! String) ||
+        (target.kind != TavernAuthoringTargetKind.character && target.kind != TavernAuthoringTargetKind.lorebook)) {
+      _authoringInvalid('The saved authority base is invalid.', resourceId: target.physicalResourceId);
+    }
+    revision = TavernAuthorityRevision(domainId: token['domainId']! as String, revision: token['revision']! as int);
+  }
+  return TavernAuthoringSource(
+    target: target,
+    sourceFormat: data['sourceFormat']! as String,
+    base: data['base']! as Map<String, Object?>,
+    mediaRefs: (data['mediaRefs']! as List<Object?>).cast<String>().toList(),
+    authorityRevision: revision,
+    applySupported: revision != null,
+  );
+}
+
+Map<String, Object?> _authoringRevisionJson(TavernAuthorityRevision revision) => {
+  'domainId': revision.domainId,
+  'revision': revision.revision,
+};
 
 TavernAuthoringChange _authoringChange(Map<String, Object?> data) => TavernAuthoringChange(
   id: data['id']! as String,

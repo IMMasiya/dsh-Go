@@ -438,6 +438,7 @@ extension _ScriptVariableOperations on _ScriptCoordinator {
         case TavernVariableScope.character:
           saved = await engine._libraryOperation(() async {
             final id = target.characterId!;
+            engine._authoringAuthority.checkWritable('character:$id');
             final record = await engine._library.read(id);
             if (record == null) {
               throw _scriptError(TavernScriptErrorCode.notFound, 'variables', 'Character not found.');
@@ -467,6 +468,7 @@ extension _ScriptVariableOperations on _ScriptCoordinator {
           } else if (owner.kind == TavernScriptOwnerKind.character) {
             saved = await engine._libraryOperation(() async {
               final id = owner.assetId!;
+              engine._authoringAuthority.checkWritable('character:$id');
               final record = await engine._library.read(id);
               if (record == null) {
                 throw _scriptError(TavernScriptErrorCode.notFound, 'variables', 'Script character not found.');
@@ -521,7 +523,9 @@ extension _ScriptVariableOperations on _ScriptCoordinator {
         nodeId: target.messageRef?.nodeId,
         committed: committed,
       );
-    } catch (error) {
+    } catch (error, stack) {
+      final reported = _scriptReportedFailure(error);
+      if (reported != null) Error.throwWithStackTrace(reported, stack);
       throw _scriptError(
         TavernScriptErrorCode.storage,
         'variables',
@@ -551,13 +555,19 @@ extension _ScriptVariableOperations on _ScriptCoordinator {
     if (engine._deletingCharacters.contains(id)) {
       throw _scriptError(TavernScriptErrorCode.notFound, 'variables', 'Character deletion is running.');
     }
+    var committed = false;
     try {
-      final record = await engine._library.updateScriptStorage(id, extensions);
+      final record = await engine._library.updateScriptStorage(
+        id,
+        extensions,
+        onCommitted: () {
+          committed = true;
+        },
+      );
       engine._characterCache = null;
       engine._cacheCharacterDetail(id, Future.value(record));
-      engine._directors.characterChanged(id);
       engine._notifyLists();
-    } catch (error) {
+    } catch (error, stack) {
       // card.json can commit before its derived summary fails. Evict and read
       // the authoritative file; never publish the older cached character.
       engine._characterCache = null;
@@ -571,10 +581,8 @@ extension _ScriptVariableOperations on _ScriptCoordinator {
       if (actual != null) {
         engine._cacheCharacterDetail(id, Future.value(actual));
       }
-      final committed = actual != null && _stateJsonEqual(_optionalObject(actual.card.data, 'extensions'), extensions);
-      if (committed) {
-        engine._directors.characterChanged(id);
-      }
+      final reported = _scriptReportedFailure(error);
+      if (reported != null) Error.throwWithStackTrace(reported, stack);
       throw _scriptError(
         TavernScriptErrorCode.storage,
         'variables',
@@ -903,6 +911,28 @@ extension _ScriptVariableVersions on _ScriptCoordinator {
           target.scriptOwner!.kind == TavernScriptOwnerKind.character &&
           target.scriptOwner!.assetId == id) {
         _observeVariable(entry, () => _scriptData(_optionalObject(data, 'extensions'), target.scriptOwner!.scriptId));
+      }
+    }
+  }
+
+  void cardRemoved(String id) {
+    if (_closed) return;
+    _resourceVersion('characterData:$id', null, present: false);
+    _resourceVersion('embedded:$id', null, present: false);
+    for (final entry in _variableVersions.values) {
+      final target = entry.target;
+      if (target.scope == TavernVariableScope.character && target.characterId == id) {
+        _observeVariable(
+          entry,
+          () => throw _scriptError(TavernScriptErrorCode.notFound, 'variables', 'Character not found.'),
+        );
+      } else if (target.scope == TavernVariableScope.script &&
+          target.scriptOwner!.kind == TavernScriptOwnerKind.character &&
+          target.scriptOwner!.assetId == id) {
+        _observeVariable(
+          entry,
+          () => throw _scriptError(TavernScriptErrorCode.notFound, 'variables', 'Script character not found.'),
+        );
       }
     }
   }

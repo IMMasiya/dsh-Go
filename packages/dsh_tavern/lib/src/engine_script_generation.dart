@@ -257,7 +257,7 @@ extension _ScriptGenerationOperations on _ScriptCoordinator {
         record.cancellation.isCancelled ||
         error is TavernModelException && error.kind == TavernFailure.cancelled ||
         error is TavernScriptException && error.code == TavernScriptErrorCode.cancelled;
-    final original = error is TavernScriptException ? error : null;
+    final original = _scriptReportedFailure(error);
     final model = error is TavernModelException
         ? error.kind
         : error is PromptBudgetExceeded

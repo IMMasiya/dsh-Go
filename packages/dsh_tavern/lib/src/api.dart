@@ -470,8 +470,9 @@ abstract interface class Tavern {
 
   // Authoring drafts ----------------------------------------------------------
 
-  /// Captures existing sources in their actual writer queues. Stage 2A offers
-  /// drafts/static checks only; every source has applySupported = false.
+  /// Captures existing sources in their actual writer queues. Characters and
+  /// standalone books include a durable authority revision. Other targets
+  /// support drafts and static checks, but not adoption.
   Future<TavernAuthoringDraft> createAuthoringDraft(List<TavernAuthoringTarget> targets);
   Future<TavernAuthoringDraft?> readAuthoringDraft(String draftId);
 
@@ -510,6 +511,38 @@ abstract interface class Tavern {
     required String physicalResourceId,
     required String scriptPath,
     required String text,
+  });
+
+  /// Adopts one physical resource after checking its saved base, the supplied
+  /// durable revision and the fresh source inside its actual writer queue.
+  /// The draft stays unchanged. Further changes to an adopted target require
+  /// an explicit rebase; untouched targets can still use their saved bases.
+  /// Reusing an operation ID with the same parameters returns its receipt,
+  /// including after the draft was deleted, without repeating the write.
+  Future<TavernAuthoringReceipt> applyAuthoringChanges(
+    String draftId, {
+    required int draftRevision,
+    required String physicalResourceId,
+    required List<String> changeIds,
+    required TavernAuthorityRevision expectedAuthorityRevision,
+    required String operationId,
+  });
+
+  Future<TavernAuthoringOperation?> readAuthoringOperation(String operationId, {required String domainId});
+
+  /// Lists confirmed adoptions only. Prepared and unconfirmed operations are
+  /// available through readAuthoringOperation and are not committed versions.
+  Future<List<TavernAuthoringRevisionSummary>> listAuthoringRevisions(String physicalResourceId);
+
+  /// Uses a historical JSON after-image as a new adoption with a new version.
+  /// The target must still exist; a character must retain the same library
+  /// identity and available media. This does not restore deleted media or
+  /// overwrite library.json, original imports or attachments.
+  Future<TavernAuthoringReceipt> restoreAuthoringRevision(
+    String physicalResourceId, {
+    required TavernAuthorityRevision revision,
+    required TavernAuthorityRevision expectedAuthorityRevision,
+    required String operationId,
   });
 
   // Library ------------------------------------------------------------------

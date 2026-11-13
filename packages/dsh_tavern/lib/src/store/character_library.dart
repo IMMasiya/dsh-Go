@@ -9,6 +9,8 @@ import 'dart:math';
 import 'dart:typed_data';
 
 import '../api.dart';
+import '../authoring.dart';
+import '../authoring_authority.dart';
 import '../import_report.dart';
 import '../io/authoring_text.dart';
 import '../io/card_codec.dart';
@@ -116,19 +118,25 @@ class StoredCharacterSummary {
 /// so interrupted writes never become visible as a half-imported character.
 /// Only one instance should own a root, just as one Tavern owns the app store.
 class CharacterLibrary {
-  CharacterLibrary(this.root, {DateTime Function()? now}) : _now = now ?? DateTime.now;
+  CharacterLibrary(this.root, {DateTime Function()? now, this.authority}) : _now = now ?? DateTime.now {
+    if (authority != null && !authority!.ownsRoot(root)) {
+      throw ArgumentError('The character library must use its root authority.');
+    }
+  }
 
   /// Allows nullable facade lookups to reject unknown identifiers without
   /// opening paths. Strict file operations still call [_requireId].
   static bool isValidId(String id) => _idPattern.hasMatch(id);
 
   final Directory root;
+  final AuthoringAuthority? authority;
   final DateTime Function() _now;
   Future<void> _queue = Future.value();
 
   /// Internal synchronous notification of the authoritative card-file commit.
   /// The observer must not throw, write, await, or depend on the derived index.
   void Function(String id, Map<String, Object?> data)? cardCommitted;
+  void Function(String id)? cardRemoved;
 
   Directory get _characters => Directory('${root.path}/characters');
   Directory get _indexes => Directory('${root.path}/character-index');
@@ -140,12 +148,60 @@ class CharacterLibrary {
     return run;
   }
 
+  void _checkManagedWriter([String? id]) {
+    if (authority == null && AuthoringAuthority.inspectRootReadOnly(root).domainId != null) {
+      throw TavernAuthoringException(
+        'managed_writer_required',
+        'This character library must be written through its TavernEngine.',
+        physicalResourceId: id == null ? null : 'character:$id',
+      );
+    }
+    if (id != null) authority?.checkWritable('character:$id');
+  }
+
+  Set<String>? _protectedArtifacts() {
+    try {
+      return (authority?.pendingState() ?? AuthoringAuthority.inspectRootReadOnly(root)).protectedArtifacts;
+    } catch (_) {
+      // A failed ledger probe cannot authorize removal of recovery evidence.
+      return null;
+    }
+  }
+
+  Future<AuthoringResourceSnapshot> _readAuthoringResource(String id) async {
+    final directory = Directory('${_characters.path}/$id');
+    final type = await FileSystemEntity.type(directory.path, followLinks: false);
+    if (type == FileSystemEntityType.notFound) {
+      try {
+        await FileSystemEntity.identical(directory.path, directory.path);
+      } on PathNotFoundException catch (error) {
+        final code = error.osError?.errorCode;
+        if ((code == 2 || (Platform.isWindows && code == 3)) &&
+            await FileSystemEntity.type(directory.path, followLinks: false) == FileSystemEntityType.notFound) {
+          return const AuthoringResourceSnapshot(present: false);
+        }
+        rethrow;
+      }
+      throw FileSystemException('The character folder could not be identified as absent.', directory.path);
+    }
+    if (type != FileSystemEntityType.directory) throw const FileSystemException('Character folder is not a directory');
+    final raw = await readAuthoringText(File('${directory.path}/card.json'));
+    final identity = await readAuthoringText(File('${directory.path}/library.json'));
+    return AuthoringResourceSnapshot(present: true, rawText: raw.rawText, identityText: identity.rawText);
+  }
+
+  Future<void> _observeCharacter(String id) async {
+    final owner = authority;
+    if (owner != null) owner.observe('character:$id', await _readAuthoringResource(id));
+  }
+
   Future<StoredCharacter> importCard(
     Uint8List bytes, {
     String? fileName,
     Future<void> Function(TavernCard card)? beforeSave,
     Future<TavernImportReport> Function(TavernCard card)? inspect,
   }) => _exclusive(() async {
+    _checkManagedWriter();
     await _tidy();
     // Decode/ZIP inflate/portrait conversion cannot stall Flutter's isolate.
     final decoded = await _decodeImport(bytes);
@@ -154,10 +210,22 @@ class CharacterLibrary {
     final report = await inspect?.call(card);
     final importedAt = _now().toUtc();
     final id = _newId();
+    final rawText = jsonEncode(card.json);
+    final identityText = jsonEncode({
+      'version': 1,
+      'importedAt': importedAt.toIso8601String(),
+      'sourceFormat': card.sourceFormat.name,
+      'sourceFileName': fileName,
+      'hasPng': card.png != null,
+      'hasPortrait': portrait != null,
+      'resources': card.assets.keys.toList(),
+    });
     final staging = await _characters.createTemp('.staging-');
     final destination = Directory('${_characters.path}/$id');
+    final owner = authority;
+    AuthoringWriteTicket? ticket;
     try {
-      await File('${staging.path}/card.json').writeAsString(jsonEncode(card.json), flush: true);
+      await File('${staging.path}/card.json').writeAsString(rawText, flush: true);
       if (report != null) {
         await File('${staging.path}/import-report.json').writeAsString(jsonEncode(report.toJson()), flush: true);
       }
@@ -172,38 +240,59 @@ class CharacterLibrary {
         await file.parent.create(recursive: true);
         await file.writeAsBytes(entry.value, flush: true);
       }
-      await File('${staging.path}/library.json').writeAsString(
-        jsonEncode({
-          'version': 1,
-          'importedAt': importedAt.toIso8601String(),
-          'sourceFormat': card.sourceFormat.name,
-          'sourceFileName': fileName,
-          'hasPng': card.png != null,
-          'hasPortrait': portrait != null,
-          'resources': card.assets.keys.toList(),
-        }),
-        flush: true,
-      );
+      await File('${staging.path}/library.json').writeAsString(identityText, flush: true);
       // Never overwrite an existing import, even on a random-id collision.
       if (await FileSystemEntity.type(destination.path, followLinks: false) != FileSystemEntityType.notFound) {
         throw const FileSystemException('Character id already exists');
       }
+      if (owner != null) {
+        final before = await _readAuthoringResource(id);
+        final after = AuthoringResourceSnapshot(present: true, rawText: rawText, identityText: identityText);
+        ticket = AuthoringWriteTicket(
+          request: owner.newRequest('character:$id', {'method': 'importCard', 'after': after.toJson()}),
+          before: before,
+          after: after,
+          artifacts: ['characters/${_name(staging)}'],
+        );
+        final replayed = owner.prepare(ticket);
+        if (replayed != null) {
+          final existing = await _read(id);
+          if (replayed.committed == true && existing != null) return existing;
+          throw TavernAuthoringException(
+            'resource_write_failed',
+            'The import operation is already recorded.',
+            physicalResourceId: 'character:$id',
+            receipt: replayed,
+          );
+        }
+      }
       // An orphaned derived index must never describe a new import, even if a
       // random id happens to be reused. Invalidate before publishing the card.
       await _invalidateSummary(id);
+      ticket?.enteredEffect = true;
       await staging.rename(destination.path);
+      ticket?.knownAdopted = true;
+      cardCommitted?.call(id, card.data);
+      if (ticket != null) owner!.adopted(ticket);
+      final record = StoredCharacter(
+        id: id,
+        card: card,
+        importedAt: importedAt,
+        avatarPath: portrait == null ? null : '${destination.path}/portrait.png',
+        directoryPath: destination.absolute.path,
+      );
+      await _writeSummary(_summarize(record));
+      if (ticket != null) owner!.publish(ticket);
+      return record;
+    } catch (error, stack) {
+      if (ticket != null) owner!.fail(ticket, error, stack);
+      rethrow;
     } finally {
-      if (await staging.exists()) await _discard(staging);
+      final protected = _protectedArtifacts();
+      if (protected != null && !protected.contains('characters/${_name(staging)}') && await staging.exists()) {
+        await _discard(staging);
+      }
     }
-    final record = StoredCharacter(
-      id: id,
-      card: card,
-      importedAt: importedAt,
-      avatarPath: portrait == null ? null : '${destination.path}/portrait.png',
-      directoryPath: destination.absolute.path,
-    );
-    await _writeSummary(_summarize(record));
-    return record;
   });
 
   Future<StoredCharacter?> read(String id) => _exclusive(() async {
@@ -241,7 +330,9 @@ class CharacterLibrary {
   Future<TavernImportReport> recheckImport(String id, Future<TavernImportReport> Function(TavernCard card) inspect) =>
       _exclusive(() async {
         _requireId(id);
+        _checkManagedWriter(id);
         await _tidy();
+        await _observeCharacter(id);
         final record = await _read(id);
         if (record == null) throw const TavernImportError('角色不存在。');
         final report = await inspect(record.card);
@@ -278,18 +369,35 @@ class CharacterLibrary {
   /// Complete source for a persistent authoring base, without loading or
   /// upgrading original/media bytes. The caller owns the returned JSON.
   Future<
-    ({Map<String, Object?> document, String rawText, String identityText, String sourceFormat, List<String> mediaRefs})?
+    ({
+      Map<String, Object?> document,
+      String rawText,
+      String identityText,
+      String sourceFormat,
+      List<String> mediaRefs,
+      TavernAuthorityRevision? authorityRevision,
+    })?
   >
   readAuthoringSnapshot(String id) => _exclusive(() async {
     _requireId(id);
+    authority?.checkWritable('character:$id');
     await _tidy();
     final directory = Directory('${_characters.path}/$id');
     final type = await FileSystemEntity.type(directory.path, followLinks: false);
-    if (type == FileSystemEntityType.notFound) return null;
+    if (type == FileSystemEntityType.notFound) {
+      final owner = authority;
+      if (owner != null) owner.observe('character:$id', await _readAuthoringResource(id));
+      return null;
+    }
     if (type != FileSystemEntityType.directory) throw const FileSystemException('Character folder is not a directory');
     final bytes = await File('${directory.path}/card.json').readAsBytes();
-    final document = const CardCodec().decodeAuthority(bytes);
+    final rawText = decodeAuthoringText(bytes).rawText;
     final identity = await readAuthoringText(File('${directory.path}/library.json'));
+    final revision = authority?.observe(
+      'character:$id',
+      AuthoringResourceSnapshot(present: true, rawText: rawText, identityText: identity.rawText),
+    );
+    final document = const CardCodec().decodeAuthority(bytes);
     final metadata = jsonDecode(identity.text);
     if (metadata is! Map<String, Object?> ||
         metadata['version'] != 1 ||
@@ -301,10 +409,11 @@ class CharacterLibrary {
     if (paths.any((path) => path is! String)) throw const TavernImportError('资料库资源目录无效。');
     return (
       document: document,
-      rawText: decodeAuthoringText(bytes).rawText,
+      rawText: rawText,
       identityText: identity.rawText,
       sourceFormat: metadata['sourceFormat']! as String,
       mediaRefs: paths.cast<String>().toList(),
+      authorityRevision: revision,
     );
   });
 
@@ -320,6 +429,7 @@ class CharacterLibrary {
     void Function()? check,
   }) => _exclusive(() async {
     _requireId(id);
+    _checkManagedWriter(id);
     await _tidy();
     final envelope = await _readAuthorityEnvelope(id);
     if (envelope == null) throw const TavernImportError('角色不存在。');
@@ -328,41 +438,67 @@ class CharacterLibrary {
     const CardCodec().validateAuthority(json);
     final record = await _read(id);
     if (record == null) throw const TavernImportError('角色不存在。');
-    final projection = const CardCodec().decode(Uint8List.fromList(utf8.encode(jsonEncode(json))));
-    final updated = StoredCharacter(
-      id: id,
-      card: TavernCard(
-        json: projection.json,
-        assets: record.card.assets,
-        png: record.card.png,
-        originalBytes: record.card.originalBytes,
-        sourceFormat: record.card.sourceFormat,
-      ),
-      importedAt: record.importedAt,
-      avatarPath: record.avatarPath,
-      directoryPath: record.directoryPath,
+    final result = await _publishCard(
+      record,
+      json,
+      runtimeProjection: true,
+      check: check,
+      onCommitted: () => onCommitted?.call(json['data']! as Map<String, Object?>),
     );
-    final summary = _summarize(updated);
-    final file = File('${_characters.path}/$id/card.json');
-    final pending = File('${file.path}.writing');
-    check?.call();
-    await _invalidateSummary(id);
+    return result.record;
+  });
+
+  /// Internal authoring adoption. The complete validated envelope is written
+  /// exactly as supplied; runtime defaults never enter the authoritative file.
+  Future<TavernAuthoringReceipt> writeAuthoringEnvelope(
+    String id,
+    String rawText, {
+    required AuthoringWriteRequest request,
+    required AuthoringExpectation expected,
+    void Function()? check,
+  }) => _exclusive(() async {
+    _requireId(id);
+    _checkManagedWriter();
+    final owner = authority;
+    if (owner == null) throw StateError('Authoring requires the managed character authority.');
+    final replayed = owner.replay(request);
+    if (replayed != null) return replayed;
+    owner.checkWritable('character:$id');
+    await _tidy();
+    final Map<String, Object?> document;
     try {
-      check?.call();
-      await pending.writeAsString(jsonEncode(json), flush: true);
-      await pending.rename(file.path);
-      final actual = json['data']! as Map<String, Object?>;
-      onCommitted?.call(actual);
-      cardCommitted?.call(id, actual);
-    } finally {
-      try {
-        if (await pending.exists()) await pending.delete();
-      } on FileSystemException {
-        // Pending cleanup is not a second authority adoption.
-      }
+      document = const CardCodec().decodeAuthority(Uint8List.fromList(utf8.encode(rawText)));
+    } on FormatException {
+      throw TavernAuthoringException(
+        'invalid_change',
+        'The candidate character envelope is invalid.',
+        physicalResourceId: 'character:$id',
+      );
+    } on TavernImportError {
+      throw TavernAuthoringException(
+        'invalid_change',
+        'The candidate character envelope is invalid.',
+        physicalResourceId: 'character:$id',
+      );
     }
-    await _writeSummary(summary);
-    return updated;
+    final record = await _read(id);
+    if (record == null) {
+      throw TavernAuthoringException(
+        'authority_conflict',
+        'The character no longer exists.',
+        physicalResourceId: 'character:$id',
+      );
+    }
+    final result = await _publishCard(
+      record,
+      document,
+      runtimeProjection: true,
+      rawText: rawText,
+      request: request,
+      expected: expected,
+      check: check,
+    );
+    return result.receipt!;
   });
 
   Future<Map<String, Object?>?> _readAuthorityEnvelope(String id) async {
@@ -388,10 +524,14 @@ class CharacterLibrary {
     // Snapshot and validate before queueing: callers may reuse their form map.
     final updates = _fieldUpdates(fields);
     return _exclusive(() async {
+      _checkManagedWriter(id);
       await _tidy();
       final record = await _read(id);
       if (record == null) throw const TavernImportError('角色不存在。');
-      if (updates.isEmpty) return record;
+      if (updates.isEmpty) {
+        await _observeCharacter(id);
+        return record;
+      }
       final json = jsonDecode(jsonEncode(record.card.json)) as Map<String, Object?>;
       final data = json['data'] as Map<String, Object?>;
       data.addAll(updates);
@@ -405,10 +545,15 @@ class CharacterLibrary {
   /// owning its character queue; this does not broaden updateFields.
   /// Persist from authority; decoder defaults belong only to the returned
   /// runtime view, including defaults in an unrelated embedded book.
-  Future<StoredCharacter> updateScriptStorage(String id, Map<String, Object?> extensions) {
+  Future<StoredCharacter> updateScriptStorage(
+    String id,
+    Map<String, Object?> extensions, {
+    void Function()? onCommitted,
+  }) {
     _requireId(id);
     final captured = jsonDecode(jsonEncode(extensions)) as Map<String, Object?>;
     return _exclusive(() async {
+      _checkManagedWriter(id);
       await _tidy();
       final record = await _read(id);
       if (record == null) {
@@ -431,7 +576,7 @@ class CharacterLibrary {
         }
       }
       data['extensions'] = captured;
-      return _saveCard(record, json, runtimeProjection: true);
+      return _saveCard(record, json, runtimeProjection: true, onCommitted: onCommitted);
     });
   }
 
@@ -499,6 +644,7 @@ class CharacterLibrary {
   }
 
   Future<StoredCharacter> _editBook(String id, bool Function(List<Object?> entries) edit) => _exclusive(() async {
+    _checkManagedWriter(id);
     await _tidy();
     final record = await _read(id);
     if (record == null) {
@@ -513,6 +659,7 @@ class CharacterLibrary {
       entry['id'] ??= index;
     }
     if (!edit(entries)) {
+      await _observeCharacter(id);
       return record;
     }
     data['character_book'] = book;
@@ -523,11 +670,25 @@ class CharacterLibrary {
     StoredCharacter record,
     Map<String, Object?> json, {
     bool runtimeProjection = false,
+    void Function()? onCommitted,
   }) async {
     (json['data']! as Map<String, Object?>)['modification_date'] = _now().toUtc().millisecondsSinceEpoch ~/ 1000;
-    final runtimeJson = runtimeProjection
-        ? const CardCodec().decode(Uint8List.fromList(utf8.encode(jsonEncode(json)))).json
-        : json;
+    final result = await _publishCard(record, json, runtimeProjection: runtimeProjection, onCommitted: onCommitted);
+    return result.record;
+  }
+
+  Future<({StoredCharacter record, TavernAuthoringReceipt? receipt})> _publishCard(
+    StoredCharacter record,
+    Map<String, Object?> json, {
+    bool runtimeProjection = false,
+    String? rawText,
+    AuthoringWriteRequest? request,
+    AuthoringExpectation? expected,
+    void Function()? check,
+    void Function()? onCommitted,
+  }) async {
+    final text = rawText ?? jsonEncode(json);
+    final runtimeJson = runtimeProjection ? const CardCodec().decode(Uint8List.fromList(utf8.encode(text))).json : json;
     final updated = StoredCharacter(
       id: record.id,
       card: TavernCard(
@@ -544,25 +705,58 @@ class CharacterLibrary {
     final summary = _summarize(updated);
     final cardFile = File('${_characters.path}/${record.id}/card.json');
     final pending = File('${cardFile.path}.writing');
-    // No committed source revision may retain a readable older index. If
-    // saving the card fails, the next list rebuilds the old source summary.
-    await _invalidateSummary(record.id);
+    final owner = authority;
+    final before = owner == null ? null : await _readAuthoringResource(record.id);
+    final after = AuthoringResourceSnapshot(present: true, rawText: text, identityText: before?.identityText);
+    final ticket = owner == null
+        ? null
+        : AuthoringWriteTicket(
+            request:
+                request ??
+                owner.newRequest('character:${record.id}', {'method': 'writeCharacter', 'after': after.toJson()}),
+            before: before!,
+            after: after,
+          );
     try {
-      await pending.writeAsString(jsonEncode(json), flush: true);
+      if (ticket != null) {
+        if (expected != null && before!.sameAs(after)) {
+          return (record: record, receipt: owner!.notAdopted(ticket, noChange: true, expected: expected, check: check));
+        }
+        final replayed = owner!.prepare(ticket, expected: expected, check: check);
+        if (replayed != null) return (record: record, receipt: replayed);
+      } else {
+        check?.call();
+      }
+      // No committed source revision may retain a readable older index.
+      await _invalidateSummary(record.id);
+      if (request == null) check?.call();
+      await pending.writeAsString(text, flush: true);
+      if (request == null) check?.call();
+      ticket?.enteredEffect = true;
       await pending.rename(cardFile.path);
-      cardCommitted?.call(record.id, json['data']! as Map<String, Object?>);
+      ticket?.knownAdopted = true;
+      try {
+        cardCommitted?.call(record.id, json['data']! as Map<String, Object?>);
+      } finally {
+        onCommitted?.call();
+      }
+      // fail() also records this known return if either notification throws.
+      if (ticket != null) owner!.adopted(ticket);
+      await _writeSummary(summary);
+      return (record: updated, receipt: ticket == null ? null : owner!.publish(ticket));
+    } catch (error, stack) {
+      if (ticket != null) owner!.fail(ticket, error, stack);
+      rethrow;
     } finally {
       try {
         if (await pending.exists()) {
           await pending.delete();
         }
       } on FileSystemException {
-        // A later save overwrites this uncommitted file. Reads only use
-        // card.json, so cleanup failure cannot publish an incomplete edit.
+        // The complete JSON candidate is already in the journal; this file
+        // does not contain the import/media evidence kept in staging/trash.
       }
     }
-    await _writeSummary(summary);
-    return updated;
   }
 
   /// Reads only derived summaries for current character directories. Old or
@@ -598,7 +792,12 @@ class CharacterLibrary {
   /// This method owns only the files; it cannot reach an unrelated character.
   Future<void> delete(String id) => _exclusive(() async {
     _requireId(id);
+    _checkManagedWriter(id);
     await _tidy();
+    if (authority != null) {
+      await _deleteManaged(id);
+      return;
+    }
     final directory = Directory('${_characters.path}/$id');
     final type = await FileSystemEntity.type(directory.path, followLinks: false);
     if (type == FileSystemEntityType.notFound) {
@@ -624,6 +823,39 @@ class CharacterLibrary {
     await _discard(trash);
     await _discardSummary(id);
   });
+
+  Future<void> _deleteManaged(String id) async {
+    final owner = authority!;
+    // Deletion records source text without asking a JSON codec to accept it.
+    // An unreadable/missing carrier is not a fabricated empty before-image.
+    final before = await _readAuthoringResource(id);
+    final trash = Directory('${_characters.path}/.trash-${_newId()}');
+    final ticket = AuthoringWriteTicket(
+      request: owner.newRequest('character:$id', {'method': 'deleteCharacter'}),
+      before: before,
+      after: const AuthoringResourceSnapshot(present: false),
+      artifacts: before.present ? ['characters/${_name(trash)}'] : const [],
+    );
+    try {
+      if (!before.present) {
+        owner.notAdopted(ticket, noChange: true);
+        cardRemoved?.call(id);
+        await _discardSummary(id);
+        return;
+      }
+      if (owner.prepare(ticket) != null) return;
+      ticket.enteredEffect = true;
+      await Directory('${_characters.path}/$id').rename(trash.path);
+      ticket.knownAdopted = true;
+      cardRemoved?.call(id);
+      owner.adopted(ticket);
+      await _discard(trash);
+      await _discardSummary(id);
+      owner.publish(ticket);
+    } catch (error, stack) {
+      owner.fail(ticket, error, stack);
+    }
+  }
 
   Future<StoredCharacterSummary> _readSummary(String id) async {
     final directory = Directory('${_characters.path}/$id');
@@ -785,11 +1017,15 @@ class CharacterLibrary {
   }
 
   Future<void> _tidy() async {
+    final protected = _protectedArtifacts();
+    if (protected == null) return;
     await _characters.create(recursive: true);
     await for (final entity in _characters.list(followLinks: false)) {
       if (entity is! Directory) continue;
       final name = _name(entity);
-      if (name.startsWith('.staging-') || name.startsWith('.trash-')) await _discard(entity);
+      if ((name.startsWith('.staging-') || name.startsWith('.trash-')) && !protected.contains('characters/$name')) {
+        await _discard(entity);
+      }
     }
   }
 }

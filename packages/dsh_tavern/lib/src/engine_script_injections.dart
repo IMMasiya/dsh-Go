@@ -532,8 +532,9 @@ class _ScriptInjectionRegistry {
           ]),
         );
       } catch (error) {
-        final issues = error is TavernScriptException ? error.issues : const <TavernScriptIssue>[];
-        final committed = error is TavernScriptException && error.committed;
+        final reported = owner._scriptReportedFailure(error);
+        final issues = reported?.issues ?? const <TavernScriptIssue>[];
+        final committed = reported?.committed == true;
         // Only the outcome which won Future.any reaches this boundary. A
         // subsequent owner/host check cannot erase its already received facts.
         onObservedIssues?.call(request, issues, committed);

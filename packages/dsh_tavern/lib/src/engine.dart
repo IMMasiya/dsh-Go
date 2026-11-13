@@ -13,6 +13,7 @@ import 'package:sqlite3/sqlite3.dart' show SqliteException;
 
 import 'api.dart';
 import 'authoring.dart';
+import 'authoring_authority.dart';
 import 'backup.dart';
 import 'director.dart';
 import 'director/direct_tool.dart' as director_core;
@@ -60,6 +61,7 @@ part 'engine_state.dart';
 part 'engine_profile.dart';
 part 'engine_prompt_history.dart';
 part 'engine_authoring.dart';
+part 'engine_authoring_apply.dart';
 part 'engine_tools.dart';
 part 'engine_director.dart';
 part 'engine_director_watch.dart';
@@ -110,6 +112,14 @@ Future<TavernBackupInfo> restoreTavernDirectory(String archivePath, String direc
       File(archivePath),
       root,
       validateStaging: TavernEngine._validateBackupStaging,
+      validateDestination: (destination) async {
+        if (AuthoringAuthority.inspectRootReadOnly(destination).hasPending) {
+          throw const TavernAuthoringException(
+            'pending_operation',
+            'The destination has an unresolved file operation.',
+          );
+        }
+      },
     );
   } finally {
     _ownedTavernRoots.remove(identity);
@@ -160,6 +170,7 @@ class TavernEngine implements Tavern {
   TavernEngine._(
     this.directory,
     this._store,
+    this._authoringAuthority,
     this._library,
     this._personas,
     this._document,
@@ -174,7 +185,20 @@ class TavernEngine implements Tavern {
   ) {
     _globalVariables = _NativeGlobals(_map(_document['globalVariables']));
     _store.committedObserver = _scripts.storeCommitted;
-    _library.cardCommitted = _scripts.cardCommitted;
+    _library.cardCommitted = (id, data) {
+      _characterCache = null;
+      unawaited(_characterDetails.remove(id));
+      _scripts.cardCommitted(id, data);
+      _directors.characterChanged(id);
+      _notifyLists();
+    };
+    _library.cardRemoved = (id) {
+      _characterCache = null;
+      unawaited(_characterDetails.remove(id));
+      _scripts.cardRemoved(id);
+      _directors.characterChanged(id);
+      _notifyLists();
+    };
     _storeSubscription = _store.changes.listen((chatId) {
       if (_closed) return;
       _paths.add(chatId);
@@ -244,10 +268,12 @@ class TavernEngine implements Tavern {
       try {
         await regexLibrary.initialize();
         store = ChatStore.open('${directory.path}/tavern.sqlite3', clock: now);
+        final authority = AuthoringAuthority(root: directory, store: store);
         final result = TavernEngine._(
           directory,
           store,
-          CharacterLibrary(directory, now: now),
+          authority,
+          CharacterLibrary(directory, now: now, authority: authority),
           personas,
           document,
           config ?? TavernModelConfig(apiKey: () async => null),
@@ -276,6 +302,7 @@ class TavernEngine implements Tavern {
   final Directory directory;
   late final String _directoryOwnerKey;
   final ChatStore _store;
+  final AuthoringAuthority _authoringAuthority;
   final CharacterLibrary _library;
   final PersonaStore _personas;
   final Map<String, Object?> _document;
@@ -412,6 +439,41 @@ class TavernEngine implements Tavern {
     required String scriptPath,
     required String text,
   }) => _testAuthoringRegex(draftId, draftRevision, changeIds, physicalResourceId, scriptPath, text);
+
+  @override
+  Future<TavernAuthoringReceipt> applyAuthoringChanges(
+    String draftId, {
+    required int draftRevision,
+    required String physicalResourceId,
+    required List<String> changeIds,
+    required TavernAuthorityRevision expectedAuthorityRevision,
+    required String operationId,
+  }) => _applyAuthoringChanges(
+    draftId,
+    draftRevision: draftRevision,
+    physicalResourceId: physicalResourceId,
+    changeIds: changeIds,
+    expectedAuthorityRevision: expectedAuthorityRevision,
+    operationId: operationId,
+  );
+  @override
+  Future<TavernAuthoringOperation?> readAuthoringOperation(String operationId, {required String domainId}) =>
+      _readAuthoringOperation(operationId, domainId: domainId);
+  @override
+  Future<List<TavernAuthoringRevisionSummary>> listAuthoringRevisions(String physicalResourceId) =>
+      _listAuthoringRevisions(physicalResourceId);
+  @override
+  Future<TavernAuthoringReceipt> restoreAuthoringRevision(
+    String physicalResourceId, {
+    required TavernAuthorityRevision revision,
+    required TavernAuthorityRevision expectedAuthorityRevision,
+    required String operationId,
+  }) => _restoreAuthoringRevision(
+    physicalResourceId,
+    revision: revision,
+    expectedAuthorityRevision: expectedAuthorityRevision,
+    operationId: operationId,
+  );
 
   // Acquire this queue before chat barriers for bind/delete. Taking them in
   // the reverse order could leave a binder waiting behind a deletion that is
@@ -551,7 +613,6 @@ class TavernEngine implements Tavern {
       final stored = await _library.updateFields(characterId, patch);
       _characterCache = null;
       _cacheCharacterDetail(characterId, Future.value(stored));
-      _directors.characterChanged(characterId);
       _notifyLists();
       final stats = _store.characterChatStats()[characterId];
       return stored.toCharacter(chatCount: stats?.count ?? 0, lastChatAt: stats?.lastAt);
@@ -591,7 +652,6 @@ class TavernEngine implements Tavern {
       final stored = await save();
       _characterCache = null;
       _cacheCharacterDetail(characterId, Future.value(stored));
-      _directors.characterChanged(characterId);
       _notifyLists();
       final stats = _store.characterChatStats()[characterId];
       return stored.toCharacter(chatCount: stats?.count ?? 0, lastChatAt: stats?.lastAt);
@@ -2191,6 +2251,7 @@ class TavernEngine implements Tavern {
         });
       case TavernImportKind.lorebook:
         return _bookOperation(() async {
+          _authoringAuthority.checkWritable('lorebook:$assetId');
           final raw = await _readBookNow(assetId);
           if (raw == null) throw const TavernImportError('世界书不存在。');
           final book = WorldInfoBook.fromJson(id: assetId, source: WorldInfoSource.global, json: raw);
@@ -2390,46 +2451,169 @@ class TavernEngine implements Tavern {
     _requireBookId(id);
     final book = WorldInfoBook.fromJson(id: id, source: WorldInfoSource.global, json: json);
     return _bookOperation(() async {
+      _authoringAuthority.checkWritable('lorebook:$id');
       await _readBookNow(id);
       await _writeBookNow(id, book.raw);
     });
   });
 
-  Future<void> _writeBookNow(
+  Future<TavernAuthoringReceipt> _writeBookNow(
     String id,
-    Map<String, Object?> raw, {
+    Map<String, Object?>? raw, {
     String? stWorldName,
     TavernImportReport? importReport,
     Map<String, Object?>? preservedEnvelope,
     void Function()? check,
     void Function()? onStarted,
     void Function()? onRenamed,
-  }) async {
-    final sourceName = stWorldName ?? _bookSourceNames[id];
-    final report = importReport ?? _bookImportReports[id];
-    // Source identity and raw data share one atomic file publication. Valid
-    // legacy books have entries at the root; this local envelope does not.
-    await _writeJson(
-      File('${directory.path}/lorebooks/$id.json'),
-      sourceName == null && report == null && preservedEnvelope == null
-          ? raw
-          : {
-              ...?preservedEnvelope,
-              'format': 'dshgo-lorebook',
-              'version': 1,
-              'stWorldName': ?sourceName,
-              if (report != null) 'importReport': report.toJson(),
-              'book': raw,
-            },
-      check: check,
-      onStarted: onStarted,
-      onRenamed: onRenamed,
-    );
+    String? exactText,
+    AuthoringWriteRequest? request,
+    AuthoringExpectation? expected,
+  }) {
+    final result = _fileQueue.then((_) async {
+      final owner = _authoringAuthority;
+      if (request != null) {
+        final replayed = owner.replay(request);
+        if (replayed != null) return replayed;
+      }
+      owner.checkWritable('lorebook:$id');
+      final Map<String, Object?> document;
+      final Map<String, Object?> actualRaw;
+      final String? sourceName;
+      final TavernImportReport? report;
+      if (exactText != null) {
+        try {
+          document = _decodeObject(decodeAuthoringText(utf8.encode(exactText)).text, 'Lorebook');
+          actualRaw = _authoringBook(document);
+          WorldInfoBook.fromJson(id: id, source: WorldInfoSource.global, json: actualRaw);
+          final enveloped = !document.containsKey('entries') && document['format'] == 'dshgo-lorebook';
+          sourceName = enveloped ? document['stWorldName'] as String? : null;
+          report = enveloped && document['importReport'] != null
+              ? TavernImportReport.fromJson(document['importReport']! as Map<String, Object?>)
+              : null;
+        } on FormatException {
+          throw TavernAuthoringException(
+            'invalid_change',
+            'The candidate lorebook envelope is invalid.',
+            physicalResourceId: 'lorebook:$id',
+          );
+        } on TavernImportError {
+          throw TavernAuthoringException(
+            'invalid_change',
+            'The candidate lorebook envelope is invalid.',
+            physicalResourceId: 'lorebook:$id',
+          );
+        } on TypeError {
+          throw TavernAuthoringException(
+            'invalid_change',
+            'The candidate lorebook envelope is invalid.',
+            physicalResourceId: 'lorebook:$id',
+          );
+        } on ArgumentError {
+          throw TavernAuthoringException(
+            'invalid_change',
+            'The candidate lorebook envelope is invalid.',
+            physicalResourceId: 'lorebook:$id',
+          );
+        }
+      } else {
+        actualRaw = raw!;
+        sourceName = stWorldName ?? _bookSourceNames[id];
+        report = importReport ?? _bookImportReports[id];
+        // Final envelope selection happens at the real file queue position.
+        document = sourceName == null && report == null && preservedEnvelope == null
+            ? actualRaw
+            : {
+                ...?preservedEnvelope,
+                'format': 'dshgo-lorebook',
+                'version': 1,
+                'stWorldName': ?sourceName,
+                if (report != null) 'importReport': report.toJson(),
+                'book': actualRaw,
+              };
+      }
+      final text = exactText ?? jsonEncode(document);
+      final file = File('${directory.path}/lorebooks/$id.json');
+      final before = await _readBookResource(file);
+      final after = AuthoringResourceSnapshot(present: true, rawText: text);
+      final ticket = AuthoringWriteTicket(
+        request: request ?? owner.newRequest('lorebook:$id', {'method': 'writeLorebook', 'after': after.toJson()}),
+        before: before,
+        after: after,
+      );
+      try {
+        if (expected != null && before.sameAs(after)) {
+          return owner.notAdopted(ticket, noChange: true, expected: expected, check: check);
+        }
+        final replayed = owner.prepare(ticket, expected: expected, check: check);
+        if (replayed != null) return replayed;
+        onStarted?.call();
+        await file.parent.create(recursive: true);
+        final temporary = File('${file.path}.writing');
+        await temporary.writeAsString(text, flush: true);
+        if (request == null) check?.call();
+        ticket.enteredEffect = true;
+        await temporary.rename(file.path);
+        ticket.knownAdopted = true;
+        try {
+          _adoptBookCache(id, actualRaw, sourceName, report);
+        } finally {
+          onRenamed?.call();
+        }
+        // fail() preserves the return and completes this marker on callback errors.
+        owner.adopted(ticket);
+        return owner.publish(ticket);
+      } catch (error, stack) {
+        owner.fail(ticket, error, stack);
+      }
+    });
+    _fileQueue = result.then<void>((_) {}, onError: (Object _, StackTrace _) {});
+    return result;
+  }
+
+  Future<TavernAuthoringReceipt> _writeAuthoringBook(
+    String id,
+    String rawText, {
+    required AuthoringWriteRequest request,
+    required AuthoringExpectation expected,
+    void Function()? check,
+  }) => _bookOperation(
+    () => _writeBookNow(id, null, exactText: rawText, request: request, expected: expected, check: check),
+  );
+
+  Future<AuthoringResourceSnapshot> _readBookResource(File file) async {
+    try {
+      final text = await readAuthoringText(file);
+      return AuthoringResourceSnapshot(present: true, rawText: text.rawText);
+    } on PathNotFoundException catch (error) {
+      final code = error.osError?.errorCode;
+      if (code != 2 && (!Platform.isWindows || code != 3)) rethrow;
+      return const AuthoringResourceSnapshot(present: false);
+    }
+  }
+
+  void _adoptBookCache(String id, Map<String, Object?> raw, String? sourceName, TavernImportReport? report) {
     _bookRevisions.update(id, (revision) => revision + 1, ifAbsent: () => 1);
     _books[id] = _copy(raw);
-    if (sourceName != null) _bookSourceNames[id] = sourceName;
-    if (report != null) _bookImportReports[id] = report;
+    if (sourceName == null) {
+      _bookSourceNames.remove(id);
+    } else {
+      _bookSourceNames[id] = sourceName;
+    }
+    if (report == null) {
+      _bookImportReports.remove(id);
+    } else {
+      _bookImportReports[id] = report;
+    }
     _scripts.scriptResourceBookCommitted(id, raw);
+  }
+
+  void _forgetBook(String id) {
+    _bookRevisions.update(id, (revision) => revision + 1, ifAbsent: () => 1);
+    _books.remove(id);
+    _bookSourceNames.remove(id);
+    _bookImportReports.remove(id);
+    _scripts.scriptResourceBookCommitted(id, null);
   }
 
   @override
@@ -2450,9 +2634,11 @@ class TavernEngine implements Tavern {
   Future<void> deleteLorebook(String id) => _operation(() {
     _requireBookId(id);
     return _bookOperation(() async {
+      _authoringAuthority.checkWritable('lorebook:$id');
       final file = File('${directory.path}/lorebooks/$id.json');
+      var remove = false;
       if (await file.exists()) {
-        await file.delete();
+        remove = true;
       } else {
         // exists can hide lookup errors. Preserve its link-following and
         // known non-file behavior, but do not acknowledge uncertain absence.
@@ -2460,7 +2646,7 @@ class TavernEngine implements Tavern {
         if (type == FileSystemEntityType.file ||
             type == FileSystemEntityType.pipe ||
             type == FileSystemEntityType.unixDomainSock) {
-          await file.delete();
+          remove = true;
         } else if (type == FileSystemEntityType.notFound) {
           // Linux delete can fold a lookup error into ENOENT. A read-only
           // open preserves that error without reading or creating the book.
@@ -2474,15 +2660,35 @@ class TavernEngine implements Tavern {
           if (probe != null) {
             // Neither close nor delete errors authorize the cache cleanup.
             await probe.close();
-            await file.delete();
+            remove = true;
           }
         }
       }
-      _bookRevisions.update(id, (revision) => revision + 1, ifAbsent: () => 1);
-      _books.remove(id);
-      _bookSourceNames.remove(id);
-      _bookImportReports.remove(id);
-      _scripts.scriptResourceBookCommitted(id, null);
+      final before = remove
+          ? AuthoringResourceSnapshot(present: true, rawText: (await readAuthoringText(file)).rawText)
+          : const AuthoringResourceSnapshot(present: false);
+      final owner = _authoringAuthority;
+      final ticket = AuthoringWriteTicket(
+        request: owner.newRequest('lorebook:$id', {'method': 'deleteLorebook'}),
+        before: before,
+        after: const AuthoringResourceSnapshot(present: false),
+      );
+      try {
+        if (!remove) {
+          owner.notAdopted(ticket, noChange: true);
+          _forgetBook(id);
+          return;
+        }
+        if (owner.prepare(ticket) != null) return;
+        ticket.enteredEffect = true;
+        await file.delete();
+        ticket.knownAdopted = true;
+        _forgetBook(id);
+        owner.adopted(ticket);
+        owner.publish(ticket);
+      } catch (error, stack) {
+        owner.fail(ticket, error, stack);
+      }
     });
   });
 
@@ -2689,27 +2895,6 @@ class TavernEngine implements Tavern {
     if (globals != null) {
       _scripts.resourcesChanged();
     }
-  }
-
-  Future<void> _writeJson(
-    File file,
-    Map<String, Object?> json, {
-    void Function()? check,
-    void Function()? onStarted,
-    void Function()? onRenamed,
-  }) {
-    final text = jsonEncode(json);
-    final result = _fileQueue.then((_) async {
-      check?.call();
-      onStarted?.call();
-      await file.parent.create(recursive: true);
-      final temporary = File('${file.path}.writing');
-      await temporary.writeAsString(text, flush: true);
-      await temporary.rename(file.path);
-      onRenamed?.call();
-    });
-    _fileQueue = result.then<void>((_) {}, onError: (Object _, StackTrace _) {});
-    return result;
   }
 
   Future<T> _withMutation<T>(String chatId, FutureOr<T> Function() action) => _withMutations([chatId], action);
@@ -4685,6 +4870,10 @@ class TavernEngine implements Tavern {
     try {
       try {
         await Future.wait(admitted);
+        _authoringAuthority.reconcileLiveTickets();
+        if (_authoringAuthority.pendingState().hasPending) {
+          throw const TavernAuthoringException('pending_operation', 'The tavern has an unresolved file operation.');
+        }
         snapshot = await backup_io.captureTavernBackup(
           directory,
           backupDatabase: _store.backupToFile,
@@ -4708,6 +4897,12 @@ class TavernEngine implements Tavern {
 
   static Future<void> _validateBackupStaging(Directory staging, int sourceSchemaVersion) async {
     await ChatStore.validateBackup(File('${staging.path}/tavern.sqlite3'), sourceSchemaVersion: sourceSchemaVersion);
+    if (AuthoringAuthority.inspectRootReadOnly(staging).hasPending) {
+      throw const TavernAuthoringException(
+        'pending_operation',
+        'The incoming backup has an unresolved file operation.',
+      );
+    }
     final probe = await TavernEngine.openDirectory(staging);
     try {
       // Use the existing versioned loaders; never reimport opaque card bytes,
@@ -4721,6 +4916,9 @@ class TavernEngine implements Tavern {
         probe._store.preset(preset.id);
       }
       await probe.listLorebooks();
+      // Opening initialized legacy snapshots too. Rotate only after complete
+      // staged validation, so old-domain drafts cannot adopt into this restore.
+      probe._store.rotateAuthoringDomain();
     } finally {
       await probe.close();
     }

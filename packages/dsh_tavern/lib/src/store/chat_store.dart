@@ -13,6 +13,7 @@ import '../tools.dart';
 
 part 'tool_store.dart';
 part 'authoring_store.dart';
+part 'authoring_authority_store.dart';
 
 // Mark only persisted ancestor-path damage while preserving legacy StateError semantics.
 class _StoredAncestorDataError extends StateError {
@@ -227,7 +228,7 @@ class ChatStore {
     return ChatStore._(database, clock: clock, createId: createId);
   }
 
-  static const schemaVersion = 10;
+  static const schemaVersion = 11;
 
   // Keys are destination versions. Future upgrades register every successor
   // here and increase schemaVersion; no existing schema is dropped or replayed.
@@ -243,6 +244,7 @@ class ChatStore {
     8: _schemaV8,
     9: _schemaV9,
     10: _schemaV10,
+    11: _schemaV11,
   };
   final Database _db;
   final DateTime Function() _clock;

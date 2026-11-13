@@ -42,6 +42,9 @@ export 'src/store/chat_store.dart'
     hide
         AuthoringStore,
         StoredAuthoringDraft,
+        AuthoringAuthorityStore,
+        inspectAuthoringDatabase,
+        StoredAuthoringResource,
         ToolStore,
         StoredToolOperation,
         StoredToolPhase,

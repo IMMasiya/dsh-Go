@@ -1,16 +1,33 @@
 import 'import_report.dart';
 import 'regex/regex_types.dart';
 
-/// Stable failures at the authoring boundary. Storage/IO failures keep their
-/// original exception; callers must not infer adoption from an exception.
+/// Stable failures at the authoring boundary. A prepared resource write keeps
+/// its original cause and receipt; an exception alone never proves adoption.
 final class TavernAuthoringException implements Exception {
-  const TavernAuthoringException(this.code, this.message, {this.physicalResourceId, this.changeId});
+  const TavernAuthoringException(
+    this.code,
+    this.message, {
+    this.physicalResourceId,
+    this.changeId,
+    this.receipt,
+    this.cause,
+    this.blockedOperationId,
+    this.blockedDomainId,
+  });
 
-  /// Stage 2A: not_found, revision_conflict, invalid_change, missing_dependency.
+  /// Stable boundary code, including conflicts and unresolved operations.
   final String code;
   final String message;
   final String? physicalResourceId;
   final String? changeId;
+  final TavernAuthoringReceipt? receipt;
+  final Object? cause;
+  final String? blockedOperationId;
+  final String? blockedDomainId;
+
+  String? get operationId => receipt?.operationId;
+  String? get domainId => receipt?.domainId;
+  bool? get committed => receipt?.committed;
 
   @override
   String toString() => 'TavernAuthoringException($code): $message';
@@ -35,7 +52,7 @@ final class TavernAuthoringTarget {
 }
 
 /// A durable authority token, distinct from a draft's edit revision and the
-/// script bridge's runtime token. Stage 2A does not issue these tokens.
+/// script bridge's runtime token. A restored root receives a new domain.
 final class TavernAuthorityRevision {
   const TavernAuthorityRevision({required this.domainId, required this.revision});
 
@@ -69,8 +86,8 @@ final class TavernAuthoringSource {
   final List<String> mediaRefs;
   final TavernAuthorityRevision? authorityRevision;
 
-  /// False for every Stage 2A source. A later adapter must explicitly rebase a
-  /// draft that was captured before durable authority was installed.
+  /// True only for a supported adapter and a saved durable base. A draft
+  /// captured before authority was installed requires an explicit rebase.
   final bool applySupported;
 }
 
@@ -190,4 +207,81 @@ final class TavernAuthoringRegexTest {
   final String scriptPath;
   final RegexCompileResult compilation;
   final RegexMatchResult? match;
+}
+
+enum TavernAuthoringOperationState { prepared, notAdopted, unconfirmed, adopted, published, noChange }
+
+/// A failure actually observed while recording or publishing a resource edit.
+final class TavernAuthoringIssue {
+  const TavernAuthoringIssue({required this.type, required this.message});
+  final String type;
+  final String message;
+}
+
+/// The result of one physical resource operation. Unknown adoption is null;
+/// callers must not turn it into an invitation to retry the file effect.
+final class TavernAuthoringReceipt {
+  const TavernAuthoringReceipt({
+    required this.domainId,
+    required this.operationId,
+    required this.physicalResourceId,
+    required this.state,
+    this.adoptedRevision,
+    required this.historyPending,
+    this.issue,
+  });
+
+  final String domainId;
+  final String operationId;
+  final String physicalResourceId;
+  final TavernAuthoringOperationState state;
+  final int? adoptedRevision;
+  final bool historyPending;
+  final TavernAuthoringIssue? issue;
+
+  bool? get committed => switch (state) {
+    TavernAuthoringOperationState.prepared || TavernAuthoringOperationState.unconfirmed => null,
+    TavernAuthoringOperationState.notAdopted || TavernAuthoringOperationState.noChange => false,
+    TavernAuthoringOperationState.adopted || TavernAuthoringOperationState.published => true,
+  };
+}
+
+/// Saved intent and observed outcome. Snapshots contain present/rawText/
+/// identityText; internal staging or trash paths are not public write commands.
+final class TavernAuthoringOperation extends TavernAuthoringReceipt {
+  const TavernAuthoringOperation({
+    required super.domainId,
+    required super.operationId,
+    required super.physicalResourceId,
+    required super.state,
+    super.adoptedRevision,
+    required super.historyPending,
+    super.issue,
+    required this.request,
+    required this.before,
+    required this.after,
+    required this.createdAt,
+    required this.updatedAt,
+  });
+
+  final Map<String, Object?> request;
+  final Map<String, Object?> before;
+  final Map<String, Object?> after;
+  final DateTime createdAt;
+  final DateTime updatedAt;
+}
+
+final class TavernAuthoringRevisionSummary {
+  const TavernAuthoringRevisionSummary({
+    required this.domainId,
+    required this.physicalResourceId,
+    required this.revision,
+    required this.operationId,
+    required this.at,
+  });
+  final String domainId;
+  final String physicalResourceId;
+  final int revision;
+  final String operationId;
+  final DateTime at;
 }

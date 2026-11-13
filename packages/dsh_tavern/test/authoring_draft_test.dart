@@ -79,8 +79,8 @@ void main() {
     expect(_source(draft, 'lorebook:harbor').base, book);
     expect(_source(draft, 'lorebook:harbor').sourceFormat, 'dshgo-lorebook');
     for (final source in draft.sources) {
-      expect(source.applySupported, isFalse);
-      expect(source.authorityRevision, isNull);
+      expect(source.applySupported, isTrue);
+      expect(source.authorityRevision, isNotNull);
     }
 
     final edited = await h.engine.editAuthoringDraft(
@@ -93,6 +93,8 @@ void main() {
     expect(restored.draftRevision, edited.draftRevision);
     expect(_source(restored, resource).base, card);
     expect(_source(restored, 'lorebook:harbor').base, book);
+    expect(_source(restored, resource).authorityRevision, _source(draft, resource).authorityRevision);
+    expect(_source(restored, 'lorebook:harbor').authorityRevision, _source(draft, 'lorebook:harbor').authorityRevision);
     expect(_map(_source(restored, resource).base['data']).containsKey('description'), isFalse);
     final savedSources = _savedAuthoringSources(h.root, draft.id);
     expect(_map(savedSources.first)['rawText'], cardText);
