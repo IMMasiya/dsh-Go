@@ -110,6 +110,8 @@ void main() {
     );
     await tester.pumpAndSettle();
     final card = find.byKey(const ValueKey('voice-model-card'));
+    // Below 朗读 and the recognition choices: not built until scrolled to.
+    await tester.scrollUntilVisible(card, 200, scrollable: find.byType(Scrollable).first);
     await tester.ensureVisible(card);
     await tester.pumpAndSettle();
     return model;
@@ -155,9 +157,10 @@ void main() {
             expect(rects[1].left - rects[0].right, moreOrLessEquals(VoiceModelCard.buttonGap));
           }
           // No label is cut short.
-          for (final e in find
-              .descendant(of: find.byKey(const ValueKey('voice-model-actions')), matching: find.byType(Text))
-              .evaluate()) {
+          for (final e
+              in find
+                  .descendant(of: find.byKey(const ValueKey('voice-model-actions')), matching: find.byType(Text))
+                  .evaluate()) {
             final paragraph = e.renderObject! as RenderParagraph;
             expect(paragraph.didExceedMaxLines, isFalse, reason: (e.widget as Text).data);
           }
@@ -231,7 +234,9 @@ void main() {
       tester.view.physicalSize = const Size(390, 900);
       addTearDown(tester.view.reset);
       final model = FixedVoiceModel(states['ready']!, deletes: false, stopping: stopping);
-      await tester.pumpWidget(testApp(const VoiceSettingsPage(), overrides: [voiceModelProvider.overrideWith(() => model)]));
+      await tester.pumpWidget(
+        testApp(const VoiceSettingsPage(), overrides: [voiceModelProvider.overrideWith(() => model)]),
+      );
       await tester.pumpAndSettle();
       await tester.ensureVisible(find.byKey(const ValueKey('voice-model-delete')));
       await tester.pumpAndSettle();
