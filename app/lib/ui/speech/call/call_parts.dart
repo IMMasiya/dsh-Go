@@ -162,7 +162,7 @@ class _HangUpKeyState extends State<HangUpKey> {
                     colors: [red, deep],
                   ),
                   boxShadow: [
-                    BoxShadow(color: red.withValues(alpha: _down ? 0.25 : 0.45), blurRadius: 28, spreadRadius: -4),
+                    BoxShadow(color: red.withValues(alpha: _down ? 0.15 : 0.28), blurRadius: 22, spreadRadius: -6),
                   ],
                 ),
                 child: AnimatedRotation(

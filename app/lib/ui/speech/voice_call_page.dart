@@ -1,8 +1,7 @@
-// 语音通话: one page over the conversation, like deep water at night. A drop of
-// light breathes in the middle — swelling with the person's voice while they
-// speak, turning while she thinks, rippling with her voice while she answers
-// (call/call_visuals.dart). Behind it the water, the person's own picture, or
-// 伙伴小屋's character mouthing the reply (call/call_backdrop.dart). What was
+// 语音通话: one quiet page over the conversation. A round light in the middle
+// breathes while it waits and swells with whoever is speaking
+// (call/call_visuals.dart). Behind it a dark field, the person's own picture,
+// or 伙伴小屋's character mouthing the reply (call/call_backdrop.dart). What was
 // heard and what she says arrive underneath; mute, hang up and loudspeaker sit
 // at the bottom; an approval or question the conversation waits on comes up
 // above them and is answered right here.
@@ -43,7 +42,6 @@ import 'speech_ui.dart';
 Future<void> openChatCall(BuildContext context, {required String title, required Future<String?> Function() session}) {
   final container = ProviderScope.containerOf(context, listen: false);
   container.read(readAloudProvider.notifier).stop();
-  unawaited(CallShaders.load());
   return Navigator.of(context).push(
     PageRouteBuilder<void>(
       opaque: true,
@@ -256,9 +254,7 @@ class _VoiceCallPageState extends ConsumerState<VoiceCallPage> with WidgetsBindi
     final l10n = context.l10n;
     final theme = Theme.of(context);
     final settings = ref.watch(callSettingsProvider);
-    final performance = ref.watch(performanceDefaultsProvider);
-    final shaders = !performance.lightweight && !AppMotion.reduced(context);
-    final blur = performance.blur;
+    final blur = ref.watch(performanceDefaultsProvider).blur;
     final ended = _call.phase == CallPhase.ended;
     final image =
         settings.backdrop == CallBackdrop.image && settings.image.isNotEmpty && File(settings.image).existsSync()
@@ -287,7 +283,7 @@ class _VoiceCallPageState extends ConsumerState<VoiceCallPage> with WidgetsBindi
             child: Stack(
               fit: StackFit.expand,
               children: [
-                SeaBackground(scene: _scene, center: her ? 0.66 : 0.38, shaders: shaders),
+                CallField(scene: _scene, center: her ? 0.66 : 0.4),
                 // A new backdrop fades in over the old one.
                 AnimatedSwitcher(
                   duration: AppMotion.of(context, AppMotion.slow),
@@ -314,9 +310,6 @@ class _VoiceCallPageState extends ConsumerState<VoiceCallPage> with WidgetsBindi
                     ),
                     _ => const SizedBox.expand(key: ValueKey('sea')),
                   },
-                ),
-                IgnorePointer(
-                  child: Plankton(scene: _scene, count: her ? 22 : 44),
                 ),
                 if (her)
                   // Her feet fade into the water so the words below stay readable.
@@ -371,24 +364,12 @@ class _VoiceCallPageState extends ConsumerState<VoiceCallPage> with WidgetsBindi
                                         _pressed ? AppMotion.press : const Duration(milliseconds: 420),
                                       ),
                                       curve: _pressed ? Curves.easeOut : Curves.elasticOut,
-                                      child: VoiceOrb(
-                                        scene: _scene,
-                                        size: math.min(360, width * 0.92),
-                                        shaders: shaders,
-                                      ),
+                                      child: CallLight(scene: _scene, size: math.min(340, width * 0.86)),
                                     ),
                                   ),
                                 ),
                               ),
                       ),
-                      _rise(
-                        0.25,
-                        Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 36),
-                          child: VoiceWave(scene: _scene, height: her ? 48 : 56),
-                        ),
-                      ),
-                      const SizedBox(height: 6),
                       _rise(
                         0.3,
                         CallStatus(
