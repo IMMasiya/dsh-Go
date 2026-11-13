@@ -59,6 +59,10 @@ void registerThirdPartyLicenses() {
     yield LicenseEntryWithLineBreaks(<String>[
       'Lodash',
     ], await rootBundle.loadString('assets/licenses/lodash-4.17.21-LICENSE.txt'));
+    // The streaming recognizer's model, downloaded on demand (語音 › 实时识别).
+    yield LicenseEntryWithLineBreaks(<String>[
+      'Streaming Zipformer zh-en (sherpa-onnx)',
+    ], await rootBundle.loadString('assets/licenses/streaming-asr-model-APACHE-2.0.txt'));
   });
 }
 

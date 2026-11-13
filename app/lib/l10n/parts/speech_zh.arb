@@ -50,6 +50,27 @@
   "speechCallCutEarly": "（你刚开口我就打断了你，这条回答我没听到。）",
   "speechCallCue": "思考提示音",
   "speechCallCueHint": "回答一时没出声时，轻响一声表示还在想",
+  "speechLiveSection": "实时字幕",
+  "speechLiveName": "流式识别模型",
+  "speechLiveAbsentNote": "下载后，通话时一边说一边出字，插话也停得更快。约 {mb}，只在手机上运行，录音不出手机",
+  "@speechLiveAbsentNote": {
+    "placeholders": {
+      "mb": {
+        "type": "String"
+      }
+    }
+  },
+  "speechLiveReadyNote": "已占用 {mb}，通话时自动使用",
+  "@speechLiveReadyNote": {
+    "placeholders": {
+      "mb": {
+        "type": "String"
+      }
+    }
+  },
+  "speechLiveFooter": "字幕和插话判断用手机上的模型；发给 AI 的文字仍由上面选的识别方式给出。",
+  "speechLiveDeleteTitle": "删除流式识别模型？",
+  "speechLiveDeleteBody": "删除后通话不再显示实时字幕，随时可以重新下载。",
   "speechCallStarting": "正在接通",
   "speechCallListening": "在听",
   "speechCallHearing": "你在说",

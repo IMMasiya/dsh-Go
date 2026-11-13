@@ -34,7 +34,11 @@ import '../companion/companion_ask.dart';
 import '../companion/companion_stage.dart';
 import '../theme/app_icons.dart';
 import '../theme/theme.dart';
+import '../../state/streaming_asr_model_state.dart';
+import '../../state/streaming_asr_state.dart';
+import '../../state/streaming_pcm_state.dart';
 import 'call/call_backdrop.dart';
+import 'call/call_live.dart';
 import 'call/call_parts.dart';
 import 'call/call_visuals.dart';
 import 'speech_ui.dart';
@@ -138,7 +142,26 @@ class _VoiceCallPageState extends ConsumerState<VoiceCallPage> with WidgetsBindi
     )..addListener(_changed);
     HapticFeedback.mediumImpact();
     _enter.forward();
-    unawaited(_call.start());
+    unawaited(_start());
+  }
+
+  /// Live captions, once the call listens, when the streaming model is on the phone.
+  CallLiveCaptions? _live;
+
+  Future<void> _start() async {
+    final pcm = ref.read(streamingPcmCaptureProvider);
+    final asr = ref.read(streamingAsrProvider);
+    final store = ref.read(streamingAsrModelStoreProvider.future);
+    await _call.start();
+    try {
+      final model = await (await store).installed();
+      if (model == null || !mounted || _call.phase == CallPhase.ended) return;
+      final live = _live = CallLiveCaptions(pcm, asr, model, _call.live);
+      await live.start();
+    } on Object {
+      // Without live captions the call goes on as before.
+      _live = null;
+    }
   }
 
   void _changed() {
@@ -217,6 +240,7 @@ class _VoiceCallPageState extends ConsumerState<VoiceCallPage> with WidgetsBindi
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    unawaited(_live?.stop());
     _leave?.cancel();
     _enter.dispose();
     _call

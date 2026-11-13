@@ -168,6 +168,30 @@ void main() {
     rig.call.hangUp();
   });
 
+  test('live words show while the person speaks, and stand in until the recognizer answers', () async {
+    final rig = _Rig();
+    await rig.call.start();
+    rig.audio.emit(const SpeechStart(over: false));
+    rig.call.live('今天天气');
+    expect(rig.call.heard, '今天天气');
+    rig.call.live('今天天气怎么样');
+    rig.audio.emit(Utterance(_Rig.second, const Duration(seconds: 1)));
+    expect(rig.call.heard, '今天天气怎么样');
+    await pumpEventQueue();
+    expect(rig.conversation.sent.single, endsWith('今天天气怎么样'));
+  });
+
+  test('over her, a few live words take the turn at once; agreement does not', () async {
+    final rig = await speaking();
+    rig.audio.emit(const SpeechStart(over: true));
+    rig.call.live('嗯嗯');
+    expect(rig.outs.single.stopped, isFalse);
+    rig.call.live('换个话题');
+    expect(rig.outs.single.stopped, isTrue);
+    expect(rig.conversation.interrupts, 1);
+    expect(rig.call.phase, CallPhase.hearing);
+  });
+
   test('the caption follows her voice; all of it once she is skipped', () async {
     final rig = await speaking();
     expect(rig.call.caption, '');

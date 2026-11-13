@@ -32078,6 +32078,48 @@ abstract class L10n {
   /// **'回答一时没出声时，轻响一声表示还在想'**
   String get speechCallCueHint;
 
+  /// No description provided for @speechLiveSection.
+  ///
+  /// In zh, this message translates to:
+  /// **'实时字幕'**
+  String get speechLiveSection;
+
+  /// No description provided for @speechLiveName.
+  ///
+  /// In zh, this message translates to:
+  /// **'流式识别模型'**
+  String get speechLiveName;
+
+  /// No description provided for @speechLiveAbsentNote.
+  ///
+  /// In zh, this message translates to:
+  /// **'下载后，通话时一边说一边出字，插话也停得更快。约 {mb}，只在手机上运行，录音不出手机'**
+  String speechLiveAbsentNote(String mb);
+
+  /// No description provided for @speechLiveReadyNote.
+  ///
+  /// In zh, this message translates to:
+  /// **'已占用 {mb}，通话时自动使用'**
+  String speechLiveReadyNote(String mb);
+
+  /// No description provided for @speechLiveFooter.
+  ///
+  /// In zh, this message translates to:
+  /// **'字幕和插话判断用手机上的模型；发给 AI 的文字仍由上面选的识别方式给出。'**
+  String get speechLiveFooter;
+
+  /// No description provided for @speechLiveDeleteTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'删除流式识别模型？'**
+  String get speechLiveDeleteTitle;
+
+  /// No description provided for @speechLiveDeleteBody.
+  ///
+  /// In zh, this message translates to:
+  /// **'删除后通话不再显示实时字幕，随时可以重新下载。'**
+  String get speechLiveDeleteBody;
+
   /// No description provided for @speechCallStarting.
   ///
   /// In zh, this message translates to:

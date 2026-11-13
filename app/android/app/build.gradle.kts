@@ -86,6 +86,8 @@ android {
         // nativeLibraryDir so they can be executed.
         jniLibs {
             useLegacyPackaging = true
+            // sherpa_onnx_android 1.12.36 and ORT Android 1.23.2 ship identical ORT binaries.
+            pickFirsts += "**/libonnxruntime.so"
             // Keep the Termux binaries byte-identical to runtime/out (their hashes are in the manifest).
             keepDebugSymbols += listOf("**/libproot.so", "**/libproot-loader.so", "**/libtalloc.so", "**/libandroid-shmem.so", "**/libtawcroot.so")
         }

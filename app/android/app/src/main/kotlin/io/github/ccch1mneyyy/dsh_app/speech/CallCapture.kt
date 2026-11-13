@@ -9,6 +9,7 @@ import android.media.audiofx.AudioEffect
 import android.media.audiofx.NoiseSuppressor
 import android.os.Handler
 import android.os.SystemClock
+import io.github.ccch1mneyyy.dsh_app.voice.StreamingPcm
 import io.github.ccch1mneyyy.dsh_app.nativemedia.SpeechGate
 import io.github.ccch1mneyyy.dsh_app.nativemedia.TurnGate
 import java.io.ByteArrayOutputStream
@@ -45,7 +46,12 @@ class CallCapture(
 
     @Volatile private var running = false
     @Volatile private var playing = false
+    @Volatile private var pcmEpoch = 0
     @Volatile var muted = false
+        set(value) {
+            if (field != value) pcmEpoch++
+            field = value
+        }
     @Volatile var bargeIn = true
     private var session = 0
 
@@ -116,9 +122,15 @@ class CallCapture(
         var utterance: ByteArrayOutputStream? = null
         var utteranceFrames = 0
         var filled = 0
+        var pcmTap: StreamingPcm.Tap? = null
+        var frameEpoch = 0
         var tick = 0
         try {
             while (running) {
+                if (filled == 0) {
+                    pcmTap = StreamingPcm.current("call")
+                    frameEpoch = pcmEpoch
+                }
                 val n = r.read(frame, filled, frame.size - filled)
                 if (!running) break
                 if (n < 0) {
@@ -138,6 +150,10 @@ class CallCapture(
                     continue
                 }
                 val level = SpeechGate.levelOf(frame, frame.size)
+                pcmTap?.let { tap ->
+                    val epoch = frameEpoch
+                    StreamingPcm.offer(tap, frame) { running && mine == session && !muted && epoch == pcmEpoch }
+                }
                 if (++tick % 2 == 0) {
                     val shown = ((level + 60.0) / 50.0).coerceIn(0.0, 1.0)
                     post(mine) { listener.onLevel(shown) }

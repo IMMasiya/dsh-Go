@@ -17529,6 +17529,31 @@ class L10nZh extends L10n {
   String get speechCallCueHint => '回答一时没出声时，轻响一声表示还在想';
 
   @override
+  String get speechLiveSection => '实时字幕';
+
+  @override
+  String get speechLiveName => '流式识别模型';
+
+  @override
+  String speechLiveAbsentNote(String mb) {
+    return '下载后，通话时一边说一边出字，插话也停得更快。约 $mb，只在手机上运行，录音不出手机';
+  }
+
+  @override
+  String speechLiveReadyNote(String mb) {
+    return '已占用 $mb，通话时自动使用';
+  }
+
+  @override
+  String get speechLiveFooter => '字幕和插话判断用手机上的模型；发给 AI 的文字仍由上面选的识别方式给出。';
+
+  @override
+  String get speechLiveDeleteTitle => '删除流式识别模型？';
+
+  @override
+  String get speechLiveDeleteBody => '删除后通话不再显示实时字幕，随时可以重新下载。';
+
+  @override
   String get speechCallStarting => '正在接通';
 
   @override

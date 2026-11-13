@@ -146,6 +146,10 @@ class VoiceCallController extends ChangeNotifier {
   /// What the person had heard of a reply they cut off, for their next message.
   String? _cutAt;
 
+  /// The person's words as the phone hears them while they speak (live captions,
+  /// when the streaming recognizer is there); the message still goes from [recognizer].
+  String _live = '';
+
   /// What she has said of the reply so far, while her voice carries it.
   String _said = '';
   bool _voiced = false;
@@ -170,8 +174,17 @@ class VoiceCallController extends ChangeNotifier {
   double get micLevel => _micLevel;
   double get voiceLevel => _voiceLevel;
 
-  /// What the person said last (recognized).
-  String get heard => _heard;
+  /// What the person is saying now (live), else what they said last (recognized).
+  String get heard => (_phase == CallPhase.hearing || _over) && _live.isNotEmpty ? _live : _heard;
+
+  /// Words heard live by the phone's own recognizer. Over her voice, a few real
+  /// words (not agreement) are enough: the person is taking the turn.
+  void live(String text) {
+    if (_phase == CallPhase.ended) return;
+    _live = text.trim();
+    if (_over && _live.runes.length >= 4 && overWords(_live) == OverWords.speech) _cutIn();
+    notifyListeners();
+  }
 
   /// The reply being read (so far).
   String get reply => _reply;
@@ -233,6 +246,7 @@ class VoiceCallController extends ChangeNotifier {
         _micLevel = value;
         notifyListeners();
       case SpeechStart(:final over):
+        _live = '';
         final out = _out;
         if ((over || _phase == CallPhase.speaking) && out != null) {
           // Over her voice: quieter (the native side already turned her down)
@@ -247,6 +261,9 @@ class VoiceCallController extends ChangeNotifier {
       case Utterance(:final wav, :final duration):
         // Finished before [confirmAfter]: the words decide.
         _overTimer?.cancel();
+        // The live words stand in until the recognizer's come back.
+        if (_live.isNotEmpty) _heard = _live;
+        _live = '';
         unawaited(_recognize(wav, duration));
       case CallError():
         _end(CallEnd.failed);
