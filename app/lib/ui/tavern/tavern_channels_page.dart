@@ -518,7 +518,6 @@ class TavernAuxiliaryTile extends ConsumerWidget {
       key: const ValueKey('tavern-auxiliary'),
       icon: AppIcons.agentLoop,
       title: l10n.tavernAuxiliary,
-      subtitle: l10n.tavernAuxiliaryNote,
       value: Text(switch (settings.auxiliary) {
         tavernAuxiliaryDeepSeek => l10n.tavernAuxiliaryDeepSeek,
         _ when helper != null => helper.name,
@@ -552,6 +551,14 @@ Future<void> _pickAuxiliary(BuildContext context) => showAppSheet<void>(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             SheetTitleBar(l10n.tavernAuxiliary),
+            // What it is for, said where it is chosen; the settings row keeps to its value.
+            Padding(
+              padding: const EdgeInsets.fromLTRB(SheetTitleBar.inset + 4, 0, SheetTitleBar.inset, 12),
+              child: Text(
+                l10n.tavernAuxiliaryNote,
+                style: Theme.of(inner).textTheme.bodySmall?.copyWith(color: DshColors.of(inner).textTertiary),
+              ),
+            ),
             Flexible(
               child: SingleChildScrollView(
                 child: SheetGroup(
