@@ -369,5 +369,59 @@
   "engineFieldEditOnWeb": "Edit this item on the web",
   "engineSettingsHostChanged": "The host changed. Reopen these settings to edit.",
   "engineSecretTargetChanged": "This field changed. Reopen it to edit.",
-  "engineSettingsGroupCount": "{count, plural, =1{1 setting} other{{count} settings}}"
+  "engineSettingsGroupCount": "{count, plural, =1{1 setting} other{{count} settings}}",
+  "engineProviderExportImport": "Export / Import",
+  "engineProviderExportTitle": "Export configuration",
+  "engineProviderExportButton": "Export to file",
+  "engineProviderExportDoneTitle": "Exported",
+  "engineProviderExportDoneWithKeys": "Exported to {path}\n(with API keys, keep the file safe)",
+  "@engineProviderExportDoneWithKeys": {
+    "placeholders": {
+      "path": {
+        "type": "String"
+      }
+    }
+  },
+  "engineProviderExportDoneNoKeys": "Exported to {path}\n(without API keys, re-enter after import)",
+  "@engineProviderExportDoneNoKeys": {
+    "placeholders": {
+      "path": {
+        "type": "String"
+      }
+    }
+  },
+  "engineProviderExportSubject": "dsh-Go model configuration",
+  "engineProviderExportFailed": "Export failed",
+  "engineProviderIncludeKeys": "Include API keys",
+  "engineProviderIncludeKeysHint": "Exported file will contain plain API keys; do not share casually",
+  "engineProviderIncludeKeysOff": "Exported file has no API keys; re-enter after import",
+  "engineProviderImportTitle": "Import configuration",
+  "engineProviderImportButton": "Import from file",
+  "engineProviderImporting": "Importing…",
+  "engineProviderImportInvalidFormat": "Invalid file format; select a JSON file exported by dsh-Go",
+  "engineProviderImportEmpty": "No providers in file",
+  "engineProviderImportConfirmTitle": "Import {count} providers?",
+  "@engineProviderImportConfirmTitle": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "engineProviderImportConfirmWithKeys": "Import provider configuration and API keys",
+  "engineProviderImportConfirmNoKeys": "Import provider configuration (without API keys, re-enter after import)",
+  "engineProviderImportConfirmOk": "Import",
+  "engineProviderImportWillReplace": "Providers with the same name will be overwritten; this cannot be undone",
+  "engineProviderImportDoneTitle": "Import complete",
+  "engineProviderImportDoneBody": "Imported {count} providers",
+  "@engineProviderImportDoneBody": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "engineProviderImportFailed": "Import failed",
+  "engineProviderExportImportNote": "Exported files are saved to Downloads / DSH-Go /; use Share to send them to another device and import there.",
+  "engineProviderExportImportWarning": "A file exported with API keys is equivalent to account credentials; do not transmit it over untrusted channels."
 }
