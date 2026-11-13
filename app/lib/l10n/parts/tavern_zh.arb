@@ -1200,5 +1200,15 @@
   "tavernToolFail": "用工具时出错了",
   "tavernToolFailDetail": "用工具时出错了：{detail}",
   "@tavernToolFailDetail": {"placeholders": {"detail": {"type": "String"}}},
+  "tavernDiceUnsettled": "结果还没确认，可以再查一次",
+  "tavernDicePending": "上次那次掷骰还没确认",
+  "tavernDiceRecheck": "再查一次",
+  "tavernDiceForget": "放弃这次",
+  "tavernDiceBusy": "现在正忙，等这一回合写完再掷",
+  "tavernDiceOff": "酒馆设置里关了掷骰",
+  "tavernDiceFailed": "没掷成：{detail}",
+  "@tavernDiceFailed": {"placeholders": {"detail": {"type": "String"}}},
+  "tavernDiceNotSaved": "没确认上：{detail}",
+  "@tavernDiceNotSaved": {"placeholders": {"detail": {"type": "String"}}},
   "@tavernGroupSaveFailed": {"placeholders": {"reason": {"type": "String"}}}
 }

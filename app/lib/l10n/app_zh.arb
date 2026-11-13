@@ -13253,6 +13253,28 @@
       }
     }
   },
+  "tavernDiceUnsettled": "结果还没确认，可以再查一次",
+  "tavernDicePending": "上次那次掷骰还没确认",
+  "tavernDiceRecheck": "再查一次",
+  "tavernDiceForget": "放弃这次",
+  "tavernDiceBusy": "现在正忙，等这一回合写完再掷",
+  "tavernDiceOff": "酒馆设置里关了掷骰",
+  "tavernDiceFailed": "没掷成：{detail}",
+  "@tavernDiceFailed": {
+    "placeholders": {
+      "detail": {
+        "type": "String"
+      }
+    }
+  },
+  "tavernDiceNotSaved": "没确认上：{detail}",
+  "@tavernDiceNotSaved": {
+    "placeholders": {
+      "detail": {
+        "type": "String"
+      }
+    }
+  },
   "updateCheck": "检查更新",
   "updateAutoCheck": "自动检查更新",
   "updateAutoCheckDaily": "每天检查一次",

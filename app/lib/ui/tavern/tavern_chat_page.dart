@@ -1047,7 +1047,7 @@ class _TavernChatPageState extends ConsumerState<TavernChatPage> {
 
   /// 掷骰: what came up joins whatever is in the box, on a line of its own.
   Future<void> _dice() async {
-    final line = await showTavernDice(context);
+    final line = await showTavernDice(context, chatId: widget.chatId);
     if (line == null || !mounted) return;
     final before = _input.text.trimRight();
     final text = before.isEmpty ? line : '$before\n$line';

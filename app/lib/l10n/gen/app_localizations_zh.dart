@@ -21557,6 +21557,34 @@ class L10nZh extends L10n {
   }
 
   @override
+  String get tavernDiceUnsettled => '结果还没确认，可以再查一次';
+
+  @override
+  String get tavernDicePending => '上次那次掷骰还没确认';
+
+  @override
+  String get tavernDiceRecheck => '再查一次';
+
+  @override
+  String get tavernDiceForget => '放弃这次';
+
+  @override
+  String get tavernDiceBusy => '现在正忙，等这一回合写完再掷';
+
+  @override
+  String get tavernDiceOff => '酒馆设置里关了掷骰';
+
+  @override
+  String tavernDiceFailed(String detail) {
+    return '没掷成：$detail';
+  }
+
+  @override
+  String tavernDiceNotSaved(String detail) {
+    return '没确认上：$detail';
+  }
+
+  @override
   String get updateCheck => '检查更新';
 
   @override

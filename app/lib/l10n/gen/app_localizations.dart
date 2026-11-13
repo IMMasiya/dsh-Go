@@ -39374,6 +39374,54 @@ abstract class L10n {
   /// **'用工具时出错了：{detail}'**
   String tavernToolFailDetail(String detail);
 
+  /// No description provided for @tavernDiceUnsettled.
+  ///
+  /// In zh, this message translates to:
+  /// **'结果还没确认，可以再查一次'**
+  String get tavernDiceUnsettled;
+
+  /// No description provided for @tavernDicePending.
+  ///
+  /// In zh, this message translates to:
+  /// **'上次那次掷骰还没确认'**
+  String get tavernDicePending;
+
+  /// No description provided for @tavernDiceRecheck.
+  ///
+  /// In zh, this message translates to:
+  /// **'再查一次'**
+  String get tavernDiceRecheck;
+
+  /// No description provided for @tavernDiceForget.
+  ///
+  /// In zh, this message translates to:
+  /// **'放弃这次'**
+  String get tavernDiceForget;
+
+  /// No description provided for @tavernDiceBusy.
+  ///
+  /// In zh, this message translates to:
+  /// **'现在正忙，等这一回合写完再掷'**
+  String get tavernDiceBusy;
+
+  /// No description provided for @tavernDiceOff.
+  ///
+  /// In zh, this message translates to:
+  /// **'酒馆设置里关了掷骰'**
+  String get tavernDiceOff;
+
+  /// No description provided for @tavernDiceFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'没掷成：{detail}'**
+  String tavernDiceFailed(String detail);
+
+  /// No description provided for @tavernDiceNotSaved.
+  ///
+  /// In zh, this message translates to:
+  /// **'没确认上：{detail}'**
+  String tavernDiceNotSaved(String detail);
+
   /// No description provided for @updateCheck.
   ///
   /// In zh, this message translates to:

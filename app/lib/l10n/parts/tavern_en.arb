@@ -1200,5 +1200,15 @@
   "tavernToolFail": "Something went wrong with a tool",
   "tavernToolFailDetail": "Something went wrong with a tool: {detail}",
   "@tavernToolFailDetail": {"placeholders": {"detail": {"type": "String"}}},
+  "tavernDiceUnsettled": "The result is not confirmed yet; check again",
+  "tavernDicePending": "Your last roll isn't confirmed yet",
+  "tavernDiceRecheck": "Check again",
+  "tavernDiceForget": "Let it go",
+  "tavernDiceBusy": "Busy right now; roll once this turn is written",
+  "tavernDiceOff": "Dice are turned off in tavern settings",
+  "tavernDiceFailed": "Didn't roll: {detail}",
+  "@tavernDiceFailed": {"placeholders": {"detail": {"type": "String"}}},
+  "tavernDiceNotSaved": "Didn't go through: {detail}",
+  "@tavernDiceNotSaved": {"placeholders": {"detail": {"type": "String"}}},
   "@tavernGroupSaveFailed": {"placeholders": {"reason": {"type": "String"}}}
 }

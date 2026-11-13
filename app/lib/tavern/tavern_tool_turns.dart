@@ -180,3 +180,52 @@ final tavernMemoryIntentProvider = FutureProvider.autoDispose.family<TavernMemor
     return null;
   }
 });
+
+/// A dice roll the player asked the engine for (§4): its id and dice, kept
+/// before it is sent and until its result is known, so a page rebuilt or a
+/// result not yet settled asks again with the very same one — never a new
+/// throw in its place.
+class TavernRollIntent {
+  const TavernRollIntent({required this.chatId, required this.actionId, required this.dice});
+
+  static TavernRollIntent? fromJson(Object? json) => switch (json) {
+    {'chatId': final String chatId, 'actionId': final String actionId, 'dice': final String dice} => TavernRollIntent(
+      chatId: chatId,
+      actionId: actionId,
+      dice: dice,
+    ),
+    _ => null,
+  };
+
+  final String chatId;
+  final String actionId;
+
+  /// As the engine takes it: 1d20, 2d6+1, 3d8-2.
+  final String dice;
+
+  Map<String, Object?> toJson() => {'chatId': chatId, 'actionId': actionId, 'dice': dice};
+
+  Future<TavernToolReceipt> submit(Tavern tavern) => tavern.rollDice(chatId, actionId: actionId, dice: dice);
+}
+
+/// Where the roll waiting to be settled is kept, by chat.
+const tavernRollIntentKey = 'tavern.rollIntent.';
+
+Future<void> tavernKeepRollIntent(TavernRollIntent intent) async => (await SharedPreferences.getInstance()).setString(
+  '$tavernRollIntentKey${intent.chatId}',
+  jsonEncode(intent.toJson()),
+);
+
+Future<void> tavernForgetRollIntent(String chatId) async =>
+    (await SharedPreferences.getInstance()).remove('$tavernRollIntentKey$chatId');
+
+/// The roll in [chatId] not settled yet, if any.
+Future<TavernRollIntent?> tavernRollIntent(String chatId) async {
+  final raw = (await SharedPreferences.getInstance()).getString('$tavernRollIntentKey$chatId');
+  if (raw == null) return null;
+  try {
+    return TavernRollIntent.fromJson(jsonDecode(raw));
+  } on FormatException {
+    return null;
+  }
+}

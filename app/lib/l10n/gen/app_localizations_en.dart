@@ -22742,6 +22742,34 @@ class L10nEn extends L10n {
   }
 
   @override
+  String get tavernDiceUnsettled => 'The result is not confirmed yet; check again';
+
+  @override
+  String get tavernDicePending => 'Your last roll isn\'t confirmed yet';
+
+  @override
+  String get tavernDiceRecheck => 'Check again';
+
+  @override
+  String get tavernDiceForget => 'Let it go';
+
+  @override
+  String get tavernDiceBusy => 'Busy right now; roll once this turn is written';
+
+  @override
+  String get tavernDiceOff => 'Dice are turned off in tavern settings';
+
+  @override
+  String tavernDiceFailed(String detail) {
+    return 'Didn\'t roll: $detail';
+  }
+
+  @override
+  String tavernDiceNotSaved(String detail) {
+    return 'Didn\'t go through: $detail';
+  }
+
+  @override
   String get updateCheck => 'Check for updates';
 
   @override
