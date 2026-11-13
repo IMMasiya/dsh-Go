@@ -29,6 +29,31 @@ class TavernSessionUsage {
 
   /// Replies whose model is not on the price list: not in [cost].
   final int unpriced;
+
+  TavernSessionUsage operator +(TavernSessionUsage other) => TavernSessionUsage(
+    replies: replies + other.replies,
+    prompt: prompt + other.prompt,
+    cacheHit: cacheHit + other.cacheHit,
+    completion: completion + other.completion,
+    cost: cost + other.cost,
+    unpriced: unpriced + other.unpriced,
+  );
+
+  /// With [m]'s reported usage, when it is a reply that has some.
+  TavernSessionUsage plus(TavernMessage m) {
+    final usage = m.reportedUsage;
+    if (m.role != TavernRole.character || usage == null) return this;
+    final price = tavernModelPrice(usage.model);
+    return this +
+        TavernSessionUsage(
+          replies: 1,
+          prompt: usage.promptTokens,
+          cacheHit: usage.cacheHitTokens,
+          completion: usage.completionTokens,
+          cost: price == null ? 0 : tavernReplyCost(usage, price, m.at),
+          unpriced: price == null ? 1 : 0,
+        );
+  }
 }
 
 /// A DeepSeek model's list prices, US dollars per million tokens at peak
@@ -71,39 +96,43 @@ double tavernReplyCost(TavernUsage usage, TavernModelPrice price, DateTime at) {
 /// of a cent), two above.
 String tavernUsd(double usd) => usd < 1 ? usd.toStringAsFixed(4) : usd.toStringAsFixed(2);
 
+/// Each tavern's last sum by chat: the newest message it counted, and the sum.
+final _lastSums = Expando<Map<String, (String, TavernSessionUsage)>>();
+
 /// [chatId]'s current line, all of it (the engine hands it out a page at a
 /// time, newest first), its replies' usage summed.
+///
+/// A long chat is thousands of messages read on the UI isolate, so the sum is
+/// kept: on a line that still passes through the newest message counted last
+/// time (replies added since), only what came after it is read. A line that
+/// no longer does (another branch, a deletion) is read whole. Between pages a
+/// frame may run, so a drawer opening over it keeps moving.
 Future<TavernSessionUsage> tavernSessionUsage(Tavern tavern, String chatId, {int page = 200}) async {
-  var replies = 0, prompt = 0, cacheHit = 0, completion = 0, unpriced = 0;
-  var cost = 0.0;
+  final sums = _lastSums[tavern] ??= {};
+  final last = sums[chatId];
+  var total = const TavernSessionUsage();
+  String? newest;
   String? before;
+  // With a sum kept, the new part is usually a few messages.
+  var limit = last == null ? page : 20;
+  scan:
   while (true) {
-    final messages = await tavern.path(chatId, limit: page, beforeNodeId: before);
-    for (final m in messages) {
-      if (m.role != TavernRole.character) continue;
-      if (m.reportedUsage case final usage?) {
-        replies++;
-        prompt += usage.promptTokens;
-        cacheHit += usage.cacheHitTokens;
-        completion += usage.completionTokens;
-        if (tavernModelPrice(usage.model) case final price?) {
-          cost += tavernReplyCost(usage, price, m.at);
-        } else {
-          unpriced++;
-        }
+    final messages = await tavern.path(chatId, limit: limit, beforeNodeId: before);
+    newest ??= messages.lastOrNull?.nodeId;
+    for (final m in messages.reversed) {
+      if (m.nodeId == last?.$1) {
+        total += last!.$2;
+        break scan;
       }
+      total = total.plus(m);
     }
-    if (messages.length < page) break;
+    if (messages.length < limit) break;
     before = messages.first.nodeId;
+    limit = page;
+    await Future<void>.delayed(Duration.zero);
   }
-  return TavernSessionUsage(
-    replies: replies,
-    prompt: prompt,
-    cacheHit: cacheHit,
-    completion: completion,
-    cost: cost,
-    unpriced: unpriced,
-  );
+  if (newest != null) sums[chatId] = (newest, total);
+  return total;
 }
 
 /// A token count at a glance: 8,421 as it is; 12,345 as 1.2万 (or 12.3k).

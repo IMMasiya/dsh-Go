@@ -67,6 +67,40 @@ void main() {
     expect(empty.replies, 0);
   });
 
+  test('summed again, only what came since is read; another line is read whole', () async {
+    final tavern = _LongChat(150);
+    await tavernSessionUsage(tavern, 'chat');
+    tavern.pages = 0;
+
+    // Nothing new: one short page, the same sum.
+    expect((await tavernSessionUsage(tavern, 'chat')).replies, 135);
+    expect(tavern.pages, 1);
+
+    // Two replies more: still one short page, both counted.
+    tavern.line
+      ..add(TavernMessage(nodeId: 'u-new', role: TavernRole.user, speaker: 'User', text: '再问', at: DateTime(2026)))
+      ..add(
+        TavernMessage(
+          nodeId: 'c-new',
+          role: TavernRole.character,
+          speaker: '林晚',
+          text: '再答',
+          at: DateTime(2026),
+          reportedUsage: const TavernUsage(promptTokens: 1000, cacheHitTokens: 0, completionTokens: 100),
+        ),
+      );
+    tavern.pages = 0;
+    final more = await tavernSessionUsage(tavern, 'chat');
+    expect((more.replies, more.prompt), (136, 136000));
+    expect(tavern.pages, 1);
+
+    // The newest counted is gone (a regenerated or deleted reply): all of it again.
+    tavern.line.removeLast();
+    tavern.pages = 0;
+    expect((await tavernSessionUsage(tavern, 'chat')).replies, 135);
+    expect(tavern.pages, greaterThan(1));
+  });
+
   test("DeepSeek's prices by the model a reply names; others are not guessed at", () {
     expect(tavernModelPrice('deepseek-flash'), tavernDeepSeekFlash);
     expect(tavernModelPrice('deepseek-v4-flash'), tavernDeepSeekFlash);

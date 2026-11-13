@@ -90,7 +90,10 @@ class TavernStagePanel extends ConsumerStatefulWidget {
 class _TavernStagePanelState extends ConsumerState<TavernStagePanel> {
   /// 本局 first: what is used most.
   TavernStageTab _tab = TavernStageTab.session;
-  late Future<TavernTurnInspection?> _record = _read();
+
+  /// Read when 本回合 is first shown: a whole turn's prompt is large, and
+  /// opening the panel should not wait on it.
+  Future<TavernTurnInspection?>? _record;
 
   Future<TavernTurnInspection?> _read() => ref.read(tavernProvider).inspectTurn(widget.chatId);
 
@@ -101,7 +104,7 @@ class _TavernStagePanelState extends ConsumerState<TavernStagePanel> {
   void didUpdateWidget(TavernStagePanel old) {
     super.didUpdateWidget(old);
     if (old.turn != widget.turn || old.chatId != widget.chatId) {
-      _record = _read();
+      _record = null;
       _usage = tavernSessionUsage(ref.read(tavernProvider), widget.chatId);
     }
   }
@@ -151,7 +154,7 @@ class _TavernStagePanelState extends ConsumerState<TavernStagePanel> {
             onSuggest: widget.onSuggest,
           ),
           TavernStageTab.turn => FutureBuilder<TavernTurnInspection?>(
-            future: _record,
+            future: _record ??= _read(),
             builder: (context, snapshot) {
               if (snapshot.connectionState != ConnectionState.done) {
                 return const Padding(

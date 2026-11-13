@@ -1321,10 +1321,16 @@ class _TavernChatPageState extends ConsumerState<TavernChatPage> {
       if (nodeId != null) unawaited(_jumpTo(nodeId));
     });
     final l10n = context.l10n;
-    final summary = ref.watch(tavernChatsProvider(null)).value?.where((c) => c.id == widget.chatId).firstOrNull;
-    final characterId = summary?.characterId;
+    // Only what this page needs from the chat list, so the page is not built
+    // again each time any chat's summary changes (every reply, every chat).
+    final (characterId, kind) = ref.watch(
+      tavernChatsProvider(null).select((chats) {
+        final summary = chats.value?.where((c) => c.id == widget.chatId).firstOrNull;
+        return (summary?.characterId, summary?.kind);
+      }),
+    );
     // A group by its summary too, before its own details are in.
-    _groupChat = _group != null || summary?.kind == TavernChatKind.group;
+    _groupChat = _group != null || kind == TavernChatKind.group;
     final characters = ref.watch(tavernCharactersProvider).value;
     final character = characters?.where((c) => c.id == characterId).firstOrNull;
     // A group goes by its own title; its members by theirs.
