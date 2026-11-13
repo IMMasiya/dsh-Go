@@ -117,6 +117,10 @@ flutter:
   # the material Icons class.
   uses-material-design: true
 
+  shaders:
+    # The voice ring's edge lens (lib/ui/fx/voice_ring/refract.dart).
+    - shaders/fx/voice_ring_refract.frag
+
   fonts:
     # App icons: a Phosphor subset made by tool/make_icon_font.py; use AppIcons.
     - family: DshIcons
