@@ -1,11 +1,14 @@
-// 语音通话: one page over the conversation, dark like a phone call. A light in
-// the middle breathes with whoever is talking — the person's microphone while
-// they speak, her voice while she answers, a slow turn while she thinks. What
-// was heard and what she says run underneath, two lines each. Mute, hang up
-// and loudspeaker sit at the bottom; an approval or question the conversation
-// waits on comes up above them and is answered right here.
+// 语音通话: one page over the conversation, like deep water at night. A drop of
+// light breathes in the middle — swelling with the person's voice while they
+// speak, turning while she thinks, rippling with her voice while she answers
+// (call/call_visuals.dart). Behind it the water, the person's own picture, or
+// 伙伴小屋's character mouthing the reply (call/call_backdrop.dart). What was
+// heard and what she says arrive underneath; mute, hang up and loudspeaker sit
+// at the bottom; an approval or question the conversation waits on comes up
+// above them and is answered right here.
 
 import 'dart:async';
+import 'dart:io';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
@@ -15,6 +18,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../companion/companion_voice.dart';
 import '../../companion/companion_voice_source.dart';
 import '../../l10n/l10n.dart';
+import '../../performance/performance_state.dart';
 import '../../speech/call/chat_call.dart';
 import '../../speech/call/voice_call.dart';
 import '../../speech/deepseek_speech.dart';
@@ -26,8 +30,12 @@ import '../../speech/voice_cloud.dart';
 import '../../state/voice_state.dart';
 import '../chat/voice/voice_bridge.dart';
 import '../companion/companion_ask.dart';
+import '../companion/companion_stage.dart';
 import '../theme/app_icons.dart';
 import '../theme/theme.dart';
+import 'call/call_backdrop.dart';
+import 'call/call_parts.dart';
+import 'call/call_visuals.dart';
 import 'speech_ui.dart';
 
 /// Opens a call with the main chat's conversation. [session] gives its id,
@@ -35,20 +43,22 @@ import 'speech_ui.dart';
 Future<void> openChatCall(BuildContext context, {required String title, required Future<String?> Function() session}) {
   final container = ProviderScope.containerOf(context, listen: false);
   container.read(readAloudProvider.notifier).stop();
+  unawaited(CallShaders.load());
   return Navigator.of(context).push(
     PageRouteBuilder<void>(
       opaque: true,
       fullscreenDialog: true,
-      transitionDuration: AppMotion.of(context, AppMotion.emphasized),
-      reverseTransitionDuration: AppMotion.of(context, AppMotion.standard),
+      transitionDuration: AppMotion.of(context, const Duration(milliseconds: 520)),
+      reverseTransitionDuration: AppMotion.of(context, AppMotion.collapse),
       pageBuilder: (_, _, _) => VoiceCallPage(title: title, conversation: ChatCallConversation(container, session)),
-      transitionsBuilder: (_, animation, _, child) => FadeTransition(
-        opacity: CurvedAnimation(parent: animation, curve: AppMotion.enter),
-        child: ScaleTransition(
-          scale: Tween(begin: 1.04, end: 1.0).animate(CurvedAnimation(parent: animation, curve: AppMotion.enter)),
-          child: child,
-        ),
-      ),
+      transitionsBuilder: (_, animation, _, child) {
+        final curve = CurvedAnimation(parent: animation, curve: AppMotion.enter, reverseCurve: AppMotion.exit);
+        // Opening: the page rises out of the dark.
+        return FadeTransition(
+          opacity: curve,
+          child: ScaleTransition(scale: Tween(begin: 1.06, end: 1.0).animate(curve), child: child),
+        );
+      },
     ),
   );
 }
@@ -63,11 +73,26 @@ class VoiceCallPage extends ConsumerStatefulWidget {
   ConsumerState<VoiceCallPage> createState() => _VoiceCallPageState();
 }
 
-class _VoiceCallPageState extends ConsumerState<VoiceCallPage> with WidgetsBindingObserver {
+class _VoiceCallPageState extends ConsumerState<VoiceCallPage> with WidgetsBindingObserver, TickerProviderStateMixin {
   late final VoiceCallController _call;
-  final _clock = Stopwatch();
-  Timer? _tick;
+  final _scene = CallScene();
+  late final AnimationController _enter = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 1100),
+  );
   Timer? _leave;
+  DateTime? _since;
+  CallPhase _shown = CallPhase.starting;
+
+  // Her, when she is the backdrop.
+  final _stage = CompanionStageController();
+  bool _stageReady = false;
+  bool _stageFailed = false;
+  double _mouthAt = 0;
+  bool _mouthOpen = false;
+
+  /// A finger on the light: it gives a little.
+  bool _pressed = false;
 
   @override
   void initState() {
@@ -95,25 +120,70 @@ class _VoiceCallPageState extends ConsumerState<VoiceCallPage> with WidgetsBindi
       spokenHint: settings.spoken ? appL10n.speechCallHint : null,
       permission: () async => await bridge.requestPermission() == VoicePermission.granted,
     )..addListener(_changed);
-    _clock.start();
-    _tick = Timer.periodic(const Duration(seconds: 1), (_) {
-      if (mounted && _call.phase != CallPhase.ended) setState(() {});
-    });
     HapticFeedback.mediumImpact();
+    _enter.forward();
     unawaited(_call.start());
   }
 
   void _changed() {
     if (!mounted) return;
-    if (_call.phase == CallPhase.ended && _leave == null) {
-      _clock.stop();
-      _tick?.cancel();
-      // Hung up: gone at once. Ended for a reason: the reason stays a moment.
-      _leave = Timer(_call.ended == CallEnd.hungUp ? Duration.zero : const Duration(milliseconds: 2400), () {
-        if (mounted) Navigator.of(context).maybePop();
-      });
+    final phase = _call.phase;
+    if (phase != _shown) {
+      _arrived(phase);
+      _shown = phase;
+    }
+    if (phase == CallPhase.ended && _leave == null) {
+      // Hung up: the light sinks away first. Ended for a reason: the reason stays a moment.
+      _leave = Timer(
+        _call.ended == CallEnd.hungUp ? const Duration(milliseconds: 380) : const Duration(milliseconds: 2600),
+        () {
+          if (mounted) Navigator.of(context).maybePop();
+        },
+      );
     }
     setState(() {});
+  }
+
+  /// A new phase: a touch under the finger, and her mood when she is there.
+  void _arrived(CallPhase phase) {
+    switch (phase) {
+      case CallPhase.listening when _since == null:
+        _since = DateTime.now();
+        HapticFeedback.lightImpact();
+      case CallPhase.hearing:
+        HapticFeedback.selectionClick();
+      case CallPhase.speaking:
+        HapticFeedback.lightImpact();
+      case CallPhase.ended:
+        HapticFeedback.mediumImpact();
+      default:
+        break;
+    }
+    if (_stageReady) {
+      _stage.command('mood', {
+        'mood': switch (phase) {
+          CallPhase.thinking || CallPhase.starting => 'thinking',
+          CallPhase.speaking => 'speaking',
+          CallPhase.ended => 'idle',
+          _ => 'listening',
+        },
+      });
+      if (phase != CallPhase.speaking) _stage.command('quiet');
+    }
+  }
+
+  void _tick(double seconds) {
+    _scene.tick(seconds, phase: _call.phase, mic: _call.micLevel, voice: _call.voiceLevel, isMuted: _call.muted);
+    // Her mouth follows the voice, twenty times a second at most.
+    if (_stageReady && seconds - _mouthAt > 0.05) {
+      final speaking = _call.phase == CallPhase.speaking;
+      final open = speaking ? (_scene.level * 1.3).clamp(0.0, 1.0) : 0.0;
+      if (speaking || _mouthOpen) {
+        _stage.command('mouth', {'value': open});
+        _mouthOpen = open > 0;
+        _mouthAt = seconds;
+      }
+    }
   }
 
   @override
@@ -124,64 +194,84 @@ class _VoiceCallPageState extends ConsumerState<VoiceCallPage> with WidgetsBindi
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
-    _tick?.cancel();
     _leave?.cancel();
+    _enter.dispose();
     _call
       ..removeListener(_changed)
       ..dispose();
+    _scene.dispose();
     super.dispose();
   }
 
   void _hangUp() {
-    HapticFeedback.mediumImpact();
+    HapticFeedback.heavyImpact();
     _call.hangUp();
   }
 
-  String _status(L10n l10n) {
+  (String, bool) _status(L10n l10n) {
     if (_call.phase == CallPhase.ended) {
-      return switch (_call.ended) {
-        CallEnd.permission => l10n.speechCallEndPermission,
-        CallEnd.microphone => l10n.speechCallEndMicrophone,
-        CallEnd.noRecognizer => l10n.speechCallEndNoRecognizer,
-        CallEnd.background => l10n.speechCallEndBackground,
-        CallEnd.failed => l10n.speechCallEndFailed,
-        CallEnd.hungUp || null => l10n.speechCallEnded,
-      };
+      return (
+        switch (_call.ended) {
+          CallEnd.permission => l10n.speechCallEndPermission,
+          CallEnd.microphone => l10n.speechCallEndMicrophone,
+          CallEnd.noRecognizer => l10n.speechCallEndNoRecognizer,
+          CallEnd.background => l10n.speechCallEndBackground,
+          CallEnd.failed => l10n.speechCallEndFailed,
+          CallEnd.hungUp || null => l10n.speechCallEnded,
+        },
+        false,
+      );
     }
     if (_call.muted && _call.phase != CallPhase.speaking && _call.phase != CallPhase.thinking) {
-      return l10n.speechCallMuted;
+      return (l10n.speechCallMuted, false);
     }
     return switch (_call.phase) {
-      CallPhase.starting => l10n.speechCallStarting,
-      CallPhase.listening => l10n.speechCallListening,
-      CallPhase.hearing => l10n.speechCallHearing,
-      CallPhase.thinking => l10n.speechCallThinking,
-      CallPhase.speaking => l10n.speechCallSpeaking,
-      CallPhase.ended => l10n.speechCallEnded,
+      CallPhase.starting => (l10n.speechCallStarting, true),
+      CallPhase.listening => (l10n.speechCallListening, true),
+      CallPhase.hearing => (l10n.speechCallHearing, false),
+      CallPhase.thinking => (l10n.speechCallThinking, true),
+      CallPhase.speaking => (l10n.speechCallSpeaking, false),
+      CallPhase.ended => (l10n.speechCallEnded, false),
     };
+  }
+
+  /// [child] coming in with the page: a fade and a short rise, starting at [from] (0–1).
+  Widget _rise(double from, Widget child, {double distance = 18}) {
+    final curve = CurvedAnimation(
+      parent: _enter,
+      curve: Interval(from, math.min(1, from + 0.5), curve: Curves.easeOutCubic),
+    );
+    return AnimatedBuilder(
+      animation: curve,
+      builder: (context, child) => Opacity(
+        opacity: curve.value,
+        child: Transform.translate(offset: Offset(0, (1 - curve.value) * distance), child: child),
+      ),
+      child: child,
+    );
   }
 
   @override
   Widget build(BuildContext context) {
     final l10n = context.l10n;
     final theme = Theme.of(context);
-    final accent = theme.colorScheme.primary;
-    final ink = Colors.white;
-    final dim = Colors.white.withValues(alpha: 0.62);
-    final faint = Colors.white.withValues(alpha: 0.42);
-    final elapsed = _clock.elapsed;
-    final time =
-        '${elapsed.inMinutes.toString().padLeft(2, '0')}:${(elapsed.inSeconds % 60).toString().padLeft(2, '0')}';
+    final settings = ref.watch(callSettingsProvider);
+    final performance = ref.watch(performanceDefaultsProvider);
+    final shaders = !performance.lightweight && !AppMotion.reduced(context);
+    final blur = performance.blur;
+    final ended = _call.phase == CallPhase.ended;
+    final image =
+        settings.backdrop == CallBackdrop.image && settings.image.isNotEmpty && File(settings.image).existsSync()
+        ? settings.image
+        : null;
+    final her = settings.backdrop == CallBackdrop.companion && !_stageFailed;
+    final (status, dots) = _status(l10n);
     final error = _call.error;
     final sessionId = switch (widget.conversation) {
       final ChatCallConversation chat => chat.sessionId,
       _ => null,
     };
-    final level = switch (_call.phase) {
-      CallPhase.hearing || CallPhase.listening => _call.micLevel,
-      CallPhase.speaking => _call.voiceLevel,
-      _ => 0.0,
-    };
+    final width = MediaQuery.sizeOf(context).width;
 
     return AnnotatedRegion<SystemUiOverlayStyle>(
       value: SystemUiOverlayStyle.light,
@@ -191,112 +281,201 @@ class _VoiceCallPageState extends ConsumerState<VoiceCallPage> with WidgetsBindi
           colorScheme: theme.colorScheme.copyWith(brightness: Brightness.dark),
         ),
         child: Scaffold(
-          backgroundColor: Color.lerp(Colors.black, accent, 0.08),
-          body: Stack(
-            fit: StackFit.expand,
-            children: [
-              // A glow behind the light, the conversation's own colour.
-              DecoratedBox(
-                decoration: BoxDecoration(
-                  gradient: RadialGradient(
-                    center: const Alignment(0, -0.22),
-                    radius: 0.9,
-                    colors: [accent.withValues(alpha: 0.26), Colors.transparent],
+          backgroundColor: const Color(0xFF02040B),
+          body: CallClock(
+            onTick: _tick,
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                SeaBackground(scene: _scene, center: her ? 0.66 : 0.38, shaders: shaders),
+                // A new backdrop fades in over the old one.
+                AnimatedSwitcher(
+                  duration: AppMotion.of(context, AppMotion.slow),
+                  switchInCurve: AppMotion.enter,
+                  switchOutCurve: AppMotion.exit,
+                  child: switch ((image, her)) {
+                    (final path?, _) => ImageBackdrop(key: ValueKey(path), path: path, blur: blur),
+                    (_, true) => CompanionBackdrop(
+                      key: const ValueKey('her'),
+                      controller: _stage,
+                      onReady: () {
+                        if (!mounted) return;
+                        setState(() => _stageReady = true);
+                        _arrived(_call.phase);
+                      },
+                      onFailed: () {
+                        if (mounted) {
+                          setState(() {
+                            _stageFailed = true;
+                            _stageReady = false;
+                          });
+                        }
+                      },
+                    ),
+                    _ => const SizedBox.expand(key: ValueKey('sea')),
+                  },
+                ),
+                IgnorePointer(
+                  child: Plankton(scene: _scene, count: her ? 22 : 44),
+                ),
+                if (her)
+                  // Her feet fade into the water so the words below stay readable.
+                  const IgnorePointer(
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          begin: Alignment.topCenter,
+                          end: Alignment.bottomCenter,
+                          colors: [Color(0x00030712), Color(0x00030712), Color(0xD9030712), Color(0xF2030712)],
+                          stops: [0, 0.46, 0.7, 1],
+                        ),
+                      ),
+                    ),
+                  ),
+                SafeArea(
+                  child: Column(
+                    children: [
+                      _rise(
+                        0.05,
+                        _TopBar(
+                          title: widget.title,
+                          since: _since,
+                          live: !ended && _since != null,
+                          onBackdrop: ended ? null : () => unawaited(showCallBackdropSheet(context)),
+                        ),
+                        distance: -14,
+                      ),
+                      Expanded(
+                        child: her
+                            ? const SizedBox.expand()
+                            : Center(
+                                child: Semantics(
+                                  button: _call.phase == CallPhase.speaking,
+                                  label: status,
+                                  hint: _call.phase == CallPhase.speaking ? l10n.speechCallSkipHint : null,
+                                  child: GestureDetector(
+                                    behavior: HitTestBehavior.opaque,
+                                    onTapDown: (_) => setState(() => _pressed = true),
+                                    onTapUp: (_) => setState(() => _pressed = false),
+                                    onTapCancel: () => setState(() => _pressed = false),
+                                    onTap: _call.phase == CallPhase.speaking
+                                        ? () {
+                                            HapticFeedback.lightImpact();
+                                            _call.skip();
+                                          }
+                                        : null,
+                                    child: AnimatedScale(
+                                      scale: _pressed ? 0.93 : 1,
+                                      duration: AppMotion.of(
+                                        context,
+                                        _pressed ? AppMotion.press : const Duration(milliseconds: 420),
+                                      ),
+                                      curve: _pressed ? Curves.easeOut : Curves.elasticOut,
+                                      child: VoiceOrb(
+                                        scene: _scene,
+                                        size: math.min(360, width * 0.92),
+                                        shaders: shaders,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                      ),
+                      _rise(
+                        0.25,
+                        Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 36),
+                          child: VoiceWave(scene: _scene, height: her ? 48 : 56),
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      _rise(
+                        0.3,
+                        CallStatus(
+                          text: status,
+                          dots: dots,
+                          color: ended && _call.ended != CallEnd.hungUp ? const Color(0xFFFF9AA8) : null,
+                        ),
+                      ),
+                      const SizedBox(height: 14),
+                      HeardLine(text: ended ? '' : _call.heard),
+                      const SizedBox(height: 10),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 32),
+                        child: error != null && !ended
+                            ? SizedBox(
+                                height: 80,
+                                child: Center(
+                                  child: Text(
+                                    speechErrorText(l10n, error, listening: true),
+                                    key: const ValueKey('call-error'),
+                                    textAlign: TextAlign.center,
+                                    style: theme.textTheme.bodyMedium?.copyWith(color: const Color(0xFFFF9AA8)),
+                                  ),
+                                ),
+                              )
+                            : RevealText(
+                                key: const ValueKey('call-reply'),
+                                text: speakable(_call.reply).replaceAll('\n', ' '),
+                                style: theme.textTheme.bodyLarge?.copyWith(
+                                  color: Colors.white.withValues(alpha: 0.94),
+                                  height: 1.55,
+                                  fontSize: 17,
+                                ),
+                              ),
+                      ),
+                      if (sessionId != null)
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+                          child: CompanionAsk(sessionId: sessionId),
+                        ),
+                      const SizedBox(height: 22),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                        crossAxisAlignment: CrossAxisAlignment.end,
+                        children: [
+                          _rise(
+                            0.4,
+                            CallKey(
+                              key: const ValueKey('call-mute'),
+                              icon: _call.muted ? AppIcons.micMuted : AppIcons.voice,
+                              label: _call.muted ? l10n.speechCallUnmute : l10n.speechCallMute,
+                              on: _call.muted,
+                              blur: blur,
+                              onTap: ended ? null : () => _call.setMuted(!_call.muted),
+                            ),
+                            distance: 28,
+                          ),
+                          _rise(
+                            0.48,
+                            HangUpKey(
+                              key: const ValueKey('call-hang-up'),
+                              icon: AppIcons.hangUp,
+                              label: l10n.speechCallHangUp,
+                              onTap: ended ? null : _hangUp,
+                            ),
+                            distance: 34,
+                          ),
+                          _rise(
+                            0.56,
+                            CallKey(
+                              key: const ValueKey('call-speaker'),
+                              icon: _call.speaker ? AppIcons.readAloud : AppIcons.earpiece,
+                              label: _call.speaker ? l10n.speechCallSpeakerOn : l10n.speechCallEarpiece,
+                              on: _call.speaker,
+                              blur: blur,
+                              onTap: ended ? null : () => unawaited(_call.setSpeaker(!_call.speaker)),
+                            ),
+                            distance: 28,
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 28),
+                    ],
                   ),
                 ),
-              ),
-              SafeArea(
-                child: Column(
-                  children: [
-                    const SizedBox(height: 28),
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 32),
-                      child: Text(
-                        widget.title,
-                        key: const ValueKey('call-title'),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        textAlign: TextAlign.center,
-                        style: theme.textTheme.titleMedium?.copyWith(color: ink, fontWeight: FontWeight.w600),
-                      ),
-                    ),
-                    const SizedBox(height: 6),
-                    Text(
-                      time,
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        color: faint,
-                        fontFeatures: const [FontFeature.tabularFigures()],
-                      ),
-                    ),
-                    Expanded(
-                      child: Center(
-                        child: Semantics(
-                          button: _call.phase == CallPhase.speaking,
-                          label: _status(l10n),
-                          hint: _call.phase == CallPhase.speaking ? l10n.speechCallSkipHint : null,
-                          child: GestureDetector(
-                            onTap: _call.phase == CallPhase.speaking ? _call.skip : null,
-                            child: _Light(phase: _call.phase, level: level, muted: _call.muted, color: accent),
-                          ),
-                        ),
-                      ),
-                    ),
-                    AnimatedSwitcher(
-                      duration: AppMotion.of(context, AppMotion.quick),
-                      child: Text(
-                        _status(l10n),
-                        key: ValueKey(_status(l10n)),
-                        style: theme.textTheme.titleSmall?.copyWith(color: dim, letterSpacing: 0.4),
-                      ),
-                    ),
-                    const SizedBox(height: 18),
-                    _Lines(
-                      heard: _call.heard,
-                      reply: _call.reply,
-                      error: error == null ? null : speechErrorText(l10n, error, listening: true),
-                      dim: dim,
-                      ink: ink,
-                    ),
-                    if (sessionId != null)
-                      Padding(
-                        padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-                        child: CompanionAsk(sessionId: sessionId),
-                      ),
-                    const SizedBox(height: 20),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                      children: [
-                        _RoundKey(
-                          key: const ValueKey('call-mute'),
-                          icon: _call.muted ? AppIcons.micMuted : AppIcons.voice,
-                          label: _call.muted ? l10n.speechCallUnmute : l10n.speechCallMute,
-                          on: _call.muted,
-                          onTap: _call.phase == CallPhase.ended ? null : () => _call.setMuted(!_call.muted),
-                        ),
-                        _RoundKey(
-                          key: const ValueKey('call-hang-up'),
-                          icon: AppIcons.hangUp,
-                          label: l10n.speechCallHangUp,
-                          danger: true,
-                          size: 72,
-                          onTap: _call.phase == CallPhase.ended ? null : _hangUp,
-                        ),
-                        _RoundKey(
-                          key: const ValueKey('call-speaker'),
-                          icon: _call.speaker ? AppIcons.readAloud : AppIcons.earpiece,
-                          label: _call.speaker ? l10n.speechCallSpeakerOn : l10n.speechCallEarpiece,
-                          on: _call.speaker,
-                          onTap: _call.phase == CallPhase.ended
-                              ? null
-                              : () => unawaited(_call.setSpeaker(!_call.speaker)),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 28),
-                  ],
-                ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),
@@ -304,273 +483,72 @@ class _VoiceCallPageState extends ConsumerState<VoiceCallPage> with WidgetsBindi
   }
 }
 
-/// What was heard (small) and what she is saying (the last two lines of it).
-class _Lines extends StatelessWidget {
-  const _Lines({required this.heard, required this.reply, required this.error, required this.dim, required this.ink});
+/// The conversation's name, the clock, and the 背景 key.
+class _TopBar extends StatelessWidget {
+  const _TopBar({required this.title, required this.since, required this.live, required this.onBackdrop});
 
-  final String heard;
-  final String reply;
-  final String? error;
-  final Color dim;
-  final Color ink;
+  final String title;
+  final DateTime? since;
+  final bool live;
+  final VoidCallback? onBackdrop;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final said = speakable(reply).replaceAll('\n', ' ');
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 32),
-      child: SizedBox(
-        height: 92,
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.end,
-          children: [
-            if (error != null)
-              Text(
-                error!,
-                textAlign: TextAlign.center,
-                maxLines: 2,
-                style: theme.textTheme.bodyMedium?.copyWith(color: DshColors.of(context).danger),
-              )
-            else ...[
-              if (heard.isNotEmpty)
+      padding: const EdgeInsets.fromLTRB(20, 14, 14, 0),
+      child: Row(
+        children: [
+          const SizedBox(width: 40),
+          Expanded(
+            child: Column(
+              children: [
                 Text(
-                  heard,
-                  key: const ValueKey('call-heard'),
-                  textAlign: TextAlign.center,
+                  title,
+                  key: const ValueKey('call-title'),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: theme.textTheme.bodySmall?.copyWith(color: dim),
-                ),
-              if (said.isNotEmpty) ...[
-                const SizedBox(height: 6),
-                // The newest words in view: the start fades out above.
-                ShaderMask(
-                  shaderCallback: (rect) => const LinearGradient(
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
-                    colors: [Colors.transparent, Colors.white, Colors.white],
-                    stops: [0, 0.35, 1],
-                  ).createShader(rect),
-                  blendMode: BlendMode.dstIn,
-                  child: Text(
-                    said.length > 90 ? '…${said.substring(said.length - 90)}' : said,
-                    key: const ValueKey('call-reply'),
-                    textAlign: TextAlign.center,
-                    maxLines: 3,
-                    overflow: TextOverflow.clip,
-                    style: theme.textTheme.bodyLarge?.copyWith(color: ink, height: 1.45),
+                  textAlign: TextAlign.center,
+                  style: theme.textTheme.titleMedium?.copyWith(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w600,
+                    letterSpacing: 0.2,
                   ),
                 ),
+                const SizedBox(height: 6),
+                CallTimer(since: since, live: live),
               ],
-            ],
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _RoundKey extends StatelessWidget {
-  const _RoundKey({
-    super.key,
-    required this.icon,
-    required this.label,
-    required this.onTap,
-    this.on = false,
-    this.danger = false,
-    this.size = 60,
-  });
-
-  final IconData icon;
-  final String label;
-  final VoidCallback? onTap;
-  final bool on;
-  final bool danger;
-  final double size;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = DshColors.of(context);
-    final fill = danger
-        ? colors.danger
-        : on
-        ? Colors.white
-        : Colors.white.withValues(alpha: 0.12);
-    final glyph = danger
-        ? colors.onDanger
-        : on
-        ? Colors.black
-        : Colors.white;
-    return Semantics(
-      button: true,
-      toggled: danger ? null : on,
-      label: label,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Material(
-            color: fill,
-            shape: const CircleBorder(),
-            clipBehavior: Clip.antiAlias,
-            child: InkWell(
-              onTap: onTap == null
+            ),
+          ),
+          Semantics(
+            button: true,
+            label: context.l10n.speechBackdropTitle,
+            child: GestureDetector(
+              key: const ValueKey('call-backdrop'),
+              onTap: onBackdrop == null
                   ? null
                   : () {
                       HapticFeedback.selectionClick();
-                      onTap!();
+                      onBackdrop!();
                     },
-              child: SizedBox.square(
-                dimension: size,
-                child: Icon(icon, color: glyph, size: size * 0.4),
+              child: Container(
+                width: 40,
+                height: 40,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: Colors.white.withValues(alpha: 0.1),
+                  border: Border.all(color: Colors.white.withValues(alpha: 0.14)),
+                ),
+                child: Icon(
+                  AppIcons.theme,
+                  size: 18,
+                  color: Colors.white.withValues(alpha: onBackdrop == null ? 0.4 : 0.85),
+                ),
               ),
-            ),
-          ),
-          const SizedBox(height: 8),
-          ExcludeSemantics(
-            child: Text(
-              label,
-              style: Theme.of(context).textTheme.labelSmall?.copyWith(color: Colors.white.withValues(alpha: 0.7)),
             ),
           ),
         ],
       ),
     );
   }
-}
-
-/// The light in the middle: breathes while listening, swells with the
-/// person's voice while they speak, turns while she thinks, ripples with her
-/// voice while she speaks. Dim when muted.
-class _Light extends StatefulWidget {
-  const _Light({required this.phase, required this.level, required this.muted, required this.color});
-
-  final CallPhase phase;
-  final double level;
-  final bool muted;
-  final Color color;
-
-  @override
-  State<_Light> createState() => _LightState();
-}
-
-class _LightState extends State<_Light> with SingleTickerProviderStateMixin {
-  late final AnimationController _time = AnimationController(vsync: this, duration: const Duration(seconds: 6))
-    ..repeat();
-  double _level = 0;
-
-  @override
-  void dispose() {
-    _time.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final still = AppMotion.reduced(context);
-    if (still) _time.stop();
-    return SizedBox.square(
-      dimension: 240,
-      child: AnimatedBuilder(
-        animation: _time,
-        builder: (context, _) {
-          // Smoothed toward the latest level: rises quickly, falls slowly.
-          final target = widget.level.clamp(0.0, 1.0);
-          _level += (target - _level) * (target > _level ? 0.35 : 0.08);
-          return CustomPaint(
-            painter: _LightPainter(
-              t: still ? 0 : _time.value,
-              level: _level,
-              phase: widget.phase,
-              muted: widget.muted,
-              color: widget.color,
-            ),
-          );
-        },
-      ),
-    );
-  }
-}
-
-class _LightPainter extends CustomPainter {
-  _LightPainter({required this.t, required this.level, required this.phase, required this.muted, required this.color});
-
-  final double t;
-  final double level;
-  final CallPhase phase;
-  final bool muted;
-  final Color color;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final center = size.center(Offset.zero);
-    final base = size.width * 0.27;
-    final angle = t * 2 * math.pi;
-    final breath = math.sin(angle * 2) * 0.025;
-    final ended = phase == CallPhase.ended;
-    final quiet = muted || ended;
-    final swell = switch (phase) {
-      CallPhase.hearing || CallPhase.speaking => level * 0.32,
-      CallPhase.listening => level * 0.12,
-      _ => 0.0,
-    };
-    final r = base * (1 + breath + swell);
-    final core = quiet ? Colors.white.withValues(alpha: 0.18) : Color.lerp(color, Colors.white, 0.35)!;
-
-    // Ripples while she speaks: rings drifting outward, louder ones brighter.
-    if (phase == CallPhase.speaking) {
-      for (var i = 0; i < 3; i++) {
-        final p = (t * 3 + i / 3) % 1.0;
-        final ring = Paint()
-          ..style = PaintingStyle.stroke
-          ..strokeWidth = 1.6
-          ..color = color.withValues(alpha: (1 - p) * (0.18 + level * 0.5));
-        canvas.drawCircle(center, r * (1 + p * 0.9), ring);
-      }
-    }
-
-    // The halo.
-    canvas.drawCircle(
-      center,
-      r * 1.6,
-      Paint()
-        ..shader = RadialGradient(
-          colors: [
-            core.withValues(alpha: quiet ? 0.08 : 0.28 + swell),
-            Colors.transparent,
-          ],
-        ).createShader(Rect.fromCircle(center: center, radius: r * 1.6)),
-    );
-
-    // The body: lit from the upper left.
-    canvas.drawCircle(
-      center,
-      r,
-      Paint()
-        ..shader = RadialGradient(
-          center: const Alignment(-0.35, -0.4),
-          radius: 1.1,
-          colors: quiet
-              ? [Colors.white.withValues(alpha: 0.22), Colors.white.withValues(alpha: 0.06)]
-              : [Color.lerp(color, Colors.white, 0.65)!, color, Color.lerp(color, Colors.black, 0.35)!],
-        ).createShader(Rect.fromCircle(center: center, radius: r)),
-    );
-
-    // Thinking: a bright arc turning around the body.
-    if (phase == CallPhase.thinking || phase == CallPhase.starting) {
-      final arc = Paint()
-        ..style = PaintingStyle.stroke
-        ..strokeCap = StrokeCap.round
-        ..strokeWidth = 3
-        ..shader = SweepGradient(
-          colors: [Colors.transparent, Colors.white.withValues(alpha: 0.9)],
-          transform: GradientRotation(angle * 2),
-        ).createShader(Rect.fromCircle(center: center, radius: r * 1.18));
-      canvas.drawArc(Rect.fromCircle(center: center, radius: r * 1.18), angle * 2, math.pi * 1.2, false, arc);
-    }
-  }
-
-  @override
-  bool shouldRepaint(_LightPainter old) =>
-      old.t != t || old.level != level || old.phase != phase || old.muted != muted || old.color != color;
 }

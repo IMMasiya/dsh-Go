@@ -35,7 +35,7 @@ Under each reply there is a **Read aloud** key: tap it to hear the reply, tap ag
 <!-- nav: commonSettings,voiceSettingsTitle,speechVoiceTitle -->
 `Settings › Voice › Reading voice`
 
-**Voice call** in the plus panel opens a call: just speak, pause, and it is sent; the answer is read while it is written. Start talking while the AI speaks and it stops to listen (turn off **Interrupt by speaking** in Settings); tap the light in the middle to skip an answer. At the bottom are **Mute**, **Hang up** and **Speaker** / **Earpiece**. Approvals and questions appear on the call page. Calls end when the app goes to the background.
+**Voice call** in the plus panel opens a call: just speak, pause, and it is sent; the answer is read while it is written. Start talking while the AI speaks and it stops to listen (turn off **Interrupt by speaking** in Settings); tap the light in the middle to skip an answer. At the bottom are **Mute**, **Hang up** and **Speaker** / **Earpiece**. Approvals and questions appear on the call page. The key at the top right changes the **Call background**: **Deep sea**, **My picture**, or your **Companion** from the companion room, who speaks along with the voice. Calls end when the app goes to the background.
 
 ## Create images and video
 

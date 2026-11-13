@@ -18534,7 +18534,7 @@ class L10nEn extends L10n {
       '(This is a voice call; what I say comes through speech recognition. Please answer briefly and conversationally, without Markdown, lists, tables or code blocks.)';
 
   @override
-  String get speechCallStarting => 'Connecting…';
+  String get speechCallStarting => 'Connecting';
 
   @override
   String get speechCallListening => 'Listening';
@@ -18543,7 +18543,7 @@ class L10nEn extends L10n {
   String get speechCallHearing => 'You\'re speaking';
 
   @override
-  String get speechCallThinking => 'Thinking…';
+  String get speechCallThinking => 'Thinking';
 
   @override
   String get speechCallSpeaking => 'Speaking. Tap the light to skip';
@@ -18590,6 +18590,38 @@ class L10nEn extends L10n {
 
   @override
   String get speechCallEarpiece => 'Earpiece';
+
+  @override
+  String get speechBackdropTitle => 'Call background';
+
+  @override
+  String get speechBackdropSea => 'Deep sea';
+
+  @override
+  String get speechBackdropImage => 'My picture';
+
+  @override
+  String get speechBackdropImagePick => 'Pick a picture';
+
+  @override
+  String get speechBackdropCompanion => 'Companion';
+
+  @override
+  String get speechBackdropHint =>
+      'Pictures are softened and darkened so captions stay readable. With your companion, she speaks along with the voice.';
+
+  @override
+  String get speechBackdropHintChange =>
+      'Tap My picture again to change it. With your companion, she speaks along with the voice.';
+
+  @override
+  String get speechBackdropNoCompanion => 'Set her up in the companion room first to bring her into calls.';
+
+  @override
+  String get speechBackdropReplace => 'Change picture';
+
+  @override
+  String get speechBackdropPickFailed => 'That picture can\'t be used. Try another';
 
   @override
   String starPromptTitle(int hours) {

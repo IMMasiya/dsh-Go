@@ -32135,7 +32135,7 @@ abstract class L10n {
   /// No description provided for @speechCallStarting.
   ///
   /// In zh, this message translates to:
-  /// **'正在接通…'**
+  /// **'正在接通'**
   String get speechCallStarting;
 
   /// No description provided for @speechCallListening.
@@ -32153,7 +32153,7 @@ abstract class L10n {
   /// No description provided for @speechCallThinking.
   ///
   /// In zh, this message translates to:
-  /// **'想一想…'**
+  /// **'想一想'**
   String get speechCallThinking;
 
   /// No description provided for @speechCallSpeaking.
@@ -32245,6 +32245,66 @@ abstract class L10n {
   /// In zh, this message translates to:
   /// **'听筒'**
   String get speechCallEarpiece;
+
+  /// No description provided for @speechBackdropTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'通话背景'**
+  String get speechBackdropTitle;
+
+  /// No description provided for @speechBackdropSea.
+  ///
+  /// In zh, this message translates to:
+  /// **'深海'**
+  String get speechBackdropSea;
+
+  /// No description provided for @speechBackdropImage.
+  ///
+  /// In zh, this message translates to:
+  /// **'我的图片'**
+  String get speechBackdropImage;
+
+  /// No description provided for @speechBackdropImagePick.
+  ///
+  /// In zh, this message translates to:
+  /// **'选一张图'**
+  String get speechBackdropImagePick;
+
+  /// No description provided for @speechBackdropCompanion.
+  ///
+  /// In zh, this message translates to:
+  /// **'伙伴'**
+  String get speechBackdropCompanion;
+
+  /// No description provided for @speechBackdropHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'图片会虚化、压暗，字幕看得清。选伙伴时，她会跟着声音说话。'**
+  String get speechBackdropHint;
+
+  /// No description provided for @speechBackdropHintChange.
+  ///
+  /// In zh, this message translates to:
+  /// **'再点一次「我的图片」可以换一张。选伙伴时，她会跟着声音说话。'**
+  String get speechBackdropHintChange;
+
+  /// No description provided for @speechBackdropNoCompanion.
+  ///
+  /// In zh, this message translates to:
+  /// **'先在伙伴小屋里请她住进来，才能把她放进通话里。'**
+  String get speechBackdropNoCompanion;
+
+  /// No description provided for @speechBackdropReplace.
+  ///
+  /// In zh, this message translates to:
+  /// **'换一张图'**
+  String get speechBackdropReplace;
+
+  /// No description provided for @speechBackdropPickFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'这张图用不了，换一张试试'**
+  String get speechBackdropPickFailed;
 
   /// The star prompt's first line. hours is the whole hours of use so far, rounded down; 0 is half an hour (the first ask comes after 30 minutes). The word joiner keeps the ~ on the line of the word before it.
   ///

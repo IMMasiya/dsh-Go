@@ -17556,7 +17556,7 @@ class L10nZh extends L10n {
   String get speechCallHint => '（这是语音通话，我说的话由语音识别转成文字。请用简短、口语化的中文回答，不要用 Markdown、列表、表格和代码块。）';
 
   @override
-  String get speechCallStarting => '正在接通…';
+  String get speechCallStarting => '正在接通';
 
   @override
   String get speechCallListening => '在听';
@@ -17565,7 +17565,7 @@ class L10nZh extends L10n {
   String get speechCallHearing => '你在说';
 
   @override
-  String get speechCallThinking => '想一想…';
+  String get speechCallThinking => '想一想';
 
   @override
   String get speechCallSpeaking => '正在说，轻点光球可以跳过';
@@ -17611,6 +17611,36 @@ class L10nZh extends L10n {
 
   @override
   String get speechCallEarpiece => '听筒';
+
+  @override
+  String get speechBackdropTitle => '通话背景';
+
+  @override
+  String get speechBackdropSea => '深海';
+
+  @override
+  String get speechBackdropImage => '我的图片';
+
+  @override
+  String get speechBackdropImagePick => '选一张图';
+
+  @override
+  String get speechBackdropCompanion => '伙伴';
+
+  @override
+  String get speechBackdropHint => '图片会虚化、压暗，字幕看得清。选伙伴时，她会跟着声音说话。';
+
+  @override
+  String get speechBackdropHintChange => '再点一次「我的图片」可以换一张。选伙伴时，她会跟着声音说话。';
+
+  @override
+  String get speechBackdropNoCompanion => '先在伙伴小屋里请她住进来，才能把她放进通话里。';
+
+  @override
+  String get speechBackdropReplace => '换一张图';
+
+  @override
+  String get speechBackdropPickFailed => '这张图用不了，换一张试试';
 
   @override
   String starPromptTitle(int hours) {

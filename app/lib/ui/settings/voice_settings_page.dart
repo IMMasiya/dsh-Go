@@ -11,6 +11,7 @@ import '../../state/voice_settings.dart';
 import '../common/app_dialog.dart';
 import '../companion/companion_voice_page.dart';
 import '../providers/provider_widgets.dart';
+import '../speech/call/call_backdrop.dart';
 import '../shell/page_frame.dart';
 import '../theme/app_icons.dart';
 import '../theme/theme.dart';
@@ -177,6 +178,16 @@ class _VoiceSettingsPageState extends ConsumerState<VoiceSettingsPage> {
           title: l10n.speechCallSection,
           footer: Text(l10n.speechCallFooter),
           children: [
+            SettingsTile(
+              key: const ValueKey('speech-call-backdrop'),
+              title: l10n.speechBackdropTitle,
+              value: Text(switch (call.backdrop) {
+                CallBackdrop.sea => l10n.speechBackdropSea,
+                CallBackdrop.image => l10n.speechBackdropImage,
+                CallBackdrop.companion => l10n.speechBackdropCompanion,
+              }),
+              onTap: () => unawaited(showCallBackdropSheet(context)),
+            ),
             SettingsSwitchTile(
               key: const ValueKey('speech-call-barge-in'),
               title: l10n.speechCallBargeIn,

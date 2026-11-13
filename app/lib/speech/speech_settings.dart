@@ -118,8 +118,18 @@ final cloudAsrProvider = NotifierProvider<CloudAsrController, CloudAsrSettings>(
 
 // ── Calls ──────────────────────────────────────────────────────────────────
 
+/// What a call shows behind its light: deep water, the person's own picture,
+/// or her (伙伴小屋's character, speaking with the call's voice).
+enum CallBackdrop { sea, image, companion }
+
 class CallSettings {
-  const CallSettings({this.bargeIn = true, this.spoken = true, this.speaker = true});
+  const CallSettings({
+    this.bargeIn = true,
+    this.spoken = true,
+    this.speaker = true,
+    this.backdrop = CallBackdrop.sea,
+    this.image = '',
+  });
 
   /// Speaking over her stops her (else what is said while she talks is ignored).
   final bool bargeIn;
@@ -129,9 +139,19 @@ class CallSettings {
 
   /// Starts on the loudspeaker (a headset always wins).
   final bool speaker;
+  final CallBackdrop backdrop;
 
-  CallSettings copyWith({bool? bargeIn, bool? spoken, bool? speaker}) =>
-      CallSettings(bargeIn: bargeIn ?? this.bargeIn, spoken: spoken ?? this.spoken, speaker: speaker ?? this.speaker);
+  /// The picture for [CallBackdrop.image]: a copy this app keeps ('' for none).
+  final String image;
+
+  CallSettings copyWith({bool? bargeIn, bool? spoken, bool? speaker, CallBackdrop? backdrop, String? image}) =>
+      CallSettings(
+        bargeIn: bargeIn ?? this.bargeIn,
+        spoken: spoken ?? this.spoken,
+        speaker: speaker ?? this.speaker,
+        backdrop: backdrop ?? this.backdrop,
+        image: image ?? this.image,
+      );
 }
 
 class CallSettingsController extends Notifier<CallSettings> {
@@ -153,6 +173,8 @@ class CallSettingsController extends Notifier<CallSettings> {
         bargeIn: json['bargeIn'] != false,
         spoken: json['spoken'] != false,
         speaker: json['speaker'] != false,
+        backdrop: CallBackdrop.values.asNameMap()[json['backdrop']] ?? CallBackdrop.sea,
+        image: json['image'] is String ? json['image'] as String : '',
       );
     } on Object {
       // Defaults for this run.
@@ -162,7 +184,16 @@ class CallSettingsController extends Notifier<CallSettings> {
   Future<void> update(CallSettings next) async {
     state = next;
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(_key, jsonEncode({'bargeIn': next.bargeIn, 'spoken': next.spoken, 'speaker': next.speaker}));
+    await prefs.setString(
+      _key,
+      jsonEncode({
+        'bargeIn': next.bargeIn,
+        'spoken': next.spoken,
+        'speaker': next.speaker,
+        'backdrop': next.backdrop.name,
+        'image': next.image,
+      }),
+    );
   }
 }
 

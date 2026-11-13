@@ -117,6 +117,11 @@ flutter:
   # the material Icons class.
   uses-material-design: true
 
+  # 语音通话's light and background (ui/speech/call/call_visuals.dart).
+  shaders:
+    - shaders/voice_orb.frag
+    - shaders/voice_sea.frag
+
   fonts:
     # App icons: a Phosphor subset made by tool/make_icon_font.py; use AppIcons.
     - family: DshIcons
