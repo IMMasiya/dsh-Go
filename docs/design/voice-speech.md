@@ -18,7 +18,7 @@
 
 - **登录的账号**：token 只在引擎里（`deepseekAccount.resolveToken(url)`，对推理源返回 token，请求头 `x-dsh-auth-token`，见引擎 `dsh-web-search-deepseek`）。App 拿不到也不该拿到，所以由 bridge 代发：`/dsh-go/v1/speech`（合同见第 7 节，实现 `runtime/bridge/dsh-go-bridge/lib/speech.js`）。
 - **API Key**：设置里填的 DeepSeek Key，App 直连 `api.deepseek.com`，音频边到边播。
-- **主机的 Key**：主机配了 Key 但 App 没填时，也走 bridge。
+- **主机的 Key**：主机配了 Key 但 App 没填时，也走 bridge。bridge 用引擎自己的 `credentials.resolve('DEEPSEEK_API_KEY')` 取值（引用名可用 bridge 配置 `speech.apiKeyEnv` 改），每次请求现取，不缓存、不记录。账号被上游拒绝时不会自动换 Key 重试（免得多扣一次）。
 
 顺序：账号 → App 的 Key → 主机的 Key → 都没有就提示「先登录或填 Key」。bridge 的能力探测按连接缓存 2 分钟（`deepseek_speech.dart`）。
 

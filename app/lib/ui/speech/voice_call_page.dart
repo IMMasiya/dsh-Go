@@ -23,6 +23,8 @@ import '../../speech/speech_audio.dart';
 import '../../speech/speech_out.dart';
 import '../../speech/speech_settings.dart';
 import '../../speech/voice_cloud.dart';
+import '../../state/voice_state.dart';
+import '../chat/voice/voice_bridge.dart';
 import '../companion/companion_ask.dart';
 import '../theme/app_icons.dart';
 import '../theme/theme.dart';
@@ -78,6 +80,7 @@ class _VoiceCallPageState extends ConsumerState<VoiceCallPage> with WidgetsBindi
     final audio = ref.read(speechAudioProvider);
     final deepseek = ref.read(deepSeekSpeechProvider);
     final recognize = ref.read(callRecognizerProvider);
+    final bridge = ref.read(voiceBridgeProvider);
     _call = VoiceCallController(
       audio: audio,
       conversation: widget.conversation,
@@ -90,6 +93,7 @@ class _VoiceCallPageState extends ConsumerState<VoiceCallPage> with WidgetsBindi
       bargeIn: settings.bargeIn,
       speaker: settings.speaker,
       spokenHint: settings.spoken ? appL10n.speechCallHint : null,
+      permission: () async => await bridge.requestPermission() == VoicePermission.granted,
     )..addListener(_changed);
     _clock.start();
     _tick = Timer.periodic(const Duration(seconds: 1), (_) {

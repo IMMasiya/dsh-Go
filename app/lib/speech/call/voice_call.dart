@@ -75,6 +75,7 @@ class VoiceCallController extends ChangeNotifier {
     this.bargeIn = true,
     this._speaker = true,
     this.spokenHint,
+    this.permission,
   });
 
   final SpeechAudio audio;
@@ -89,6 +90,13 @@ class VoiceCallController extends ChangeNotifier {
 
   /// Put before the call's first message: asks for short spoken answers.
   final String? spokenHint;
+
+  /// Asks for the microphone (the system dialog); false when refused.
+  final Future<bool> Function()? permission;
+
+  /// The microphone is being asked for: the dialog may pause the app.
+  bool get asking => _asking;
+  bool _asking = false;
 
   CallPhase _phase = CallPhase.starting;
   CallEnd? _ended;
@@ -139,6 +147,17 @@ class VoiceCallController extends ChangeNotifier {
       return;
     }
     _cloud = cloud;
+    final ask = permission;
+    if (ask != null) {
+      _asking = true;
+      final granted = await ask().catchError((Object _) => false);
+      _asking = false;
+      if (_disposed || _phase == CallPhase.ended) return;
+      if (!granted) {
+        _end(CallEnd.permission);
+        return;
+      }
+    }
     final started = await audio.startCall(bargeIn: bargeIn);
     if (_disposed || _phase == CallPhase.ended) {
       if (started == CallStart.ok) unawaited(audio.stopCall());
@@ -312,7 +331,9 @@ class VoiceCallController extends ChangeNotifier {
 
   /// The app went to the background: Android gives a backgrounded app no
   /// microphone, so the call ends rather than listen to silence.
-  void backgrounded() => _end(CallEnd.background);
+  void backgrounded() {
+    if (!_asking) _end(CallEnd.background);
+  }
 
   void _end(CallEnd why) {
     if (_phase == CallPhase.ended) return;

@@ -93,6 +93,27 @@ DeepSeekSpeechFailure _failureOf(int status, {required bool account}) => switch 
   _ => DeepSeekSpeechFailure.protocol,
 };
 
+/// The bridge's own code first (`speech/no-credential` is a 401 too), then the status.
+DeepSeekSpeechFailure _bridgeFailure(int status, List<int> body, {required bool account}) {
+  try {
+    final json = jsonDecode(utf8.decode(body, allowMalformed: true));
+    final code = json is Map && json['error'] is Map ? (json['error'] as Map)['code'] : null;
+    switch (code) {
+      case 'speech/no-credential':
+        return DeepSeekSpeechFailure.noCredential;
+      case 'speech/sign-in-required':
+        return DeepSeekSpeechFailure.signIn;
+      case 'speech/unauthorized':
+        return DeepSeekSpeechFailure.unauthorized;
+      case 'speech/upstream-unreachable':
+        return DeepSeekSpeechFailure.network;
+    }
+  } on FormatException {
+    // Not the bridge's JSON (an older engine's 404 page): by status.
+  }
+  return _failureOf(status, account: account);
+}
+
 /// The message in an error body (`{"error":{"message"}}` or plain text), short.
 String _detail(List<int> body) {
   final text = utf8.decode(body.take(400).toList(), allowMalformed: true).trim();
@@ -229,7 +250,10 @@ class BridgeDeepSeekSpeech implements DeepSeekSpeech {
     }
     if (_closed) return;
     if (response.statusCode != 200) {
-      throw DeepSeekSpeechError(_failureOf(response.statusCode, account: _account), _detail(response.body));
+      throw DeepSeekSpeechError(
+        _bridgeFailure(response.statusCode, response.body, account: _account),
+        _detail(response.body),
+      );
     }
     if (response.body.isNotEmpty) yield Uint8List.fromList(response.body);
   }
@@ -250,7 +274,10 @@ class BridgeDeepSeekSpeech implements DeepSeekSpeech {
       throw DeepSeekSpeechError(DeepSeekSpeechFailure.network, error.message);
     }
     if (response.statusCode != 200) {
-      throw DeepSeekSpeechError(_failureOf(response.statusCode, account: _account), _detail(response.body));
+      throw DeepSeekSpeechError(
+        _bridgeFailure(response.statusCode, response.body, account: _account),
+        _detail(response.body),
+      );
     }
     return _textOf(response.body);
   }
