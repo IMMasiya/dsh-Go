@@ -198,7 +198,7 @@ TavernAuthoringTarget _authoringPhysicalTarget(String resourceId) {
 
 Never _unsupportedAuthoringApply(String resourceId) => throw TavernAuthoringException(
   'unsupported_apply',
-  'This source has no supported adoption base; rebase an older character or book draft explicitly.',
+  'This saved source has no supported in-place adoption base.',
   physicalResourceId: resourceId,
 );
 

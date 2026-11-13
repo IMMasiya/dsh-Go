@@ -11,11 +11,28 @@ import 'dart:typed_data';
 import '../api.dart';
 import '../authoring.dart';
 import '../authoring_authority.dart';
+import '../authoring_seed.dart';
 import '../import_report.dart';
 import '../io/authoring_text.dart';
 import '../io/card_codec.dart';
 import '../regex_library.dart';
 import '../worldinfo/world_info.dart';
+
+/// Detached media supplied by a seed or read under the current source queue.
+final class AuthoringCardMedia {
+  const AuthoringCardMedia({
+    required this.sourceFormat,
+    required this.originalBytes,
+    this.assets = const {},
+    this.png,
+    this.fileName,
+  });
+  final TavernCardFormat sourceFormat;
+  final Uint8List originalBytes;
+  final Map<String, Uint8List> assets;
+  final Uint8List? png;
+  final String? fileName;
+}
 
 class StoredCharacter {
   const StoredCharacter({
@@ -210,7 +227,173 @@ class CharacterLibrary {
     final report = await inspect?.call(card);
     final importedAt = _now().toUtc();
     final id = _newId();
-    final rawText = jsonEncode(card.json);
+    final saved = await _importPrepared(id, card, portrait, importedAt, fileName: fileName, report: report);
+    return saved.record;
+  });
+
+  /// Creates a new card in this same physical queue. Current-source media is
+  /// read only after its saved authority and raw identity still match.
+  Future<TavernAuthoringSaveAsReceipt> importAuthoringEnvelope(
+    String rawText, {
+    required String domainId,
+    required String operationId,
+    required Map<String, Object?> parameters,
+    required TavernAuthoringMediaSelection media,
+    required List<String> mediaRefs,
+    required String sourceFormat,
+    AuthoringCardMedia? seedMedia,
+    ({String id, AuthoringExpectation expected})? currentSource,
+    void Function()? check,
+    Future<TavernImportReport> Function(TavernCard card)? inspect,
+  }) => _exclusive(() async {
+    _checkManagedWriter();
+    final owner = authority;
+    if (owner == null) {
+      throw StateError('Authoring requires the managed character authority.');
+    }
+    final replayed = replayAuthoringSaveAs(owner, domainId, operationId, parameters);
+    if (replayed != null) {
+      return replayed;
+    }
+    if (domainId != owner.domainId) {
+      throw const TavernAuthoringException('authority_conflict', 'The operation domain changed.');
+    }
+    await _tidy();
+    final bytes = Uint8List.fromList(utf8.encode(rawText));
+    final (document, projection) = await _decodeAuthoringImport(bytes);
+    final AuthoringCardMedia selected;
+    switch (media) {
+      case TavernAuthoringMediaSelection.none:
+        selected = AuthoringCardMedia(sourceFormat: TavernCardFormat.json, originalBytes: bytes);
+      case TavernAuthoringMediaSelection.seedCaptured:
+        selected = seedMedia!;
+      case TavernAuthoringMediaSelection.currentSource:
+        final source = currentSource!;
+        _checkManagedWriter(source.id);
+        final fresh = await _readAuthoringResource(source.id);
+        final revision = owner.observe('character:${source.id}', fresh);
+        if (revision != source.expected.revision || !fresh.sameAs(source.expected.before)) {
+          throw TavernAuthoringException(
+            'authority_conflict',
+            'The current media source changed.',
+            physicalResourceId: 'character:${source.id}',
+          );
+        }
+        final metadata = jsonDecode(decodeAuthoringText(utf8.encode(fresh.identityText!)).text) as Map<String, Object?>;
+        final format = TavernCardFormat.values.byName(metadata['sourceFormat']! as String);
+        final sourceDirectory = '${_characters.path}/${source.id}';
+        final assets = <String, Uint8List>{};
+        for (final path in mediaRefs) {
+          if (!isSafeCardAssetPath(path)) {
+            throw const TavernImportError('资料库资源路径无效。');
+          }
+          assets[path] = await File('$sourceDirectory/resources/$path').readAsBytes();
+        }
+        selected = AuthoringCardMedia(
+          sourceFormat: format,
+          assets: assets,
+          originalBytes: await File('$sourceDirectory/original.${format.name}').readAsBytes(),
+          png: metadata['hasPng'] == true ? await File('$sourceDirectory/source.png').readAsBytes() : null,
+          fileName: metadata['sourceFileName'] is String ? metadata['sourceFileName']! as String : null,
+        );
+    }
+    final card = TavernCard(
+      json: projection,
+      assets: selected.assets,
+      png: selected.png,
+      originalBytes: selected.originalBytes,
+      sourceFormat: selected.sourceFormat,
+    );
+    final portrait = await _authoringPortrait(card);
+    final report = await inspect?.call(
+      TavernCard(
+        json: document,
+        assets: selected.assets,
+        png: selected.png,
+        originalBytes: selected.originalBytes,
+        sourceFormat: selected.sourceFormat,
+      ),
+    );
+    final copied = media == TavernAuthoringMediaSelection.none
+        ? <String>[]
+        : [
+            'original.${selected.sourceFormat.name}',
+            if (selected.png != null) 'source.png',
+            for (final path in selected.assets.keys) 'resources/$path',
+          ];
+    final missing = <String>{...mediaRefs, if (sourceFormat == 'png') 'ccdefault:'};
+    final data = document['data']! as Map<String, Object?>;
+    final declared = data['assets'];
+    if (declared is List<Object?>) {
+      for (final asset in declared.whereType<Map<String, Object?>>()) {
+        final uri = asset['uri'];
+        if (uri is String && !uri.startsWith('data:')) {
+          missing.add(uri);
+        }
+      }
+    }
+    missing.removeWhere(
+      (reference) => reference == 'ccdefault:'
+          ? selected.png != null
+          : selected.assets.containsKey(embeddedCardAssetPath(reference) ?? reference),
+    );
+    final result = <String, Object?>{
+      'copiedMedia': copied,
+      'issues': [
+        for (final reference in missing) {'type': 'media_not_copied', 'message': reference},
+      ],
+    };
+    String id;
+    do {
+      id = _newId();
+    } while (await FileSystemEntity.type('${_characters.path}/$id', followLinks: false) !=
+        FileSystemEntityType.notFound);
+    final request = AuthoringWriteRequest(
+      domainId: domainId,
+      operationId: operationId,
+      physicalResourceId: 'character:$id',
+      parameters: {...parameters, 'saveAsResult': result},
+    );
+    try {
+      final saved = await _importPrepared(
+        id,
+        card,
+        portrait,
+        _now().toUtc(),
+        fileName: selected.fileName,
+        report: report,
+        exactText: rawText,
+        actualData: data,
+        request: request,
+        check: check,
+      );
+      return authoringSaveAsReceipt(saved.receipt!, result);
+    } on TavernAuthoringException catch (error) {
+      final receipt = error.receipt;
+      if (error.code != 'resource_write_failed' ||
+          receipt == null ||
+          receipt.domainId != domainId ||
+          receipt.operationId != operationId ||
+          receipt.physicalResourceId != request.physicalResourceId) {
+        rethrow;
+      }
+      return authoringSaveAsReceipt(receipt, result);
+    }
+  });
+
+  Future<({StoredCharacter record, TavernAuthoringReceipt? receipt})> _importPrepared(
+    String id,
+    TavernCard card,
+    Uint8List? portrait,
+    DateTime importedAt, {
+    String? fileName,
+    TavernImportReport? report,
+    String? exactText,
+    Map<String, Object?>? actualData,
+    AuthoringWriteRequest? request,
+    void Function()? check,
+  }) async {
+    final rawText = exactText ?? jsonEncode(card.json);
     final identityText = jsonEncode({
       'version': 1,
       'importedAt': importedAt.toIso8601String(),
@@ -247,17 +430,26 @@ class CharacterLibrary {
       }
       if (owner != null) {
         final before = await _readAuthoringResource(id);
+        if (request != null && before.present) {
+          throw TavernAuthoringException(
+            'authority_conflict',
+            'The new character target is no longer absent.',
+            physicalResourceId: 'character:$id',
+          );
+        }
         final after = AuthoringResourceSnapshot(present: true, rawText: rawText, identityText: identityText);
         ticket = AuthoringWriteTicket(
-          request: owner.newRequest('character:$id', {'method': 'importCard', 'after': after.toJson()}),
+          request: request ?? owner.newRequest('character:$id', {'method': 'importCard', 'after': after.toJson()}),
           before: before,
           after: after,
           artifacts: ['characters/${_name(staging)}'],
         );
-        final replayed = owner.prepare(ticket);
+        final replayed = owner.prepare(ticket, check: check);
         if (replayed != null) {
           final existing = await _read(id);
-          if (replayed.committed == true && existing != null) return existing;
+          if (replayed.committed == true && existing != null) {
+            return (record: existing, receipt: replayed);
+          }
           throw TavernAuthoringException(
             'resource_write_failed',
             'The import operation is already recorded.',
@@ -272,7 +464,7 @@ class CharacterLibrary {
       ticket?.enteredEffect = true;
       await staging.rename(destination.path);
       ticket?.knownAdopted = true;
-      cardCommitted?.call(id, card.data);
+      cardCommitted?.call(id, actualData ?? card.data);
       if (ticket != null) owner!.adopted(ticket);
       final record = StoredCharacter(
         id: id,
@@ -282,8 +474,7 @@ class CharacterLibrary {
         directoryPath: destination.absolute.path,
       );
       await _writeSummary(_summarize(record));
-      if (ticket != null) owner!.publish(ticket);
-      return record;
+      return (record: record, receipt: ticket == null ? null : owner!.publish(ticket));
     } catch (error, stack) {
       if (ticket != null) owner!.fail(ticket, error, stack);
       rethrow;
@@ -293,7 +484,7 @@ class CharacterLibrary {
         await _discard(staging);
       }
     }
-  });
+  }
 
   Future<StoredCharacter?> read(String id) => _exclusive(() async {
     _requireId(id);
@@ -1273,6 +1464,19 @@ Map<String, Object?> _mergeBookExtensions(Map<String, Object?> current, Map<Stri
 
 // Top-level helpers keep an isolate callback from capturing the library's
 // operation queue (and its unsendable Futures) through a surrounding closure.
+Future<(Map<String, Object?>, Map<String, Object?>)> _decodeAuthoringImport(Uint8List bytes) => Isolate.run(() {
+  const codec = CardCodec();
+  try {
+    return (codec.decodeAuthority(bytes), codec.decode(bytes).json);
+  } on FormatException {
+    throw const TavernAuthoringException('invalid_change', 'The candidate character envelope is invalid.');
+  } on TavernImportError {
+    throw const TavernAuthoringException('invalid_change', 'The candidate character envelope is invalid.');
+  }
+});
+
+Future<Uint8List?> _authoringPortrait(TavernCard card) => Isolate.run(() => const CardCodec().portraitPng(card));
+
 Future<(TavernCard, Uint8List?)> _decodeImport(Uint8List bytes) => Isolate.run(() {
   const codec = CardCodec();
   final card = codec.decode(bytes);
@@ -1302,4 +1506,42 @@ Future<void> _discard(Directory directory) async {
     // The rename already made deletion final. Retry residual cleanup on the
     // next operation; never restore a character the user deleted.
   }
+}
+
+/// Reuses only prepared result metadata. Caller parameters must still pass the
+/// authority's ordinary operation-id comparison before any result is decoded.
+TavernAuthoringSaveAsReceipt? replayAuthoringSaveAs(
+  AuthoringAuthority authority,
+  String domainId,
+  String operationId,
+  Map<String, Object?> parameters,
+) {
+  final saved = authority.recordedRequest(domainId, operationId);
+  if (saved == null) {
+    return null;
+  }
+  final request = AuthoringWriteRequest(
+    domainId: domainId,
+    operationId: operationId,
+    physicalResourceId: saved.physicalResourceId,
+    parameters: {...parameters, 'saveAsResult': saved.parameters['saveAsResult']},
+  );
+  final receipt = authority.replay(request)!;
+  return authoringSaveAsReceipt(receipt, saved.parameters['saveAsResult']! as Map<String, Object?>);
+}
+
+TavernAuthoringSaveAsReceipt authoringSaveAsReceipt(TavernAuthoringReceipt outcome, Map<String, Object?> result) {
+  final character = outcome.physicalResourceId.startsWith('character:');
+  return TavernAuthoringSaveAsReceipt(
+    outcome: outcome,
+    newTarget: TavernAuthoringTarget(
+      kind: character ? TavernAuthoringTargetKind.character : TavernAuthoringTargetKind.lorebook,
+      id: outcome.physicalResourceId.substring(character ? 10 : 9),
+    ),
+    copiedMedia: List.unmodifiable((result['copiedMedia']! as List<Object?>).cast<String>()),
+    issues: List.unmodifiable([
+      for (final item in (result['issues']! as List<Object?>).cast<Map<String, Object?>>())
+        TavernAuthoringIssue(type: item['type']! as String, message: item['message']! as String),
+    ]),
+  );
 }

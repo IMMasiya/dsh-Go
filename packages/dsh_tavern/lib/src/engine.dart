@@ -5,6 +5,7 @@ import 'dart:async';
 import 'dart:collection';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:isolate';
 import 'dart:math';
 import 'dart:typed_data';
 
@@ -14,13 +15,15 @@ import 'package:sqlite3/sqlite3.dart' show SqliteException;
 import 'api.dart';
 import 'authoring.dart';
 import 'authoring_authority.dart';
+import 'authoring_run.dart';
+import 'authoring_seed.dart';
 import 'backup.dart';
 import 'director.dart';
 import 'director/direct_tool.dart' as director_core;
 import 'import_report.dart';
 import 'inspection.dart';
 import 'io/authoring_text.dart';
-import 'io/card_codec.dart' show CardCodec, TavernCard;
+import 'io/card_codec.dart' show CardCodec, DecodedCardSeed, TavernCard;
 import 'io/chat_jsonl.dart';
 import 'io/import_intake.dart';
 import 'io/preset_codec.dart';
@@ -62,6 +65,8 @@ part 'engine_profile.dart';
 part 'engine_prompt_history.dart';
 part 'engine_authoring.dart';
 part 'engine_authoring_apply.dart';
+part 'engine_authoring_run.dart';
+part 'engine_authoring_seed.dart';
 part 'engine_tools.dart';
 part 'engine_director.dart';
 part 'engine_director_watch.dart';
@@ -269,6 +274,7 @@ class TavernEngine implements Tavern {
         await regexLibrary.initialize();
         store = ChatStore.open('${directory.path}/tavern.sqlite3', clock: now);
         final authority = AuthoringAuthority(root: directory, store: store);
+        store.interruptAuthoringRuns();
         final result = TavernEngine._(
           directory,
           store,
@@ -342,6 +348,7 @@ class TavernEngine implements Tavern {
   final _deletingPersonas = <String>{};
   final _deletingPresets = <String>{};
   final _operations = <Future<void>>{};
+  final _authoringRuns = <String, _AuthoringRunRecord>{};
   final _inspections = <String, TavernInspection>{};
   // A null entry is a tombstone: never fall back to an older disk snapshot
   // after deleting the context of a more recent in-memory attempt.
@@ -473,6 +480,39 @@ class TavernEngine implements Tavern {
     revision: revision,
     expectedAuthorityRevision: expectedAuthorityRevision,
     operationId: operationId,
+  );
+
+  @override
+  TavernAuthoringRun startAuthoringRun(TavernAuthoringRunRequest request) => _startAuthoringRun(request);
+  @override
+  Future<TavernAuthoringRunSnapshot?> readAuthoringRun(String runId) => _readAuthoringRun(runId);
+  @override
+  Future<List<TavernAuthoringRunSummary>> listAuthoringRuns({String? draftId, int limit = 30, String? beforeRunId}) =>
+      _listAuthoringRuns(draftId: draftId, limit: limit, beforeRunId: beforeRunId);
+  @override
+  Future<TavernAuthoringToolReceipt?> readAuthoringToolReceipt(String runId, String receiptId) =>
+      _readAuthoringToolReceipt(runId, receiptId);
+  @override
+  Future<void> cancelAuthoringRun(String runId) => _cancelAuthoringRun(runId);
+  @override
+  Future<TavernAuthoringDraft> createAuthoringSeed(TavernAuthoringSeedInput input) => _createAuthoringSeed(input);
+  @override
+  Future<TavernAuthoringSaveAsReceipt> saveAuthoringAsNew(
+    String draftId, {
+    required int draftRevision,
+    required String physicalResourceId,
+    required List<String> changeIds,
+    required String operationId,
+    required TavernAuthoringMediaSelection media,
+    String? domainId,
+  }) => _saveAuthoringAsNew(
+    draftId,
+    draftRevision: draftRevision,
+    physicalResourceId: physicalResourceId,
+    changeIds: changeIds,
+    operationId: operationId,
+    media: media,
+    domainId: domainId,
   );
 
   // Acquire this queue before chat barriers for bind/delete. Taking them in
@@ -2469,6 +2509,7 @@ class TavernEngine implements Tavern {
     String? exactText,
     AuthoringWriteRequest? request,
     AuthoringExpectation? expected,
+    bool requireMissing = false,
   }) {
     final result = _fileQueue.then((_) async {
       final owner = _authoringAuthority;
@@ -2535,6 +2576,9 @@ class TavernEngine implements Tavern {
       final text = exactText ?? jsonEncode(document);
       final file = File('${directory.path}/lorebooks/$id.json');
       final before = await _readBookResource(file);
+      if (requireMissing && before.present) {
+        _authoringAuthorityConflict('lorebook:$id');
+      }
       final after = AuthoringResourceSnapshot(present: true, rawText: text);
       final ticket = AuthoringWriteTicket(
         request: request ?? owner.newRequest('lorebook:$id', {'method': 'writeLorebook', 'after': after.toJson()}),
@@ -4929,6 +4973,7 @@ class TavernEngine implements Tavern {
 
   Future<void> _close() async {
     _closing = true;
+    _cancelAuthoringRuns();
     _scripts.close();
     for (final group in _groups.rounds.values) {
       group.cancel();
@@ -4962,6 +5007,7 @@ class TavernEngine implements Tavern {
     await _bookQueue;
     await _personaSubscription.cancel();
     await _storeSubscription.cancel();
+    _authoringRuns.clear();
     _liveVariables.clear();
     _latestInspections.clear();
     _inspections.clear();

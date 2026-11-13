@@ -96,6 +96,24 @@ final class AuthoringAuthority {
   /// moved away. This preserves the blocking operation's identity on all exits.
   void checkWritable(String resourceId) => _checkPending(resourceId, _store.readAuthoringResource(resourceId));
 
+  /// Reads a reserved target for SaveAs replay without reconciling that
+  /// operation before the caller's complete parameters have been checked.
+  AuthoringWriteRequest? recordedRequest(String domainId, String operationId) {
+    final live = _live[(domainId, operationId)];
+    if (live != null) {
+      return live.request;
+    }
+    final saved = _store.readAuthoringOperationData(domainId, operationId);
+    return saved == null
+        ? null
+        : AuthoringWriteRequest(
+            domainId: saved.domainId,
+            operationId: saved.operationId,
+            physicalResourceId: saved.physicalResourceId,
+            parameters: saved.request,
+          );
+  }
+
   TavernAuthoringReceipt? replay(AuthoringWriteRequest request) {
     final live = _live[(request.domainId, request.operationId)];
     if (live != null) {

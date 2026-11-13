@@ -35,8 +35,10 @@ final class TavernAuthoringException implements Exception {
 
 enum TavernAuthoringTargetKind { character, lorebook, regexLibrary, preset }
 
-/// An existing resource. An embedded book belongs to its character target;
-/// the managed regex library is one target with id = 'global'.
+enum TavernAuthoringSourceOrigin { existing, seed }
+
+/// A resource named in a draft. A seed reserves an ID without a live file.
+/// Embedded books belong to their character; the regex library uses 'global'.
 final class TavernAuthoringTarget {
   const TavernAuthoringTarget({required this.kind, required this.id});
 
@@ -77,9 +79,11 @@ final class TavernAuthoringSource {
     this.mediaRefs = const [],
     this.authorityRevision,
     this.applySupported = false,
+    this.origin = TavernAuthoringSourceOrigin.existing,
   });
 
   final TavernAuthoringTarget target;
+  final TavernAuthoringSourceOrigin origin;
   String get physicalResourceId => target.physicalResourceId;
   final String sourceFormat;
   final Map<String, Object?> base;

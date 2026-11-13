@@ -9,6 +9,8 @@
 import 'dart:typed_data';
 
 import 'authoring.dart';
+import 'authoring_run.dart';
+import 'authoring_seed.dart';
 import 'backup.dart';
 import 'director.dart';
 import 'import_report.dart';
@@ -543,6 +545,29 @@ abstract interface class Tavern {
     required TavernAuthorityRevision revision,
     required TavernAuthorityRevision expectedAuthorityRevision,
     required String operationId,
+  });
+
+  /// Starts a separate authoring conversation whose tools only edit drafts.
+  /// Reusing the same run identity never sends another model request.
+  TavernAuthoringRun startAuthoringRun(TavernAuthoringRunRequest request);
+  Future<TavernAuthoringRunSnapshot?> readAuthoringRun(String runId);
+  Future<List<TavernAuthoringRunSummary>> listAuthoringRuns({String? draftId, int limit = 30, String? beforeRunId});
+  Future<TavernAuthoringToolReceipt?> readAuthoringToolReceipt(String runId, String receiptId);
+  Future<void> cancelAuthoringRun(String runId);
+
+  /// Saves an imported container as a draft, retaining its raw source and media.
+  Future<TavernAuthoringDraft> createAuthoringSeed(TavernAuthoringSeedInput input);
+
+  /// Creates one new resource without changing the source draft. Preserve the
+  /// returned operation domain on retries, especially after a root restore.
+  Future<TavernAuthoringSaveAsReceipt> saveAuthoringAsNew(
+    String draftId, {
+    required int draftRevision,
+    required String physicalResourceId,
+    required List<String> changeIds,
+    required String operationId,
+    required TavernAuthoringMediaSelection media,
+    String? domainId,
   });
 
   // Library ------------------------------------------------------------------

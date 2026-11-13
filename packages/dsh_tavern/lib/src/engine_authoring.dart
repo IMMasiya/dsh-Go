@@ -54,6 +54,9 @@ extension _AuthoringOperations on TavernEngine {
     final captured = _captureAuthoringChanges(changes);
     final stored = _requireAuthoringDraft(id, revision);
     final old = _authoringView(stored);
+    if (rebase && old.sources.any((source) => source.origin == TavernAuthoringSourceOrigin.seed)) {
+      throw const TavernAuthoringException('unsupported_seed', 'A seed has no live resource to rebase.');
+    }
     final sources = rebase
         ? [for (final source in old.sources) await _captureAuthoringSource(source.target)]
         : stored.data['sources']! as List<Object?>;
@@ -363,6 +366,13 @@ TavernAuthoringDraft _authoringView(StoredAuthoringDraft stored) {
 TavernAuthoringSource _authoringSourceView(Map<String, Object?> data) {
   final target = _authoringTarget(data['target']! as Map<String, Object?>);
   final token = data['authorityRevision'];
+  final origin = TavernAuthoringSourceOrigin.values.byName(data['origin'] as String? ?? 'existing');
+  if (origin == TavernAuthoringSourceOrigin.seed &&
+      (token != null ||
+          data['present'] != false ||
+          (target.kind != TavernAuthoringTargetKind.character && target.kind != TavernAuthoringTargetKind.lorebook))) {
+    _authoringInvalid('The saved seed source is invalid.', resourceId: target.physicalResourceId);
+  }
   TavernAuthorityRevision? revision;
   if (token != null) {
     if (token is! Map<String, Object?> ||
@@ -381,6 +391,7 @@ TavernAuthoringSource _authoringSourceView(Map<String, Object?> data) {
   }
   return TavernAuthoringSource(
     target: target,
+    origin: origin,
     sourceFormat: data['sourceFormat']! as String,
     base: data['base']! as Map<String, Object?>,
     mediaRefs: (data['mediaRefs']! as List<Object?>).cast<String>().toList(),
