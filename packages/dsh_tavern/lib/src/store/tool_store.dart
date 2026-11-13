@@ -850,6 +850,35 @@ extension ToolStore on ChatStore {
     });
   }
 
+  /// One statement lists identities without decoding request/inspection data.
+  List<TavernToolTurnSummary> recentToolTurns(String chatId, {int limit = 20}) {
+    _ensureOpen();
+    if (limit < 0) throw ArgumentError.value(limit, 'limit', 'Must be non-negative.');
+    final rows = _db.select(
+      '''
+      WITH recent AS (
+        SELECT rowid AS ordinal, id, chat_id, reply_commit_adopted, candidate_live_node_id, candidate_seq
+        FROM tool_turns WHERE chat_id = ? ORDER BY rowid DESC LIMIT ?
+      )
+      SELECT char(1) || t.id AS logical_turn_id, char(1) || n.id AS reply_node_id
+      FROM chats c LEFT JOIN recent t ON t.chat_id = c.id
+        LEFT JOIN nodes n ON t.reply_commit_adopted = 1 AND n.id = t.candidate_live_node_id
+          AND n.chat_id = t.chat_id AND n.seq = t.candidate_seq AND n.deleted_by IS NULL
+      WHERE c.id = ? ORDER BY t.ordinal DESC
+    ''',
+      [chatId, limit, chatId],
+    );
+    if (rows.isEmpty) throw StateError('Chat not found: $chatId');
+    return [
+      for (final row in rows)
+        if (row['logical_turn_id'] != null)
+          TavernToolTurnSummary(
+            logicalTurnId: ChatStore._unguardText(row['logical_turn_id'])!,
+            replyNodeId: ChatStore._unguardText(row['reply_node_id']),
+          ),
+    ];
+  }
+
   TavernToolTurnSnapshot? readToolTurn(String logicalTurnId) {
     _toolIdentity(logicalTurnId, 'logicalTurnId');
     final row = _toolRow('tool_turns', logicalTurnId);

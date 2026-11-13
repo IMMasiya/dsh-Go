@@ -158,12 +158,9 @@ final class ChatJsonlCodec {
   /// again. Single-node deletion uses this before reparenting even children
   /// hidden by a pending subtree deletion. Does not mutate [chat] or [state].
   Map<String, Object?> metadataForState(StoredChat chat, Map<String, Object?> state) {
-    var metadata = _clone(chat.metadata);
     final source = state[_sourceKey];
     final header = _sourceFor(chat.metadata, source);
-    if (header != null) {
-      metadata = _map(header['chat_metadata']);
-    }
+    final metadata = header == null ? _clone(chat.metadata) : _map(header['chat_metadata']);
     metadata.remove('variables');
     if (state['variables'] is Map<String, Object?>) {
       metadata['variables'] = _map(state['variables']);

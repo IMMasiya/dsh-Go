@@ -236,8 +236,25 @@ void main() {
       (db) => db.execute('UPDATE chats SET settings = ? WHERE id = ?', [
         jsonEncode({
           'unrelated': {'keep': 7},
-          'toolPolicy': 23,
+          'toolPolicy': {
+            'roll': {'enabled': true},
+          },
         }),
+        h.chatId,
+      ]),
+    );
+    final preserved = await h.engine.setToolPolicy({
+      'roll': {'enabled': false},
+    }, chatId: h.chatId);
+    expect(preserved.committed, isTrue);
+    final savedSettings = h.database(
+      (db) =>
+          jsonDecode(db.select('SELECT settings FROM chats WHERE id = ?', [h.chatId]).single['settings']! as String),
+    );
+    expect(stage1Map(savedSettings)['unrelated'], {'keep': 7});
+    h.database(
+      (db) => db.execute('UPDATE chats SET settings = ? WHERE id = ?', [
+        jsonEncode({'toolPolicy': 23}),
         h.chatId,
       ]),
     );

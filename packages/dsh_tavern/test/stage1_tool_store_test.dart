@@ -33,7 +33,7 @@ void main() {
       await store.close();
       await directory.delete(recursive: true);
     });
-    expect(database.select('PRAGMA user_version').single['user_version'], 8);
+    expect(database.select('PRAGMA user_version').single['user_version'], ChatStore.schemaVersion);
     final row = database.select('SELECT rowid, * FROM memories').single;
     expect(row['rowid'], 19);
     expect(row['entry_json'], raw);

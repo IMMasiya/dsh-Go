@@ -714,6 +714,9 @@ _StagedStateCall _evaluateStateCall(
   if (!call.originalArgumentsStringComplete && call.issues.isEmpty) {
     problems.add(_stateIssue('incomplete-tool-arguments', '', 'The original tool argument string is not complete.'));
   }
+  if (call.unsupportedEnvelope) {
+    problems.add(_stateIssue('unsupported-tool-envelope', '', 'The tool call envelope is not supported.'));
+  }
   if (!normal) {
     problems.add(
       _stateIssue(
