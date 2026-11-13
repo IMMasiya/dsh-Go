@@ -24,6 +24,14 @@
         }
       }
     },
+    "config-editor-lock-order.diff": {
+      "0.2.2-rc.1": {
+        "node_modules/@deepseek-ai/dsh-config-editor/lib/index.js": {
+          "after": "5afb26351f03086d97f5c3028bf80c49c495c367dd68f26473a1da0424601427",
+          "before": "8bcc6f2ea0ace1438ea5497fbc5417b1af53f8805b663b776e8d6a5231c1940f"
+        }
+      }
+    },
     "cordis-effect-dispose-completion.diff": {
       "0.2.2-rc.1": {
         "node_modules/@deepseek-ai/cordis/lib/index.js": {
