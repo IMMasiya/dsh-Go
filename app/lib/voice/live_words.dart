@@ -1,18 +1,19 @@
-// Live captions for a call: the call's own microphone (a PCM tap on the native
-// capture, no second recorder) through the phone's streaming recognizer, while
-// the downloaded model is there. What the person says appears as they say it.
+// Words as they are spoken: a recorder's PCM (a tap on the native capture, no
+// second recorder) through the phone's streaming recognizer, while its model is
+// downloaded. A call shows them as captions; dictation as provisional text.
 
 import 'dart:async';
 
-import '../../../voice/streaming_asr.dart';
-import '../../../voice/streaming_pcm.dart';
+import 'streaming_asr.dart';
+import 'streaming_pcm.dart';
 
-class CallLiveCaptions {
-  CallLiveCaptions(this._pcm, this._asr, this._model, this._onWords);
+class LiveWords {
+  LiveWords(this._pcm, this._asr, this._model, this._source, this._onWords);
 
   final StreamingPcmCapture _pcm;
   final StreamingAsr _asr;
   final StreamingAsrModel _model;
+  final StreamingPcmSource _source;
   final void Function(String words) _onWords;
   StreamSubscription<StreamingAsrEvent>? _events;
   StreamSubscription<Object>? _frames;
@@ -22,7 +23,7 @@ class CallLiveCaptions {
     await _asr.start(_model);
     // A frame that lands while it stops is simply not heard.
     _frames = _pcm.frames.listen((frame) => unawaited(_asr.feed(frame).catchError((Object _) {})));
-    await _pcm.start(StreamingPcmSource.call);
+    await _pcm.start(_source);
   }
 
   Future<void> stop() async {

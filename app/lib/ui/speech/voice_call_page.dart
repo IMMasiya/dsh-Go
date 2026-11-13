@@ -37,8 +37,9 @@ import '../theme/theme.dart';
 import '../../state/streaming_asr_model_state.dart';
 import '../../state/streaming_asr_state.dart';
 import '../../state/streaming_pcm_state.dart';
+import '../../voice/live_words.dart';
+import '../../voice/streaming_pcm.dart';
 import 'call/call_backdrop.dart';
-import 'call/call_live.dart';
 import 'call/call_parts.dart';
 import 'call/call_visuals.dart';
 import 'speech_ui.dart';
@@ -146,7 +147,7 @@ class _VoiceCallPageState extends ConsumerState<VoiceCallPage> with WidgetsBindi
   }
 
   /// Live captions, once the call listens, when the streaming model is on the phone.
-  CallLiveCaptions? _live;
+  LiveWords? _live;
 
   Future<void> _start() async {
     final pcm = ref.read(streamingPcmCaptureProvider);
@@ -156,7 +157,7 @@ class _VoiceCallPageState extends ConsumerState<VoiceCallPage> with WidgetsBindi
     try {
       final model = await (await store).installed();
       if (model == null || !mounted || _call.phase == CallPhase.ended) return;
-      final live = _live = CallLiveCaptions(pcm, asr, model, _call.live);
+      final live = _live = LiveWords(pcm, asr, model, StreamingPcmSource.call, _call.live);
       await live.start();
     } on Object {
       // Without live captions the call goes on as before.

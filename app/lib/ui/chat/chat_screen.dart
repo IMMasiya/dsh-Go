@@ -18,6 +18,11 @@ import '../../runtime/runtime_state.dart' show localRuntimeProvider;
 import '../../speech/read_aloud.dart';
 import '../../speech/voice_cloud.dart';
 import '../speech/voice_call_page.dart';
+import '../../state/streaming_asr_model_state.dart';
+import '../../state/streaming_asr_state.dart';
+import '../../state/streaming_pcm_state.dart';
+import '../../voice/live_words.dart';
+import '../../voice/streaming_pcm.dart';
 import '../../state/agents_state.dart' show subagentParentProvider;
 import '../../state/attachments.dart';
 import '../../state/balance_state.dart';
@@ -359,6 +364,20 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
       mode: () => ref.read(voiceSettingsProvider.notifier).ready(),
       cloud: (mode) => ref.read(voiceCloudProvider)(mode),
       cloudLikely: () => ref.read(voiceCloudLikelyProvider)(),
+      liveWords: (onWords) async {
+        final pcm = ref.read(streamingPcmCaptureProvider);
+        final asr = ref.read(streamingAsrProvider);
+        try {
+          final model = await (await ref.read(streamingAsrModelStoreProvider.future)).installed();
+          if (model == null || !mounted) return null;
+          final live = LiveWords(pcm, asr, model, StreamingPcmSource.dictation, onWords);
+          await live.start();
+          return live;
+        } on Object {
+          // Without live words dictation works as before.
+          return null;
+        }
+      },
       // The voice model lives in the on-device engine: it counts for that host only.
       modelReady: () =>
           mounted &&
