@@ -101,7 +101,7 @@ class TavernChatToolSection extends ConsumerWidget {
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
           child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             spacing: 4,
             children: [
               Text(
