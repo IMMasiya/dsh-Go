@@ -174,6 +174,53 @@ class PreviewTavern implements Tavern, TavernPreview {
   Future<List<TavernToolTurnSummary>> recentToolTurns(String chatId, {int limit = 20}) =>
       _noTool('recentToolTurns', chatId: chatId);
 
+  // 做卡草稿 (stage 2A): the preview keeps none; there is nothing to list or
+  // read, and nothing is made up for a draft that would be written.
+  static Future<T> _noDraft<T>() => Future<T>.error(UnsupportedError('The preview keeps no authoring drafts.'));
+
+  @override
+  Future<List<TavernAuthoringDraftSummary>> listAuthoringDrafts() async => const [];
+
+  @override
+  Future<TavernAuthoringDraft?> readAuthoringDraft(String draftId) async => null;
+
+  @override
+  Future<TavernAuthoringDraft> createAuthoringDraft(List<TavernAuthoringTarget> targets) => _noDraft();
+
+  @override
+  Future<TavernAuthoringDraft> editAuthoringDraft(
+    String draftId, {
+    required int draftRevision,
+    required List<TavernAuthoringChange> changes,
+  }) => _noDraft();
+
+  @override
+  Future<TavernAuthoringDraft> rebaseAuthoringDraft(
+    String draftId, {
+    required int draftRevision,
+    required List<TavernAuthoringChange> changes,
+  }) => _noDraft();
+
+  @override
+  Future<void> deleteAuthoringDraft(String draftId, {required int draftRevision}) => _noDraft();
+
+  @override
+  Future<TavernAuthoringPreview> previewAuthoringDraft(
+    String draftId, {
+    required int draftRevision,
+    required List<String> changeIds,
+  }) => _noDraft();
+
+  @override
+  Future<TavernAuthoringRegexTest> testAuthoringRegex(
+    String draftId, {
+    required int draftRevision,
+    required List<String> changeIds,
+    required String physicalResourceId,
+    required String scriptPath,
+    required String text,
+  }) => _noDraft();
+
   /// The engine sums in one query; the preview adds up its line, a page at
   /// a time through [path] (as a test's line overrides it), the same way.
   @override

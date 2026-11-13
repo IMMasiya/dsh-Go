@@ -127,6 +127,58 @@ class DeferredTavern implements Tavern {
   Future<List<TavernPathUsage>> pathUsage(String chatId) async => (await _ready).pathUsage(chatId);
 
   @override
+  Future<TavernAuthoringDraft> createAuthoringDraft(List<TavernAuthoringTarget> targets) async =>
+      (await _ready).createAuthoringDraft(targets);
+
+  @override
+  Future<TavernAuthoringDraft?> readAuthoringDraft(String draftId) async => (await _ready).readAuthoringDraft(draftId);
+
+  @override
+  Future<List<TavernAuthoringDraftSummary>> listAuthoringDrafts() async => (await _ready).listAuthoringDrafts();
+
+  @override
+  Future<TavernAuthoringDraft> editAuthoringDraft(
+    String draftId, {
+    required int draftRevision,
+    required List<TavernAuthoringChange> changes,
+  }) async => (await _ready).editAuthoringDraft(draftId, draftRevision: draftRevision, changes: changes);
+
+  @override
+  Future<TavernAuthoringDraft> rebaseAuthoringDraft(
+    String draftId, {
+    required int draftRevision,
+    required List<TavernAuthoringChange> changes,
+  }) async => (await _ready).rebaseAuthoringDraft(draftId, draftRevision: draftRevision, changes: changes);
+
+  @override
+  Future<void> deleteAuthoringDraft(String draftId, {required int draftRevision}) async =>
+      (await _ready).deleteAuthoringDraft(draftId, draftRevision: draftRevision);
+
+  @override
+  Future<TavernAuthoringPreview> previewAuthoringDraft(
+    String draftId, {
+    required int draftRevision,
+    required List<String> changeIds,
+  }) async => (await _ready).previewAuthoringDraft(draftId, draftRevision: draftRevision, changeIds: changeIds);
+
+  @override
+  Future<TavernAuthoringRegexTest> testAuthoringRegex(
+    String draftId, {
+    required int draftRevision,
+    required List<String> changeIds,
+    required String physicalResourceId,
+    required String scriptPath,
+    required String text,
+  }) async => (await _ready).testAuthoringRegex(
+    draftId,
+    draftRevision: draftRevision,
+    changeIds: changeIds,
+    physicalResourceId: physicalResourceId,
+    scriptPath: scriptPath,
+    text: text,
+  );
+
+  @override
   Future<List<TavernToolTurnSummary>> recentToolTurns(String chatId, {int limit = 20}) async =>
       (await _ready).recentToolTurns(chatId, limit: limit);
 
