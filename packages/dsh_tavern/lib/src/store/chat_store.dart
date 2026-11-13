@@ -6,11 +6,13 @@ import 'dart:math';
 import 'package:sqlite3/sqlite3.dart';
 
 import '../api.dart';
+import '../authoring.dart';
 import '../import_report.dart';
 import '../llm/tool_usage.dart';
 import '../tools.dart';
 
 part 'tool_store.dart';
+part 'authoring_store.dart';
 
 // Mark only persisted ancestor-path damage while preserving legacy StateError semantics.
 class _StoredAncestorDataError extends StateError {
@@ -225,7 +227,7 @@ class ChatStore {
     return ChatStore._(database, clock: clock, createId: createId);
   }
 
-  static const schemaVersion = 9;
+  static const schemaVersion = 10;
 
   // Keys are destination versions. Future upgrades register every successor
   // here and increase schemaVersion; no existing schema is dropped or replayed.
@@ -240,6 +242,7 @@ class ChatStore {
     7: _schemaV7,
     8: _schemaV8,
     9: _schemaV9,
+    10: _schemaV10,
   };
   final Database _db;
   final DateTime Function() _clock;

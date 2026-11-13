@@ -8,6 +8,7 @@
 
 import 'dart:typed_data';
 
+import 'authoring.dart';
 import 'backup.dart';
 import 'director.dart';
 import 'import_report.dart';
@@ -466,6 +467,51 @@ abstract interface class Tavern {
   /// Persisted script data and awaited App lifecycle bridge. Capabilities
   /// distinguish the implemented surface from later script/generation layers.
   TavernScriptBridge get scripts;
+
+  // Authoring drafts ----------------------------------------------------------
+
+  /// Captures existing sources in their actual writer queues. Stage 2A offers
+  /// drafts/static checks only; every source has applySupported = false.
+  Future<TavernAuthoringDraft> createAuthoringDraft(List<TavernAuthoringTarget> targets);
+  Future<TavernAuthoringDraft?> readAuthoringDraft(String draftId);
+
+  /// Summary discovery does not validate every saved change; read or preview
+  /// a draft to validate its complete persisted structure.
+  Future<List<TavernAuthoringDraftSummary>> listAuthoringDrafts();
+
+  /// Replaces the change list, keeping its saved base, and advances the draft
+  /// revision. Input values are captured before the first asynchronous wait.
+  Future<TavernAuthoringDraft> editAuthoringDraft(
+    String draftId, {
+    required int draftRevision,
+    required List<TavernAuthoringChange> changes,
+  });
+
+  /// Explicitly captures a new base and adopts only the resubmitted changes.
+  /// An empty list resets the draft for a subsequent editing step.
+  Future<TavernAuthoringDraft> rebaseAuthoringDraft(
+    String draftId, {
+    required int draftRevision,
+    required List<TavernAuthoringChange> changes,
+  });
+  Future<void> deleteAuthoringDraft(String draftId, {required int draftRevision});
+
+  /// Selects explicit change IDs, checks dependency closure, and runs static
+  /// intake checks. It does not execute macros or write an import report.
+  Future<TavernAuthoringPreview> previewAuthoringDraft(
+    String draftId, {
+    required int draftRevision,
+    required List<String> changeIds,
+  });
+  Future<TavernAuthoringRegexTest> testAuthoringRegex(
+    String draftId, {
+    required int draftRevision,
+    required List<String> changeIds,
+    required String physicalResourceId,
+    required String scriptPath,
+    required String text,
+  });
+
   // Library ------------------------------------------------------------------
 
   /// The saved capability snapshot, or null for a missing/legacy asset.

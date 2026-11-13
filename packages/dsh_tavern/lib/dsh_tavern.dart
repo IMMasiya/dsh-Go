@@ -3,6 +3,7 @@
 library;
 
 export 'src/api.dart';
+export 'src/authoring.dart';
 export 'src/backup.dart';
 export 'src/director.dart';
 export 'src/engine.dart';
@@ -39,6 +40,8 @@ export 'src/regex/regex_worker.dart';
 export 'src/store/character_library.dart';
 export 'src/store/chat_store.dart'
     hide
+        AuthoringStore,
+        StoredAuthoringDraft,
         ToolStore,
         StoredToolOperation,
         StoredToolPhase,

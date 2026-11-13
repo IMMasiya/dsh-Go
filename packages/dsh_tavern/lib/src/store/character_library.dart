@@ -10,6 +10,7 @@ import 'dart:typed_data';
 
 import '../api.dart';
 import '../import_report.dart';
+import '../io/authoring_text.dart';
 import '../io/card_codec.dart';
 import '../regex_library.dart';
 import '../worldinfo/world_info.dart';
@@ -272,6 +273,39 @@ class CharacterLibrary {
     final envelope = await _readAuthorityEnvelope(id);
     if (envelope == null) return null;
     return project(envelope['data']! as Map<String, Object?>);
+  });
+
+  /// Complete source for a persistent authoring base, without loading or
+  /// upgrading original/media bytes. The caller owns the returned JSON.
+  Future<
+    ({Map<String, Object?> document, String rawText, String identityText, String sourceFormat, List<String> mediaRefs})?
+  >
+  readAuthoringSnapshot(String id) => _exclusive(() async {
+    _requireId(id);
+    await _tidy();
+    final directory = Directory('${_characters.path}/$id');
+    final type = await FileSystemEntity.type(directory.path, followLinks: false);
+    if (type == FileSystemEntityType.notFound) return null;
+    if (type != FileSystemEntityType.directory) throw const FileSystemException('Character folder is not a directory');
+    final bytes = await File('${directory.path}/card.json').readAsBytes();
+    final document = const CardCodec().decodeAuthority(bytes);
+    final identity = await readAuthoringText(File('${directory.path}/library.json'));
+    final metadata = jsonDecode(identity.text);
+    if (metadata is! Map<String, Object?> ||
+        metadata['version'] != 1 ||
+        !const ['png', 'json', 'charx'].contains(metadata['sourceFormat']) ||
+        metadata['resources'] is! List<Object?>) {
+      throw const TavernImportError('资料库元数据无效。');
+    }
+    final paths = metadata['resources']! as List<Object?>;
+    if (paths.any((path) => path is! String)) throw const TavernImportError('资料库资源目录无效。');
+    return (
+      document: document,
+      rawText: decodeAuthoringText(bytes).rawText,
+      identityText: identity.rawText,
+      sourceFormat: metadata['sourceFormat']! as String,
+      mediaRefs: paths.cast<String>().toList(),
+    );
   });
 
   /// Internal full-data/embedded-book writer. [prepare] is synchronous and is

@@ -12,12 +12,14 @@ import 'package:crypto/crypto.dart' as crypto;
 import 'package:sqlite3/sqlite3.dart' show SqliteException;
 
 import 'api.dart';
+import 'authoring.dart';
 import 'backup.dart';
 import 'director.dart';
 import 'director/direct_tool.dart' as director_core;
 import 'import_report.dart';
 import 'inspection.dart';
-import 'io/card_codec.dart' show TavernCard;
+import 'io/authoring_text.dart';
+import 'io/card_codec.dart' show CardCodec, TavernCard;
 import 'io/chat_jsonl.dart';
 import 'io/import_intake.dart';
 import 'io/preset_codec.dart';
@@ -57,6 +59,7 @@ import 'worldinfo/world_info.dart';
 part 'engine_state.dart';
 part 'engine_profile.dart';
 part 'engine_prompt_history.dart';
+part 'engine_authoring.dart';
 part 'engine_tools.dart';
 part 'engine_director.dart';
 part 'engine_director_watch.dart';
@@ -371,6 +374,44 @@ class TavernEngine implements Tavern {
     _libraryQueue = result.then<void>((_) {}, onError: (Object _, StackTrace _) {});
     return result;
   }
+
+  @override
+  Future<TavernAuthoringDraft> createAuthoringDraft(List<TavernAuthoringTarget> targets) =>
+      _createAuthoringDraft(targets);
+  @override
+  Future<TavernAuthoringDraft?> readAuthoringDraft(String draftId) => _readAuthoringDraft(draftId);
+  @override
+  Future<List<TavernAuthoringDraftSummary>> listAuthoringDrafts() => _listAuthoringDrafts();
+  @override
+  Future<TavernAuthoringDraft> editAuthoringDraft(
+    String draftId, {
+    required int draftRevision,
+    required List<TavernAuthoringChange> changes,
+  }) => _editAuthoringDraft(draftId, draftRevision, changes, rebase: false);
+  @override
+  Future<TavernAuthoringDraft> rebaseAuthoringDraft(
+    String draftId, {
+    required int draftRevision,
+    required List<TavernAuthoringChange> changes,
+  }) => _editAuthoringDraft(draftId, draftRevision, changes, rebase: true);
+  @override
+  Future<void> deleteAuthoringDraft(String draftId, {required int draftRevision}) =>
+      _authoringOperation(() => _store.deleteAuthoringDraftData(draftId, draftRevision));
+  @override
+  Future<TavernAuthoringPreview> previewAuthoringDraft(
+    String draftId, {
+    required int draftRevision,
+    required List<String> changeIds,
+  }) => _previewAuthoringDraft(draftId, draftRevision, changeIds);
+  @override
+  Future<TavernAuthoringRegexTest> testAuthoringRegex(
+    String draftId, {
+    required int draftRevision,
+    required List<String> changeIds,
+    required String physicalResourceId,
+    required String scriptPath,
+    required String text,
+  }) => _testAuthoringRegex(draftId, draftRevision, changeIds, physicalResourceId, scriptPath, text);
 
   // Acquire this queue before chat barriers for bind/delete. Taking them in
   // the reverse order could leave a binder waiting behind a deletion that is

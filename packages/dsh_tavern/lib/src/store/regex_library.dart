@@ -4,6 +4,7 @@ import 'dart:math';
 
 import '../api.dart';
 import '../import_report.dart';
+import '../io/authoring_text.dart';
 import '../io/import_intake.dart';
 import '../io/regex_intake.dart';
 import '../regex/regex_types.dart';
@@ -83,6 +84,26 @@ final class RegexLibrary {
     _queue = result.then<void>((_) {}, onError: (Object _, StackTrace _) {});
     return result;
   }
+
+  /// Captures the complete physical library, including fields not represented
+  /// by runtime script records. An absent library has an explicit empty base.
+  Future<({Map<String, Object?> document, String? rawText, bool present})> readAuthoringSnapshot() =>
+      _exclusive(() async {
+        final ({String text, String rawText}) source;
+        try {
+          source = await readAuthoringText(_file);
+        } on PathNotFoundException catch (error) {
+          final code = error.osError?.errorCode;
+          if (code != 2 && (!Platform.isWindows || code != 3)) rethrow;
+          if (await FileSystemEntity.type(_file.path) != FileSystemEntityType.notFound) rethrow;
+          return (document: <String, Object?>{'version': 1, 'scripts': <Object?>[]}, rawText: null, present: false);
+        }
+        final document = jsonDecode(source.text);
+        if (document is! Map<String, Object?> || document['version'] != 1 || document['scripts'] is! List<Object?>) {
+          throw const FormatException('Unsupported regex library.');
+        }
+        return (document: document, rawText: source.rawText, present: true);
+      });
 
   Future<TavernRegexImportResult> importScripts(String text) async {
     final Object? value;
