@@ -1300,7 +1300,6 @@ class _TavernChatPageState extends ConsumerState<TavernChatPage> {
         );
         if (ok && mounted && !_running) {
           await _tavern.deleteMessage(widget.chatId, message.nodeId);
-          tavernForgetSessionUsage(_tavern, widget.chatId);
         }
       case _MessageAction.delete:
         // Gone at once, with 撤销 for a while (engine T24: hidden until the

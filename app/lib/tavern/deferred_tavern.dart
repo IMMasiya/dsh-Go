@@ -124,6 +124,13 @@ class DeferredTavern implements Tavern {
       (await _ready).path(chatId, limit: limit, beforeNodeId: beforeNodeId);
 
   @override
+  Future<List<TavernPathUsage>> pathUsage(String chatId) async => (await _ready).pathUsage(chatId);
+
+  @override
+  Future<List<TavernToolTurnSummary>> recentToolTurns(String chatId, {int limit = 20}) async =>
+      (await _ready).recentToolTurns(chatId, limit: limit);
+
+  @override
   Stream<void> pathChanges(String chatId) => _stream((t) => t.pathChanges(chatId));
 
   @override

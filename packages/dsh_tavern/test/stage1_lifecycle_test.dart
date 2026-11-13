@@ -60,6 +60,46 @@ void main() {
     expect(turn.budgetUsed, 1);
   });
 
+  test('stopping in the Started listener leaves no request budget or empty reply', () async {
+    final h = await Stage1Harness.open();
+    final before = await h.engine.path(h.chatId);
+    final events = await h.engine
+        .send(h.chatId, 'cancel before request')
+        .map((event) {
+          if (event is TavernTurnStarted) h.engine.stop(h.chatId);
+          return event;
+        })
+        .toList()
+        .timeout(const Duration(seconds: 5));
+    final started = events.whereType<TavernTurnStarted>().single;
+    final failed = events.whereType<TavernTurnFailed>().single;
+    expect(started.message.text, isEmpty);
+    expect(started.logicalTurnId, isNotNull);
+    expect(failed.logicalTurnId, started.logicalTurnId);
+    expect(failed.kind, TavernFailure.cancelled);
+    expect(failed.partial, isNull);
+    expect(events.whereType<TavernTurnDone>(), isEmpty);
+    expect(h.model.generated, 0);
+    final turn = (await h.engine.readToolTurn(started.logicalTurnId!))!;
+    expect(turn.status, 'failed');
+    expect(turn.outcome, 'cancelled');
+    expect(turn.budgetUsed, 0);
+    expect(turn.requests, isEmpty);
+    expect(turn.replyCommitAdopted, isFalse);
+    expect(turn.normalFinalAdopted, isFalse);
+    expect(
+      h.database((db) => db.select('SELECT id FROM tool_requests WHERE logical_turn_id = ?', [turn.logicalTurnId])),
+      isEmpty,
+    );
+    expect((await h.engine.path(h.chatId)).map((message) => message.nodeId), before.map((message) => message.nodeId));
+    expect(
+      h
+          .database((db) => db.select('SELECT id FROM nodes WHERE chat_id = ? ORDER BY seq', [h.chatId]))
+          .map((row) => row['id']),
+      before.map((message) => message.nodeId),
+    );
+  });
+
   test('a captured beforeTurn write loses its permit when stop wins before its SQL callback', () async {
     final h = await ScriptFixture.open();
     final card = await h.card('Cancelled hooks', greeting: 'UNCHANGED');

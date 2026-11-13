@@ -9,6 +9,7 @@ import 'package:http/http.dart' as http;
 import 'package:test/test.dart';
 
 import 'support/stage1_engine_harness.dart';
+import 'support/t24_engine_harness.dart';
 
 void main() {
   test('raw null usage is observed before the same payload first text even when the reader stops there', () async {
@@ -282,6 +283,176 @@ void main() {
     expect(completeToolUsage(incomplete), isNull);
   });
 
+  test('streaming cumulative usage stays in memory and seals once after the same request retries', () async {
+    final source = StreamController<List<int>>();
+    addTearDown(() {
+      if (!source.isClosed) unawaited(source.close());
+    });
+    var sends = 0;
+    final h = await _httpUsageHarness(
+      TavernModelClient(
+        clientFactory: () => _Client((_) async {
+          sends++;
+          if (sends == 1) return http.StreamedResponse(Stream.value(utf8.encode('{}')), 500);
+          return http.StreamedResponse(source.stream, 200);
+        }),
+      ),
+    );
+    final events = T24Events(h.engine.send(h.chatId, 'question'));
+    final throughUsage = _throughText(events, 'usage-ready');
+    for (var index = 0; index < 64; index++) {
+      source.add(
+        _frame({
+          'usage': {'prompt_tokens': index + 1, 'completion_tokens': index + 2, 'prompt_cache_hit_tokens': 0},
+          'choices': [],
+        }),
+      );
+    }
+    source.add(
+      _frame({
+        'choices': [
+          {
+            'delta': {'role': 'assistant', 'content': 'usage-ready'},
+          },
+        ],
+      }),
+    );
+    await throughUsage;
+    expect(_usageWrites(h), 0);
+    expect(stage1Rows((await h.turn(events)).requests.single.usage['observations']), isEmpty);
+    expect((await h.engine.path(h.chatId)).last.reportedUsage!.promptTokens, 64);
+    source.add(
+      _frame({
+        'choices': [
+          {'delta': <String, Object?>{}, 'finish_reason': 'stop'},
+        ],
+      }),
+    );
+    source.add(utf8.encode('data: [DONE]\n\n'));
+    await source.close();
+    await events.done.future;
+    final turn = await h.turn(events);
+    expect(events.values.whereType<TavernTurnFailed>(), isEmpty);
+    expect(sends, 2);
+    expect(turn.requests.single.sendAttempts, [0, 1]);
+    expect(_usageWrites(h), 1);
+    final observations = stage1Rows(turn.requests.single.usage['observations']);
+    expect(observations, hasLength(1));
+    expect(stage1Map(observations.single['report'])['observationIndex'], 63);
+    expect(stage1Map(observations.single['normalizedUsage'])['promptTokens'], 64);
+    expect(events.values.whereType<TavernTurnDone>().single.message.usage!.completionTokens, 65);
+    expect(stage1Map(stage1Map(turn.usageSummary['fields'])['prompt_tokens'])['total'], 64);
+    await h.reopen();
+    expect((await h.engine.readToolTurn(turn.logicalTurnId))!.usageSummary, turn.usageSummary);
+    expect((await h.engine.path(h.chatId)).last.reportedUsage!.promptTokens, 64);
+  });
+
+  test('accepted stream failure seals latest invalid raw with its last normalized provenance', () async {
+    for (final multi in [false, true]) {
+      final source = StreamController<List<int>>();
+      addTearDown(() {
+        if (!source.isClosed) unawaited(source.close());
+      });
+      var sends = 0;
+      final h = await _httpUsageHarness(
+        TavernModelClient(
+          clientFactory: () => _Client((_) async {
+            sends++;
+            if (multi && sends == 1) {
+              return _sse([
+                {
+                  'usage': {'prompt_tokens': 10, 'completion_tokens': 2, 'prompt_cache_hit_tokens': 1},
+                  'choices': [],
+                },
+                {
+                  'choices': [
+                    {
+                      'delta': {
+                        'role': 'assistant',
+                        'tool_calls': [
+                          {
+                            'index': 0,
+                            ...Stage1Call(0, 'roll-usage', 'roll', {'dice': 'd6'}).wire,
+                          },
+                        ],
+                      },
+                      'finish_reason': 'tool_calls',
+                    },
+                  ],
+                },
+              ]);
+            }
+            return http.StreamedResponse(source.stream, 200);
+          }),
+        ),
+      );
+      final events = T24Events(h.engine.send(h.chatId, 'question'));
+      final throughUsage = _throughText(events, 'partial');
+      for (var index = 0; index < 4; index++) {
+        source.add(
+          _frame({
+            'usage': {'prompt_tokens': 20 + index, 'completion_tokens': 3, 'prompt_cache_hit_tokens': 2},
+            'choices': [],
+          }),
+        );
+      }
+      source.add(
+        _frame({
+          'choices': [
+            {
+              'delta': {'role': 'assistant', 'content': 'partial'},
+            },
+          ],
+        }),
+      );
+      await throughUsage;
+      expect((await h.engine.path(h.chatId)).last.reportedUsage!.promptTokens, multi ? 33 : 23);
+      expect(_usageWrites(h), multi ? 1 : 0);
+      final throughInvalid = _throughText(events, '-invalid');
+      source.add(
+        _frame({
+          'usage': null,
+          'choices': [
+            {
+              'delta': {'content': '-invalid'},
+            },
+          ],
+        }),
+      );
+      await throughInvalid;
+      final live = (await h.engine.path(h.chatId)).last;
+      expect(live.reportedUsage?.promptTokens, multi ? null : 23);
+      expect(stage1Rows((await h.turn(events)).requests.last.usage['observations']), isEmpty);
+      expect(_usageWrites(h), multi ? 1 : 0);
+      source.addError(http.ClientException('accepted response interrupted'));
+      await source.close();
+      await events.done.future;
+      final failed = events.values.whereType<TavernTurnFailed>().single;
+      expect(failed.partial!.text, 'partial-invalid');
+      expect(failed.partial!.reportedUsage?.promptTokens, multi ? null : 23);
+      expect(events.values.whereType<TavernTurnDone>(), isEmpty);
+      expect(sends, multi ? 2 : 1);
+      expect(_usageWrites(h), multi ? 2 : 1);
+      final turn = await h.turn(events);
+      final ledger = turn.requests.last.usage;
+      final observations = stage1Rows(ledger['observations']);
+      expect(observations, hasLength(2));
+      expect(stage1Map(observations.first['report'])['observationIndex'], 3);
+      expect(stage1Map(observations.first['normalizedUsage'])['promptTokens'], 23);
+      expect(stage1Map(observations.last['report'])['raw'], isNull);
+      expect(stage1Map(observations.last['report'])['observationIndex'], 4);
+      expect(ledger['selectedObservationSequence'], 1);
+      final summary = stage1Map(stage1Map(turn.usageSummary['fields'])['prompt_tokens']);
+      expect(summary['knownSubtotal'], multi ? 10 : 0);
+      expect(summary['invalidRequestIndexes'], [multi ? 2 : 1]);
+      expect(summary['complete'], isFalse);
+      expect(summary['total'], isNull);
+      await h.reopen();
+      expect((await h.engine.readToolTurn(turn.logicalTurnId))!.usageSummary, turn.usageSummary);
+      expect((await h.engine.path(h.chatId)).last.reportedUsage?.promptTokens, multi ? null : 23);
+    }
+  });
+
   test('custom request observations belong to the original request and close before the next one', () async {
     final h = await Stage1Harness.open();
     final active = await h.start();
@@ -505,6 +676,47 @@ void main() {
       ..add(ModelToolFragment(index: 0, name: 'll'));
     expect(fragments.finish().rollNameObserved, isFalse);
   });
+}
+
+Future<Stage1Harness> _httpUsageHarness(TavernModelClient model) async {
+  final h = await Stage1Harness.open(state: false);
+  await h.engine.close();
+  h.engine = await TavernEngine.openDirectory(
+    h.root,
+    config: h.config,
+    modelClient: model,
+    clock: () => T24Harness.at,
+    random: () => 0.25,
+    rollRandom: h.dice.draw,
+  );
+  h.database(
+    (database) => database.execute('''
+    CREATE TABLE usage_writes(request_id TEXT NOT NULL);
+    CREATE TRIGGER count_usage_writes AFTER UPDATE OF usage_json ON tool_requests BEGIN
+      INSERT INTO usage_writes(request_id) VALUES(NEW.id);
+    END;
+  '''),
+  );
+  return h;
+}
+
+int _usageWrites(Stage1Harness h) =>
+    h.database((database) => database.select('SELECT COUNT(*) AS n FROM usage_writes').single['n']! as int);
+
+Future<void> _throughText(T24Events events, String text) {
+  final reached = Completer<void>();
+  events.subscription.onData((event) {
+    events.values.add(event);
+    if (event is TavernTextDelta && event.text == text && !reached.isCompleted) {
+      reached.complete();
+    }
+  });
+  return Future.any<void>([
+    reached.future,
+    events.done.future.then<void>((_) {
+      throw TestFailure('Turn ended before usage barrier: $text');
+    }),
+  ]);
 }
 
 /// VM-only fault injection at the existing real store notification boundary.

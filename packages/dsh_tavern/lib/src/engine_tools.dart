@@ -46,70 +46,92 @@ void _commitOrdinaryToolFinal(
   _StateSettlement? stateSettlement,
   _StorySettlement? storySettlement,
 ) {
-  final message = engine._buffered(turn);
-  final successful = inspection.status == TavernInspectionStatus.completed;
-  final kind = !successful
-      ? StoredToolFinishKind.failedPartial
-      : turn.modelTerminal
-      ? StoredToolFinishKind.modelTerminal
-      : StoredToolFinishKind.normal;
-  final outcome = kind == StoredToolFinishKind.normal
-      ? 'normal'
-      : kind == StoredToolFinishKind.modelTerminal
-      ? 'model_terminal'
-      : _ordinaryFailureOutcome(turn, inspection);
-  final terminal = engine._store.finishToolTurn<_ToolFinalAdoption>(
-    turn.toolOwner!,
-    kind: kind,
-    outcome: outcome,
-    summary: _ordinaryTurnSummary(turn),
-    stateSettlements: stateSettlement?.toolSettlements ?? const [],
-    action: () {
-      final extra = engine._inspectionExtra(engine._store.node(turn.chat.id, message.nodeId).extra, inspection);
-      extra['dshgo'] = {..._map(extra['dshgo']), ...?ownAudit, ...?storySettlement?.ownAudit, 'tavernState': state};
-      final stored = engine._store.updateMessage(
-        turn.chat.id,
-        message.nodeId,
-        text: message.text,
-        reasoning: message.reasoning,
-        clearReasoning: message.reasoning == null,
-        usage: message.usage,
-        clearUsage: message.usage == null,
-        extra: extra,
-      );
-      engine._store.updateChat(
-        turn.chat.id,
-        variables: _copy(turn.variables),
-        metadata: engine._latestInspectionMetadata(
-          _runtimeMetadata(engine._store.chat(turn.chat.id).metadata, state),
-          inspection,
-        ),
-      );
-      _writeStateRuns(engine._store, turn, stateSettlement, message.nodeId);
-      _writeStoryRun(engine._store, turn, storySettlement, message.nodeId);
-      return _ToolFinalAdoption(stored, inspection, _copy(state), _runtimeCopy(turn.variables));
-    },
-    onCommitted: (committed) {
-      final prepared = committed.value;
-      turn.terminalStorageAdopted = true;
-      turn.replyCommitAdopted = committed.snapshot.replyCommitAdopted;
-      turn.normalFinalAdopted = committed.snapshot.normalFinalAdopted;
-      turn.toolPhase = committed.ownership.phase;
-      turn.lastCommitted = prepared.message;
-      turn.state = prepared.state;
-      turn.dirty = false;
-      if (stateSettlement != null) turn.stateRunsWritten = true;
-      if (storySettlement != null) turn.storyRunWritten = true;
-      if (successful) turn.modelCommitted = true;
-      engine._liveVariables[turn.chat.id] = (leaf: prepared.message.nodeId, values: prepared.variables);
-      engine._setInspection(turn, prepared.inspection);
-    },
-  );
-  for (final id in terminal.affectedReceiptIds) {
-    _toolActivity(turn, executionId: id);
-  }
-  for (final id in terminal.affectedProposalIds) {
-    _toolActivity(turn, proposalId: id);
+  final started = turn.profile?.now;
+  try {
+    final onTiming = turn.profile?.stageRecorder('final_');
+    final message = engine._buffered(turn);
+    final successful = inspection.status == TavernInspectionStatus.completed;
+    final kind = !successful
+        ? StoredToolFinishKind.failedPartial
+        : turn.modelTerminal
+        ? StoredToolFinishKind.modelTerminal
+        : StoredToolFinishKind.normal;
+    final outcome = kind == StoredToolFinishKind.normal
+        ? 'normal'
+        : kind == StoredToolFinishKind.modelTerminal
+        ? 'model_terminal'
+        : _ordinaryFailureOutcome(turn, inspection);
+    final terminal = engine._store.finishToolTurn<_ToolFinalAdoption>(
+      turn.toolOwner!,
+      kind: kind,
+      outcome: outcome,
+      summary: _ordinaryTurnSummary(turn),
+      onTiming: onTiming,
+      stateSettlements: stateSettlement?.toolSettlements ?? const [],
+      action: () {
+        final inspectionStarted = turn.profile?.now;
+        final extra = engine._inspectionExtra(engine._store.node(turn.chat.id, message.nodeId).extra, inspection);
+        extra['dshgo'] = {
+          ...(extra['dshgo'] as Map<String, Object?>),
+          ...?ownAudit,
+          ...?storySettlement?.ownAudit,
+          'tavernState': state,
+        };
+        turn.profile?.record('final_inspection', inspectionStarted!);
+        final nodeStarted = turn.profile?.now;
+        final stored = engine._store.updateMessage(
+          turn.chat.id,
+          message.nodeId,
+          text: message.text,
+          reasoning: message.reasoning,
+          clearReasoning: message.reasoning == null,
+          usage: message.usage,
+          clearUsage: message.usage == null,
+          extra: extra,
+        );
+        turn.profile?.record('final_node_write', nodeStarted!);
+        final metadataStarted = turn.profile?.now;
+        engine._store.updateChat(
+          turn.chat.id,
+          variables: _copy(turn.variables),
+          metadata: engine._latestInspectionMetadata(
+            _runtimeMetadata(engine._store.chat(turn.chat.id).metadata, state),
+            inspection,
+          ),
+        );
+        turn.profile?.record('final_metadata', metadataStarted!);
+        final stateRunsAt = turn.profile?.now;
+        _writeStateRuns(engine._store, turn, stateSettlement, message.nodeId);
+        _writeStoryRun(engine._store, turn, storySettlement, message.nodeId);
+        final prepared = _ToolFinalAdoption(stored, inspection, _copy(state), _runtimeCopy(turn.variables));
+        turn.profile?.record('final_state_runs_prepare', stateRunsAt!);
+        return prepared;
+      },
+      onCommitted: (committed) {
+        final prepared = committed.value;
+        turn.terminalStorageAdopted = true;
+        turn.replyCommitAdopted = committed.snapshot.replyCommitAdopted;
+        turn.normalFinalAdopted = committed.snapshot.normalFinalAdopted;
+        turn.toolPhase = committed.ownership.phase;
+        turn.lastCommitted = prepared.message;
+        turn.state = prepared.state;
+        turn.dirty = false;
+        if (stateSettlement != null) turn.stateRunsWritten = true;
+        if (storySettlement != null) turn.storyRunWritten = true;
+        if (successful) turn.modelCommitted = true;
+        engine._liveVariables[turn.chat.id] = (leaf: prepared.message.nodeId, values: prepared.variables);
+        engine._setInspection(turn, prepared.inspection);
+      },
+    );
+    for (final id in terminal.affectedReceiptIds) {
+      _toolActivity(turn, executionId: id);
+    }
+    for (final id in terminal.affectedProposalIds) {
+      _toolActivity(turn, proposalId: id);
+    }
+    onTiming?.call('activity');
+  } finally {
+    turn.profile?.record('final_store', started!);
   }
 }
 
@@ -396,6 +418,7 @@ class _OrdinaryToolRequest {
   final ToolWireAuthorization authorization;
   final bool stateAllowed;
   final accumulator = ModelToolAccumulator();
+  final streamingUsage = StreamingToolUsage();
   late TavernToolRequestSnapshot snapshot;
   Map<String, Object?> usage = emptyToolUsageLedger();
   Map<String, Object?> diagnostics = {};
@@ -450,25 +473,49 @@ void _recordOrdinaryUsage(
   ModelUsageReport report, {
   TavernUsage? normalizedUsage,
 }) {
-  final next = recordToolUsageObservation(request.usage, report: report, normalizedUsage: normalizedUsage);
-  if (_stateJsonEqual(next.ledger, request.usage)) return;
-  final diagnostics = <String, Object?>{
-    ...request.diagnostics,
-    'usage': [..._stateRows(request.diagnostics['usage']), ...next.diagnostics],
-  };
-  final preparedUsage = _prepareOrdinaryUsage(turn, request, next.ledger, normalizedUsage: normalizedUsage);
-  engine._store.observeToolRequest(
-    request.snapshot.requestId,
-    usage: next.ledger,
-    batchDiagnostics: diagnostics,
-    onCommitted: (snapshot) {
-      request.snapshot = snapshot;
-      request.usage = next.ledger;
-      request.diagnostics = diagnostics;
-      _adoptOrdinaryUsage(engine, turn, preparedUsage);
-      if (normalizedUsage != null) turn.hasOutput = true;
-    },
-  );
+  final started = turn.profile?.now;
+  try {
+    if (report.transport == 'streaming' && report.origin != 'legacy_normalized') {
+      if (!request.streamingUsage.observe(report, normalizedUsage: normalizedUsage)) return;
+      if (turn.toolRequests.length > 1) {
+        final latest = request.streamingUsage.record(request.usage);
+        _adoptOrdinaryUsage(
+          engine,
+          turn,
+          _prepareOrdinaryUsage(turn, request, latest.ledger, normalizedUsage: normalizedUsage),
+        );
+      }
+      return;
+    }
+    // A custom/nonstream observation keeps its immediate adoption contract.
+    // Include any earlier streaming snapshots in that same write, in order.
+    final pending = request.streamingUsage.record(request.usage);
+    final next = recordToolUsageObservation(pending.ledger, report: report, normalizedUsage: normalizedUsage);
+    if (_stateJsonEqual(next.ledger, request.usage)) {
+      request.streamingUsage.clear();
+      return;
+    }
+    final diagnostics = <String, Object?>{
+      ...request.diagnostics,
+      'usage': [..._stateRows(request.diagnostics['usage']), ...pending.diagnostics, ...next.diagnostics],
+    };
+    final preparedUsage = _prepareOrdinaryUsage(turn, request, next.ledger, normalizedUsage: normalizedUsage);
+    engine._store.observeToolRequest(
+      request.snapshot.requestId,
+      usage: next.ledger,
+      batchDiagnostics: diagnostics,
+      onCommitted: (snapshot) {
+        request.snapshot = snapshot;
+        request.usage = next.ledger;
+        request.streamingUsage.clear();
+        request.diagnostics = diagnostics;
+        _adoptOrdinaryUsage(engine, turn, preparedUsage);
+        if (normalizedUsage != null) turn.hasOutput = true;
+      },
+    );
+  } finally {
+    turn.profile?.record('usage', started!);
+  }
 }
 
 void _toolActivity(_Turn turn, {String? requestId, String? executionId, String? proposalId}) {
@@ -478,74 +525,94 @@ void _toolActivity(_Turn turn, {String? requestId, String? executionId, String? 
 }
 
 _OrdinaryToolRequest _registerOrdinaryRequest(TavernEngine engine, _Turn turn, Map<String, Object?> body) {
-  final authorization = toolWireAuthorization(config: turn.config, body: body, policy: turn.toolPolicy!);
-  final request = _OrdinaryToolRequest(
-    authorization,
-    turn.stateAutomatic && !turn.config.thinking && _finalStateToolAllowed(body),
-  );
-  final requests = [...turn.toolRequests, request];
-  final inspection = requests.length < 2 ? turn.inspection : turn.inspection.copyWith(clearReportedUsage: true);
-  engine._store.registerToolRequest(
-    turn.toolOwner!,
-    offeredTools: authorization.offeredTools,
-    wireAuthorization: authorization.toJson(),
-    onCommitted: (snapshot) {
-      request.snapshot = snapshot;
-      turn.toolRequests = requests;
-      turn.toolRequest = request;
-      turn.stateTools = request.accumulator;
-      turn.finishReason = null;
-      if (requests.length > 1) turn.usage = null;
-      engine._setInspection(turn, inspection);
-    },
-  );
-  _toolActivity(turn, requestId: request.snapshot.requestId);
-  return request;
+  final started = turn.profile?.now;
+  try {
+    final authorization = toolWireAuthorization(config: turn.config, body: body, policy: turn.toolPolicy!);
+    final request = _OrdinaryToolRequest(
+      authorization,
+      turn.stateAutomatic && !turn.config.thinking && _finalStateToolAllowed(body),
+    );
+    final requests = [...turn.toolRequests, request];
+    final inspection = requests.length < 2 ? turn.inspection : turn.inspection.copyWith(clearReportedUsage: true);
+    engine._store.registerToolRequest(
+      turn.toolOwner!,
+      offeredTools: authorization.offeredTools,
+      wireAuthorization: authorization.toJson(),
+      onCommitted: (snapshot) {
+        request.snapshot = snapshot;
+        turn.toolRequests = requests;
+        turn.toolRequest = request;
+        turn.stateTools = request.accumulator;
+        turn.finishReason = null;
+        if (requests.length > 1) turn.usage = null;
+        engine._setInspection(turn, inspection);
+      },
+    );
+    _toolActivity(turn, requestId: request.snapshot.requestId);
+    return request;
+  } finally {
+    turn.profile?.record('request_register', started!);
+  }
 }
 
 void _finishOrdinaryRequest(TavernEngine engine, _Turn turn, _OrdinaryToolRequest request, {Object? error}) {
   if (request.rowFinished) return;
-  final batch = request.batch ??= request.accumulator.finish();
-  final rejection = _ordinaryBatchRejection(request);
-  final diagnostics = <String, Object?>{
-    ...request.diagnostics,
-    'batch': batch.toJson(),
-    if (rejection != null) 'outcome': rejection.outcome,
-  };
-  final preparedUsage = _prepareOrdinaryUsage(turn, request, request.usage);
+  final started = turn.profile?.now;
   try {
-    engine._store.finishToolRequest(
-      request.snapshot.requestId,
-      status: request.responseComplete
-          ? 'response_complete'
-          : error == null
-          ? 'interrupted'
-          : 'failed',
-      responseComplete: request.responseComplete,
-      providerFinishReason: request.finishReason,
-      responseSnapshot: request.assistant?.toJson(),
-      usage: request.usage,
-      batchDiagnostics: diagnostics,
-      error: error == null
-          ? null
-          : {
-              'code': error is TavernModelException ? error.kind.name : 'request_failure',
-              'type': '${error.runtimeType}',
-            },
-      onCommitted: (snapshot) {
-        request.snapshot = snapshot;
-        request.diagnostics = diagnostics;
-        request.rowFinished = true;
-        _adoptOrdinaryUsage(engine, turn, preparedUsage);
-      },
+    final batch = request.batch ??= request.accumulator.finish();
+    final rejection = _ordinaryBatchRejection(request);
+    final pending = request.streamingUsage.record(request.usage);
+    final diagnostics = <String, Object?>{
+      ...request.diagnostics,
+      'batch': batch.toJson(),
+      if (!request.streamingUsage.isEmpty)
+        'usage': [..._stateRows(request.diagnostics['usage']), ...pending.diagnostics],
+      if (rejection != null) 'outcome': rejection.outcome,
+    };
+    final preparedUsage = _prepareOrdinaryUsage(
+      turn,
+      request,
+      pending.ledger,
+      normalizedUsage: request.streamingUsage.normalizedUsage,
     );
-  } catch (_) {
-    // Only an adopted complete response can supply this primary preflight
-    // failure when publication of its durable response seal itself fails.
-    if (request.rowFinished) turn.toolFailureCode ??= _ordinaryBatchRejection(request)?.code;
-    rethrow;
+    try {
+      engine._store.finishToolRequest(
+        request.snapshot.requestId,
+        status: request.responseComplete
+            ? 'response_complete'
+            : error == null
+            ? 'interrupted'
+            : 'failed',
+        responseComplete: request.responseComplete,
+        providerFinishReason: request.finishReason,
+        responseSnapshot: request.assistant?.toJson(),
+        usage: pending.ledger,
+        batchDiagnostics: diagnostics,
+        error: error == null
+            ? null
+            : {
+                'code': error is TavernModelException ? error.kind.name : 'request_failure',
+                'type': '${error.runtimeType}',
+              },
+        onCommitted: (snapshot) {
+          request.snapshot = snapshot;
+          request.usage = pending.ledger;
+          request.streamingUsage.clear();
+          request.diagnostics = diagnostics;
+          request.rowFinished = true;
+          _adoptOrdinaryUsage(engine, turn, preparedUsage);
+        },
+      );
+    } catch (_) {
+      // Only an adopted complete response can supply this primary preflight
+      // failure when publication of its durable response seal itself fails.
+      if (request.rowFinished) turn.toolFailureCode ??= _ordinaryBatchRejection(request)?.code;
+      rethrow;
+    }
+    _toolActivity(turn, requestId: request.snapshot.requestId);
+  } finally {
+    turn.profile?.record('request_finish', started!);
   }
-  _toolActivity(turn, requestId: request.snapshot.requestId);
 }
 
 void _recordOrdinaryBatchOutcome(TavernEngine engine, _OrdinaryToolRequest request, String outcome) {
@@ -981,31 +1048,41 @@ class _ToolPreparationSnapshot {
 }
 
 int _sealOrdinaryToolPreparation(TavernEngine engine, _Turn turn) {
-  final committed = engine._store.sealToolPreparation<_ToolPreparationSnapshot>(
-    turn.toolOwner!,
-    capture: (chat, target) {
-      final metadata = engine._chatCodec.metadataForNode(engine._store, chat.id, nodeId: turn.nodeId);
-      final source =
-          engine._stateAt(chat.id, turn.nodeId ?? chat.currentLeafId)['chatJsonlSourceFile'] ??
-          _map(_map(chat.metadata['dshgo'])['chatJsonl'])['rootFile'];
-      return _ToolPreparationSnapshot(
-        metadata,
-        source is String ? source : null,
-        _runtimeCopy(engine._liveVariables[chat.id]?.values ?? chat.variables),
-        engine._globalVariables.revision,
-      );
-    },
-    onCommitted: (prepared) {
-      turn.chat = prepared.chat;
-      turn.originalTarget = prepared.operationTarget;
-      turn.metadata = prepared.value.metadata;
-      turn.sourceFile = prepared.value.sourceFile;
-      turn.originalVariables = prepared.value.variables;
-      turn.nativePreparationStarted = true;
-      turn.toolPhase = prepared.ownership.phase;
-    },
-  );
-  return committed.value.globalRevision;
+  final started = turn.profile?.now;
+  try {
+    final committed = engine._store.sealToolPreparation<_ToolPreparationSnapshot>(
+      turn.toolOwner!,
+      onTiming: turn.profile?.stageRecorder('prepare_seal_'),
+      capture: (chat, target) {
+        final leaf = chat.currentLeafId;
+        final sourceNode = target ?? (leaf == null ? null : engine._store.node(chat.id, leaf));
+        final metadata = engine._chatCodec.metadataForCapturedNode(engine._store, chat, sourceNode);
+        final sourceState = sourceNode == null
+            ? engine._store.groupInitialState(chat.id)
+            : engine._stateFromNode(chat.id, sourceNode, chat: chat);
+        final source =
+            sourceState['chatJsonlSourceFile'] ?? _map(_map(chat.metadata['dshgo'])['chatJsonl'])['rootFile'];
+        return _ToolPreparationSnapshot(
+          metadata,
+          source is String ? source : null,
+          _runtimeCopy(engine._liveVariables[chat.id]?.values ?? chat.variables),
+          engine._globalVariables.revision,
+        );
+      },
+      onCommitted: (prepared) {
+        turn.chat = prepared.chat;
+        turn.originalTarget = prepared.operationTarget;
+        turn.metadata = prepared.value.metadata;
+        turn.sourceFile = prepared.value.sourceFile;
+        turn.originalVariables = prepared.value.variables;
+        turn.nativePreparationStarted = true;
+        turn.toolPhase = prepared.ownership.phase;
+      },
+    );
+    return committed.value.globalRevision;
+  } finally {
+    turn.profile?.record('prepare_seal', started!);
+  }
 }
 
 Future<void> _completeOrdinaryToolPolicy(TavernEngine engine, _Turn turn) async {
