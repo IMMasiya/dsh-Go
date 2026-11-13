@@ -1473,7 +1473,7 @@ class _ScriptCoordinator implements TavernScriptBridge {
       try {
         final current = engine._store.node(turn.chat.id, reply.nodeId);
         turn.lastCommitted = current.message;
-        turn.state = engine._stateAt(turn.chat.id, reply.nodeId);
+        turn.state = engine._stateFromNode(turn.chat.id, current);
         turn.variables = _runtimeCopy(_map(turn.state['variables']));
       } finally {
         turn.profile?.record('after_message_refresh', refreshStarted!);

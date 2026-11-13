@@ -3389,8 +3389,18 @@ class TavernEngine implements Tavern {
     var beforeGlobals = _globalVariables.revision;
     try {
       turn.secretCardRevision ??= _directors._cardRevisions[turn.chat.characterId] ?? 0;
-      _beginOrdinaryToolTurn(this, turn);
-      await _scripts.beforeTurn(turn);
+      final toolAdmissionAt = turn.profile?.now;
+      try {
+        _beginOrdinaryToolTurn(this, turn);
+      } finally {
+        turn.profile?.record('prepare_tool_admission', toolAdmissionAt!);
+      }
+      final beforeHooksAt = turn.profile?.now;
+      try {
+        await _scripts.beforeTurn(turn);
+      } finally {
+        turn.profile?.recordElapsed('prepare_before_hooks', beforeHooksAt!);
+      }
       turn.cancellation.check();
       // Preparation handlers may write locals or message variables. Capture
       // their committed state after their direct writes have drained. An
@@ -3398,7 +3408,12 @@ class TavernEngine implements Tavern {
       // even while a different branch is selected in the chat.
       if (turn.toolOwner != null) {
         beforeGlobals = _sealOrdinaryToolPreparation(this, turn);
-        await _completeOrdinaryToolPolicy(this, turn);
+        final policyAt = turn.profile?.now;
+        try {
+          await _completeOrdinaryToolPolicy(this, turn);
+        } finally {
+          turn.profile?.recordElapsed('prepare_policy', policyAt!);
+        }
       } else {
         turn.chat = _store.chat(chatId);
         turn.metadata = _chatCodec.metadataForNode(_store, chatId, nodeId: turn.nodeId);
@@ -3412,6 +3427,7 @@ class TavernEngine implements Tavern {
       }
       // Cancellation releases the turn, not its actual local file work.
       // Keep the original read owned until every character file has drained.
+      final resourcesAt = turn.profile?.now;
       if (turn.groupView == null) {
         final group = _store.groupChat(chatId);
         if (group != null) {
@@ -3423,7 +3439,9 @@ class TavernEngine implements Tavern {
       final record = turn.groupView == null
           ? await turn.cancellation.wait(_trackOperation(_record(turn.actorId)))
           : turn.groupView!.cards[turn.actorId];
+      turn.profile?.recordElapsed('prepare_resources', resourcesAt!);
       if (record == null) throw const TavernImportError('角色不存在。');
+      final prepareContextAt = turn.profile?.now;
       turn.cancellation.check();
       _requireOrdinaryOwnership(this, turn, StoredToolPhase.native);
       final data = _effectiveCard(record.card.data, turn.settings);
@@ -3471,6 +3489,7 @@ class TavernEngine implements Tavern {
         'show_thoughts': turn.config.thinking,
       });
       final worldSettings = WorldInfoSettings.fromJson(_map(turn.settings['worldInfo']));
+      turn.profile?.record('prepare_context', prepareContextAt!);
       turn.profile?.mark('prepare');
       final historyAt = turn.profile?.now;
       final _PromptHistoryWindow? historyWindow;
@@ -3868,6 +3887,9 @@ class TavernEngine implements Tavern {
         cancellation: turn.cancellation,
       );
       turn.profile?.mark('reply');
+      // Let the event queue run before registering the first model request.
+      await Future<void>.delayed(Duration.zero);
+      turn.cancellation.check();
       if (turn.toolOwner == null) {
         await _consume(turn, requestBody);
       } else {
@@ -3899,6 +3921,8 @@ class TavernEngine implements Tavern {
       }
       _groups.actorCommitted(turn);
       turn.profile?.mark('settlement');
+      // Storage is already adopted; cancellation here remains post-commit.
+      await Future<void>.delayed(Duration.zero);
       await _scripts.afterMessage(turn);
       turn.emit(
         TavernTurnDone(
@@ -5598,7 +5622,9 @@ Map<String, Object?> _emptyChatState(Map<String, Object?> metadata) => {
 };
 
 Map<String, Object?> _runtimeMetadata(Map<String, Object?> metadata, Map<String, Object?> state) {
-  final result = _copy(metadata);
+  // The source is decoded store JSON. Keep the detached compatible tree
+  // without encoding and parsing the complete source catalog again.
+  final result = _jsonCompatible(metadata) as Map<String, Object?>;
   for (final key in const ['timedWorldInfo', 'decoratorState', 'greetingIndex']) {
     if (state.containsKey(key)) {
       result[key] = _runtimeValue(state[key]);

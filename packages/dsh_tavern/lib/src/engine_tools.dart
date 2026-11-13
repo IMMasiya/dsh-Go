@@ -48,6 +48,7 @@ void _commitOrdinaryToolFinal(
 ) {
   final started = turn.profile?.now;
   try {
+    final onTiming = turn.profile?.stageRecorder('final_');
     final message = engine._buffered(turn);
     final successful = inspection.status == TavernInspectionStatus.completed;
     final kind = !successful
@@ -65,11 +66,17 @@ void _commitOrdinaryToolFinal(
       kind: kind,
       outcome: outcome,
       summary: _ordinaryTurnSummary(turn),
+      onTiming: onTiming,
       stateSettlements: stateSettlement?.toolSettlements ?? const [],
       action: () {
         final inspectionStarted = turn.profile?.now;
         final extra = engine._inspectionExtra(engine._store.node(turn.chat.id, message.nodeId).extra, inspection);
-        extra['dshgo'] = {..._map(extra['dshgo']), ...?ownAudit, ...?storySettlement?.ownAudit, 'tavernState': state};
+        extra['dshgo'] = {
+          ...(extra['dshgo'] as Map<String, Object?>),
+          ...?ownAudit,
+          ...?storySettlement?.ownAudit,
+          'tavernState': state,
+        };
         turn.profile?.record('final_inspection', inspectionStarted!);
         final nodeStarted = turn.profile?.now;
         final stored = engine._store.updateMessage(
@@ -93,9 +100,12 @@ void _commitOrdinaryToolFinal(
           ),
         );
         turn.profile?.record('final_metadata', metadataStarted!);
+        final stateRunsAt = turn.profile?.now;
         _writeStateRuns(engine._store, turn, stateSettlement, message.nodeId);
         _writeStoryRun(engine._store, turn, storySettlement, message.nodeId);
-        return _ToolFinalAdoption(stored, inspection, _copy(state), _runtimeCopy(turn.variables));
+        final prepared = _ToolFinalAdoption(stored, inspection, _copy(state), _runtimeCopy(turn.variables));
+        turn.profile?.record('final_state_runs_prepare', stateRunsAt!);
+        return prepared;
       },
       onCommitted: (committed) {
         final prepared = committed.value;
@@ -119,6 +129,7 @@ void _commitOrdinaryToolFinal(
     for (final id in terminal.affectedProposalIds) {
       _toolActivity(turn, proposalId: id);
     }
+    onTiming?.call('activity');
   } finally {
     turn.profile?.record('final_store', started!);
   }
@@ -1037,31 +1048,41 @@ class _ToolPreparationSnapshot {
 }
 
 int _sealOrdinaryToolPreparation(TavernEngine engine, _Turn turn) {
-  final committed = engine._store.sealToolPreparation<_ToolPreparationSnapshot>(
-    turn.toolOwner!,
-    capture: (chat, target) {
-      final metadata = engine._chatCodec.metadataForNode(engine._store, chat.id, nodeId: turn.nodeId);
-      final source =
-          engine._stateAt(chat.id, turn.nodeId ?? chat.currentLeafId)['chatJsonlSourceFile'] ??
-          _map(_map(chat.metadata['dshgo'])['chatJsonl'])['rootFile'];
-      return _ToolPreparationSnapshot(
-        metadata,
-        source is String ? source : null,
-        _runtimeCopy(engine._liveVariables[chat.id]?.values ?? chat.variables),
-        engine._globalVariables.revision,
-      );
-    },
-    onCommitted: (prepared) {
-      turn.chat = prepared.chat;
-      turn.originalTarget = prepared.operationTarget;
-      turn.metadata = prepared.value.metadata;
-      turn.sourceFile = prepared.value.sourceFile;
-      turn.originalVariables = prepared.value.variables;
-      turn.nativePreparationStarted = true;
-      turn.toolPhase = prepared.ownership.phase;
-    },
-  );
-  return committed.value.globalRevision;
+  final started = turn.profile?.now;
+  try {
+    final committed = engine._store.sealToolPreparation<_ToolPreparationSnapshot>(
+      turn.toolOwner!,
+      onTiming: turn.profile?.stageRecorder('prepare_seal_'),
+      capture: (chat, target) {
+        final leaf = chat.currentLeafId;
+        final sourceNode = target ?? (leaf == null ? null : engine._store.node(chat.id, leaf));
+        final metadata = engine._chatCodec.metadataForCapturedNode(engine._store, chat, sourceNode);
+        final sourceState = sourceNode == null
+            ? engine._store.groupInitialState(chat.id)
+            : engine._stateFromNode(chat.id, sourceNode, chat: chat);
+        final source =
+            sourceState['chatJsonlSourceFile'] ?? _map(_map(chat.metadata['dshgo'])['chatJsonl'])['rootFile'];
+        return _ToolPreparationSnapshot(
+          metadata,
+          source is String ? source : null,
+          _runtimeCopy(engine._liveVariables[chat.id]?.values ?? chat.variables),
+          engine._globalVariables.revision,
+        );
+      },
+      onCommitted: (prepared) {
+        turn.chat = prepared.chat;
+        turn.originalTarget = prepared.operationTarget;
+        turn.metadata = prepared.value.metadata;
+        turn.sourceFile = prepared.value.sourceFile;
+        turn.originalVariables = prepared.value.variables;
+        turn.nativePreparationStarted = true;
+        turn.toolPhase = prepared.ownership.phase;
+      },
+    );
+    return committed.value.globalRevision;
+  } finally {
+    turn.profile?.record('prepare_seal', started!);
+  }
 }
 
 Future<void> _completeOrdinaryToolPolicy(TavernEngine engine, _Turn turn) async {

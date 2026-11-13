@@ -10,6 +10,7 @@ class _TurnProfile {
   final _watch = Stopwatch()..start();
   final _phases = <String, int>{};
   final _work = <String, _ProfileWork>{};
+  final _elapsedSpans = <String, _ProfileWork>{};
   Map<String, Object?> _history = const {};
   _ProfiledPromptCounter? _counter;
   var _last = 0;
@@ -25,6 +26,18 @@ class _TurnProfile {
 
   // Work samples are synchronous subspans and may overlap a main phase.
   void record(String name, int start) => _work.putIfAbsent(name, _ProfileWork.new).add(now - start);
+
+  // A synchronous staged call uses one cursor, without adding a store timer.
+  void Function(String) stageRecorder(String prefix) {
+    var start = now;
+    return (stage) {
+      record('$prefix$stage', start);
+      start = now;
+    };
+  }
+
+  // These nested spans include awaits; keep them separate from CPU/SQL work.
+  void recordElapsed(String name, int start) => _elapsedSpans.putIfAbsent(name, _ProfileWork.new).add(now - start);
 
   PromptTokenCounter counter(PromptTokenCounter original) => _counter ??= _ProfiledPromptCounter(original, this);
 
@@ -44,6 +57,15 @@ class _TurnProfile {
         for (final entry in _work.entries)
           entry.key: {'total': entry.value.total / 1000, 'max': entry.value.longest / 1000, 'calls': entry.value.calls},
       },
+      if (_elapsedSpans.isNotEmpty)
+        'elapsedSpansMs': {
+          for (final entry in _elapsedSpans.entries)
+            entry.key: {
+              'total': entry.value.total / 1000,
+              'max': entry.value.longest / 1000,
+              'calls': entry.value.calls,
+            },
+        },
     };
     stdout.writeln('DSH_TAVERN_PROFILE ${jsonEncode(data)}');
   }
