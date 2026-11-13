@@ -22715,6 +22715,33 @@ class L10nEn extends L10n {
   }
 
   @override
+  String get tavernToolFailBudget =>
+      'This turn has used up its tool requests and stops here; dice already rolled still count';
+
+  @override
+  String get tavernToolFailBatch => 'The model asked for too many tools at once; that batch was not run';
+
+  @override
+  String get tavernToolFailProtocol => 'The model\'s tool call was malformed and was not run';
+
+  @override
+  String get tavernToolFailSnapshot => 'This model\'s reply can\'t continue with tools, so it stops here';
+
+  @override
+  String get tavernToolFailReceipt => 'A tool\'s result couldn\'t be saved; check this turn again shortly';
+
+  @override
+  String get tavernToolFailAnchor => 'The chat changed during this turn, so it did not go on';
+
+  @override
+  String get tavernToolFail => 'Something went wrong with a tool';
+
+  @override
+  String tavernToolFailDetail(String detail) {
+    return 'Something went wrong with a tool: $detail';
+  }
+
+  @override
   String get updateCheck => 'Check for updates';
 
   @override

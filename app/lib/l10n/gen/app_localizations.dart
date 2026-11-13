@@ -39326,6 +39326,54 @@ abstract class L10n {
   /// **'没改成：{detail}'**
   String tavernToolPolicyFailed(String detail);
 
+  /// No description provided for @tavernToolFailBudget.
+  ///
+  /// In zh, this message translates to:
+  /// **'这一回合用工具的次数用完了，停在这里；之前已经掷的骰子照样算数'**
+  String get tavernToolFailBudget;
+
+  /// No description provided for @tavernToolFailBatch.
+  ///
+  /// In zh, this message translates to:
+  /// **'模型一次要用的工具太多，这一批没有执行'**
+  String get tavernToolFailBatch;
+
+  /// No description provided for @tavernToolFailProtocol.
+  ///
+  /// In zh, this message translates to:
+  /// **'模型给的工具调用格式不对，没有执行'**
+  String get tavernToolFailProtocol;
+
+  /// No description provided for @tavernToolFailSnapshot.
+  ///
+  /// In zh, this message translates to:
+  /// **'这个模型的回复没法接着用工具，停在这里'**
+  String get tavernToolFailSnapshot;
+
+  /// No description provided for @tavernToolFailReceipt.
+  ///
+  /// In zh, this message translates to:
+  /// **'工具的结果没能存好，稍后看看这一回合'**
+  String get tavernToolFailReceipt;
+
+  /// No description provided for @tavernToolFailAnchor.
+  ///
+  /// In zh, this message translates to:
+  /// **'对话在这一回合中途变了，没有接着写'**
+  String get tavernToolFailAnchor;
+
+  /// No description provided for @tavernToolFail.
+  ///
+  /// In zh, this message translates to:
+  /// **'用工具时出错了'**
+  String get tavernToolFail;
+
+  /// No description provided for @tavernToolFailDetail.
+  ///
+  /// In zh, this message translates to:
+  /// **'用工具时出错了：{detail}'**
+  String tavernToolFailDetail(String detail);
+
   /// No description provided for @updateCheck.
   ///
   /// In zh, this message translates to:

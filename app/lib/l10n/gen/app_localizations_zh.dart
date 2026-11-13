@@ -21531,6 +21531,32 @@ class L10nZh extends L10n {
   }
 
   @override
+  String get tavernToolFailBudget => '这一回合用工具的次数用完了，停在这里；之前已经掷的骰子照样算数';
+
+  @override
+  String get tavernToolFailBatch => '模型一次要用的工具太多，这一批没有执行';
+
+  @override
+  String get tavernToolFailProtocol => '模型给的工具调用格式不对，没有执行';
+
+  @override
+  String get tavernToolFailSnapshot => '这个模型的回复没法接着用工具，停在这里';
+
+  @override
+  String get tavernToolFailReceipt => '工具的结果没能存好，稍后看看这一回合';
+
+  @override
+  String get tavernToolFailAnchor => '对话在这一回合中途变了，没有接着写';
+
+  @override
+  String get tavernToolFail => '用工具时出错了';
+
+  @override
+  String tavernToolFailDetail(String detail) {
+    return '用工具时出错了：$detail';
+  }
+
+  @override
   String get updateCheck => '检查更新';
 
   @override

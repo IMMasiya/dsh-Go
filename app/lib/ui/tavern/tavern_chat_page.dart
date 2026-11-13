@@ -495,12 +495,12 @@ class _TavernChatPageState extends ConsumerState<TavernChatPage> {
                   _finish();
                 }
             }
-          case TavernTurnFailed(:final kind, :final detail, :final partial):
+          case TavernTurnFailed(:final kind, :final detail, :final partial, :final toolFailureCode):
             if (partial == null && draft != null && _input.text.isEmpty) _input.text = draft;
             if (kind == TavernFailure.cancelled) return _finish();
             final l10n = context.l10n;
             _finish(
-              error: _failureText(kind, detail),
+              error: _failureText(kind, detail, toolFailureCode),
               action: switch (kind) {
                 // Trying again cannot help until the key is there.
                 TavernFailure.noKey ||
@@ -635,7 +635,7 @@ class _TavernChatPageState extends ConsumerState<TavernChatPage> {
           case TavernGroupMemberEvent(:final progress, :final event):
             _groupProgress = progress;
             member(event);
-          case TavernGroupFinished(:final reason, :final failure, :final detail, :final progress):
+          case TavernGroupFinished(:final reason, :final failure, :final detail, :final progress, :final code):
             setState(() => _groupProgress = null);
             final l10n = context.l10n;
             switch (reason) {
@@ -657,7 +657,7 @@ class _TavernChatPageState extends ConsumerState<TavernChatPage> {
                 if (!kept && draft != null && _input.text.isEmpty) _input.text = draft;
                 final kind = failure ?? TavernFailure.server;
                 _finish(
-                  error: _failureText(kind, detail),
+                  error: _failureText(kind, detail, code),
                   action: switch (kind) {
                     TavernFailure.noKey ||
                     TavernFailure.badKey => (label: l10n.commonSettings, onPressed: _openKeySettings),
@@ -803,9 +803,21 @@ class _TavernChatPageState extends ConsumerState<TavernChatPage> {
     unawaited(_reload());
   }
 
-  String _failureText(TavernFailure kind, String? detail) {
+  /// What went wrong, as the player reads it. A tool's failure says which
+  /// ([toolCode], STAGE1-APP-INTEGRATION §3.2); one not known here, or none,
+  /// falls back to the detail as it came.
+  String _failureText(TavernFailure kind, String? detail, [String? toolCode]) {
     final l10n = context.l10n;
     return switch (kind) {
+      TavernFailure.toolFailure => switch (toolCode) {
+        'budget_exhausted' => l10n.tavernToolFailBudget,
+        'batch_limit' => l10n.tavernToolFailBatch,
+        'protocol_invalid' => l10n.tavernToolFailProtocol,
+        'unsupported_response_snapshot' => l10n.tavernToolFailSnapshot,
+        'receipt_failure' => l10n.tavernToolFailReceipt,
+        'anchor_changed' => l10n.tavernToolFailAnchor,
+        _ => detail == null ? l10n.tavernToolFail : l10n.tavernToolFailDetail(detail),
+      },
       TavernFailure.noKey => l10n.tavernErrorNoKey,
       TavernFailure.badKey => l10n.tavernErrorBadKey,
       TavernFailure.busy => l10n.tavernErrorBusy,

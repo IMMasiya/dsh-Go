@@ -1191,5 +1191,14 @@
   "tavernToolPolicyNote": "Replies only use these with DeepSeek and thinking off; a change applies from the next turn, and a character card can turn them off",
   "tavernToolPolicyFailed": "Didn't change: {detail}",
   "@tavernToolPolicyFailed": {"placeholders": {"detail": {"type": "String"}}},
+  "tavernToolFailBudget": "This turn has used up its tool requests and stops here; dice already rolled still count",
+  "tavernToolFailBatch": "The model asked for too many tools at once; that batch was not run",
+  "tavernToolFailProtocol": "The model's tool call was malformed and was not run",
+  "tavernToolFailSnapshot": "This model's reply can't continue with tools, so it stops here",
+  "tavernToolFailReceipt": "A tool's result couldn't be saved; check this turn again shortly",
+  "tavernToolFailAnchor": "The chat changed during this turn, so it did not go on",
+  "tavernToolFail": "Something went wrong with a tool",
+  "tavernToolFailDetail": "Something went wrong with a tool: {detail}",
+  "@tavernToolFailDetail": {"placeholders": {"detail": {"type": "String"}}},
   "@tavernGroupSaveFailed": {"placeholders": {"reason": {"type": "String"}}}
 }
