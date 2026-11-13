@@ -122,6 +122,9 @@ flutter:
     - shaders/fx/voice_ring_refract.frag
     # Libraries.dev Metal's liquid-metal material (lib/ui/fx/metal/).
     - shaders/fx/metal_liquid.frag
+    # Distortion waves (lib/ui/fx/waves); both include distortion_wave_field.glsl.
+    - shaders/fx/distortion_wave_lens.frag
+    - shaders/fx/distortion_wave_band.frag
 
   fonts:
     # App icons: a Phosphor subset made by tool/make_icon_font.py; use AppIcons.
@@ -175,10 +178,6 @@ flutter:
     - assets/skills/dsh-go-support/
     - assets/skills/companion-adapt/
 
-  shaders:
-    # Distortion waves (lib/ui/fx/waves); both include distortion_wave_field.glsl.
-    - shaders/fx/distortion_wave_lens.frag
-    - shaders/fx/distortion_wave_band.frag
 
   # To add assets to your application, add an assets section, like this:
   # assets:
