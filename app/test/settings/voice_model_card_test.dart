@@ -251,6 +251,12 @@ void main() {
         testApp(const VoiceSettingsPage(), overrides: [voiceModelProvider.overrideWith(() => model)]),
       );
       await tester.pumpAndSettle();
+      // Below 朗读 and the recognition choices: built once scrolled to.
+      await tester.scrollUntilVisible(
+        find.byKey(const ValueKey('voice-model-delete')),
+        200,
+        scrollable: find.byType(Scrollable).first,
+      );
       await tester.ensureVisible(find.byKey(const ValueKey('voice-model-delete')));
       await tester.pumpAndSettle();
       await tester.tap(find.byKey(const ValueKey('voice-model-delete')));

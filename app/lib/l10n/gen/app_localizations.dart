@@ -32306,6 +32306,12 @@ abstract class L10n {
   /// **'这张图用不了，换一张试试'**
   String get speechBackdropPickFailed;
 
+  /// No description provided for @speechInsecure.
+  ///
+  /// In zh, this message translates to:
+  /// **'这个云端服务的地址不是 https，Key 不能这样发出去'**
+  String get speechInsecure;
+
   /// The star prompt's first line. hours is the whole hours of use so far, rounded down; 0 is half an hour (the first ask comes after 30 minutes). The word joiner keeps the ~ on the line of the word before it.
   ///
   /// In zh, this message translates to:

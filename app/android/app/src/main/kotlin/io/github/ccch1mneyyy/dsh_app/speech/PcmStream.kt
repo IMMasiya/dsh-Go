@@ -3,10 +3,12 @@ package io.github.ccch1mneyyy.dsh_app.speech
 import android.media.AudioAttributes
 import android.media.AudioFormat
 import android.media.AudioTrack
+import android.os.Build
 import android.os.Handler
 import io.github.ccch1mneyyy.dsh_app.nativemedia.SpeechGate
 import java.util.concurrent.LinkedBlockingQueue
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicLong
 import kotlin.math.max
 import kotlin.math.min
 
@@ -16,7 +18,8 @@ import kotlin.math.min
  * [AudioTrack] in stream mode, so the first chunk is heard as soon as it lands.
  *
  * [end] means nothing more is coming: the stream reports [Listener.onDone] once the last sample has
- * actually played. [stop] silences it at once (from any thread); a stopped stream reports nothing
+ * actually played (a little silence after it makes even a very short line start). [write] answers
+ * how many bytes wait to be played, so the app holds back when it runs far ahead of playback. [stop] silences it at once (from any thread); a stopped stream reports nothing
  * more after [Listener.onStopped]. The writer thread owns the track and releases it.
  *
  * With [levels] on, it reports how loud each 40 ms is, timed to when that audio is heard (for a mouth
@@ -39,6 +42,10 @@ class PcmStream(
     }
 
     private val queue = LinkedBlockingQueue<ByteArray>()
+
+    /** Bytes written by the app and not yet handed to the track. */
+    private val waiting = AtomicLong(0)
+    private var bufferBytes = 0
     @Volatile private var stopped = false
     @Volatile private var finished = false
     private var track: AudioTrack? = null
@@ -75,17 +82,26 @@ class PcmStream(
             t.release()
             return false
         }
+        bufferBytes = runCatching { t.bufferSizeInFrames * 2 }.getOrDefault(rate * 2 * 2 / 5)
+        // Start playing after 100 ms of audio, not a whole buffer (Android 12+).
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) runCatching { t.setStartThresholdInFrames(rate / 10) }
         track = t
         thread = Thread({ run(t) }, "dsh-speech-pcm").also { it.start() }
         return true
     }
 
-    /** Queues one chunk; false once the stream has ended or stopped. */
-    fun write(bytes: ByteArray): Boolean {
-        if (stopped || finished || bytes.isEmpty()) return !stopped && !finished
-        queue.offer(bytes)
-        return true
+    /** Queues one chunk; answers the bytes now waiting, or -1 once the stream has ended or stopped. */
+    fun write(bytes: ByteArray): Long {
+        if (stopped || finished) return -1
+        if (bytes.isNotEmpty()) {
+            waiting.addAndGet(bytes.size.toLong())
+            queue.offer(bytes)
+        }
+        return waiting.get()
     }
+
+    /** The bytes waiting to be played, or -1 once it has ended or stopped. */
+    fun waiting(): Long = if (stopped) -1 else waiting.get()
 
     /** Nothing more is coming. */
     fun end() {
@@ -117,6 +133,7 @@ class PcmStream(
             while (!stopped) {
                 val chunk = queue.poll(200, TimeUnit.MILLISECONDS) ?: continue
                 if (chunk === END) break
+                waiting.addAndGet(-chunk.size.toLong())
                 // Samples are two bytes; an odd chunk leaves its last byte for the next.
                 val data = carry?.let { byteArrayOf(it) + chunk } ?: chunk
                 val even = data.size and 1.inv()
@@ -158,6 +175,15 @@ class PcmStream(
                 if (failed != null) break
             }
             if (!stopped && failed == null && started) {
+                // A buffer of silence after the last sample: a line shorter than the start
+                // threshold starts too, and nothing is cut off. It is not counted in [frames].
+                val silence = ByteArray(bufferBytes)
+                var at = 0
+                while (at < silence.size && !stopped) {
+                    val n = t.write(silence, at, silence.size - at)
+                    if (n <= 0) break
+                    at += n
+                }
                 // Ended: wait until the last written sample has played (head position counts frames).
                 val deadline = System.nanoTime() + (frames * 1000 / rate + 1500) * 1_000_000
                 while (!stopped && t.playbackHeadPosition.toLong() and 0xFFFFFFFFL < frames && System.nanoTime() < deadline) {

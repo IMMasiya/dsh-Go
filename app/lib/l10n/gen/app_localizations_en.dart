@@ -18624,6 +18624,9 @@ class L10nEn extends L10n {
   String get speechBackdropPickFailed => 'That picture can\'t be used. Try another';
 
   @override
+  String get speechInsecure => 'That service\'s address isn\'t https; the key can\'t be sent that way';
+
+  @override
   String starPromptTitle(int hours) {
     String _temp0 = intl.Intl.pluralLogic(
       hours,

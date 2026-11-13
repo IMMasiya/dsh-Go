@@ -275,6 +275,8 @@ class _CloudAsrFormState extends ConsumerState<_CloudAsrForm> {
     final l10n = context.l10n;
     Widget field(TextEditingController c, String hint, {bool secret = false, bool url = false}) => TextField(
       controller: c,
+      // Not before the saved values are in: they would replace what was typed.
+      enabled: _filled,
       onChanged: (_) => _edited(),
       obscureText: secret && _obscure,
       obscuringCharacter: '•',

@@ -51,6 +51,9 @@ enum DeepSeekSpeechFailure {
 
   /// An answer that isn't what the API promises.
   protocol,
+
+  /// A key would have gone over the network unencrypted (an http address).
+  insecure,
 }
 
 class DeepSeekSpeechError implements Exception {

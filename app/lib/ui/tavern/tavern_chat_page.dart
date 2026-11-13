@@ -120,6 +120,13 @@ class _TavernChatPageState extends ConsumerState<TavernChatPage> {
   /// The page the stage last played, played again when it (re)loads.
   TavernPage? _staged;
   late final Tavern _tavern = ref.read(tavernProvider);
+
+  /// Held from the start: the page stops what it read aloud as it closes,
+  /// when it can no longer read providers.
+  late final ReadAloudController _readAloud = ref.read(readAloudProvider.notifier);
+
+  /// Stops reading aloud if what is being read is one of the tavern's lines.
+  void _quietTavern() => _readAloud.stopWhere((id) => id.startsWith('tavern:'));
   StreamSubscription<void>? _changes;
   StreamSubscription<Object?>? _turn;
 
@@ -249,6 +256,7 @@ class _TavernChatPageState extends ConsumerState<TavernChatPage> {
   @override
   void initState() {
     super.initState();
+    _readAloud; // Bound now: dispose can't read providers.
     _changes = _tavern.pathChanges(widget.chatId).listen((_) => unawaited(_reload()));
     _director = _tavern.watchDirector(widget.chatId).listen(
       (view) {
@@ -273,6 +281,7 @@ class _TavernChatPageState extends ConsumerState<TavernChatPage> {
       bridge: ref.read(voiceBridgeProvider),
       mode: () => ref.read(voiceSettingsProvider.notifier).ready(),
       cloud: (mode) => ref.read(voiceCloudProvider)(mode),
+      cloudLikely: () => ref.read(voiceCloudLikelyProvider)(),
       // The voice model lives in the on-device engine: it counts for that host only.
       modelReady: () =>
           (_connection?.isLocal ?? false) && ref.read(voiceModelProvider).status == VoiceModelStatus.ready,
@@ -291,6 +300,9 @@ class _TavernChatPageState extends ConsumerState<TavernChatPage> {
     // A reply goes on without the page (engine T24) and is picked up when it
     // opens again; a line being written into this page's box has nowhere to go.
     if (_running && _drafting) _tavern.stop(widget.chatId);
+    // Its lines are not read on after the story is left (providers change after the tree settles).
+    final readAloud = _readAloud;
+    scheduleMicrotask(() => readAloud.stopWhere((id) => id.startsWith('tavern:')));
     unawaited(_turn?.cancel());
     _stream.dispose();
     _live.removeListener(_feedCanvas);
@@ -781,6 +793,7 @@ class _TavernChatPageState extends ConsumerState<TavernChatPage> {
 
   void _send() {
     if (_running) return;
+    _quietTavern();
     // A slash command (/sys, /send: no model, so no key needed).
     final slash = tavernSlashOf(_input.text);
     if (slash case (command: TavernSlash.narrate || TavernSlash.sendOnly, :final rest)) {
@@ -1159,7 +1172,7 @@ class _TavernChatPageState extends ConsumerState<TavernChatPage> {
       case _MessageAction.copy:
         await Clipboard.setData(ClipboardData(text: message.text));
       case _MessageAction.readAloud:
-        readAloudReply(context, readId, message.text);
+        readAloudReply(context, readId, tavernStripMarkers(message.text));
       case _MessageAction.edit:
         await _edit(message);
       case _MessageAction.bookmark:

@@ -67,5 +67,6 @@
   "speechBackdropHintChange": "Tap My picture again to change it. With your companion, she speaks along with the voice.",
   "speechBackdropNoCompanion": "Set her up in the companion room first to bring her into calls.",
   "speechBackdropReplace": "Change picture",
-  "speechBackdropPickFailed": "That picture can't be used. Try another"
+  "speechBackdropPickFailed": "That picture can't be used. Try another",
+  "speechInsecure": "That service's address isn't https; the key can't be sent that way"
 }

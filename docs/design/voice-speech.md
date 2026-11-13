@@ -71,7 +71,7 @@
 1. `GET /dsh-go/v1/speech` → `{"v":1,"credential":"account"|"api-key"|null}`，不发上游请求。
 2. `POST /dsh-go/v1/speech/tts`，JSON `{text, voice}` → `200 application/octet-stream`，边收边转上游 PCM；App 断开时中止上游；上游中途断开就销毁响应。
 3. `POST /dsh-go/v1/speech/asr`，体是音频（`audio/wav` / `audio/ogg`，≤8 MiB）→ `{text, duration_ms}`。
-4. 错误 `{"error":{"code","message"}}`：`speech/no-credential` 401、`speech/sign-in-required` 401、`speech/unauthorized` 401、`speech/insufficient-balance` 402、`speech/rate-limited` 429、`speech/rejected` 400、`speech/too-large` 413、`speech/busy` 503、`speech/upstream-unreachable` 502。不记录、不回显凭据。
+4. 错误 `{"error":{"code","message"}}`：`speech/no-credential` 401、`speech/sign-in-required` 401、`speech/unauthorized` 401、`speech/insufficient-balance` 402、`speech/rate-limited` 429、`speech/rejected` 400、`speech/too-large` 413、`speech/busy`（上游的 5xx 原样带回）、`speech/upstream-unreachable` 502。不记录、不回显凭据。
 
 旧引擎没有这组路由时，探测失败按「没有账号路线」处理，App 的 Key 照常可用。
 

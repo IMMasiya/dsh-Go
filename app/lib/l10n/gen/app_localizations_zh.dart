@@ -17643,6 +17643,9 @@ class L10nZh extends L10n {
   String get speechBackdropPickFailed => '这张图用不了，换一张试试';
 
   @override
+  String get speechInsecure => '这个云端服务的地址不是 https，Key 不能这样发出去';
+
+  @override
   String starPromptTitle(int hours) {
     String _temp0 = intl.Intl.pluralLogic(
       hours,

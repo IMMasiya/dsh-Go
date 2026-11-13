@@ -78,6 +78,7 @@ class VoiceInputController extends ChangeNotifier with WidgetsBindingObserver {
     Future<VoiceMode> Function()? mode,
     bool Function()? modelReady,
     this._cloud,
+    this._cloudLikely,
     this.onRecognized,
     this.requiredProviderId,
     bool observeLifecycle = true,
@@ -109,6 +110,10 @@ class VoiceInputController extends ChangeNotifier with WidgetsBindingObserver {
 
   /// The cloud recognizer for a mode, if any (DeepSeek's, or the person's own).
   final VoiceCloudResolver? _cloud;
+
+  /// A cloud recognizer is probably there (settings only, nothing asked):
+  /// the microphone shows even without a phone or engine recognizer.
+  final bool Function()? _cloudLikely;
   VoiceCloud? _cloudRun;
   final bool _observing;
   void Function(VoiceMessage message)? onMessage;
@@ -149,7 +154,8 @@ class VoiceInputController extends ChangeNotifier with WidgetsBindingObserver {
   bool get active => _phase != VoicePhase.idle;
   VoiceEngine? get engine => _engine;
   bool get engineReady => _caps.recorder && (_catalog?.current(client()) ?? false);
-  bool get available => _caps.recognizer || engineReady;
+  bool get available =>
+      _caps.recognizer || engineReady || (_caps.recorder && _cloud != null && (_cloudLikely?.call() ?? false));
 
   bool _current(int operation) => !_disposed && active && operation == _operation;
   // Phone recognition belongs to the draft, not its Host transport. Starting
@@ -441,10 +447,12 @@ class VoiceInputController extends ChangeNotifier with WidgetsBindingObserver {
     try {
       final prefs = await SharedPreferences.getInstance();
       if (prefs.getBool(cloudNoticeKey) == true) return;
-      await prefs.setBool(cloudNoticeKey, true);
+      // Marked as said only once someone is there to hear it.
+      if (_disposed || onMessage == null) return;
       _say(VoiceMessage(appL10n.speechCloudNotice, change: true));
+      await prefs.setBool(cloudNoticeKey, true);
     } catch (_) {
-      // No preferences: nothing said, nothing lost.
+      // No preferences: said this time, and again next time.
     }
   }
 

@@ -325,6 +325,7 @@ class _CompanionPageState extends ConsumerState<CompanionPage> implements Compan
       bridge: ref.read(voiceBridgeProvider),
       mode: () => ref.read(voiceSettingsProvider.notifier).ready(),
       cloud: (mode) => ref.read(voiceCloudProvider)(mode),
+      cloudLikely: () => ref.read(voiceCloudLikelyProvider)(),
       modelReady: () =>
           mounted &&
           (ref.read(activeConnectionProvider).value?.isLocal ?? false) &&
@@ -337,6 +338,8 @@ class _CompanionPageState extends ConsumerState<CompanionPage> implements Compan
         });
       },
     );
+    // What dictation has to say (a notice, why it failed) comes in her bubble, not aloud.
+    _voice.onMessage = (message) => _say(message.text, aloud: false);
     _voice.addListener(_voiceChanged);
     _agentEvents = ref.read(petEventBusProvider).events.listen(_onAgentEvent);
     _speaker = ref.read(companionSpeakerProvider);

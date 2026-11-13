@@ -196,6 +196,10 @@ class DeepSeekOut implements SpeechOut {
   /// How many pieces are asked for ahead of the one playing.
   static const _ahead = 2;
 
+  /// At most this much audio waits on the phone to be played (3 s): beyond
+  /// it, writing waits for playback to catch up.
+  static const _waitingBytes = deepSeekTtsRate * 2 * 3;
+
   @override
   void add(String text) {
     if (_finished || _stopped) return;
@@ -278,7 +282,11 @@ class DeepSeekOut implements SpeechOut {
                 return;
               }
             }
-            await _audio.write(id, chunk);
+            var waiting = await _audio.write(id, chunk);
+            while (waiting > _waitingBytes && !_stopped) {
+              await Future<void>.delayed(const Duration(milliseconds: 150));
+              waiting = await _audio.waiting(id);
+            }
           }
           if (piece.done) break;
           await piece.more;
@@ -384,6 +392,11 @@ class SpeakerOut implements SpeechOut {
   final _events = StreamController<SpeechOutEvent>.broadcast();
   late final StreamSubscription<CompanionVoiceEvent> _sub;
   final _open = <String>{};
+
+  /// Pieces not handed to the speaker yet: it fetches each line as soon as it
+  /// is queued, so only a few go ahead of the one playing.
+  final _held = Queue<String>();
+  static const _ahead = 3;
   bool _finished = false;
   bool _ended = false;
   bool _started = false;
@@ -409,15 +422,22 @@ class SpeakerOut implements SpeechOut {
     if (_finished || _ended) return;
     _finished = true;
     _say(_chunker.take(final_: true));
-    if (_open.isEmpty) _close(_said > 0 && _failed == _said ? const SpeechOutFailed('voice') : const SpeechOutDone());
+    if (_open.isEmpty && _held.isEmpty) {
+      _close(_said > 0 && _failed == _said ? const SpeechOutFailed('voice') : const SpeechOutDone());
+    }
   }
 
   void _say(List<String> pieces) {
-    for (final piece in pieces) {
+    _held.addAll(pieces);
+    _release();
+  }
+
+  void _release() {
+    while (_held.isNotEmpty && _open.length < _ahead && !_ended) {
       final id = 'r${++_lines}';
       _open.add(id);
       _said++;
-      _speaker.speak(id, piece);
+      _speaker.speak(id, _held.removeFirst());
     }
   }
 
@@ -434,6 +454,7 @@ class SpeakerOut implements SpeechOut {
       case CompanionVoiceEventType.done || CompanionVoiceEventType.stopped || CompanionVoiceEventType.error:
         if (event.type == CompanionVoiceEventType.error) _failed++;
         _open.remove(event.id);
+        _release();
         if (_open.isEmpty) {
           _levels?.cancel();
           onPlaying?.call(false);
@@ -467,6 +488,7 @@ class SpeakerOut implements SpeechOut {
     if (_ended) return;
     if (_open.isNotEmpty) _speaker.stop();
     _open.clear();
+    _held.clear();
     onPlaying?.call(false);
     _close(const SpeechOutDone());
   }

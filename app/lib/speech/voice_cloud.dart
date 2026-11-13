@@ -11,7 +11,9 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
 
+import '../state/account_state.dart';
 import '../state/connection_state.dart';
+import '../state/settings_state.dart';
 import '../state/voice_settings.dart';
 import 'deepseek_speech.dart';
 import 'speech_settings.dart';
@@ -25,21 +27,35 @@ abstract class VoiceCloud {
   Future<String> transcribe(Uint8List wav);
 }
 
+/// DeepSeek's recognizer. Each recording asks who pays afresh and closes what
+/// it opened, so a call can use it turn after turn.
 class DeepSeekVoiceCloud implements VoiceCloud {
-  DeepSeekVoiceCloud(this._speech);
-  final DeepSeekSpeech _speech;
+  DeepSeekVoiceCloud(this._resolve);
+  final DeepSeekSpeechResolver _resolve;
 
   @override
   int get maxSeconds => deepSeekAsrMaxSeconds;
 
   @override
   Future<String> transcribe(Uint8List wav) async {
+    final speech = await _resolve();
+    if (speech == null) throw const DeepSeekSpeechError(DeepSeekSpeechFailure.noCredential);
     try {
-      return await _speech.transcribe(wav);
+      return await speech.transcribe(wav);
     } finally {
-      _speech.close();
+      speech.close();
     }
   }
+}
+
+/// A key may only travel encrypted, or to this device itself (a local server).
+bool cloudBaseSafe(String base) {
+  final uri = Uri.tryParse(base.trim());
+  if (uri == null || !uri.hasScheme) return false;
+  if (uri.scheme == 'https') return true;
+  if (uri.scheme != 'http') return false;
+  final host = uri.host.toLowerCase();
+  return host == 'localhost' || host == '127.0.0.1' || host == '::1' || host == '[::1]';
 }
 
 /// An OpenAI-compatible `/audio/transcriptions`.
@@ -58,11 +74,18 @@ class OpenAiVoiceCloud implements VoiceCloud {
       ..fields['model'] = settings.model.trim()
       ..fields['response_format'] = 'json'
       ..files.add(http.MultipartFile.fromBytes('file', wav, filename: 'speech.wav'));
-    if (settings.key.trim().isNotEmpty) request.headers['authorization'] = 'Bearer ${settings.key.trim()}';
+    if (settings.key.trim().isNotEmpty) {
+      // Never a key in the clear over the network.
+      if (!cloudBaseSafe(base)) throw const DeepSeekSpeechError(DeepSeekSpeechFailure.insecure);
+      request.headers['authorization'] = 'Bearer ${settings.key.trim()}';
+    }
     final client = _client();
     final http.Response response;
     try {
-      response = await http.Response.fromStream(await client.send(request)).timeout(const Duration(seconds: 90));
+      // One deadline for the headers and the body together.
+      response = await () async {
+        return http.Response.fromStream(await client.send(request));
+      }().timeout(const Duration(seconds: 90));
     } on TimeoutException {
       throw const DeepSeekSpeechError(DeepSeekSpeechFailure.busy, 'timeout');
     } on Object catch (error) {
@@ -101,8 +124,11 @@ final voiceCloudProvider = Provider<VoiceCloudResolver>((ref) {
   return (mode) async {
     switch (mode) {
       case VoiceMode.deepseek || VoiceMode.auto:
-        final speech = await ref.read(deepSeekSpeechProvider)();
-        return speech == null ? null : DeepSeekVoiceCloud(speech);
+        final resolve = ref.read(deepSeekSpeechProvider);
+        final speech = await resolve();
+        if (speech == null) return null;
+        speech.close();
+        return DeepSeekVoiceCloud(resolve);
       case VoiceMode.cloud:
         final settings = await ref.read(cloudAsrProvider.notifier).ready();
         return settings.configured ? OpenAiVoiceCloud(settings, ref.read(deepSeekSpeechHttpProvider)) : null;
@@ -111,6 +137,21 @@ final voiceCloudProvider = Provider<VoiceCloudResolver>((ref) {
     }
   };
 });
+
+/// Whether [mode] probably has a cloud recognizer, without asking anyone: the
+/// composer's microphone shows on phones with no other way to listen.
+/// (Starting still asks; a wrong guess ends in a notice, not a silent failure.)
+final voiceCloudLikelyProvider = Provider<bool Function()>(
+  (ref) =>
+      () => switch (ref.read(voiceSettingsProvider)) {
+        VoiceMode.deepseek => true,
+        VoiceMode.cloud => ref.read(cloudAsrProvider).configured,
+        VoiceMode.auto =>
+          ref.read(settingsProvider).apiKey.trim().isNotEmpty ||
+              ref.read(accountProvider).phase == AccountPhase.signedIn,
+        VoiceMode.system || VoiceMode.engine => false,
+      },
+);
 
 /// The engine's own recognizer (the on-device voice model), for a call when
 /// no cloud one can be had.

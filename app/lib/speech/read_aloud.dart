@@ -8,6 +8,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../companion/companion_voice.dart';
 import '../companion/companion_voice_source.dart';
+import '../ui/chat/secret_mask.dart';
 import 'deepseek_speech.dart';
 import 'speech_audio.dart';
 import 'speech_out.dart';
@@ -27,6 +28,9 @@ class ReadAloudState {
 
 class ReadAloudController extends Notifier<ReadAloudState> {
   SpeechOut? _out;
+
+  /// Goes up with every start and stop: a start that waited across one gives up.
+  int _run = 0;
   StreamSubscription<SpeechOutEvent>? _sub;
 
   @override
@@ -44,23 +48,25 @@ class ReadAloudController extends Notifier<ReadAloudState> {
     final reading = state.id;
     stop();
     if (reading == messageId) return;
-    final text = speakable(markdown);
+    // Keys and tokens in a reply are neither sent to a voice nor spoken.
+    final text = speakable(maskSecrets(markdown, mark: ''));
     if (text.isEmpty) {
       onError?.call(const DeepSeekSpeechError(DeepSeekSpeechFailure.rejected));
       return;
     }
     state = ReadAloudState(id: messageId, phase: ReadAloudPhase.loading);
-    // First use before the settings were read: DeepSeek's voice.
-    final settings =
-        ref.read(speechVoiceSettingsProvider) ?? const CompanionVoiceSettings(source: CompanionVoiceSource.deepseek);
+    final run = ++_run;
+    // The chosen voice, once the settings have been read (never a guess).
+    final settings = await ref.read(speechVoiceSettingsProvider.notifier).ready();
+    if (run != _run || !ref.mounted) return;
     final speaker = ref.read(speechSpeakerProvider);
     if (settings.source != CompanionVoiceSource.deepseek && !await speaker.ready(settings)) {
-      if (state.id != messageId) return;
+      if (run != _run || !ref.mounted) return;
       state = const ReadAloudState();
       onError?.call(const ReadAloudNotSetUp());
       return;
     }
-    if (state.id != messageId) return;
+    if (run != _run || !ref.mounted) return;
     final out = speechOutFor(
       settings,
       deepseek: ref.read(deepSeekSpeechProvider),
@@ -95,8 +101,15 @@ class ReadAloudController extends Notifier<ReadAloudState> {
     state = const ReadAloudState();
   }
 
+  /// Stops reading when what is being read is one [reading] owns (a page closing).
+  void stopWhere(bool Function(String id) reading) {
+    final id = state.id;
+    if (id != null && reading(id)) stop();
+  }
+
   /// Silence: nothing is read any more.
   void stop() {
+    _run++;
     final out = _out;
     _out = null;
     unawaited(_sub?.cancel());

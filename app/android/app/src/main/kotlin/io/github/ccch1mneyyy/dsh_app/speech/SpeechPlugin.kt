@@ -21,8 +21,8 @@ import io.github.ccch1mneyyy.dsh_app.nativemedia.MicArbiter
 /**
  * Speech audio for 朗读 and 语音通话: MethodChannel `dsh/speech` (lib/speech/speech_audio.dart).
  *
- * Playback — one [PcmStream] at a time: `open` {id, rate, call, levels}, `write` {id, bytes},
- * `end` {id}, `stop`. Opening a stream stops the one before. A `call` stream plays as voice
+ * Playback — one [PcmStream] at a time: `open` {id, rate, call, levels}, `write` {id, bytes} (answers
+ * the bytes waiting to play, -1 when the stream is gone), `waiting` {id}, `end` {id}, `stop`. Opening a stream stops the one before. A `call` stream plays as voice
  * communication (so the echo canceller hears it); others as media, ducking other apps.
  *
  * Calls — `callStart` {bargeIn} answers "ok", "permission" or "microphone"; `callStop`; `callMute`
@@ -95,7 +95,11 @@ class SpeechPlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandl
                 val id = call.argument<String>("id")
                 val bytes = call.argument<ByteArray>("bytes")
                 val s = stream
-                result.success(s != null && s.id == id && bytes != null && s.write(bytes))
+                result.success(if (s != null && s.id == id && bytes != null) s.write(bytes) else -1L)
+            }
+            "waiting" -> {
+                val s = stream
+                result.success(if (s != null && s.id == call.argument<String>("id")) s.waiting() else -1L)
             }
             "end" -> {
                 val s = stream

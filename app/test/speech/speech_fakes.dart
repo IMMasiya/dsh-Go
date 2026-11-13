@@ -30,10 +30,13 @@ class FakeAudio extends SpeechAudio {
   }
 
   @override
-  Future<bool> write(String id, Uint8List bytes) async {
+  Future<int> write(String id, Uint8List bytes) async {
     written[id]!.addAll(bytes);
-    return true;
+    return 0;
   }
+
+  @override
+  Future<int> waiting(String id) async => 0;
 
   @override
   Future<void> end(String id) async => calls.add('end:$id');

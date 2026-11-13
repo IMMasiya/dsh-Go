@@ -98,8 +98,9 @@ class _VoiceCallPageState extends ConsumerState<VoiceCallPage> with WidgetsBindi
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     final settings = ref.read(callSettingsProvider);
-    final voice =
-        ref.read(speechVoiceSettingsProvider) ?? const CompanionVoiceSettings(source: CompanionVoiceSource.deepseek);
+    final voices = ref.read(speechVoiceSettingsProvider.notifier);
+    // The chosen voice, as soon as the settings have been read (the first reply comes later).
+    var voice = ref.read(speechVoiceSettingsProvider) ?? voices.defaults;
     final speaker = ref.read(speechSpeakerProvider);
     final audio = ref.read(speechAudioProvider);
     final deepseek = ref.read(deepSeekSpeechProvider);
@@ -109,6 +110,7 @@ class _VoiceCallPageState extends ConsumerState<VoiceCallPage> with WidgetsBindi
       audio: audio,
       conversation: widget.conversation,
       recognizer: () async {
+        voice = await voices.ready();
         // The phone's own voice warms up while the recognizer is found.
         if (voice.source != CompanionVoiceSource.deepseek) unawaited(speaker.ready(voice));
         return recognize();

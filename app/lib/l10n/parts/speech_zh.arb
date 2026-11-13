@@ -67,5 +67,6 @@
   "speechBackdropHintChange": "再点一次「我的图片」可以换一张。选伙伴时，她会跟着声音说话。",
   "speechBackdropNoCompanion": "先在伙伴小屋里请她住进来，才能把她放进通话里。",
   "speechBackdropReplace": "换一张图",
-  "speechBackdropPickFailed": "这张图用不了，换一张试试"
+  "speechBackdropPickFailed": "这张图用不了，换一张试试",
+  "speechInsecure": "这个云端服务的地址不是 https，Key 不能这样发出去"
 }

@@ -28,6 +28,7 @@ String speechErrorText(L10n l10n, Object error, {bool listening = false}) => swi
     DeepSeekSpeechFailure.busy => l10n.speechBusy,
     DeepSeekSpeechFailure.network => l10n.speechNetwork,
     DeepSeekSpeechFailure.protocol => listening ? l10n.speechListenFailed : l10n.speechReadFailed,
+    DeepSeekSpeechFailure.insecure => l10n.speechInsecure,
   },
   _ => listening ? l10n.speechListenFailed : l10n.speechReadFailed,
 };

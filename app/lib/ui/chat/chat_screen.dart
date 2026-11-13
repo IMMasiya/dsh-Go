@@ -358,6 +358,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
       bridge: ref.read(voiceBridgeProvider),
       mode: () => ref.read(voiceSettingsProvider.notifier).ready(),
       cloud: (mode) => ref.read(voiceCloudProvider)(mode),
+      cloudLikely: () => ref.read(voiceCloudLikelyProvider)(),
       // The voice model lives in the on-device engine: it counts for that host only.
       modelReady: () =>
           mounted &&
@@ -1032,7 +1033,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
         call: true,
       );
       if (choice is CallChoice) {
-        if (ownsDraft() && mounted) _startCall();
+        if (ownsDraft() && mounted) await _startCall();
         return;
       }
       if (choice is GenerateChoice) {
@@ -1439,15 +1440,23 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
 
   /// 「语音通话」 with this conversation (a new chat gets its conversation
   /// with the first thing said).
-  void _startCall() {
+  Future<void> _startCall() async {
+    // Dictation gives the microphone back first (what it heard so far goes, as on a draft switch).
+    await _voice.cancel();
+    if (!mounted) return;
     final sessionId = ref.read(currentSessionProvider);
     final listed = sessionId == null ? null : ref.read(chatProvider(sessionId)).title;
     final title = listed != null && listed.trim().isNotEmpty ? chatTitleShown(listed.trim()) : appL10n.commonNewChat;
+    // The call stays with the conversation it began in, whatever is opened meanwhile.
+    var pinned = sessionId;
     unawaited(
       openChatCall(
         context,
         title: title,
-        session: () async => mounted ? _ensureSession(isCurrent: () => mounted) : null,
+        session: () async {
+          if (!mounted) return null;
+          return pinned ??= await _ensureSession(isCurrent: () => mounted);
+        },
       ),
     );
   }

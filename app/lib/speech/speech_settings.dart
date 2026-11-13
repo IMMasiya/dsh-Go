@@ -156,10 +156,11 @@ class CallSettings {
 
 class CallSettingsController extends Notifier<CallSettings> {
   static const _key = 'speech_call_v1';
+  late Future<void> _loaded;
 
   @override
   CallSettings build() {
-    unawaited(_load());
+    _loaded = _load();
     return const CallSettings();
   }
 
@@ -182,6 +183,9 @@ class CallSettingsController extends Notifier<CallSettings> {
   }
 
   Future<void> update(CallSettings next) async {
+    // After the saved settings are in: they never overwrite a change made meanwhile.
+    await _loaded;
+    if (!ref.mounted) return;
     state = next;
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(

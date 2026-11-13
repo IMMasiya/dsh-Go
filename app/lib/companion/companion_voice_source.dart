@@ -414,8 +414,16 @@ abstract class VoiceOutputSettingsController extends Notifier<CompanionVoiceSett
 
   @override
   CompanionVoiceSettings? build() {
-    unawaited(_load());
+    _loaded = _load();
     return null;
+  }
+
+  late Future<void> _loaded;
+
+  /// The settings once they have been read (the defaults when nothing could be).
+  Future<CompanionVoiceSettings> ready() async {
+    await _loaded;
+    return state ?? defaults;
   }
 
   Future<void> _load() async {

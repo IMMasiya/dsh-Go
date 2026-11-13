@@ -102,8 +102,12 @@ class SpeechAudio {
   Future<bool> open(String id, {int rate = 24000, bool call = false, bool levels = false}) async =>
       await _invoke<bool>('open', {'id': id, 'rate': rate, 'call': call, 'levels': levels}) ?? false;
 
-  Future<bool> write(String id, Uint8List bytes) async =>
-      await _invoke<bool>('write', {'id': id, 'bytes': bytes}) ?? false;
+  /// Queues [bytes] on stream [id]; the bytes now waiting to play, or -1 when
+  /// the stream is gone.
+  Future<int> write(String id, Uint8List bytes) async => await _invoke<int>('write', {'id': id, 'bytes': bytes}) ?? -1;
+
+  /// The bytes waiting to play on stream [id], or -1 when it is gone.
+  Future<int> waiting(String id) async => await _invoke<int>('waiting', {'id': id}) ?? -1;
 
   /// Nothing more for [id]: it reports done once the last sample is heard.
   Future<void> end(String id) => _invoke<void>('end', {'id': id});

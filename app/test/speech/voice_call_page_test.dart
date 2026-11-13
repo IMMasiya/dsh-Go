@@ -57,6 +57,8 @@ void main() {
     await tester.tap(find.text('open'));
     for (var i = 0; i < 25; i++) {
       await tester.pump(const Duration(milliseconds: 60));
+      // The saved voice is read with real async work before the call starts listening.
+      if (i % 5 == 0) await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 20)));
     }
     return (audio, conversation);
   }
