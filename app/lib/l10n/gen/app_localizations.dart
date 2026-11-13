@@ -39362,6 +39362,72 @@ abstract class L10n {
   /// **'酒馆设置里关着的，这里打开也不算'**
   String get tavernChatToolHeld;
 
+  /// No description provided for @tavernInspectRequests.
+  ///
+  /// In zh, this message translates to:
+  /// **'{count} 次请求'**
+  String tavernInspectRequests(int count);
+
+  /// No description provided for @tavernInspectUsageTotals.
+  ///
+  /// In zh, this message translates to:
+  /// **'输入 {prompt}（缓存 {hit}）· 输出 {completion}'**
+  String tavernInspectUsageTotals(String prompt, String hit, String completion);
+
+  /// No description provided for @tavernReqUsagePrompt.
+  ///
+  /// In zh, this message translates to:
+  /// **'输入'**
+  String get tavernReqUsagePrompt;
+
+  /// No description provided for @tavernReqUsageCache.
+  ///
+  /// In zh, this message translates to:
+  /// **'缓存'**
+  String get tavernReqUsageCache;
+
+  /// No description provided for @tavernReqUsageCompletion.
+  ///
+  /// In zh, this message translates to:
+  /// **'输出'**
+  String get tavernReqUsageCompletion;
+
+  /// No description provided for @tavernReqUsageLine.
+  ///
+  /// In zh, this message translates to:
+  /// **'{field}：{parts}'**
+  String tavernReqUsageLine(String field, String parts);
+
+  /// No description provided for @tavernReqUsageJoin.
+  ///
+  /// In zh, this message translates to:
+  /// **'，'**
+  String get tavernReqUsageJoin;
+
+  /// No description provided for @tavernReqUsageKnown.
+  ///
+  /// In zh, this message translates to:
+  /// **'已明确 {known}'**
+  String tavernReqUsageKnown(String known);
+
+  /// No description provided for @tavernReqUsageUnknown.
+  ///
+  /// In zh, this message translates to:
+  /// **'{count} 个请求未知'**
+  String tavernReqUsageUnknown(int count);
+
+  /// No description provided for @tavernReqUsageMissing.
+  ///
+  /// In zh, this message translates to:
+  /// **'{count} 个请求没报告'**
+  String tavernReqUsageMissing(int count);
+
+  /// No description provided for @tavernReqUsageInvalid.
+  ///
+  /// In zh, this message translates to:
+  /// **'{count} 个请求报告的数不对'**
+  String tavernReqUsageInvalid(int count);
+
   /// No description provided for @tavernToolFailBudget.
   ///
   /// In zh, this message translates to:

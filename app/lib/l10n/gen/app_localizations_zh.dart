@@ -21551,6 +21551,53 @@ class L10nZh extends L10n {
   String get tavernChatToolHeld => '酒馆设置里关着的，这里打开也不算';
 
   @override
+  String tavernInspectRequests(int count) {
+    return '$count 次请求';
+  }
+
+  @override
+  String tavernInspectUsageTotals(String prompt, String hit, String completion) {
+    return '输入 $prompt（缓存 $hit）· 输出 $completion';
+  }
+
+  @override
+  String get tavernReqUsagePrompt => '输入';
+
+  @override
+  String get tavernReqUsageCache => '缓存';
+
+  @override
+  String get tavernReqUsageCompletion => '输出';
+
+  @override
+  String tavernReqUsageLine(String field, String parts) {
+    return '$field：$parts';
+  }
+
+  @override
+  String get tavernReqUsageJoin => '，';
+
+  @override
+  String tavernReqUsageKnown(String known) {
+    return '已明确 $known';
+  }
+
+  @override
+  String tavernReqUsageUnknown(int count) {
+    return '$count 个请求未知';
+  }
+
+  @override
+  String tavernReqUsageMissing(int count) {
+    return '$count 个请求没报告';
+  }
+
+  @override
+  String tavernReqUsageInvalid(int count) {
+    return '$count 个请求报告的数不对';
+  }
+
+  @override
   String get tavernToolFailBudget => '这一回合用工具的次数用完了，停在这里；之前已经掷的骰子照样算数';
 
   @override

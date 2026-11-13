@@ -22735,6 +22735,53 @@ class L10nEn extends L10n {
   String get tavernChatToolHeld => 'What tavern settings turned off stays off, even if on here';
 
   @override
+  String tavernInspectRequests(int count) {
+    return '$count requests';
+  }
+
+  @override
+  String tavernInspectUsageTotals(String prompt, String hit, String completion) {
+    return 'In $prompt (cached $hit) · out $completion';
+  }
+
+  @override
+  String get tavernReqUsagePrompt => 'In';
+
+  @override
+  String get tavernReqUsageCache => 'Cached';
+
+  @override
+  String get tavernReqUsageCompletion => 'Out';
+
+  @override
+  String tavernReqUsageLine(String field, String parts) {
+    return '$field: $parts';
+  }
+
+  @override
+  String get tavernReqUsageJoin => ', ';
+
+  @override
+  String tavernReqUsageKnown(String known) {
+    return '$known known';
+  }
+
+  @override
+  String tavernReqUsageUnknown(int count) {
+    return '$count not known';
+  }
+
+  @override
+  String tavernReqUsageMissing(int count) {
+    return '$count not reported';
+  }
+
+  @override
+  String tavernReqUsageInvalid(int count) {
+    return '$count reported wrongly';
+  }
+
+  @override
   String get tavernToolFailBudget =>
       'This turn has used up its tool requests and stops here; dice already rolled still count';
 
