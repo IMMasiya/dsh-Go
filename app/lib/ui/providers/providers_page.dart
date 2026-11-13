@@ -32,6 +32,7 @@ import 'provider_form_page.dart';
 import 'provider_widgets.dart';
 import 'subscription_page.dart';
 import 'subscription_sheet.dart';
+import 'export_import_page.dart';
 
 class ProvidersPage extends ConsumerWidget {
   const ProvidersPage({super.key});
@@ -66,6 +67,13 @@ class ProvidersPage extends ConsumerWidget {
           : summary == null
           ? null
           : Text(summary),
+      actions: [
+        GlassIconButton(
+          icon: AppIcons.shareConfig,
+          tooltip: l10n.engineProviderExportImport,
+          onPressed: () => _push(context, const ExportImportPage()),
+        ),
+      ],
       children: [
         const NewChatDefaultsCard(),
         _OfficialAccounts(openAi: official, openAiReady: officialReady),
