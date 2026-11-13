@@ -209,6 +209,13 @@ class _VoiceSettingsPageState extends ConsumerState<VoiceSettingsPage> {
               value: call.speaker,
               onChanged: (on) => unawaited(calls.update(call.copyWith(speaker: on))),
             ),
+            SettingsSwitchTile(
+              key: const ValueKey('speech-call-cue'),
+              title: l10n.speechCallCue,
+              subtitle: l10n.speechCallCueHint,
+              value: call.cue,
+              onChanged: (on) => unawaited(calls.update(call.copyWith(cue: on))),
+            ),
           ],
         ),
       ],

@@ -110,6 +110,11 @@ class SpeechPlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandl
                 stream?.stop()
                 result.success(null)
             }
+            "duck" -> {
+                val s = stream
+                if (s != null && s.id == call.argument<String>("id")) s.duck(call.argument<Boolean>("on") == true)
+                result.success(null)
+            }
             "callStart" -> result.success(startCall(call.argument<Boolean>("bargeIn") ?: true))
             "callStop" -> {
                 endCall()
@@ -232,8 +237,9 @@ class SpeechPlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandl
 
     private val captureListener = object : CallCapture.Listener {
         override fun onSpeechStart(overPlayback: Boolean) {
-            // Barge-in: the voice stops here, before Dart hears of it.
-            if (overPlayback) stream?.takeIf { it.call }?.stop()
+            // Spoken over: the voice steps back at once, before Dart hears of it; Dart
+            // decides from what was said whether it stops or comes back up.
+            if (overPlayback) stream?.takeIf { it.call }?.duck(true)
             send("speechStart", "over" to overPlayback)
         }
 

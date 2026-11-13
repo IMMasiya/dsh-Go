@@ -129,6 +129,7 @@ class CallSettings {
     this.speaker = true,
     this.backdrop = CallBackdrop.sea,
     this.image = '',
+    this.cue = true,
   });
 
   /// Speaking over her stops her (else what is said while she talks is ignored).
@@ -144,14 +145,24 @@ class CallSettings {
   /// The picture for [CallBackdrop.image]: a copy this app keeps ('' for none).
   final String image;
 
-  CallSettings copyWith({bool? bargeIn, bool? spoken, bool? speaker, CallBackdrop? backdrop, String? image}) =>
-      CallSettings(
-        bargeIn: bargeIn ?? this.bargeIn,
-        spoken: spoken ?? this.spoken,
-        speaker: speaker ?? this.speaker,
-        backdrop: backdrop ?? this.backdrop,
-        image: image ?? this.image,
-      );
+  /// A soft chime when an answer is slow to start.
+  final bool cue;
+
+  CallSettings copyWith({
+    bool? bargeIn,
+    bool? spoken,
+    bool? speaker,
+    CallBackdrop? backdrop,
+    String? image,
+    bool? cue,
+  }) => CallSettings(
+    bargeIn: bargeIn ?? this.bargeIn,
+    spoken: spoken ?? this.spoken,
+    speaker: speaker ?? this.speaker,
+    backdrop: backdrop ?? this.backdrop,
+    image: image ?? this.image,
+    cue: cue ?? this.cue,
+  );
 }
 
 class CallSettingsController extends Notifier<CallSettings> {
@@ -176,6 +187,7 @@ class CallSettingsController extends Notifier<CallSettings> {
         speaker: json['speaker'] != false,
         backdrop: CallBackdrop.values.asNameMap()[json['backdrop']] ?? CallBackdrop.sea,
         image: json['image'] is String ? json['image'] as String : '',
+        cue: json['cue'] != false,
       );
     } on Object {
       // Defaults for this run.
@@ -202,6 +214,7 @@ class CallSettingsController extends Notifier<CallSettings> {
         'speaker': next.speaker,
         'backdrop': next.backdrop.name,
         'image': next.image,
+        'cue': next.cue,
       }),
     );
   }

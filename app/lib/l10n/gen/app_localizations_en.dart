@@ -18468,7 +18468,8 @@ class L10nEn extends L10n {
   String get speechCallBargeIn => 'Interrupt by speaking';
 
   @override
-  String get speechCallBargeInHint => 'Start talking while the AI speaks and it stops to listen';
+  String get speechCallBargeInHint =>
+      'When you speak over the AI it goes quiet; a “yeah” lets it go on, anything else stops it';
 
   @override
   String get speechCallSpoken => 'Spoken answers';
@@ -18485,6 +18486,20 @@ class L10nEn extends L10n {
   @override
   String get speechCallHint =>
       '(This is a voice call; what I say comes through speech recognition. Please answer briefly and conversationally, without Markdown, lists, tables or code blocks.)';
+
+  @override
+  String speechCallCutNote(String heard) {
+    return '(I cut you off at “$heard”; I didn\'t hear the rest.)';
+  }
+
+  @override
+  String get speechCallCutEarly => '(I cut you off before you said anything; I didn\'t hear that answer.)';
+
+  @override
+  String get speechCallCue => 'Thinking sound';
+
+  @override
+  String get speechCallCueHint => 'A soft chime when an answer is slow to start';
 
   @override
   String get speechCallStarting => 'Connecting';

@@ -2,8 +2,14 @@
 // utterances on the phone (speech/call capture: echo cancellation, a speech
 // gate, 300 ms kept before each start); each utterance is recognized whole
 // (DeepSeek's recognizer by default) and sent as an ordinary message; the reply
-// is read aloud while it is still being written. Speaking over the reply stops
-// it, and the turn with it (插话打断, on by default).
+// is read aloud while it is still being written.
+//
+// Speaking over the reply (插话打断, on by default) goes in two steps, as voice
+// agents do it: she steps back at once (quieter), and what was said decides —
+// agreement (嗯、对、好的) and noise let her carry on, 停 / 等一下 stop her, and
+// anything else, or talking on past [VoiceCallController.confirmAfter] (1.6 s), is the
+// person taking the turn: she stops, the turn behind her too, and the next
+// message tells the model where she was cut off.
 //
 // The controller knows nothing of widgets or of where messages go: a
 // [CallConversation] sends and reports the reply, a [VoiceCloud] recognizes,
@@ -16,6 +22,7 @@ import 'package:flutter/foundation.dart';
 import '../speech_audio.dart';
 import '../speech_out.dart';
 import '../voice_cloud.dart';
+import 'turn_words.dart';
 
 enum CallPhase {
   /// Getting the microphone.
@@ -78,7 +85,24 @@ class VoiceCallController extends ChangeNotifier {
     required this.voice,
     required this.choices,
     this.permission,
+    this.cutNote,
+    this.thinkingCue,
+    this.confirmAfter = const Duration(milliseconds: 1600),
+    this.cueAfter = const Duration(milliseconds: 1200),
   });
+
+  /// Talking on over her this long is taking the turn, whatever the words.
+  final Duration confirmAfter;
+
+  /// No reply yet this long after the person finished: the thinking cue, once a turn.
+  final Duration cueAfter;
+
+  /// The line telling the model where the person cut its reply off ([heard]:
+  /// the end of what they heard, '' when they cut in before a word).
+  final String Function(String heard)? cutNote;
+
+  /// Plays the soft "still thinking" sound.
+  final Future<void> Function()? thinkingCue;
 
   final SpeechAudio audio;
   final CallConversation conversation;
@@ -115,6 +139,19 @@ class VoiceCallController extends ChangeNotifier {
   Object? _error;
   bool _hinted = false;
 
+  /// The person began speaking over her: she is quieter until it is known what they said.
+  bool _over = false;
+  Timer? _overTimer;
+
+  /// What the person had heard of a reply they cut off, for their next message.
+  String? _cutAt;
+
+  /// What she has said of the reply so far, while her voice carries it.
+  String _said = '';
+  bool _voiced = false;
+  Timer? _cueTimer;
+  bool _cued = false;
+
   VoiceCloud? _cloud;
   StreamSubscription<SpeechAudioEvent>? _audioSub;
   StreamSubscription<CallReply>? _replySub;
@@ -138,6 +175,9 @@ class VoiceCallController extends ChangeNotifier {
 
   /// The reply being read (so far).
   String get reply => _reply;
+
+  /// The reply as far as she has said it; all of it when there is no voice.
+  String get caption => _voiced ? _said : _reply;
 
   /// The last thing that went wrong without ending the call (recognition,
   /// sending, the voice); cleared when the next turn starts.
@@ -193,15 +233,20 @@ class VoiceCallController extends ChangeNotifier {
         _micLevel = value;
         notifyListeners();
       case SpeechStart(:final over):
-        if (over || _phase == CallPhase.speaking) {
-          // Spoken over her: she stops (the native side already cut its own
-          // stream), and so does the turn behind her.
-          _stopVoice();
-          if (!_replyDone) unawaited(conversation.interrupt());
-          _replyDone = true;
+        final out = _out;
+        if ((over || _phase == CallPhase.speaking) && out != null) {
+          // Over her voice: quieter (the native side already turned her down)
+          // until what was said is known, or the person keeps talking.
+          _over = true;
+          out.duck(true);
+          _overTimer?.cancel();
+          _overTimer = Timer(confirmAfter, _cutIn);
+          return;
         }
         _set(CallPhase.hearing);
       case Utterance(:final wav, :final duration):
+        // Finished before [confirmAfter]: the words decide.
+        _overTimer?.cancel();
         unawaited(_recognize(wav, duration));
       case CallError():
         _end(CallEnd.failed);
@@ -213,37 +258,64 @@ class VoiceCallController extends ChangeNotifier {
   Future<void> _recognize(Uint8List wav, Duration duration) async {
     final cloud = _cloud;
     if (cloud == null || _muted) return;
+    // Said over her (she may already have stopped, if they talked on).
+    final over = _over || _cutAt != null;
     // Too short to be words (a cough, a knock).
     if (duration < const Duration(milliseconds: 350)) {
-      if (_phase == CallPhase.hearing) _set(CallPhase.listening);
+      if (_over) {
+        _carryOn();
+      } else if (_phase == CallPhase.hearing) {
+        _set(CallPhase.listening);
+      }
       return;
     }
     final mine = ++_recognizing;
     _error = null;
-    _set(CallPhase.thinking);
+    if (!_over) _set(CallPhase.thinking);
     String text;
     try {
       text = await cloud.transcribe(wav);
     } catch (error) {
       if (_phase == CallPhase.ended || mine != _recognizing) return;
+      if (_over) {
+        // Could not make it out: she carries on.
+        _carryOn();
+        return;
+      }
       _error = error;
       _set(CallPhase.listening);
       return;
     }
     if (_phase == CallPhase.ended || mine != _recognizing) return;
-    if (text.trim().isEmpty) {
+    final taken = over ? overWords(text) : OverWords.speech;
+    if (taken == OverWords.backchannel && _over) {
+      _carryOn();
+      return;
+    }
+    if (_over) _cutIn();
+    if (taken != OverWords.speech || text.trim().isEmpty) {
+      // 停, agreement after she stopped, or nothing at all: nothing to send (where
+      // she was cut off still goes with the next message).
       _set(_out == null ? CallPhase.listening : CallPhase.speaking);
       return;
     }
     _heard = text.trim();
     _reply = '';
+    _said = '';
+    _voiced = false;
     _spoken = 0;
     _turn++;
     _replyDone = false;
     final hint = _spokenHint;
-    final message = !_hinted && hint != null ? '$hint\n$_heard' : _heard;
+    final cut = _cutAt;
+    _cutAt = null;
+    final note = cut == null ? null : cutNote?.call(cut.length > 30 ? '…${cut.substring(cut.length - 30)}' : cut);
+    final message = [if (!_hinted && hint != null) hint, ?note, _heard].join('\n');
     _hinted = true;
-    notifyListeners();
+    _cued = false;
+    _cueTimer?.cancel();
+    _cueTimer = Timer(cueAfter, _cue);
+    _set(CallPhase.thinking);
     final sent = await conversation.send(message);
     if (_phase == CallPhase.ended) return;
     if (!sent) {
@@ -275,6 +347,42 @@ class VoiceCallController extends ChangeNotifier {
     }
   }
 
+  /// The person takes the turn over her: she stops where they cut in, and so
+  /// does the turn behind her.
+  void _cutIn() {
+    _overTimer?.cancel();
+    if (!_over) return;
+    _over = false;
+    final out = _out;
+    if (out != null) {
+      _cutAt = out.heard;
+      _stopVoice();
+    }
+    if (!_replyDone) unawaited(conversation.interrupt());
+    _replyDone = true;
+    _set(CallPhase.hearing);
+  }
+
+  /// It was agreement or noise: she comes back up and carries on.
+  void _carryOn() {
+    _overTimer?.cancel();
+    _over = false;
+    final out = _out;
+    if (out == null) {
+      if (_phase != CallPhase.thinking) _set(CallPhase.listening);
+      return;
+    }
+    out.duck(false);
+    _set(CallPhase.speaking);
+  }
+
+  void _cue() {
+    // Only before any reply text: the cue's stream would take the place of her voice's.
+    if (_cued || _phase != CallPhase.thinking || _out != null) return;
+    _cued = true;
+    unawaited(thinkingCue?.call());
+  }
+
   SpeechOut _newVoice() {
     final out = voice();
     final turn = _turn;
@@ -282,17 +390,22 @@ class VoiceCallController extends ChangeNotifier {
       if (!identical(_out, out) || _phase == CallPhase.ended) return;
       switch (event) {
         case SpeechOutStarted():
+          _voiced = true;
+          _cueTimer?.cancel();
           if (_phase == CallPhase.thinking || _phase == CallPhase.listening) _set(CallPhase.speaking);
         case SpeechOutLevel(:final value):
           _voiceLevel = value;
+          _said = out.heard;
           notifyListeners();
         case SpeechOutDone():
+          _said = out.heard;
           _clearVoice(out);
           if (_phase == CallPhase.speaking || (_phase == CallPhase.thinking && turn == _turn && _replyDone)) {
             _set(CallPhase.listening);
           }
         case SpeechOutFailed(:final error):
           _clearVoice(out);
+          _voiced = false;
           _error = error;
           if (_phase == CallPhase.speaking || _phase == CallPhase.thinking) _set(CallPhase.listening);
       }
@@ -335,6 +448,8 @@ class VoiceCallController extends ChangeNotifier {
   void skip() {
     if (_phase != CallPhase.speaking) return;
     _stopVoice();
+    // The rest is there to read.
+    _voiced = false;
     _replyDone = true;
     _set(CallPhase.listening);
   }
@@ -350,6 +465,8 @@ class VoiceCallController extends ChangeNotifier {
   void _end(CallEnd why) {
     if (_phase == CallPhase.ended) return;
     _ended = why;
+    _overTimer?.cancel();
+    _cueTimer?.cancel();
     _stopVoice();
     unawaited(audio.stopCall());
     unawaited(_replySub?.cancel());

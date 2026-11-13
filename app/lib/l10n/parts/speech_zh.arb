@@ -33,12 +33,23 @@
   "speechCallSection": "语音通话",
   "speechCallFooter": "通话时说完一句停一下，就会发出去；回答边写边读。",
   "speechCallBargeIn": "插话打断",
-  "speechCallBargeInHint": "AI 说话时你一开口，它就停下来听你说",
+  "speechCallBargeInHint": "AI 说话时你一开口，它先轻下来；「嗯」「对」它接着说，说别的它就停下听你",
   "speechCallSpoken": "口语回答",
   "speechCallSpokenHint": "通话的第一条消息会请 AI 简短、口语化地回答",
   "speechCallSpeaker": "默认免提",
   "speechCallSpeakerHint": "接上耳机时总用耳机",
   "speechCallHint": "（这是语音通话，我说的话由语音识别转成文字。请用简短、口语化的中文回答，不要用 Markdown、列表、表格和代码块。）",
+  "speechCallCutNote": "（你说到「{heard}」时我打断了你，后面的我没听到。）",
+  "@speechCallCutNote": {
+    "placeholders": {
+      "heard": {
+        "type": "String"
+      }
+    }
+  },
+  "speechCallCutEarly": "（你刚开口我就打断了你，这条回答我没听到。）",
+  "speechCallCue": "思考提示音",
+  "speechCallCueHint": "回答一时没出声时，轻响一声表示还在想",
   "speechCallStarting": "正在接通",
   "speechCallListening": "在听",
   "speechCallHearing": "你在说",

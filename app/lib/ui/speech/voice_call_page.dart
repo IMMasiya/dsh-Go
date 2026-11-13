@@ -20,6 +20,7 @@ import '../../companion/companion_voice_source.dart';
 import '../../l10n/l10n.dart';
 import '../../performance/performance_state.dart';
 import '../../speech/call/chat_call.dart';
+import '../../speech/call/thinking_cue.dart';
 import '../../speech/call/voice_call.dart';
 import '../../speech/deepseek_speech.dart';
 import '../../speech/read_aloud.dart';
@@ -130,6 +131,10 @@ class _VoiceCallPageState extends ConsumerState<VoiceCallPage> with WidgetsBindi
         );
       },
       permission: () async => await bridge.requestPermission() == VoicePermission.granted,
+      cutNote: (heard) => heard.isEmpty ? appL10n.speechCallCutEarly : appL10n.speechCallCutNote(heard),
+      thinkingCue: () async {
+        if ((await callSettings.ready()).cue) await playThinkingCue(audio);
+      },
     )..addListener(_changed);
     HapticFeedback.mediumImpact();
     _enter.forward();
@@ -425,7 +430,7 @@ class _VoiceCallPageState extends ConsumerState<VoiceCallPage> with WidgetsBindi
                               )
                             : RevealText(
                                 key: const ValueKey('call-reply'),
-                                text: speakable(_call.reply).replaceAll('\n', ' '),
+                                text: speakable(_call.caption).replaceAll('\n', ' '),
                                 style: theme.textTheme.bodyLarge?.copyWith(
                                   color: ink.fg.withValues(alpha: 0.92),
                                   height: 1.55,

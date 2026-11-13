@@ -17497,7 +17497,7 @@ class L10nZh extends L10n {
   String get speechCallBargeIn => '插话打断';
 
   @override
-  String get speechCallBargeInHint => 'AI 说话时你一开口，它就停下来听你说';
+  String get speechCallBargeInHint => 'AI 说话时你一开口，它先轻下来；「嗯」「对」它接着说，说别的它就停下听你';
 
   @override
   String get speechCallSpoken => '口语回答';
@@ -17513,6 +17513,20 @@ class L10nZh extends L10n {
 
   @override
   String get speechCallHint => '（这是语音通话，我说的话由语音识别转成文字。请用简短、口语化的中文回答，不要用 Markdown、列表、表格和代码块。）';
+
+  @override
+  String speechCallCutNote(String heard) {
+    return '（你说到「$heard」时我打断了你，后面的我没听到。）';
+  }
+
+  @override
+  String get speechCallCutEarly => '（你刚开口我就打断了你，这条回答我没听到。）';
+
+  @override
+  String get speechCallCue => '思考提示音';
+
+  @override
+  String get speechCallCueHint => '回答一时没出声时，轻响一声表示还在想';
 
   @override
   String get speechCallStarting => '正在接通';

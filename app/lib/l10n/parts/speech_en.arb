@@ -33,12 +33,23 @@
   "speechCallSection": "Voice calls",
   "speechCallFooter": "In a call, pause after you speak and it is sent; the answer is read while it is written.",
   "speechCallBargeIn": "Interrupt by speaking",
-  "speechCallBargeInHint": "Start talking while the AI speaks and it stops to listen",
+  "speechCallBargeInHint": "When you speak over the AI it goes quiet; a “yeah” lets it go on, anything else stops it",
   "speechCallSpoken": "Spoken answers",
   "speechCallSpokenHint": "The call's first message asks for short, conversational answers",
   "speechCallSpeaker": "Speakerphone by default",
   "speechCallSpeakerHint": "Headphones always win when connected",
   "speechCallHint": "(This is a voice call; what I say comes through speech recognition. Please answer briefly and conversationally, without Markdown, lists, tables or code blocks.)",
+  "speechCallCutNote": "(I cut you off at “{heard}”; I didn't hear the rest.)",
+  "@speechCallCutNote": {
+    "placeholders": {
+      "heard": {
+        "type": "String"
+      }
+    }
+  },
+  "speechCallCutEarly": "(I cut you off before you said anything; I didn't hear that answer.)",
+  "speechCallCue": "Thinking sound",
+  "speechCallCueHint": "A soft chime when an answer is slow to start",
   "speechCallStarting": "Connecting",
   "speechCallListening": "Listening",
   "speechCallHearing": "You're speaking",
