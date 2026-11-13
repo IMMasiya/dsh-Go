@@ -19,6 +19,7 @@ import '../../../companion/companion_state.dart';
 import '../../../l10n/l10n.dart';
 import '../../../speech/speech_settings.dart';
 import '../../common/app_sheet.dart';
+import '../../common/segmented_pill.dart';
 import '../../companion/companion_stage.dart';
 import '../../theme/app_icons.dart';
 import '../../theme/theme.dart';
@@ -274,6 +275,19 @@ class _BackdropChooserState extends ConsumerState<_BackdropChooser> {
               child: Text(l10n.speechBackdropReplace),
             ),
           ],
+          const SizedBox(height: 20),
+          Text(l10n.speechCallVisual, style: theme.textTheme.titleSmall),
+          const SizedBox(height: 10),
+          SegmentedPill<CallVisual>(
+            key: const ValueKey('call-visual'),
+            segments: [
+              PillSegment(CallVisual.ring, l10n.speechCallVisualRing),
+              PillSegment(CallVisual.mono, l10n.speechCallVisualMono),
+              PillSegment(CallVisual.glass, l10n.speechCallVisualGlass),
+            ],
+            selected: settings.visual,
+            onChanged: (visual) => unawaited(_set(settings.copyWith(visual: visual))),
+          ),
         ],
       ),
     );

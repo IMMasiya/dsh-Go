@@ -68,5 +68,9 @@
   "speechBackdropNoCompanion": "先在伙伴小屋里请她住进来，才能把她放进通话里。",
   "speechBackdropReplace": "换一张图",
   "speechBackdropPickFailed": "这张图用不了，换一张试试",
+  "speechCallVisual": "光效",
+  "speechCallVisualRing": "光环",
+  "speechCallVisualMono": "细线",
+  "speechCallVisualGlass": "光球",
   "speechInsecure": "这个云端服务的地址不是 https，Key 不能这样发出去"
 }
