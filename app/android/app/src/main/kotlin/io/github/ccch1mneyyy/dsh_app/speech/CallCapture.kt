@@ -10,6 +10,7 @@ import android.media.audiofx.NoiseSuppressor
 import android.os.Handler
 import android.os.SystemClock
 import io.github.ccch1mneyyy.dsh_app.nativemedia.SpeechGate
+import io.github.ccch1mneyyy.dsh_app.nativemedia.TurnGate
 import java.io.ByteArrayOutputStream
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
@@ -28,6 +29,7 @@ import java.nio.ByteOrder
 class CallCapture(
     private val main: Handler,
     private val listener: Listener,
+    private val createGate: (Boolean) -> TurnGate = { SpeechGate(it) },
 ) {
     interface Listener {
         fun onSpeechStart(overPlayback: Boolean)
@@ -39,7 +41,7 @@ class CallCapture(
     private var record: AudioRecord? = null
     private var effects = mutableListOf<AudioEffect>()
     private var thread: Thread? = null
-    private var gate: SpeechGate? = null
+    private var gate: TurnGate? = null
 
     @Volatile private var running = false
     @Volatile private var playing = false
@@ -84,14 +86,16 @@ class CallCapture(
                 runCatching { effect.setEnabled(true) }
             }
         }
+        val g = createGate(echoCancelled)
         val started = runCatching { r.startRecording() }.isSuccess && r.recordingState == AudioRecord.RECORDSTATE_RECORDING
         if (!started) {
+            g.close()
             releaseEffects()
             r.release()
             return false
         }
         record = r
-        val g = SpeechGate(echoCancelled).also { gate = it }
+        gate = g
         if (playing) g.setPlaying(true, SystemClock.elapsedRealtime())
         running = true
         val mine = ++session
@@ -106,7 +110,7 @@ class CallCapture(
         synchronized(g) { g.setPlaying(on, SystemClock.elapsedRealtime()) }
     }
 
-    private fun capture(r: AudioRecord, g: SpeechGate, mine: Int) {
+    private fun capture(r: AudioRecord, g: TurnGate, mine: Int) {
         val frame = ShortArray((RATE * SpeechGate.FRAME_MS / 1000).toInt())
         val preroll = ArrayDeque<ShortArray>()
         var utterance: ByteArrayOutputStream? = null
@@ -126,6 +130,7 @@ class CallCapture(
                 filled = 0
                 if (muted) {
                     // Nothing heard, nothing kept: an utterance under way is dropped.
+                    synchronized(g) { g.reset() }
                     utterance = null
                     preroll.clear()
                     frame.fill(0)
@@ -138,7 +143,7 @@ class CallCapture(
                     post(mine) { listener.onLevel(shown) }
                 }
                 val overPlayback = playing
-                val edge = synchronized(g) { g.consume(level, SystemClock.elapsedRealtime()) }
+                val edge = synchronized(g) { g.consume(frame, level, SystemClock.elapsedRealtime()) }
                 val current = utterance
                 when {
                     edge == SpeechGate.Edge.START && (!overPlayback || bargeIn) -> {
@@ -153,6 +158,7 @@ class CallCapture(
                         append(current, frame)
                         utteranceFrames++
                         if (edge == SpeechGate.Edge.END || utteranceFrames * SpeechGate.FRAME_MS >= MAX_MS) {
+                            if (edge != SpeechGate.Edge.END) synchronized(g) { g.reset() }
                             utterance = null
                             val ms = (utteranceFrames * SpeechGate.FRAME_MS).toInt()
                             val wav = wav(current.toByteArray())
@@ -163,9 +169,10 @@ class CallCapture(
                 preroll.addLast(frame.copyOf())
                 while (preroll.size > PREROLL_FRAMES) preroll.removeFirst()
             }
-        } catch (_: RuntimeException) {
+        } catch (_: Exception) {
             post(mine) { listener.onError("capture") }
         } finally {
+            synchronized(g) { g.close() }
             frame.fill(0)
             preroll.clear()
         }

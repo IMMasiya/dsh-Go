@@ -27,6 +27,10 @@ void registerThirdPartyLicenses() {
       LicenseEntryWithLineBreaks(<String>['Bouncy Castle'], _bouncyCastle),
       LicenseEntryWithLineBreaks(<String>['XZ for Java'], _xzForJava0bsd),
       LicenseEntryWithLineBreaks(<String>['AndroidX WebKit'], _androidxWebkitNotice + _apache2),
+      LicenseEntryWithLineBreaks(<String>['ONNX Runtime'], _onnxRuntimeMit),
+      // Speech models bundled as assets (app/android/app/src/main/assets/speech).
+      LicenseEntryWithLineBreaks(<String>['Silero VAD'], _sileroMit),
+      LicenseEntryWithLineBreaks(<String>['smart-turn'], _smartTurnBsd2),
       // Native launcher built from source (runtime/tawcroot/build.py).
       LicenseEntryWithLineBreaks(<String>['tawcroot (tawc)'], _tawcMit),
       // flutter_webrtc's own MIT licence comes with its pub package; these are its NOTICE and
@@ -132,6 +136,49 @@ MIT License
 Copyright (c) 2026 qiannianhuanxiang
 
 $_mitTerms''';
+
+/// ONNX Runtime for Android (`com.microsoft.onnxruntime:onnxruntime-android`), 1.23.2.
+const _onnxRuntimeMit = '''
+MIT License
+
+Copyright (c) Microsoft Corporation
+
+$_mitTerms''';
+
+/// Silero VAD v6.2 (`silero_vad.onnx`).
+const _sileroMit = '''
+MIT License
+
+Copyright (c) 2020-present Silero Team
+
+$_mitTerms''';
+
+/// smart-turn v3.2 (`smart-turn-v3.2-cpu.onnx`), Pipecat.
+const _smartTurnBsd2 = r'''
+BSD 2-Clause License
+
+Copyright (c) 2024–2025, Daily
+
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions are met:
+
+1. Redistributions of source code must retain the above copyright notice, this
+   list of conditions and the following disclaimer.
+
+2. Redistributions in binary form must reproduce the above copyright notice,
+   this list of conditions and the following disclaimer in the documentation
+   and/or other materials provided with the distribution.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.''';
 
 /// Shizuku-API (`dev.rikka.shizuku:api`, `provider`).
 /// tawc's tawcroot launcher (libtawcroot.so), commit a49a4075; everything outside tawc's deps/ is MIT.

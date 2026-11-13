@@ -17,6 +17,7 @@ import io.flutter.embedding.engine.plugins.activity.ActivityPluginBinding
 import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
 import io.github.ccch1mneyyy.dsh_app.nativemedia.MicArbiter
+import io.github.ccch1mneyyy.dsh_app.nativemedia.SpeechGates
 
 /**
  * Speech audio for 朗读 and 语音通话: MethodChannel `dsh/speech` (lib/speech/speech_audio.dart).
@@ -217,7 +218,7 @@ class SpeechPlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandl
         }
         endCall()
         mic = MicArbiter.beginDictation()
-        val c = CallCapture(main, captureListener)
+        val c = CallCapture(main, captureListener) { SpeechGates.create(context.assets, it) }
         c.bargeIn = bargeIn
         val am = audio
         if (am != null) {

@@ -278,6 +278,9 @@ DS Bot 的 NOTICE 原文附在文末。
 | mobile_scanner（pub 包，含 Android 插件代码） | 7.5.0 | BSD-3-Clause | Copyright (c) 2022, Julian Steenbakker | Remote「扫码配对电脑」的相机扫码和相册识图 |
 | ML Kit Barcode Scanning（`com.google.mlkit:barcode-scanning`，模型随 APK 打包） | 17.3.0 | [ML Kit 服务条款](https://developers.google.com/ml-kit/terms)（Google 免费分发的二进制，非开源） | Google LLC | mobile_scanner 的二维码识别，在手机本地运行，不需要 Google Play 服务 |
 | CameraX（`androidx.camera:*`，mobile_scanner 的依赖） | 随 mobile_scanner 7.5.0 | Apache-2.0 | The Android Open Source Project | 扫码时的相机预览 |
+| ONNX Runtime（`com.microsoft.onnxruntime:onnxruntime-android`） | 1.23.2 | MIT | Copyright (c) Microsoft Corporation | 语音通话在手机上跑判停模型 |
+| Silero VAD v6.2（模型文件 `assets/speech/silero_vad.onnx`） | `be95df9` | MIT | Copyright (c) 2020-present Silero Team | 语音通话判断有没有在说话 |
+| smart-turn v3.2（模型文件 `assets/speech/smart-turn-v3.2-cpu.onnx`） | `f766f81` | BSD-2-Clause | Copyright (c) 2024–2025, Daily | 语音通话判断一句话说完没有 |
 
 ### tawcroot（tawc，MIT）
 
@@ -404,6 +407,8 @@ Copyright (c) 2026 CikeSeven                                   (PiPilot)
 Copyright (c) 2026 DeepSeek                                    (DeepSeek Harness)
 Copyright (c) 2026 DSH Remote contributors                     (ds-harness-remote)
 Copyright (c) 2026 qiannianhuanxiang                           (DSHA)
+Copyright (c) Microsoft Corporation                            (ONNX Runtime)
+Copyright (c) 2020-present Silero Team                         (Silero VAD)
 Copyright (c) 2018 Civilized Discourse Construction Kit, Inc.  (discourse_docker)
 Copyright (c) 2023 Phosphor Icons                              (Phosphor Icons)
 Copyright (c) 2021 RikkaW                                      (Shizuku-API)

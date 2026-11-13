@@ -142,7 +142,14 @@ flutter {
     source = "../.."
 }
 
+// Local JVM tests need the desktop JNI library, not Android's classes.jar.
+configurations.matching { it.name.endsWith("UnitTestRuntimeClasspath") }.configureEach {
+    exclude(group = "com.microsoft.onnxruntime", module = "onnxruntime-android")
+}
+
 dependencies {
+    implementation("com.microsoft.onnxruntime:onnxruntime-android:1.23.2") // MIT
+    testImplementation("com.microsoft.onnxruntime:onnxruntime:1.23.2")
     // Bundled Chinese OCR. SDK statistics disclosed separately; initialization is opt-in per use.
     implementation("com.google.mlkit:text-recognition-chinese:16.0.1")
     testImplementation("junit:junit:4.13.2")
