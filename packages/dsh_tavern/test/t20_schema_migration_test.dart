@@ -121,7 +121,7 @@ void main() {
             'speaker_character_id TEXT, source_epoch INTEGER NOT NULL DEFAULT 0\n'
             "  CHECK(typeof(source_epoch) = 'integer' AND source_epoch >= 0), "
             'content_version INTEGER NOT NULL DEFAULT 1\n'
-            "  CHECK(typeof(content_version) = 'integer' AND content_version > 0)",
+            "  CHECK(typeof(content_version) = 'integer' AND content_version > 0), display_context TEXT",
       };
       for (final row in retainedDefinitions) {
         final addition = additions[row['name']];
@@ -283,14 +283,17 @@ Map<String, Object?> _legacyData(Database database) => {
 };
 void _expectUpgradedLegacyData(Database database, Object? expected) {
   // Keep every old row, field, and unknown column under exact comparison.
-  // Strip only the explicitly checked T23/T24/P2/stage1 additions from this genuine v1
-  // fixture. The old payload has no owned inspection to backfill.
+  // Strip only the explicitly checked later additions from this genuine v1
+  // fixture. Its extra has neither owned inspection nor portable display data.
   const addedNames = {'stream_text', 'stream_reasoning', 'deleted_by', 'reported_usage', 'speaker_character_id'};
   expect(
     _rows(database, 'PRAGMA table_info(nodes)')
         .where(
           (row) =>
-              addedNames.contains(row['name']) || row['name'] == 'source_epoch' || row['name'] == 'content_version',
+              addedNames.contains(row['name']) ||
+              row['name'] == 'source_epoch' ||
+              row['name'] == 'content_version' ||
+              row['name'] == 'display_context',
         )
         .toList(),
     [
@@ -301,6 +304,7 @@ void _expectUpgradedLegacyData(Database database, Object? expected) {
       {'cid': 19, 'name': 'speaker_character_id', 'type': 'TEXT', 'notnull': 0, 'dflt_value': null, 'pk': 0},
       {'cid': 20, 'name': 'source_epoch', 'type': 'INTEGER', 'notnull': 1, 'dflt_value': '0', 'pk': 0},
       {'cid': 21, 'name': 'content_version', 'type': 'INTEGER', 'notnull': 1, 'dflt_value': '1', 'pk': 0},
+      {'cid': 22, 'name': 'display_context', 'type': 'TEXT', 'notnull': 0, 'dflt_value': null, 'pk': 0},
     ],
   );
   expect(_rows(database, 'PRAGMA table_info(chats)').where((row) => row['name'] == 'tree_revision').toList(), [
@@ -337,6 +341,9 @@ void _expectUpgradedLegacyData(Database database, Object? expected) {
     }
     expect(row.remove('source_epoch'), 0);
     expect(row.remove('content_version'), 1);
+    expect(jsonDecode(row.remove('display_context')! as String), {
+      'dshgo': {'tavernState': null, 'chatJsonl': null},
+    });
   }
   for (final row in actual['memories']! as List<Map<String, Object?>>) {
     expect(row.remove('origin'), 'legacy');

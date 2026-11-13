@@ -326,10 +326,10 @@ void main() {
     });
     final archive = File('${work.path}/groups.zip');
     final info = await h.engine.backup(archive.path);
-    expect(info.sqliteUserVersion, 8);
+    expect(info.sqliteUserVersion, ChatStore.schemaVersion);
     final destination = Directory('${work.path}/restored');
     final restoredInfo = await restoreTavernDirectory(archive.path, destination.path);
-    expect(restoredInfo.sqliteUserVersion, 8);
+    expect(restoredInfo.sqliteUserVersion, ChatStore.schemaVersion);
     restored = await TavernEngine.openDirectory(
       destination,
       config: h.config,
@@ -374,7 +374,7 @@ void main() {
       },
     );
     expect(snapshot, {
-      'version': 8,
+      'version': ChatStore.schemaVersion,
       'marker': 'do not rewrite',
       'metadata': {
         'foreign': ['keep', 2],
@@ -388,7 +388,7 @@ void main() {
     expect((await h.engine.path('old-chat')).single.nodeId, 'old-node');
     expect(await h.engine.readVariables('old-chat'), {'kept': 7});
     expect((await h.engine.path(group)).single.speakerCharacterId, host);
-    expect(_inspect(h.root, (db) => db.select('PRAGMA user_version').single['user_version']), 8);
+    expect(_inspect(h.root, (db) => db.select('PRAGMA user_version').single['user_version']), ChatStore.schemaVersion);
     h.expectNoGeneration();
   });
 }

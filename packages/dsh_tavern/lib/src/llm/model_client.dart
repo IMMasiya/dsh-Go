@@ -257,7 +257,7 @@ class TavernModelClient {
         ..headers.addAll({
           'Content-Type': 'application/json',
           for (final entry in headers.entries)
-            if (entry.key.toLowerCase() != 'authorization') entry.key: entry.value,
+            if (key == null || key.isEmpty || entry.key.toLowerCase() != 'authorization') entry.key: entry.value,
           if (key != null && key.isNotEmpty) 'Authorization': 'Bearer $key',
         })
         ..body = encodedBody;
