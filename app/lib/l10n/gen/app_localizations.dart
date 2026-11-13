@@ -39110,6 +39110,156 @@ abstract class L10n {
   /// **'这个角色是一个群聊的群主，先删掉那个群聊'**
   String get tavernGroupErrorHostInUse;
 
+  /// No description provided for @tavernGroupErrorInvalidTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'群聊的名字不能只有空白'**
+  String get tavernGroupErrorInvalidTitle;
+
+  /// No description provided for @tavernToolRollUnsettled.
+  ///
+  /// In zh, this message translates to:
+  /// **'🎲 {dice}：结果还没确认'**
+  String tavernToolRollUnsettled(String dice);
+
+  /// No description provided for @tavernToolRollNotDone.
+  ///
+  /// In zh, this message translates to:
+  /// **'🎲 {dice}：没有掷'**
+  String tavernToolRollNotDone(String dice);
+
+  /// No description provided for @tavernToolRollPass.
+  ///
+  /// In zh, this message translates to:
+  /// **'目标 {target}，成功'**
+  String tavernToolRollPass(int target);
+
+  /// No description provided for @tavernToolRollFail.
+  ///
+  /// In zh, this message translates to:
+  /// **'目标 {target}，没过'**
+  String tavernToolRollFail(int target);
+
+  /// No description provided for @tavernToolMemory.
+  ///
+  /// In zh, this message translates to:
+  /// **'想记住：「{text}」'**
+  String tavernToolMemory(String text);
+
+  /// No description provided for @tavernToolMemoryAccept.
+  ///
+  /// In zh, this message translates to:
+  /// **'记住'**
+  String get tavernToolMemoryAccept;
+
+  /// No description provided for @tavernToolMemoryReject.
+  ///
+  /// In zh, this message translates to:
+  /// **'不用'**
+  String get tavernToolMemoryReject;
+
+  /// No description provided for @tavernToolMemoryStaged.
+  ///
+  /// In zh, this message translates to:
+  /// **'等这一回合写完再定'**
+  String get tavernToolMemoryStaged;
+
+  /// No description provided for @tavernToolMemoryIneligible.
+  ///
+  /// In zh, this message translates to:
+  /// **'现在不能确认：{reason}'**
+  String tavernToolMemoryIneligible(String reason);
+
+  /// No description provided for @tavernToolMemoryAccepted.
+  ///
+  /// In zh, this message translates to:
+  /// **'已记住'**
+  String get tavernToolMemoryAccepted;
+
+  /// No description provided for @tavernToolMemoryAuto.
+  ///
+  /// In zh, this message translates to:
+  /// **'已按自动设置记住'**
+  String get tavernToolMemoryAuto;
+
+  /// No description provided for @tavernToolMemoryRejected.
+  ///
+  /// In zh, this message translates to:
+  /// **'没有记'**
+  String get tavernToolMemoryRejected;
+
+  /// No description provided for @tavernToolMemoryInactive.
+  ///
+  /// In zh, this message translates to:
+  /// **'这一回合没有正常写完，没有记'**
+  String get tavernToolMemoryInactive;
+
+  /// No description provided for @tavernToolMemoryWaiting.
+  ///
+  /// In zh, this message translates to:
+  /// **'上次的决定还没确认上'**
+  String get tavernToolMemoryWaiting;
+
+  /// No description provided for @tavernToolMemoryNotApplied.
+  ///
+  /// In zh, this message translates to:
+  /// **'没记上：{reason}'**
+  String tavernToolMemoryNotApplied(String reason);
+
+  /// No description provided for @tavernToolMemoryFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'没确认上：{detail}'**
+  String tavernToolMemoryFailed(String detail);
+
+  /// No description provided for @tavernToolReasonRevision.
+  ///
+  /// In zh, this message translates to:
+  /// **'它已经变了，刷新后再定'**
+  String get tavernToolReasonRevision;
+
+  /// No description provided for @tavernToolReasonResolved.
+  ///
+  /// In zh, this message translates to:
+  /// **'已经定过了'**
+  String get tavernToolReasonResolved;
+
+  /// No description provided for @tavernToolReasonContext.
+  ///
+  /// In zh, this message translates to:
+  /// **'对话已经变了'**
+  String get tavernToolReasonContext;
+
+  /// No description provided for @tavernToolReasonDeleted.
+  ///
+  /// In zh, this message translates to:
+  /// **'那条回复被删了'**
+  String get tavernToolReasonDeleted;
+
+  /// No description provided for @tavernToolReasonChanged.
+  ///
+  /// In zh, this message translates to:
+  /// **'那条回复改过了'**
+  String get tavernToolReasonChanged;
+
+  /// No description provided for @tavernToolReasonBranch.
+  ///
+  /// In zh, this message translates to:
+  /// **'不在现在这条线上'**
+  String get tavernToolReasonBranch;
+
+  /// No description provided for @tavernToolReasonInactive.
+  ///
+  /// In zh, this message translates to:
+  /// **'已经失效'**
+  String get tavernToolReasonInactive;
+
+  /// No description provided for @tavernToolReasonUnknown.
+  ///
+  /// In zh, this message translates to:
+  /// **'原因不明'**
+  String get tavernToolReasonUnknown;
+
   /// No description provided for @updateCheck.
   ///
   /// In zh, this message translates to:

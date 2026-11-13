@@ -22587,6 +22587,97 @@ class L10nEn extends L10n {
   String get tavernGroupErrorHostInUse => 'This character hosts a group chat; delete that chat first';
 
   @override
+  String get tavernGroupErrorInvalidTitle => 'A group chat\'s name can\'t be blank';
+
+  @override
+  String tavernToolRollUnsettled(String dice) {
+    return '🎲 $dice: result not confirmed yet';
+  }
+
+  @override
+  String tavernToolRollNotDone(String dice) {
+    return '🎲 $dice: not rolled';
+  }
+
+  @override
+  String tavernToolRollPass(int target) {
+    return 'target $target, passed';
+  }
+
+  @override
+  String tavernToolRollFail(int target) {
+    return 'target $target, missed';
+  }
+
+  @override
+  String tavernToolMemory(String text) {
+    return 'Wants to remember: \"$text\"';
+  }
+
+  @override
+  String get tavernToolMemoryAccept => 'Remember';
+
+  @override
+  String get tavernToolMemoryReject => 'No';
+
+  @override
+  String get tavernToolMemoryStaged => 'Decided once this turn is written';
+
+  @override
+  String tavernToolMemoryIneligible(String reason) {
+    return 'Can\'t be decided now: $reason';
+  }
+
+  @override
+  String get tavernToolMemoryAccepted => 'Remembered';
+
+  @override
+  String get tavernToolMemoryAuto => 'Remembered by the automatic setting';
+
+  @override
+  String get tavernToolMemoryRejected => 'Not remembered';
+
+  @override
+  String get tavernToolMemoryInactive => 'This turn didn\'t finish normally; not remembered';
+
+  @override
+  String get tavernToolMemoryWaiting => 'Your last decision hasn\'t gone through yet';
+
+  @override
+  String tavernToolMemoryNotApplied(String reason) {
+    return 'Not remembered: $reason';
+  }
+
+  @override
+  String tavernToolMemoryFailed(String detail) {
+    return 'Didn\'t go through: $detail';
+  }
+
+  @override
+  String get tavernToolReasonRevision => 'it has changed; refresh and decide again';
+
+  @override
+  String get tavernToolReasonResolved => 'already decided';
+
+  @override
+  String get tavernToolReasonContext => 'the chat has changed';
+
+  @override
+  String get tavernToolReasonDeleted => 'that reply was deleted';
+
+  @override
+  String get tavernToolReasonChanged => 'that reply was edited';
+
+  @override
+  String get tavernToolReasonBranch => 'not on the current branch';
+
+  @override
+  String get tavernToolReasonInactive => 'no longer active';
+
+  @override
+  String get tavernToolReasonUnknown => 'reason unknown';
+
+  @override
   String get updateCheck => 'Check for updates';
 
   @override

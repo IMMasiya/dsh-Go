@@ -21405,6 +21405,97 @@ class L10nZh extends L10n {
   String get tavernGroupErrorHostInUse => '这个角色是一个群聊的群主，先删掉那个群聊';
 
   @override
+  String get tavernGroupErrorInvalidTitle => '群聊的名字不能只有空白';
+
+  @override
+  String tavernToolRollUnsettled(String dice) {
+    return '🎲 $dice：结果还没确认';
+  }
+
+  @override
+  String tavernToolRollNotDone(String dice) {
+    return '🎲 $dice：没有掷';
+  }
+
+  @override
+  String tavernToolRollPass(int target) {
+    return '目标 $target，成功';
+  }
+
+  @override
+  String tavernToolRollFail(int target) {
+    return '目标 $target，没过';
+  }
+
+  @override
+  String tavernToolMemory(String text) {
+    return '想记住：「$text」';
+  }
+
+  @override
+  String get tavernToolMemoryAccept => '记住';
+
+  @override
+  String get tavernToolMemoryReject => '不用';
+
+  @override
+  String get tavernToolMemoryStaged => '等这一回合写完再定';
+
+  @override
+  String tavernToolMemoryIneligible(String reason) {
+    return '现在不能确认：$reason';
+  }
+
+  @override
+  String get tavernToolMemoryAccepted => '已记住';
+
+  @override
+  String get tavernToolMemoryAuto => '已按自动设置记住';
+
+  @override
+  String get tavernToolMemoryRejected => '没有记';
+
+  @override
+  String get tavernToolMemoryInactive => '这一回合没有正常写完，没有记';
+
+  @override
+  String get tavernToolMemoryWaiting => '上次的决定还没确认上';
+
+  @override
+  String tavernToolMemoryNotApplied(String reason) {
+    return '没记上：$reason';
+  }
+
+  @override
+  String tavernToolMemoryFailed(String detail) {
+    return '没确认上：$detail';
+  }
+
+  @override
+  String get tavernToolReasonRevision => '它已经变了，刷新后再定';
+
+  @override
+  String get tavernToolReasonResolved => '已经定过了';
+
+  @override
+  String get tavernToolReasonContext => '对话已经变了';
+
+  @override
+  String get tavernToolReasonDeleted => '那条回复被删了';
+
+  @override
+  String get tavernToolReasonChanged => '那条回复改过了';
+
+  @override
+  String get tavernToolReasonBranch => '不在现在这条线上';
+
+  @override
+  String get tavernToolReasonInactive => '已经失效';
+
+  @override
+  String get tavernToolReasonUnknown => '原因不明';
+
+  @override
   String get updateCheck => '检查更新';
 
   @override

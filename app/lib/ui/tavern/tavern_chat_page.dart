@@ -36,6 +36,7 @@ import '../../tavern/tavern_provider.dart';
 import '../../tavern/tavern_quick_replies.dart';
 import '../../tavern/tavern_session_usage.dart';
 import '../../tavern/tavern_settings.dart';
+import '../../tavern/tavern_tool_turns.dart';
 import '../../tavern/tavern_slash.dart';
 import '../../tavern/tavern_sprites.dart';
 import '../bots/bot_chat_kit.dart';
@@ -75,6 +76,7 @@ import 'tavern_quick_replies_page.dart';
 import 'tavern_reading.dart';
 import 'tavern_stage_panel.dart';
 import 'tavern_vn_view.dart';
+import 'tavern_tool_strip.dart';
 import 'tavern_widgets.dart';
 
 class TavernChatPage extends ConsumerStatefulWidget {
@@ -444,6 +446,9 @@ class _TavernChatPageState extends ConsumerState<TavernChatPage> {
                 );
               }
             }
+          // A tool the model used was taken up: read what it did.
+          case TavernToolActivity():
+            _refreshTools();
           case TavernTurnStarted(:final message):
             setState(() => _streamNode = message.nodeId);
             unawaited(_reload());
@@ -601,6 +606,8 @@ class _TavernChatPageState extends ConsumerState<TavernChatPage> {
           _stopThinking();
           setState(() => _streamNode = null);
           unawaited(_reload());
+        case TavernToolActivity():
+          _refreshTools();
         default:
         // A member's failure ends the batch: its Finished says how.
       }
@@ -745,7 +752,43 @@ class _TavernChatPageState extends ConsumerState<TavernChatPage> {
     if (_streamNode == null) setState(() => _streamNode = nodeId);
   }
 
+  /// What the chat's turns did with tools (the dice, what to remember), read
+  /// again: a turn ended, a tool was taken up, a decision was made.
+  void _refreshTools() => ref.invalidate(tavernChatToolTurnsProvider(widget.chatId));
+
+  /// 记住 / 不用 on what a reply proposed to remember: as the proposal is
+  /// now (its version, its context), under a new decision id, kept before it
+  /// is sent (STAGE1-APP-INTEGRATION §5.2).
+  Future<void> _decide(TavernMemoryProposalSnapshot proposal, TavernMemoryDecision decision) async {
+    if (proposal.workflow != 'pending_confirmation' || !proposal.eligible) return;
+    final intent = TavernMemoryIntent.of(proposal, decision, tavernNewId());
+    await tavernKeepMemoryIntent(intent);
+    await _submitDecision(intent);
+  }
+
+  /// Sends [intent] (again, unchanged, for 重试). Its record is what it is:
+  /// not applied says why. Kept only while it may yet go through (the engine
+  /// could not save or read back); a conflict or refusal lets it go.
+  Future<void> _submitDecision(TavernMemoryIntent intent) async {
+    final messenger = ScaffoldMessenger.maybeOf(context);
+    final l10n = context.l10n;
+    try {
+      final receipt = await intent.submit(_tavern);
+      await tavernForgetMemoryIntent(intent.proposalId);
+      if (receipt.record.outcome == 'not_applied') {
+        messenger?.showBriefNotice(l10n.tavernToolMemoryNotApplied(tavernToolReason(l10n, receipt.record.reason)));
+      }
+    } on TavernToolException catch (e) {
+      if (e.code != TavernToolErrorCode.storageFailure) await tavernForgetMemoryIntent(intent.proposalId);
+      messenger?.showBriefNotice(l10n.tavernToolMemoryFailed(e.message));
+    }
+    if (!mounted) return;
+    ref.invalidate(tavernMemoryIntentProvider(intent.proposalId));
+    _refreshTools();
+  }
+
   void _finish({String? error, bool calm = false, ({String label, VoidCallback onPressed})? action}) {
+    _refreshTools();
     unawaited(_turn?.cancel());
     setState(() {
       _turn = null;
@@ -1028,7 +1071,7 @@ class _TavernChatPageState extends ConsumerState<TavernChatPage> {
               case TavernTurnFailed(:final kind, :final detail):
                 if (kind == TavernFailure.cancelled) return _endDraft();
                 _endDraft(failure: (kind, detail));
-              case TavernTurnSnapshot() || TavernTurnStarted() || TavernReasoningDelta():
+              case TavernTurnSnapshot() || TavernTurnStarted() || TavernReasoningDelta() || TavernToolActivity():
                 break;
             }
           },
@@ -1291,6 +1334,8 @@ class _TavernChatPageState extends ConsumerState<TavernChatPage> {
     final novel = layout == TavernLayout.novel;
     final indent = novel && ref.watch(tavernSettingsProvider.select((s) => s.novelIndent));
     final showUsage = ref.watch(tavernSettingsProvider.select((s) => s.showUsage));
+    // What each reply's turn did with tools, by reply (the engine's record).
+    final toolTurns = ref.watch(tavernChatToolTurnsProvider(widget.chatId)).value ?? const {};
     final messages = _messages;
     final (String status, StatusTone tone) = switch (()) {
       // A group: who speaks now, and who follows.
@@ -1343,6 +1388,9 @@ class _TavernChatPageState extends ConsumerState<TavernChatPage> {
             lead: name,
             bookmarked: marked.contains(m.nodeId),
             showName: group != null,
+            tools: toolTurns[m.nodeId],
+            onDecide: _decide,
+            onRetryDecision: _submitDecision,
           ),
       ],
       if (_running && (_streamNode == null || !(messages?.any((m) => m.nodeId == _streamNode) ?? false)))
@@ -1769,7 +1817,26 @@ class _MessageRow extends StatelessWidget {
     this.lead = '',
     this.bookmarked = false,
     this.showName = false,
+    this.tools,
+    this.onDecide,
+    this.onRetryDecision,
   });
+
+  /// What this reply's turn did with tools, when there is something to show.
+  final TavernToolTurnView? tools;
+  final void Function(TavernMemoryProposalSnapshot proposal, TavernMemoryDecision decision)? onDecide;
+  final void Function(TavernMemoryIntent intent)? onRetryDecision;
+
+  /// The dice the model rolled and what it proposed to remember, under it.
+  Widget? _tools() => switch (tools) {
+    final view? when message.role == TavernRole.character => TavernToolStrip(
+      key: ValueKey('tavern-tools-${message.nodeId}'),
+      view: view,
+      onDecide: (proposal, decision) => onDecide?.call(proposal, decision),
+      onRetry: (intent) => onRetryDecision?.call(intent),
+    ),
+    _ => null,
+  };
 
   final String chatId;
   final TavernMessage message;
@@ -1884,6 +1951,7 @@ class _MessageRow extends StatelessWidget {
           if (message.reasoning case final reasoning? when reasoning.isNotEmpty) ThinkingPill(reasoning: reasoning),
           _Shown(chatId: chatId, message: message),
           ?_usage(),
+          ?_tools(),
           if (alternatives) ...[
             const SizedBox(height: 4),
             if (last)
@@ -1923,6 +1991,7 @@ class _MessageRow extends StatelessWidget {
             child: _Shown(chatId: chatId, message: message, indent: indent),
           ),
           ?_usage(),
+          ?_tools(),
           if (alternatives) ...[
             const SizedBox(height: 4),
             if (last)

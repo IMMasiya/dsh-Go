@@ -151,6 +151,51 @@ class PreviewTavern implements Tavern, TavernPreview {
   @override
   Future<TavernTurnInspection?> inspectTurn(String chatId, {String? nodeId}) async => null;
 
+  // Stage one's tools: the preview keeps none, and says so rather than
+  // making up a roll, a receipt or a saved setting.
+
+  Future<T> _noTool<T>(String operation, {String? chatId}) => Future<T>.error(
+    TavernToolException(
+      code: TavernToolErrorCode.unsupportedCapability,
+      operation: operation,
+      message: 'The preview keeps no tool executions.',
+      committed: false,
+      chatId: chatId,
+    ),
+  );
+
+  @override
+  Future<TavernToolTurnSnapshot?> readToolTurn(String logicalTurnId) => _noTool('readToolTurn');
+
+  @override
+  Future<TavernToolReceipt?> readToolReceipt(String executionId) => _noTool('readToolReceipt');
+
+  @override
+  Future<TavernToolReceipt> rollDice(
+    String chatId, {
+    required String actionId,
+    required String dice,
+    String? label,
+    int? target,
+    String? expectedNodeId,
+  }) => _noTool('rollDice', chatId: chatId);
+
+  @override
+  Future<TavernMemoryDecisionReceipt> resolveMemoryProposal(
+    String proposalId, {
+    required String decisionId,
+    required int expectedVersion,
+    required TavernMemoryDecision decision,
+    required TavernToolContextAnchor expectedContextAnchor,
+  }) => _noTool('resolveMemoryProposal');
+
+  @override
+  Future<TavernToolPolicySnapshot> readToolPolicy({String? chatId}) => _noTool('readToolPolicy', chatId: chatId);
+
+  @override
+  Future<TavernToolPolicyWriteResult> setToolPolicy(Map<String, Object?> patch, {String? chatId}) =>
+      _noTool('setToolPolicy', chatId: chatId);
+
   // Personas ------------------------------------------------------------------
 
   final _personas = <String, TavernPersona>{};
