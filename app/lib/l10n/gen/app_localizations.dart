@@ -39554,6 +39554,210 @@ abstract class L10n {
   /// **'没确认上：{detail}'**
   String tavernDiceNotSaved(String detail);
 
+  /// No description provided for @tavernChannel.
+  ///
+  /// In zh, this message translates to:
+  /// **'渠道'**
+  String get tavernChannel;
+
+  /// No description provided for @tavernChannelDeepSeek.
+  ///
+  /// In zh, this message translates to:
+  /// **'DeepSeek 官方'**
+  String get tavernChannelDeepSeek;
+
+  /// No description provided for @tavernChannelDeepSeekNote.
+  ///
+  /// In zh, this message translates to:
+  /// **'用 App 里填的 DeepSeek Key'**
+  String get tavernChannelDeepSeekNote;
+
+  /// No description provided for @tavernChannelAdd.
+  ///
+  /// In zh, this message translates to:
+  /// **'添加渠道'**
+  String get tavernChannelAdd;
+
+  /// No description provided for @tavernChannelEdit.
+  ///
+  /// In zh, this message translates to:
+  /// **'编辑渠道'**
+  String get tavernChannelEdit;
+
+  /// No description provided for @tavernChannelsNote.
+  ///
+  /// In zh, this message translates to:
+  /// **'兼容 OpenAI 接口的服务都能加：中转站、OpenRouter、自己电脑上跑的模型。Key 只存在这台手机的安全存储里。费用估算只认 DeepSeek 官方的价格，其他渠道只显示 token 数。'**
+  String get tavernChannelsNote;
+
+  /// No description provided for @tavernChannelName.
+  ///
+  /// In zh, this message translates to:
+  /// **'名称'**
+  String get tavernChannelName;
+
+  /// No description provided for @tavernChannelNameHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'不填就用网址'**
+  String get tavernChannelNameHint;
+
+  /// No description provided for @tavernChannelBaseUrlInvalid.
+  ///
+  /// In zh, this message translates to:
+  /// **'要以 http:// 或 https:// 开头'**
+  String get tavernChannelBaseUrlInvalid;
+
+  /// No description provided for @tavernChannelKeyOptional.
+  ///
+  /// In zh, this message translates to:
+  /// **'本地服务不需要 Key 可以不填'**
+  String get tavernChannelKeyOptional;
+
+  /// No description provided for @tavernChannelKeyKept.
+  ///
+  /// In zh, this message translates to:
+  /// **'已存了 Key，不填就保持原样'**
+  String get tavernChannelKeyKept;
+
+  /// No description provided for @tavernChannelFetchModels.
+  ///
+  /// In zh, this message translates to:
+  /// **'获取列表'**
+  String get tavernChannelFetchModels;
+
+  /// No description provided for @tavernChannelFetching.
+  ///
+  /// In zh, this message translates to:
+  /// **'获取中…'**
+  String get tavernChannelFetching;
+
+  /// No description provided for @tavernChannelFetchFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'没拿到模型列表（{detail}），直接填模型名也行'**
+  String tavernChannelFetchFailed(String detail);
+
+  /// No description provided for @tavernChannelNoModels.
+  ///
+  /// In zh, this message translates to:
+  /// **'这个服务没列出模型，直接填模型名就行'**
+  String get tavernChannelNoModels;
+
+  /// No description provided for @tavernChannelModelHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'服务商给的模型名'**
+  String get tavernChannelModelHint;
+
+  /// No description provided for @tavernChannelModelMissing.
+  ///
+  /// In zh, this message translates to:
+  /// **'填一个模型名'**
+  String get tavernChannelModelMissing;
+
+  /// No description provided for @tavernChannelPickModel.
+  ///
+  /// In zh, this message translates to:
+  /// **'选模型'**
+  String get tavernChannelPickModel;
+
+  /// No description provided for @tavernChannelSearchModels.
+  ///
+  /// In zh, this message translates to:
+  /// **'搜索模型'**
+  String get tavernChannelSearchModels;
+
+  /// No description provided for @tavernChannelDeepSeekApi.
+  ///
+  /// In zh, this message translates to:
+  /// **'按 DeepSeek 接口发送'**
+  String get tavernChannelDeepSeekApi;
+
+  /// No description provided for @tavernChannelDeepSeekApiNote.
+  ///
+  /// In zh, this message translates to:
+  /// **'用 DeepSeek 的续写方式和思考开关。只在 DeepSeek 官方或原样转发它的中转上打开。'**
+  String get tavernChannelDeepSeekApiNote;
+
+  /// No description provided for @tavernChannelDelete.
+  ///
+  /// In zh, this message translates to:
+  /// **'删除渠道'**
+  String get tavernChannelDelete;
+
+  /// No description provided for @tavernChannelDeleteTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'删除「{name}」？'**
+  String tavernChannelDeleteTitle(String name);
+
+  /// No description provided for @tavernChannelDeleteMessage.
+  ///
+  /// In zh, this message translates to:
+  /// **'它的 Key 也会一起删掉。正在用它的话，换回 DeepSeek 官方。'**
+  String get tavernChannelDeleteMessage;
+
+  /// No description provided for @tavernChannelCopyFromApp.
+  ///
+  /// In zh, this message translates to:
+  /// **'从 App 的渠道复制'**
+  String get tavernChannelCopyFromApp;
+
+  /// No description provided for @tavernModelName.
+  ///
+  /// In zh, this message translates to:
+  /// **'模型名'**
+  String get tavernModelName;
+
+  /// No description provided for @tavernNumberCustom.
+  ///
+  /// In zh, this message translates to:
+  /// **'自定义'**
+  String get tavernNumberCustom;
+
+  /// No description provided for @tavernNumberType.
+  ///
+  /// In zh, this message translates to:
+  /// **'输入数值'**
+  String get tavernNumberType;
+
+  /// No description provided for @tavernNumberRange.
+  ///
+  /// In zh, this message translates to:
+  /// **'填 {min} 到 {max} 之间的数'**
+  String tavernNumberRange(String min, String max);
+
+  /// No description provided for @tavernNumberRangeWhole.
+  ///
+  /// In zh, this message translates to:
+  /// **'填 {min} 到 {max} 之间的整数'**
+  String tavernNumberRangeWhole(String min, String max);
+
+  /// No description provided for @tavernTopP.
+  ///
+  /// In zh, this message translates to:
+  /// **'Top P'**
+  String get tavernTopP;
+
+  /// No description provided for @tavernPresencePenalty.
+  ///
+  /// In zh, this message translates to:
+  /// **'存在惩罚'**
+  String get tavernPresencePenalty;
+
+  /// No description provided for @tavernFrequencyPenalty.
+  ///
+  /// In zh, this message translates to:
+  /// **'频率惩罚'**
+  String get tavernFrequencyPenalty;
+
+  /// No description provided for @tavernPresetSampling.
+  ///
+  /// In zh, this message translates to:
+  /// **'采样'**
+  String get tavernPresetSampling;
+
   /// No description provided for @updateCheck.
   ///
   /// In zh, this message translates to:

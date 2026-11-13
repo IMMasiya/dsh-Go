@@ -38,6 +38,7 @@ import 'tavern_chat_files.dart';
 import 'tavern_inspector_page.dart';
 import 'tavern_lorebooks_page.dart';
 import 'tavern_message_edit_page.dart';
+import 'tavern_model_rows.dart';
 import 'tavern_personas.dart';
 import 'tavern_presets_page.dart';
 import 'tavern_runs_page.dart';
@@ -197,7 +198,6 @@ class _Session extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final l10n = context.l10n;
     final settings = ref.watch(tavernSettingsProvider);
-    final model = ref.read(tavernSettingsProvider.notifier);
     final own = ref.watch(tavernChatLayoutProvider(chatId));
     final layout = ref.read(tavernChatLayoutProvider(chatId).notifier);
     final scene = ref.watch(tavernChatBackgroundProvider(chatId));
@@ -226,22 +226,13 @@ class _Session extends ConsumerWidget {
           title: l10n.tavernSessionUsing,
           margin: const EdgeInsets.only(bottom: 12),
           children: [
-            SettingsSegmentTile<String>(
-              key: const ValueKey('tavern-session-model'),
-              title: l10n.tavernSettingsModel,
+            ...tavernModelRows(
+              context,
+              ref,
+              keyPrefix: 'tavern-session',
               tinted: false,
-              segments: [
-                PillSegment(tavernModels[0], l10n.tavernModelFlash),
-                PillSegment(tavernModels[1], l10n.tavernModelPro),
-              ],
-              selected: settings.model,
-              onChanged: (value) => unawaited(model.setModel(value)),
-            ),
-            SettingsSwitchTile(
-              key: const ValueKey('tavern-session-thinking'),
-              title: l10n.tavernThinking,
-              value: settings.thinking,
-              onChanged: (on) => unawaited(model.setThinking(on)),
+              thinkingSubtitle: false,
+              open: open,
             ),
             SettingsTile(
               key: const ValueKey('tavern-chat-persona'),

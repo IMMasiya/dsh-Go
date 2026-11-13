@@ -21667,6 +21667,117 @@ class L10nZh extends L10n {
   }
 
   @override
+  String get tavernChannel => '渠道';
+
+  @override
+  String get tavernChannelDeepSeek => 'DeepSeek 官方';
+
+  @override
+  String get tavernChannelDeepSeekNote => '用 App 里填的 DeepSeek Key';
+
+  @override
+  String get tavernChannelAdd => '添加渠道';
+
+  @override
+  String get tavernChannelEdit => '编辑渠道';
+
+  @override
+  String get tavernChannelsNote =>
+      '兼容 OpenAI 接口的服务都能加：中转站、OpenRouter、自己电脑上跑的模型。Key 只存在这台手机的安全存储里。费用估算只认 DeepSeek 官方的价格，其他渠道只显示 token 数。';
+
+  @override
+  String get tavernChannelName => '名称';
+
+  @override
+  String get tavernChannelNameHint => '不填就用网址';
+
+  @override
+  String get tavernChannelBaseUrlInvalid => '要以 http:// 或 https:// 开头';
+
+  @override
+  String get tavernChannelKeyOptional => '本地服务不需要 Key 可以不填';
+
+  @override
+  String get tavernChannelKeyKept => '已存了 Key，不填就保持原样';
+
+  @override
+  String get tavernChannelFetchModels => '获取列表';
+
+  @override
+  String get tavernChannelFetching => '获取中…';
+
+  @override
+  String tavernChannelFetchFailed(String detail) {
+    return '没拿到模型列表（$detail），直接填模型名也行';
+  }
+
+  @override
+  String get tavernChannelNoModels => '这个服务没列出模型，直接填模型名就行';
+
+  @override
+  String get tavernChannelModelHint => '服务商给的模型名';
+
+  @override
+  String get tavernChannelModelMissing => '填一个模型名';
+
+  @override
+  String get tavernChannelPickModel => '选模型';
+
+  @override
+  String get tavernChannelSearchModels => '搜索模型';
+
+  @override
+  String get tavernChannelDeepSeekApi => '按 DeepSeek 接口发送';
+
+  @override
+  String get tavernChannelDeepSeekApiNote => '用 DeepSeek 的续写方式和思考开关。只在 DeepSeek 官方或原样转发它的中转上打开。';
+
+  @override
+  String get tavernChannelDelete => '删除渠道';
+
+  @override
+  String tavernChannelDeleteTitle(String name) {
+    return '删除「$name」？';
+  }
+
+  @override
+  String get tavernChannelDeleteMessage => '它的 Key 也会一起删掉。正在用它的话，换回 DeepSeek 官方。';
+
+  @override
+  String get tavernChannelCopyFromApp => '从 App 的渠道复制';
+
+  @override
+  String get tavernModelName => '模型名';
+
+  @override
+  String get tavernNumberCustom => '自定义';
+
+  @override
+  String get tavernNumberType => '输入数值';
+
+  @override
+  String tavernNumberRange(String min, String max) {
+    return '填 $min 到 $max 之间的数';
+  }
+
+  @override
+  String tavernNumberRangeWhole(String min, String max) {
+    return '填 $min 到 $max 之间的整数';
+  }
+
+  @override
+  String get tavernTopP => 'Top P';
+
+  @override
+  String get tavernPresencePenalty => '存在惩罚';
+
+  @override
+  String get tavernFrequencyPenalty => '频率惩罚';
+
+  @override
+  String get tavernPresetSampling => '采样';
+
+  @override
   String get updateCheck => '检查更新';
 
   @override

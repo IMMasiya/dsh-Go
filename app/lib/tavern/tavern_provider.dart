@@ -1,8 +1,9 @@
 // The app's one [Tavern]: the engine (packages/dsh_tavern) opened on
 // `<app support>/tavern`. It opens asynchronously, so the screens get a
-// [DeferredTavern] that queues calls until it is ready. It follows 酒馆设置
-// and reads the app's DeepSeek key on every call; the key is never stored
-// by the engine. Tests swap in the preview stand-in (tavern_preview.dart).
+// [DeferredTavern] that queues calls until it is ready. It follows 酒馆设置's
+// channel and reads that channel's key (the app's DeepSeek key for the
+// built-in one) on every call; the engine never stores a key. Tests swap in
+// the preview stand-in (tavern_preview.dart).
 
 import 'package:dsh_tavern/dsh_tavern.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -10,6 +11,7 @@ import 'package:path_provider/path_provider.dart';
 
 import '../state/settings_state.dart';
 import 'deferred_tavern.dart';
+import 'tavern_channels.dart';
 import 'tavern_script_host.dart';
 import 'tavern_settings.dart';
 
@@ -19,16 +21,23 @@ final tavernProvider = Provider<Tavern>((ref) {
     return openTavern('${support.path}/tavern');
   }());
   ref.onDispose(tavern.close);
-  void configure(TavernSettings settings) => tavern.configure(
-    TavernModelConfig(
-      apiKey: () async {
-        final key = ref.read(settingsProvider).apiKey.trim();
-        return key.isEmpty ? null : key;
-      },
-      model: settings.model,
-      thinking: settings.thinking,
-    ),
-  );
+  final keys = ref.read(tavernChannelKeysProvider);
+  void configure(TavernSettings settings) {
+    final channel = settings.activeChannel;
+    tavern.configure(
+      TavernModelConfig(
+        apiKey: () async {
+          final key = (channel == null ? ref.read(settingsProvider).apiKey : await keys.read(channel.id))?.trim();
+          return key == null || key.isEmpty ? null : key;
+        },
+        baseUrl: channel?.baseUrl ?? tavernDeepSeekBaseUrl,
+        model: settings.activeModel,
+        deepseek: settings.deepseekApi,
+        thinking: settings.thinking,
+      ),
+    );
+  }
+
   configure(ref.read(tavernSettingsProvider));
   ref.listen(tavernSettingsProvider, (_, next) => configure(next));
   return tavern;

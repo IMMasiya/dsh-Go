@@ -1,0 +1,316 @@
+import 'dart:async';
+import 'dart:convert';
+
+import 'package:dsh_app/tavern/tavern_channels.dart';
+import 'package:dsh_app/tavern/tavern_generation.dart';
+import 'package:dsh_app/tavern/tavern_preview.dart';
+import 'package:dsh_app/tavern/tavern_provider.dart';
+import 'package:dsh_app/tavern/tavern_settings.dart';
+import 'package:dsh_app/ui/tavern/tavern_channels_page.dart';
+import 'package:dsh_app/ui/tavern/tavern_number_tile.dart';
+import 'package:dsh_app/ui/tavern/tavern_settings_page.dart';
+import 'package:dsh_app/ui/theme/theme.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:http/http.dart' as http;
+import 'package:http/testing.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+
+import '../support/test_fonts.dart';
+
+class _Keys implements TavernChannelKeys {
+  final stored = <String, String>{};
+
+  @override
+  Future<String?> read(String id) async => stored[id];
+
+  @override
+  Future<void> write(String id, String key) async => stored[id] = key;
+
+  @override
+  Future<void> delete(String id) async => stored.remove(id);
+}
+
+const _relay = TavernChannel(id: 'c1', name: 'Relay', baseUrl: 'https://relay.example/v1', model: 'gpt-x');
+
+Widget _app(_Keys keys, Widget home) => ProviderScope(
+  overrides: [
+    tavernProvider.overrideWith((ref) => PreviewTavern(tick: Duration.zero)),
+    tavernChannelKeysProvider.overrideWithValue(keys),
+  ],
+  child: MaterialApp(
+    theme: withTestFonts(buildLightTheme()),
+    locale: const Locale('zh', 'CN'),
+    supportedLocales: const [Locale('zh', 'CN'), Locale('en')],
+    localizationsDelegates: GlobalMaterialLocalizations.delegates,
+    home: home,
+  ),
+);
+
+void _phone(WidgetTester tester) {
+  tester.view.physicalSize = const Size(390, 844) * 2;
+  tester.view.devicePixelRatio = 2;
+  addTearDown(tester.view.reset);
+}
+
+Future<void> _show(WidgetTester tester, Finder finder) async {
+  unawaited(Scrollable.ensureVisible(tester.element(finder), alignment: 0.5));
+  await tester.pumpAndSettle();
+}
+
+ProviderContainer _container(WidgetTester tester) =>
+    ProviderScope.containerOf(tester.element(find.byType(Scaffold).first));
+
+void main() {
+  group('TavernChannel', () {
+    test('a list survives preferences; anything else there reads as none', () {
+      final json = TavernChannel.listToJson([_relay, _relay.copyWith(name: 'B')]);
+      expect(TavernChannel.listFromJson(json), [_relay, _relay.copyWith(name: 'B')]);
+      expect(TavernChannel.listFromJson('{"not": "a list"}'), isEmpty);
+      expect(TavernChannel.listFromJson('not json'), isEmpty);
+      expect(TavernChannel.listFromJson('[{"id": "x"}, ${jsonEncode(_relay.toJson())}]'), [_relay]);
+    });
+
+    test('/models sits where /chat/completions does', () {
+      expect(tavernModelsUrl('https://a.example/v1').toString(), 'https://a.example/v1/models');
+      expect(tavernModelsUrl('https://a.example/v1/').toString(), 'https://a.example/v1/models');
+      expect(tavernModelsUrl('https://a.example/v1/chat/completions').toString(), 'https://a.example/v1/models');
+    });
+
+    test('the endpoint lists its models, sorted, asked with the key', () async {
+      late http.Request seen;
+      final client = MockClient((request) async {
+        seen = request;
+        return http.Response(
+          jsonEncode({
+            'data': [
+              {'id': 'b-model'},
+              {'id': 'a-model'},
+            ],
+          }),
+          200,
+        );
+      });
+      expect(await fetchTavernModels('https://a.example/v1', 'sk-1', client: client), ['a-model', 'b-model']);
+      expect(seen.headers['Authorization'], 'Bearer sk-1');
+
+      final keyless = MockClient((request) async {
+        seen = request;
+        return http.Response('{"data": []}', 200);
+      });
+      expect(await fetchTavernModels('http://192.168.1.2:1234/v1', null, client: keyless), isEmpty);
+      expect(seen.headers.containsKey('Authorization'), isFalse);
+
+      final refused = MockClient((_) async => http.Response('no', 401));
+      expect(
+        fetchTavernModels('https://a.example/v1', 'bad', client: refused),
+        throwsA(isA<TavernModelsException>().having((e) => e.detail, 'detail', 'HTTP 401')),
+      );
+    });
+  });
+
+  group('酒馆设置 keeps channels', () {
+    test('saving, choosing and deleting one; its key apart from preferences', () async {
+      SharedPreferences.setMockInitialValues({});
+      final keys = _Keys();
+      final container = ProviderContainer(overrides: [tavernChannelKeysProvider.overrideWithValue(keys)]);
+      addTearDown(container.dispose);
+      final controller = container.read(tavernSettingsProvider.notifier);
+      await Future<void>.delayed(Duration.zero);
+
+      await controller.saveChannel(_relay, key: 'sk-relay');
+      await controller.setChannel(_relay.id);
+      var settings = container.read(tavernSettingsProvider);
+      expect(settings.activeChannel, _relay);
+      expect(settings.activeModel, 'gpt-x');
+      expect(settings.deepseekApi, isFalse);
+      expect(keys.stored, {'c1': 'sk-relay'});
+      final prefs = await SharedPreferences.getInstance();
+      expect(prefs.getString(TavernSettingsController.channelsKey), isNot(contains('sk-relay')));
+
+      // An edit without a key keeps the stored one.
+      await controller.saveChannel(_relay.copyWith(model: 'gpt-y'));
+      expect(container.read(tavernSettingsProvider).activeModel, 'gpt-y');
+      expect(keys.stored, {'c1': 'sk-relay'});
+
+      await controller.deleteChannel(_relay.id);
+      settings = container.read(tavernSettingsProvider);
+      expect(settings.channels, isEmpty);
+      expect(settings.activeChannel, isNull);
+      expect(settings.activeModel, 'deepseek-flash');
+      expect(keys.stored, isEmpty);
+      expect(prefs.getString(TavernSettingsController.channelKey), isNull);
+    });
+
+    test('read back: the channel in use, a typed DeepSeek model, typed numbers', () async {
+      SharedPreferences.setMockInitialValues({
+        TavernSettingsController.channelsKey: TavernChannel.listToJson([_relay]),
+        TavernSettingsController.channelKey: 'c1',
+        TavernSettingsController.modelKey: 'deepseek-chat',
+        TavernSettingsController.textSizeKey: 17.0,
+        TavernSettingsController.costAlertKey: 0.3,
+      });
+      final container = ProviderContainer();
+      addTearDown(container.dispose);
+      container.read(tavernSettingsProvider);
+      await Future<void>.delayed(Duration.zero);
+      final settings = container.read(tavernSettingsProvider);
+      expect(settings.activeChannel, _relay);
+      expect(settings.model, 'deepseek-chat');
+      expect(settings.textSize, 17);
+      expect(settings.costAlert, 0.3);
+    });
+
+    test('a channel id with no channel behind it is DeepSeek', () async {
+      SharedPreferences.setMockInitialValues({TavernSettingsController.channelKey: 'gone'});
+      final container = ProviderContainer();
+      addTearDown(container.dispose);
+      container.read(tavernSettingsProvider);
+      await Future<void>.delayed(Duration.zero);
+      expect(container.read(tavernSettingsProvider).activeChannel, isNull);
+    });
+  });
+
+  testWidgets('adding a channel from 酒馆设置 starts using it; 思考 and the DeepSeek key row step aside', (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    _phone(tester);
+    final keys = _Keys();
+    await tester.pumpWidget(_app(keys, const TavernSettingsPage()));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('tavern-thinking')), findsOneWidget);
+    expect(find.byKey(const ValueKey('tavern-key')), findsOneWidget);
+
+    await tester.tap(find.byKey(const ValueKey('tavern-channel')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('tavern-channel-add')));
+    await tester.pumpAndSettle();
+
+    // Nothing filled: both required fields say so.
+    await tester.tap(find.byKey(const ValueKey('tavern-channel-save')));
+    await tester.pumpAndSettle();
+    expect(find.text('要以 http:// 或 https:// 开头'), findsOneWidget);
+    expect(find.text('填一个模型名'), findsOneWidget);
+
+    await tester.enterText(find.byKey(const ValueKey('tavern-channel-base-url')), 'https://relay.example/v1');
+    await tester.enterText(find.byKey(const ValueKey('tavern-channel-key')), 'sk-relay');
+    await tester.enterText(find.byKey(const ValueKey('tavern-channel-model')), 'gpt-x');
+    await tester.tap(find.byKey(const ValueKey('tavern-channel-save')));
+    await tester.pumpAndSettle();
+
+    // Back on the list, the new one ticked; its name is the host.
+    final settings = _container(tester).read(tavernSettingsProvider);
+    expect(settings.activeChannel?.name, 'relay.example');
+    expect(settings.activeChannel?.baseUrl, 'https://relay.example/v1');
+    expect(keys.stored.values, ['sk-relay']);
+    tester.state<NavigatorState>(find.byType(Navigator)).pop();
+    await tester.pumpAndSettle();
+
+    expect(
+      find.descendant(of: find.byKey(const ValueKey('tavern-channel')), matching: find.text('relay.example')),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(of: find.byKey(const ValueKey('tavern-model')), matching: find.text('gpt-x')),
+      findsOneWidget,
+    );
+    expect(find.byKey(const ValueKey('tavern-thinking')), findsNothing);
+    expect(find.byKey(const ValueKey('tavern-key')), findsNothing);
+  });
+
+  testWidgets('DeepSeek takes a model name typed under 自定义', (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    _phone(tester);
+    await tester.pumpWidget(_app(_Keys(), const TavernSettingsPage()));
+    await tester.pumpAndSettle();
+    final row = find.byKey(const ValueKey('tavern-model'));
+    await tester.tap(find.descendant(of: row, matching: find.text('自定义')));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField).last, 'deepseek-chat');
+    await tester.tap(find.text('保存'));
+    await tester.pumpAndSettle();
+    expect((await SharedPreferences.getInstance()).getString(TavernSettingsController.modelKey), 'deepseek-chat');
+    expect(find.descendant(of: row, matching: find.text('deepseek-chat')), findsOneWidget);
+  });
+
+  testWidgets('生成 takes a number typed under 自定义, within its range, and edits it again', (tester) async {
+    final tavern = PreviewTavern(tick: Duration.zero);
+    SharedPreferences.setMockInitialValues({});
+    _phone(tester);
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [tavernProvider.overrideWith((ref) => tavern), tavernChannelKeysProvider.overrideWithValue(_Keys())],
+        child: MaterialApp(
+          theme: withTestFonts(buildLightTheme()),
+          locale: const Locale('zh', 'CN'),
+          supportedLocales: const [Locale('zh', 'CN'), Locale('en')],
+          localizationsDelegates: GlobalMaterialLocalizations.delegates,
+          home: const TavernSettingsPage(),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    final row = find.byKey(const ValueKey('tavern-temperature'));
+    await _show(tester, row);
+    await tester.tap(find.descendant(of: row, matching: find.text('自定义')));
+    await tester.pumpAndSettle();
+
+    await tester.enterText(find.byType(TextField).last, '2.5');
+    await tester.tap(find.text('保存'));
+    await tester.pumpAndSettle();
+    expect(find.text('填 0 到 2 之间的数'), findsNWidgets(2)); // the caption, and the field's error
+
+    await tester.enterText(find.byType(TextField).last, '0.85');
+    await tester.tap(find.text('保存'));
+    await tester.pumpAndSettle();
+    expect(((await tavern.readSettings())['preset']! as Map<String, Object?>)['temperature'], 0.85);
+    expect(find.descendant(of: row, matching: find.text('0.85')), findsOneWidget);
+
+    // Tapping the typed value opens it again, filled in.
+    await tester.tap(find.descendant(of: row, matching: find.text('0.85')));
+    await tester.pumpAndSettle();
+    expect(find.widgetWithText(TextField, '0.85'), findsOneWidget);
+  });
+
+  test('tavernNumberText drops what does not count', () {
+    expect(tavernNumberText(1.0), '1');
+    expect(tavernNumberText(0.85), '0.85');
+    expect(tavernNumberText(4096), '4096');
+    expect(tavernNumberText(0.1 + 0.2), '0.3');
+  });
+
+  test('the ranges hold their presets', () {
+    for (final (presets, range) in [(tavernContextSizes, tavernContextRange), (tavernReplySizes, tavernReplyRange)]) {
+      expect(presets.every((p) => p >= range.min && p <= range.max), isTrue);
+    }
+    expect(tavernTemperatures.every((t) => t <= tavernTemperatureRange.max), isTrue);
+    expect(tavernTopPs.every((t) => t <= tavernTopPRange.max), isTrue);
+  });
+
+  testWidgets('the channel list: DeepSeek, then each added one with its edit button', (tester) async {
+    SharedPreferences.setMockInitialValues({
+      TavernSettingsController.channelsKey: TavernChannel.listToJson([_relay]),
+      TavernSettingsController.channelKey: 'c1',
+    });
+    _phone(tester);
+    final keys = _Keys()..stored['c1'] = 'sk-relay';
+    await tester.pumpWidget(_app(keys, const TavernChannelsPage()));
+    await tester.pumpAndSettle();
+    expect(find.text('relay.example · gpt-x'), findsOneWidget);
+
+    await tester.tap(find.byKey(const ValueKey('tavern-channel-deepseek')));
+    await tester.pumpAndSettle();
+    expect(_container(tester).read(tavernSettingsProvider).activeChannel, isNull);
+
+    await tester.tap(find.byKey(const ValueKey('tavern-channel-c1-edit')));
+    await tester.pumpAndSettle();
+    expect(find.text('已存了 Key，不填就保持原样'), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('tavern-channel-delete')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('删除').last);
+    await tester.pumpAndSettle();
+    expect(_container(tester).read(tavernSettingsProvider).channels, isEmpty);
+    expect(keys.stored, isEmpty);
+  });
+}

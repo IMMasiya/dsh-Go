@@ -22853,6 +22853,118 @@ class L10nEn extends L10n {
   }
 
   @override
+  String get tavernChannel => 'Channel';
+
+  @override
+  String get tavernChannelDeepSeek => 'DeepSeek';
+
+  @override
+  String get tavernChannelDeepSeekNote => 'Uses the app\'s DeepSeek key';
+
+  @override
+  String get tavernChannelAdd => 'Add a channel';
+
+  @override
+  String get tavernChannelEdit => 'Edit channel';
+
+  @override
+  String get tavernChannelsNote =>
+      'Any OpenAI-compatible service works: a relay, OpenRouter, a model running on your own computer. Keys stay in this phone\'s secure storage. Cost estimates know DeepSeek\'s prices only; other channels show token counts.';
+
+  @override
+  String get tavernChannelName => 'Name';
+
+  @override
+  String get tavernChannelNameHint => 'Leave empty to use the address';
+
+  @override
+  String get tavernChannelBaseUrlInvalid => 'Starts with http:// or https://';
+
+  @override
+  String get tavernChannelKeyOptional => 'A local server without a key can leave this empty';
+
+  @override
+  String get tavernChannelKeyKept => 'A key is saved; leave empty to keep it';
+
+  @override
+  String get tavernChannelFetchModels => 'Fetch list';
+
+  @override
+  String get tavernChannelFetching => 'Fetching…';
+
+  @override
+  String tavernChannelFetchFailed(String detail) {
+    return 'Couldn\'t get the model list ($detail). You can type the model name.';
+  }
+
+  @override
+  String get tavernChannelNoModels => 'This service lists no models. Type the model name.';
+
+  @override
+  String get tavernChannelModelHint => 'The model name your provider gives';
+
+  @override
+  String get tavernChannelModelMissing => 'Enter a model name';
+
+  @override
+  String get tavernChannelPickModel => 'Pick a model';
+
+  @override
+  String get tavernChannelSearchModels => 'Search models';
+
+  @override
+  String get tavernChannelDeepSeekApi => 'Send as DeepSeek\'s API';
+
+  @override
+  String get tavernChannelDeepSeekApiNote =>
+      'Uses DeepSeek\'s continuation and the Thinking switch. Turn on only for DeepSeek itself or a relay that forwards it as is.';
+
+  @override
+  String get tavernChannelDelete => 'Delete channel';
+
+  @override
+  String tavernChannelDeleteTitle(String name) {
+    return 'Delete “$name”?';
+  }
+
+  @override
+  String get tavernChannelDeleteMessage => 'Its key is deleted too. If it\'s in use, DeepSeek takes over.';
+
+  @override
+  String get tavernChannelCopyFromApp => 'Copy from the app\'s channels';
+
+  @override
+  String get tavernModelName => 'Model name';
+
+  @override
+  String get tavernNumberCustom => 'Custom';
+
+  @override
+  String get tavernNumberType => 'Enter a number';
+
+  @override
+  String tavernNumberRange(String min, String max) {
+    return 'Enter a number from $min to $max';
+  }
+
+  @override
+  String tavernNumberRangeWhole(String min, String max) {
+    return 'Enter a whole number from $min to $max';
+  }
+
+  @override
+  String get tavernTopP => 'Top P';
+
+  @override
+  String get tavernPresencePenalty => 'Presence penalty';
+
+  @override
+  String get tavernFrequencyPenalty => 'Frequency penalty';
+
+  @override
+  String get tavernPresetSampling => 'Sampling';
+
+  @override
   String get updateCheck => 'Check for updates';
 
   @override

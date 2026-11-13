@@ -1,13 +1,17 @@
-// 酒馆设置: which DeepSeek model plays the characters and whether it thinks
-// first (docs/design/roleplay.md §7). The key is the app's own DeepSeek key
-// (settings_state.dart); nothing here stores it.
+// 酒馆设置: which model plays the characters and whether it thinks first
+// (docs/design/roleplay.md §7). The built-in channel is DeepSeek with the
+// app's own key (settings_state.dart); channels the person adds keep their
+// keys in tavern_channels.dart, never here.
 
 import 'dart:async';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-/// The models the tavern offers, cheapest first.
+import 'tavern_channels.dart';
+
+/// The DeepSeek models offered as choices, cheapest first; any other name
+/// can be typed.
 const tavernModels = ['deepseek-flash', 'deepseek-v4-pro'];
 
 /// How a chat is laid out (docs/design/roleplay-ui.md §4): bubbles, full
@@ -16,11 +20,14 @@ const tavernModels = ['deepseek-flash', 'deepseek-v4-pro'];
 enum TavernLayout { bubble, novel, visualNovel }
 
 /// The story's text size (px), smallest first: a role-play reads more at a
-/// time than a chat, so it starts a step below the app's 16.
+/// time than a chat, so it starts a step below the app's 16. Any size in
+/// [tavernTextSizeRange] can be typed.
 const tavernTextSizes = [14.0, 15.0, 16.0, 18.0];
+const tavernTextSizeRange = (min: 10.0, max: 32.0);
 
-/// Its line spacing: 紧凑, 适中 (the app's), 宽松.
+/// Its line spacing: 紧凑, 适中 (the app's), 宽松; or one typed.
 const tavernLineHeights = [1.5, 1.65, 1.8];
+const tavernLineHeightRange = (min: 1.0, max: 3.0);
 
 /// The story's colours (tavern_ink.dart): 素 leaves the text as the app draws
 /// it; the others colour what is said and what is done. [st] takes them from
@@ -41,12 +48,16 @@ enum TavernTextSpeed {
   final double? charactersPerSecond;
 }
 
-/// 单回合费用提醒's lines, US dollars a turn; 0 is off.
+/// 单回合费用提醒's lines, US dollars a turn; 0 is off. Any other amount in
+/// the range can be typed.
 const tavernCostAlerts = [0.0, 0.01, 0.05, 0.1, 0.5];
+const tavernCostAlertRange = (min: 0.0, max: 100.0);
 
 class TavernSettings {
   const TavernSettings({
     this.model = 'deepseek-flash',
+    this.channel,
+    this.channels = const [],
     this.thinking = false,
     this.layout = TavernLayout.bubble,
     this.textSize = 15,
@@ -64,7 +75,12 @@ class TavernSettings {
     this.loaded = false,
   });
 
+  /// DeepSeek's model, when the built-in channel is the one in use.
   final String model;
+
+  /// The id of the channel in use, one of [channels]; null is DeepSeek's own.
+  final String? channel;
+  final List<TavernChannel> channels;
   final bool thinking;
   final TavernLayout layout;
 
@@ -104,8 +120,24 @@ class TavernSettings {
   final double costAlert;
   final bool loaded;
 
+  /// The added channel in use; null when it is DeepSeek's own.
+  TavernChannel? get activeChannel {
+    for (final c in channels) {
+      if (c.id == channel) return c;
+    }
+    return null;
+  }
+
+  /// The model the next reply comes from.
+  String get activeModel => activeChannel?.model ?? model;
+
+  /// The request speaks DeepSeek's API, so 思考 applies.
+  bool get deepseekApi => activeChannel?.deepseek ?? true;
+
   TavernSettings copyWith({
     String? model,
+    Object? channel = _keep,
+    List<TavernChannel>? channels,
     bool? thinking,
     TavernLayout? layout,
     double? textSize,
@@ -122,6 +154,8 @@ class TavernSettings {
     double? costAlert,
   }) => TavernSettings(
     model: model ?? this.model,
+    channel: identical(channel, _keep) ? this.channel : channel as String?,
+    channels: channels ?? this.channels,
     thinking: thinking ?? this.thinking,
     layout: layout ?? this.layout,
     textSize: textSize ?? this.textSize,
@@ -138,10 +172,14 @@ class TavernSettings {
     costAlert: costAlert ?? this.costAlert,
     loaded: true,
   );
+
+  static const _keep = Object();
 }
 
 class TavernSettingsController extends Notifier<TavernSettings> {
   static const modelKey = 'tavern.model';
+  static const channelKey = 'tavern.channel';
+  static const channelsKey = 'tavern.channels';
   static const thinkingKey = 'tavern.thinking';
   static const layoutKey = 'tavern.layout';
   static const textSizeKey = 'tavern.textSize';
@@ -167,13 +205,17 @@ class TavernSettingsController extends Notifier<TavernSettings> {
     var loaded = const TavernSettings(loaded: true);
     try {
       final prefs = await SharedPreferences.getInstance();
-      final model = prefs.getString(modelKey);
+      final model = prefs.getString(modelKey)?.trim() ?? '';
+      final channels = TavernChannel.listFromJson(prefs.getString(channelsKey));
+      final channel = prefs.getString(channelKey);
       loaded = TavernSettings(
-        model: tavernModels.contains(model) ? model! : tavernModels.first,
+        model: model.isEmpty ? tavernModels.first : model,
+        channel: channels.any((c) => c.id == channel) ? channel : null,
+        channels: channels,
         thinking: prefs.getBool(thinkingKey) ?? false,
         layout: TavernLayout.values.asNameMap()[prefs.getString(layoutKey)] ?? TavernLayout.bubble,
-        textSize: _oneOf(prefs.getDouble(textSizeKey), tavernTextSizes, 15),
-        lineHeight: _oneOf(prefs.getDouble(lineHeightKey), tavernLineHeights, 1.5),
+        textSize: _within(prefs.getDouble(textSizeKey), tavernTextSizeRange, 15),
+        lineHeight: _within(prefs.getDouble(lineHeightKey), tavernLineHeightRange, 1.5),
         palette: TavernPalette.values.asNameMap()[prefs.getString(paletteKey)] ?? TavernPalette.ember,
         textSpeed: TavernTextSpeed.values.asNameMap()[prefs.getString(textSpeedKey)] ?? TavernTextSpeed.normal,
         showUsage: prefs.getBool(showUsageKey) ?? true,
@@ -183,7 +225,7 @@ class TavernSettingsController extends Notifier<TavernSettings> {
         islandNoScripts: prefs.getBool(islandNoScriptsKey) ?? false,
         islandOffline: prefs.getBool(islandOfflineKey) ?? false,
         canvas: prefs.getBool(canvasKey) ?? false,
-        costAlert: _oneOf(prefs.getDouble(costAlertKey), tavernCostAlerts, 0),
+        costAlert: _within(prefs.getDouble(costAlertKey), tavernCostAlertRange, 0),
         loaded: true,
       );
     } catch (_) {
@@ -195,6 +237,35 @@ class TavernSettingsController extends Notifier<TavernSettings> {
   Future<void> setModel(String model) async {
     state = state.copyWith(model: model);
     await _save((prefs) => prefs.setString(modelKey, model));
+  }
+
+  /// Uses [id]'s channel from now on; null goes back to DeepSeek's own.
+  Future<void> setChannel(String? id) async {
+    state = state.copyWith(channel: id);
+    await _save((prefs) => id == null ? prefs.remove(channelKey) : prefs.setString(channelKey, id));
+  }
+
+  /// Adds [channel], or replaces the one with its id. [key] replaces its key
+  /// when given; empty removes it (an endpoint that needs none).
+  Future<void> saveChannel(TavernChannel channel, {String? key}) async {
+    if (key != null) {
+      final keys = ref.read(tavernChannelKeysProvider);
+      key.isEmpty ? await keys.delete(channel.id) : await keys.write(channel.id, key);
+    }
+    final channels = [...state.channels];
+    final at = channels.indexWhere((c) => c.id == channel.id);
+    at < 0 ? channels.add(channel) : channels[at] = channel;
+    state = state.copyWith(channels: channels);
+    await _save((prefs) => prefs.setString(channelsKey, TavernChannel.listToJson(channels)));
+  }
+
+  /// Removes [id]'s channel and its key; DeepSeek's own takes over if it was in use.
+  Future<void> deleteChannel(String id) async {
+    final channels = [...state.channels]..removeWhere((c) => c.id == id);
+    if (state.channel == id) await setChannel(null);
+    state = state.copyWith(channels: channels);
+    await _save((prefs) => prefs.setString(channelsKey, TavernChannel.listToJson(channels)));
+    await ref.read(tavernChannelKeysProvider).delete(id);
   }
 
   Future<void> setThinking(bool thinking) async {
@@ -267,9 +338,9 @@ class TavernSettingsController extends Notifier<TavernSettings> {
     await _save((prefs) => prefs.setDouble(costAlertKey, usd));
   }
 
-  /// [stored] when it is one of [choices]; else [fallback].
-  static double _oneOf(double? stored, List<double> choices, double fallback) =>
-      stored != null && choices.contains(stored) ? stored : fallback;
+  /// [stored] when it is within [range]; else [fallback].
+  static double _within(double? stored, ({double min, double max}) range, double fallback) =>
+      stored != null && stored >= range.min && stored <= range.max ? stored : fallback;
 
   Future<void> _save(Future<bool> Function(SharedPreferences prefs) write) async {
     try {
