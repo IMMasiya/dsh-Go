@@ -117,6 +117,10 @@ flutter:
   # the material Icons class.
   uses-material-design: true
 
+  shaders:
+    # Libraries.dev Metal's liquid-metal material (lib/ui/fx/metal/).
+    - shaders/fx/metal_liquid.frag
+
   fonts:
     # App icons: a Phosphor subset made by tool/make_icon_font.py; use AppIcons.
     - family: DshIcons
