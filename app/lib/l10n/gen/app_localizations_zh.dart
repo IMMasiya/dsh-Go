@@ -17510,6 +17510,10 @@ class L10nZh extends L10n {
   String get speechNoCredential => '要先登录 DeepSeek 账号，或在设置里填 API Key';
 
   @override
+  String get speechAccountUnusable =>
+      '已登录的账号在这里付不了 DeepSeek 语音：当前连接的 DSH 版本较旧（更新后就行），或正经 DSH Remote 中继连接。在设置里填 DeepSeek API Key 就能用';
+
+  @override
   String get speechSignIn => 'DeepSeek 账号用不了语音（可能登录过期，或语音只认 API Key）。重新登录，或在设置里填上 API Key';
 
   @override
@@ -17649,6 +17653,10 @@ class L10nZh extends L10n {
 
   @override
   String get speechCallEndMicrophone => '麦克风被占用或打不开';
+
+  @override
+  String get speechCallEndNoRecognizerSignedIn =>
+      '通话要能识别录音。已登录的账号在这里付不了 DeepSeek 语音（当前连接的 DSH 版本较旧，或经 DSH Remote 中继）：在设置里填 DeepSeek API Key，或在设置 › 语音里下载语音模型';
 
   @override
   String get speechCallEndNoRecognizer => '通话需要能识别录音的方式：登录 DeepSeek 账号、填 API Key，或下载语音模型';

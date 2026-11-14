@@ -152,6 +152,7 @@ class CallSettings {
 
   /// A soft chime when an answer is slow to start.
   final bool cue;
+
   /// The light in the middle.
   final CallVisual visual;
 

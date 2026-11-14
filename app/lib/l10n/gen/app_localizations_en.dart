@@ -18482,6 +18482,10 @@ class L10nEn extends L10n {
   String get speechNoCredential => 'Sign in to DeepSeek or add an API key in Settings first';
 
   @override
+  String get speechAccountUnusable =>
+      'Your signed-in account can\'t pay for DeepSeek speech here: the DSH you\'re connected to is older (updating fixes it), or you\'re going through DSH Remote. Add a DeepSeek API key in Settings to use it';
+
+  @override
   String get speechSignIn =>
       'Your DeepSeek account can\'t pay for speech (sign-in expired, or speech takes only an API key). Sign in again, or add an API key in Settings';
 
@@ -18628,6 +18632,10 @@ class L10nEn extends L10n {
 
   @override
   String get speechCallEndMicrophone => 'The microphone is busy or can\'t be opened';
+
+  @override
+  String get speechCallEndNoRecognizerSignedIn =>
+      'A call needs a way to recognize speech. Your signed-in account can\'t pay for DeepSeek speech here (the DSH you\'re connected to is older, or you\'re going through DSH Remote): add a DeepSeek API key in Settings, or download the voice model in Settings › Voice';
 
   @override
   String get speechCallEndNoRecognizer =>

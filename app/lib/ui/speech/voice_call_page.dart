@@ -29,6 +29,7 @@ import '../../speech/speech_audio.dart';
 import '../../speech/speech_out.dart';
 import '../../speech/speech_settings.dart';
 import '../../speech/voice_cloud.dart';
+import '../../state/account_state.dart';
 import '../../state/app_notes.dart';
 import '../../state/notify_state.dart';
 import '../../state/voice_state.dart';
@@ -132,11 +133,28 @@ class _VoiceCallPageState extends ConsumerState<VoiceCallPage> with WidgetsBindi
       conversation: widget.conversation,
       recognizer: () async {
         voice = await voices.ready();
+        // DeepSeek's voice with nobody to pay for it here: she speaks with the phone's own.
+        if (voice.source == CompanionVoiceSource.deepseek) {
+          final speech = await deepseek();
+          if (speech == null) {
+            voice = voice.copyWith(source: CompanionVoiceSource.system);
+          } else {
+            speech.close();
+          }
+        }
         // The phone's own voice warms up while the recognizer is found.
         if (voice.source != CompanionVoiceSource.deepseek) unawaited(speaker.ready(voice));
         return recognize();
       },
-      voice: () => speechOutFor(voice, deepseek: deepseek, audio: audio, speaker: speaker, call: true, levels: true),
+      voice: () => speechOutFor(
+        voice,
+        deepseek: deepseek,
+        audio: audio,
+        speaker: speaker,
+        call: true,
+        levels: true,
+        gap: ref.read(deepSeekSpeechGapProvider),
+      ),
       // The saved ones, not the defaults shown while they load (a first call after launch).
       choices: () async {
         final saved = await callSettings.ready();
@@ -280,7 +298,10 @@ class _VoiceCallPageState extends ConsumerState<VoiceCallPage> with WidgetsBindi
         switch (_call.ended) {
           CallEnd.permission => l10n.speechCallEndPermission,
           CallEnd.microphone => l10n.speechCallEndMicrophone,
-          CallEnd.noRecognizer => l10n.speechCallEndNoRecognizer,
+          CallEnd.noRecognizer =>
+            ref.read(accountProvider).signedIn
+                ? l10n.speechCallEndNoRecognizerSignedIn
+                : l10n.speechCallEndNoRecognizer,
           CallEnd.background => l10n.speechCallEndBackground,
           CallEnd.failed => l10n.speechCallEndFailed,
           CallEnd.hungUp || null => l10n.speechCallEnded,

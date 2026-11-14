@@ -32042,6 +32042,12 @@ abstract class L10n {
   /// **'要先登录 DeepSeek 账号，或在设置里填 API Key'**
   String get speechNoCredential;
 
+  /// No description provided for @speechAccountUnusable.
+  ///
+  /// In zh, this message translates to:
+  /// **'已登录的账号在这里付不了 DeepSeek 语音：当前连接的 DSH 版本较旧（更新后就行），或正经 DSH Remote 中继连接。在设置里填 DeepSeek API Key 就能用'**
+  String get speechAccountUnusable;
+
   /// No description provided for @speechSignIn.
   ///
   /// In zh, this message translates to:
@@ -32311,6 +32317,12 @@ abstract class L10n {
   /// In zh, this message translates to:
   /// **'麦克风被占用或打不开'**
   String get speechCallEndMicrophone;
+
+  /// No description provided for @speechCallEndNoRecognizerSignedIn.
+  ///
+  /// In zh, this message translates to:
+  /// **'通话要能识别录音。已登录的账号在这里付不了 DeepSeek 语音（当前连接的 DSH 版本较旧，或经 DSH Remote 中继）：在设置里填 DeepSeek API Key，或在设置 › 语音里下载语音模型'**
+  String get speechCallEndNoRecognizerSignedIn;
 
   /// No description provided for @speechCallEndNoRecognizer.
   ///
