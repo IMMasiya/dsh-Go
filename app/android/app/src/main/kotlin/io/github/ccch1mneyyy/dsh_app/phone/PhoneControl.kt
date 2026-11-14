@@ -201,9 +201,11 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
             if (state.stopped) record.activeWorker?.interruptCurrent(record.tasks)
             prompts.stopTask(record.tasks)
         })
-    private val server = McpServer(PhoneToolCatalog.listJson(), { name, args, _ -> sessions.run(sessions.admit(null), name, args) }, SERVER_VERSION)
+    private val server = McpServer(PhoneToolCatalog.listJson(), { name, args, _ -> sessions.run(sessions.admit(null), name, args) }, SERVER_VERSION,
+        diagnostics = { args, caller -> RuntimeController.get(app).diagnosticsTool.call(args, caller) })
     private val bridge = PhoneBridge(server, { line -> logger(line) }, { call ->
-        if (call.name == PhoneCore.REPLAY) replayWork(call) else {
+        if (call.name == DiagnosticsTool.NAME) PhoneCallWork({ call.run() })
+        else if (call.name == PhoneCore.REPLAY) replayWork(call) else {
         val admission = sessions.admit(call.caller)
         val nativeReplyCommit = PhoneReplyCommit()
         PhoneCallWork(
@@ -365,7 +367,7 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
 
     fun isEnabled(): Boolean = switchedOn(app)
 
-    /** Off closes the bridge and stops the task after any in-flight keeper settings write.
+    /** Off stops control tasks after any in-flight keeper settings write; diagnostics keeps its transport.
      * On needs an engine restart (the UI does it); the rebind gap never holds this switch.
      */
     fun setEnabled(enabled: Boolean): Boolean {
@@ -376,7 +378,7 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
             // l10n:keep agent stop reason
             sessions.stopAll("手机操控已关闭")
             skillLifecycle.retired()
-            stopBridge()
+            stopBridge(stopTransport = false)
         } else {
             tasks.clearStop()
             ticker.execute(::keep)
@@ -431,9 +433,8 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
     // ── Engine lifecycle (RuntimeController's worker thread) ───────────────────────
 
     /**
-     * Before DSH launches: with the switch on and not in safe mode, writes the guest files, starts
-     * the bridge and returns true (the launch then adds the `--patch` overlay). Otherwise makes
-     * sure nothing is listening and returns false: DSH mounts no phone tools at all.
+     * Before a normal DSH launch, mounts the bridge even with control off: diagnostics is independent.
+     * Other tools still require the control switch. Safe mode mounts no phone tools.
      */
     fun prepareLaunch(rootfs: File, safe: Boolean, log: (String) -> Unit): Boolean {
         logger = log
@@ -442,7 +443,7 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
         stopBridge()
         sessions.beginCallerLaunch()
         this.rootfs = rootfs
-        if (!isEnabled() || safe) {
+        if (safe) {
             PhoneGuest.clearConfig(rootfs)
             if (isEnabled()) log("[dsh-app] phone control stays off in safe mode")
             emitStatus()
@@ -511,17 +512,17 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
         emitStatus()
     }
 
-    private fun stopBridge() {
+    private fun stopBridge(stopTransport: Boolean = true) {
         shell.cancelAll()
         skillReplaySelections.retire()
         selfCheck.stop()
         background.sealTask()
-        bridge.stop()
+        if (stopTransport) bridge.stop()
         sessions.retire()
         displaySelection.clear()
         PhoneRegistry.overlayGate?.clearStatus { /* Stale displayed status only. */ }
         core.worker.retire()
-        rootfs?.let { PhoneGuest.clearConfig(it) }
+        if (stopTransport) rootfs?.let { PhoneGuest.clearConfig(it) }
         refreshScreenOff()
     }
 
@@ -664,7 +665,7 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
     /** Receiver ownership stays on main; a pending selfcheck outlives an engine bridge. */
     private fun refreshScreenOff() {
         if (Looper.myLooper() != main.looper) { main.post { refreshScreenOff() }; return }
-        if (bridge.listening || selfCheck.needsReceiver) registerScreenOffNow()
+        if ((bridge.listening && isEnabled()) || selfCheck.needsReceiver) registerScreenOffNow()
         else {
             screenReceiver?.let { runCatching { app.unregisterReceiver(it) } }
             screenReceiver = null

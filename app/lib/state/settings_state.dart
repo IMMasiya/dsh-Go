@@ -18,6 +18,7 @@ class AppSettings {
     this.autoStartLocal = true,
     this.autoStartLocalExplicit = true,
     this.autoApproveCommands = false,
+    this.automaticDiagnostics = false,
     this.phoneStorage = false,
     this.webPhoneLayout = true,
     this.chatSuggestions = true,
@@ -41,6 +42,9 @@ class AppSettings {
   /// New local sessions use DSH's `danger-full-access` preset (commands run without asking).
   /// Off by default: there is no sandbox on Android, so each command escalation asks first.
   final bool autoApproveCommands;
+
+  /// Explicit opt-in to sending content-free local failure facts to the model.
+  final bool automaticDiagnostics;
 
   /// Mount the phone's shared storage at /sdcard in the Linux environment.
   final bool phoneStorage;
@@ -85,6 +89,7 @@ class AppSettings {
     bool? autoStartLocal,
     bool? autoStartLocalExplicit,
     bool? autoApproveCommands,
+    bool? automaticDiagnostics,
     bool? phoneStorage,
     bool? webPhoneLayout,
     bool? chatSuggestions,
@@ -100,6 +105,7 @@ class AppSettings {
     autoStartLocal: autoStartLocal ?? this.autoStartLocal,
     autoStartLocalExplicit: autoStartLocalExplicit ?? this.autoStartLocalExplicit,
     autoApproveCommands: autoApproveCommands ?? this.autoApproveCommands,
+    automaticDiagnostics: automaticDiagnostics ?? this.automaticDiagnostics,
     phoneStorage: phoneStorage ?? this.phoneStorage,
     webPhoneLayout: webPhoneLayout ?? this.webPhoneLayout,
     chatSuggestions: chatSuggestions ?? this.chatSuggestions,
@@ -125,6 +131,7 @@ class SettingsController extends Notifier<AppSettings> {
   static const _themeKey = 'theme_mode';
   static const _autoStartKey = 'auto_start_local';
   static const _autoApproveKey = 'auto_approve_commands';
+  static const _automaticDiagnosticsKey = 'automatic_diagnostics';
   static const _phoneStorageKey = 'phone_storage';
   static const _webPhoneLayoutKey = 'web_phone_layout';
   static const _chatSuggestionsKey = 'chat_suggestions';
@@ -172,6 +179,7 @@ class SettingsController extends Notifier<AppSettings> {
       autoStartLocal: prefs.getBool(_autoStartKey) ?? ref.read(performanceDefaultsProvider).autoStartLocal,
       autoStartLocalExplicit: prefs.containsKey(_autoStartKey),
       autoApproveCommands: prefs.getBool(_autoApproveKey) ?? false,
+      automaticDiagnostics: prefs.getBool(_automaticDiagnosticsKey) ?? false,
       phoneStorage: prefs.getBool(_phoneStorageKey) ?? false,
       webPhoneLayout: prefs.getBool(_webPhoneLayoutKey) ?? true,
       chatSuggestions: prefs.getBool(_chatSuggestionsKey) ?? true,
@@ -219,6 +227,18 @@ class SettingsController extends Notifier<AppSettings> {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(_autoApproveKey, value);
     state = state.copyWith(autoApproveCommands: value);
+  }
+
+  Future<void> setAutomaticDiagnostics(bool value) async {
+    await _loaded;
+    if (!ref.mounted) return;
+    // Revoke in memory before awaiting persistence, including an in-flight send.
+    state = state.copyWith(automaticDiagnostics: value);
+    final prefs = await SharedPreferences.getInstance();
+    if (!await prefs.setBool(_automaticDiagnosticsKey, value)) {
+      if (ref.mounted) state = state.copyWith(automaticDiagnostics: false);
+      throw StateError('automatic_diagnostics_store_failed');
+    }
   }
 
   Future<void> setPhoneStorage(bool value) async {

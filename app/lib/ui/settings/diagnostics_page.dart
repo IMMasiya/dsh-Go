@@ -8,6 +8,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../l10n/l10n.dart';
 import '../../diagnostics/diagnostics_publish.dart';
+import '../../diagnostics/automatic_diagnostics.dart';
 import '../../diagnostics/redact.dart';
 import '../../diagnostics/system_ime_diagnostics.dart';
 import '../../runtime/runtime_state.dart';
@@ -15,6 +16,9 @@ import '../../runtime/runtime_bridge.dart';
 import '../../state/app_info.dart';
 import '../../state/connection_state.dart';
 import '../../state/settings_state.dart';
+import '../../state/hosts_state.dart';
+import '../../state/sessions_state.dart';
+import '../common/risk_notice.dart';
 import '../common/list_page_row.dart';
 import '../engine/diagnostics_export_card.dart';
 import '../engine/engine_screen.dart' show shortRuntimeVersion;
@@ -127,6 +131,7 @@ class DiagnosticsPage extends ConsumerWidget {
             InfoRow(label: 'API Key', value: settings.hasApiKey ? l10n.pluginsConfigured : l10n.commonNotSet),
           ],
         ),
+        const AutomaticDiagnosticsSection(),
         const SystemImeDiagnosticsSection(),
         DiagnosticsExportCard(
           title: l10n.pluginsExport,
@@ -151,6 +156,97 @@ class DiagnosticsPage extends ConsumerWidget {
         const SizedBox(height: 24),
         const DirectEngineSettings(),
       ],
+    );
+  }
+}
+
+/// One opt-in, one status, one ordinary report-session entry.
+class AutomaticDiagnosticsSection extends ConsumerStatefulWidget {
+  const AutomaticDiagnosticsSection({super.key});
+
+  @override
+  ConsumerState<AutomaticDiagnosticsSection> createState() => _AutomaticDiagnosticsSectionState();
+}
+
+class _AutomaticDiagnosticsSectionState extends ConsumerState<AutomaticDiagnosticsSection> {
+  bool _changing = false;
+
+  Future<void> _change(bool enabled) async {
+    if (_changing) return;
+    setState(() => _changing = true);
+    try {
+      final l10n = context.l10n;
+      if (enabled) {
+        final accepted = await confirmRisk(
+          context,
+          RiskNotice(
+            id: 'diagnostics.automatic',
+            level: RiskLevel.high,
+            title: l10n.automaticDiagnosticsConsentTitle,
+            body: l10n.automaticDiagnosticsConsent,
+            action: l10n.automaticDiagnosticsEnable,
+          ),
+        );
+        if (!mounted || !accepted || !ref.read(activeHostProvider).isLocal) return;
+      }
+      await ref.read(settingsProvider.notifier).setAutomaticDiagnostics(enabled);
+    } catch (_) {
+      if (mounted) showBriefNotice(context, context.l10n.automaticDiagnosticsStoreFailed);
+    } finally {
+      if (mounted) setState(() => _changing = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = context.l10n;
+    final settings = ref.watch(settingsProvider);
+    final local = ref.watch(activeHostProvider).isLocal;
+    final automatic = ref.watch(automaticDiagnosticsProvider);
+    return ListenableBuilder(
+      listenable: automatic,
+      builder: (context, _) {
+        final status = switch (automatic.phase) {
+          AutomaticDiagnosticsPhase.failed =>
+            automatic.failureCode == 'store_failed'
+                ? l10n.automaticDiagnosticsStoreFailed
+                : automatic.failureCode == 'cancel_failed'
+                ? l10n.automaticDiagnosticsCancelFailed
+                : l10n.automaticDiagnosticsFailed,
+          _ when !settings.automaticDiagnostics => l10n.automaticDiagnosticsOff,
+          _ when !automatic.eligible => l10n.automaticDiagnosticsWaiting,
+          AutomaticDiagnosticsPhase.collecting => l10n.automaticDiagnosticsCollecting,
+          AutomaticDiagnosticsPhase.analyzing => l10n.automaticDiagnosticsAnalyzing,
+          AutomaticDiagnosticsPhase.complete => l10n.automaticDiagnosticsComplete,
+          AutomaticDiagnosticsPhase.cancelled => l10n.automaticDiagnosticsCancelled,
+          _ => l10n.automaticDiagnosticsReady,
+        };
+        return SettingsSection(
+          title: l10n.automaticDiagnosticsTitle,
+          children: [
+            SettingsSwitchTile(
+              title: l10n.automaticDiagnosticsTitle,
+              subtitle: l10n.automaticDiagnosticsHint,
+              value: settings.automaticDiagnostics,
+              onChanged: _changing || !settings.loaded || (!local && !settings.automaticDiagnostics) ? null : _change,
+            ),
+            InfoRow(label: l10n.commonStatus, value: status),
+            if (automatic.reportSessionId case final id?)
+              SettingsTile(
+                title: l10n.automaticDiagnosticsViewReport,
+                subtitle: l10n.automaticDiagnosticsReportHint,
+                onTap: !local
+                    ? null
+                    : () {
+                        // Only a deliberate tap selects this ordinary conversation.
+                        if (!ref.read(activeHostProvider).isLocal) return;
+                        ref.read(currentSessionProvider.notifier).select(id);
+                        Navigator.of(context).popUntil((route) => route.isFirst);
+                      },
+              ),
+          ],
+        );
+      },
     );
   }
 }

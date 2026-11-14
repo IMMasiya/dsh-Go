@@ -59,7 +59,7 @@ Shows your DeepSeek account or API key and balance; tap it to open your account.
 
 - **Help**: takes "what can this app do" to a new chat, where the AI answers from this guide. Not shown in Web mode.
 - **Community**: chat groups and the forum.
-- **Diagnostics**: see [FAQ](11-faq.md).
+- **Diagnostics**: inspect the environment, export a bundle, or enable **Automatic failure analysis** (off by default); see [FAQ](11-faq.md).
 - **About DSH Go**:
   - **Version**: the app version, such as 0.9.2 (10251234), with the build number in parentheses. When there's a new version, this row on the Settings page says **Update available**.
   - **Check for updates**: when there's a new version, the update window opens. Read **What’s new**, tap **Update now**, and once the download is verified, tap **Install** and confirm in the system prompt. DSH Go closes to install; your chats and settings stay. If the version changes the runtime, only `/root` stays in the Linux environment: software installed with `apt`, and files in `/usr/local`, `/opt` and similar places, need installing again. To pass on a version, tap **Skip this version**. The first time, you'll need to allow DSH Go to install apps. If the installed app has a different signature (usually a test build), it can't be updated in place: uninstall it first, which erases your chats, Linux environment and settings.

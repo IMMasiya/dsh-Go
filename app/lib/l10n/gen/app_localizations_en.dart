@@ -6124,6 +6124,63 @@ class L10nEn extends L10n {
   String get companionAdaptNetwork => 'no connection';
 
   @override
+  String get automaticDiagnosticsTitle => 'Automatic failure analysis';
+
+  @override
+  String get automaticDiagnosticsHint =>
+      'Off by default. Local, foreground and engine-ready only. Same-version failures are merged for 24 hours. Disabling stops new requests; sent data cannot be retracted.';
+
+  @override
+  String get automaticDiagnosticsConsentTitle => 'Enable automatic failure analysis?';
+
+  @override
+  String get automaticDiagnosticsConsent =>
+      'On a failure, the app sends redacted versions, Android system facts, runtime state, error categories, voice stages and its own process exit reasons to the model provider configured on your local engine. Model charges may apply. No chat text, recordings, credentials or raw logs are included. Reports stay in a separate read-only analysis conversation without changing your current chat. No automatic repairs or GitHub publication. Disabling or switching hosts blocks new analyses and attempts to stop existing analysis; data already sent cannot be retracted.';
+
+  @override
+  String get automaticDiagnosticsEnable => 'Agree and enable';
+
+  @override
+  String get automaticDiagnosticsOff => 'Off';
+
+  @override
+  String get automaticDiagnosticsWaiting => 'Waiting for a local connection, foreground and ready engine';
+
+  @override
+  String get automaticDiagnosticsReady => 'Enabled; waiting for a new failure';
+
+  @override
+  String get automaticDiagnosticsCollecting => 'Collecting structured failure facts';
+
+  @override
+  String get automaticDiagnosticsAnalyzing => 'Analyzing in a separate conversation (up to 2 minutes)';
+
+  @override
+  String get automaticDiagnosticsComplete => 'Analysis complete';
+
+  @override
+  String get automaticDiagnosticsCancelled => 'Stopped or interrupted; no automatic retry';
+
+  @override
+  String get automaticDiagnosticsFailed => 'Analysis failed; this failure will not be retried automatically';
+
+  @override
+  String get automaticDiagnosticsStoreFailed => 'Cannot save diagnostics settings or state; automatic analysis stopped';
+
+  @override
+  String get automaticDiagnosticsCancelFailed => 'Stop request failed; check the report conversation and stop manually';
+
+  @override
+  String get automaticDiagnosticsViewReport => 'View latest analysis conversation';
+
+  @override
+  String get automaticDiagnosticsReportHint =>
+      'Opens only when tapped; never interrupts your current chat. The report may still be running or interrupted.';
+
+  @override
+  String get automaticDiagnosticsReportTitle => 'Automatic failure analysis report';
+
+  @override
   String get systemImeTitle => 'System input-method diagnostics';
 
   @override

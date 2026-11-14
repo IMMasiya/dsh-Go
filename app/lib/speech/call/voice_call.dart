@@ -19,6 +19,7 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 
+import '../../diagnostics/diagnostics_channel.dart';
 import '../speech_audio.dart';
 import '../speech_out.dart';
 import '../voice_cloud.dart';
@@ -201,6 +202,7 @@ class VoiceCallController extends ChangeNotifier {
   Object? get error => _error;
 
   Future<void> start() async {
+    unawaited(const DiagnosticsChannel().recordVoiceStage('call_started'));
     _replySub = conversation.replies.listen(_onReply);
     _audioSub = audio.events.listen(_onAudio);
     final chosen = await choices();
@@ -227,6 +229,8 @@ class VoiceCallController extends ChangeNotifier {
         return;
       }
     }
+    await const DiagnosticsChannel().recordVoiceStage('preparing');
+    if (_disposed || _phase == CallPhase.ended) return;
     final started = await audio.startCall(bargeIn: _bargeIn);
     if (_disposed || _phase == CallPhase.ended) {
       if (started == CallStart.ok) unawaited(audio.stopCall());
@@ -234,6 +238,7 @@ class VoiceCallController extends ChangeNotifier {
     }
     switch (started) {
       case CallStart.ok:
+        unawaited(const DiagnosticsChannel().recordVoiceStage('capture_started'));
         _speaker = await audio.speaker(_speaker);
         _set(CallPhase.listening);
       case CallStart.permission:
@@ -268,6 +273,7 @@ class VoiceCallController extends ChangeNotifier {
         }
         _set(CallPhase.hearing);
       case Utterance(:final wav, :final duration):
+        unawaited(const DiagnosticsChannel().recordVoiceStage('utterance_ready'));
         // Finished before [confirmAfter]: the words decide.
         _overTimer?.cancel();
         // The live words stand in until the recognizer's come back.
@@ -300,8 +306,12 @@ class VoiceCallController extends ChangeNotifier {
     if (!_over) _set(CallPhase.thinking);
     String text;
     try {
+      await const DiagnosticsChannel().recordVoiceStage('recognizing', backend: 'cloud');
+      if (_disposed || _phase == CallPhase.ended || mine != _recognizing) return;
       text = await cloud.transcribe(wav);
+      unawaited(const DiagnosticsChannel().recordVoiceStage('recognized', backend: 'cloud'));
     } catch (error) {
+      unawaited(const DiagnosticsChannel().recordVoiceStage('failed', backend: 'cloud'));
       if (_phase == CallPhase.ended || mine != _recognizing) return;
       if (_over) {
         // Could not make it out: she carries on.
@@ -355,6 +365,7 @@ class VoiceCallController extends ChangeNotifier {
     if (_phase == CallPhase.ended || _replyDone) return;
     final text = reply.text;
     if (text.length > _spoken) {
+      if (_spoken == 0) unawaited(const DiagnosticsChannel().recordVoiceStage('reply_received'));
       final out = _out ??= _newVoice();
       out.add(text.substring(_spoken));
       _spoken = text.length;
@@ -378,6 +389,7 @@ class VoiceCallController extends ChangeNotifier {
   void _cutIn() {
     _overTimer?.cancel();
     if (!_over) return;
+    unawaited(const DiagnosticsChannel().recordVoiceStage('interrupted'));
     _over = false;
     final out = _out;
     if (out != null) {
@@ -490,6 +502,7 @@ class VoiceCallController extends ChangeNotifier {
 
   void _end(CallEnd why) {
     if (_phase == CallPhase.ended) return;
+    unawaited(const DiagnosticsChannel().recordVoiceStage('call_ended', code: why.index));
     _ended = why;
     _overTimer?.cancel();
     _cueTimer?.cancel();
@@ -501,6 +514,9 @@ class VoiceCallController extends ChangeNotifier {
   }
 
   void _set(CallPhase phase) {
+    if (_phase != phase && phase == CallPhase.listening) {
+      unawaited(const DiagnosticsChannel().recordVoiceStage('listening'));
+    }
     _phase = phase;
     if (!_disposed) notifyListeners();
   }

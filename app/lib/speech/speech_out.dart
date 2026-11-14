@@ -12,6 +12,7 @@ import 'dart:collection';
 import 'dart:math';
 import 'dart:typed_data';
 
+import '../diagnostics/diagnostics_channel.dart';
 import '../companion/companion_voice.dart';
 import '../companion/companion_voice_source.dart';
 import 'deepseek_speech.dart';
@@ -306,6 +307,10 @@ class DeepSeekOut implements SpeechOut {
         .._signal();
       return;
     }
+    if (_pieces.isNotEmpty && identical(_pieces.first, piece) && _written == 0) {
+      await const DiagnosticsChannel().recordVoiceStage('synthesis_requested', backend: 'deepseek');
+      if (_stopped) return;
+    }
     piece.fetch = speech
         .synthesize(piece.text, voice: voice)
         .listen(
@@ -343,6 +348,8 @@ class DeepSeekOut implements SpeechOut {
             span.end = _written;
             if (!_opened) {
               _opened = true;
+              await const DiagnosticsChannel().recordVoiceStage('playback_opening', backend: 'deepseek');
+              if (_stopped) return;
               if (!await _audio.open(id, call: call, levels: levels)) {
                 _fail(const DeepSeekSpeechError(DeepSeekSpeechFailure.protocol, 'no audio output'));
                 return;
@@ -436,6 +443,7 @@ class DeepSeekOut implements SpeechOut {
       case PlayEvent(id: final which, :final phase) when which == id:
         switch (phase) {
           case PlayPhase.start:
+            unawaited(const DiagnosticsChannel().recordVoiceStage('playback_started', backend: 'deepseek'));
             if (!_events.isClosed) _events.add(const SpeechOutStarted());
           case PlayPhase.done:
             _played = _written;
@@ -455,6 +463,7 @@ class DeepSeekOut implements SpeechOut {
 
   void _close(SpeechOutEvent last) {
     if (_ended) return;
+    if (last is SpeechOutFailed) unawaited(const DiagnosticsChannel().recordVoiceStage('failed', backend: 'deepseek'));
     _ended = true;
     _stopped = true;
     if (!_events.isClosed) {
@@ -535,6 +544,7 @@ class SpeakerOut implements SpeechOut {
       _open.add(id);
       _lineText[id] = text;
       _said++;
+      if (_said == 1) unawaited(const DiagnosticsChannel().recordVoiceStage('synthesis_requested'));
       _speaker.speak(id, text);
     }
   }
@@ -544,6 +554,7 @@ class SpeakerOut implements SpeechOut {
     switch (event.type) {
       case CompanionVoiceEventType.start:
         if (!_started) {
+          unawaited(const DiagnosticsChannel().recordVoiceStage('playback_started'));
           _started = true;
           if (!_events.isClosed) _events.add(const SpeechOutStarted());
         }
@@ -605,6 +616,7 @@ class SpeakerOut implements SpeechOut {
 
   void _close(SpeechOutEvent last) {
     if (_ended) return;
+    if (last is SpeechOutFailed) unawaited(const DiagnosticsChannel().recordVoiceStage('failed'));
     _ended = true;
     _levels?.cancel();
     if (!_events.isClosed) {

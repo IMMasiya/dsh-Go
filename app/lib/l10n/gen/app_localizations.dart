@@ -10724,6 +10724,114 @@ abstract class L10n {
   /// **'网络不通'**
   String get companionAdaptNetwork;
 
+  /// No description provided for @automaticDiagnosticsTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'自动故障分析'**
+  String get automaticDiagnosticsTitle;
+
+  /// No description provided for @automaticDiagnosticsHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'默认关闭 · 仅本机、前台且引擎可用时发送；同版本同类故障 24 小时内合并。关闭后停止新请求，已发送信息无法撤回。'**
+  String get automaticDiagnosticsHint;
+
+  /// No description provided for @automaticDiagnosticsConsentTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'开启自动故障分析？'**
+  String get automaticDiagnosticsConsentTitle;
+
+  /// No description provided for @automaticDiagnosticsConsent.
+  ///
+  /// In zh, this message translates to:
+  /// **'发生故障时，App 会将脱敏的版本、Android 系统信息、运行时状态、错误类别、语音阶段及自身进程退出原因，发送给当前本机引擎配置的模型服务商，可能产生模型费用。不含聊天正文、录音、凭据或原始日志。报告保存在独立的只读分析对话，不自动切换当前对话，不自动执行修复或向 GitHub 外发。关闭或切换主机后不再发起新分析，并尝试停止已有分析；已发送的信息无法撤回。'**
+  String get automaticDiagnosticsConsent;
+
+  /// No description provided for @automaticDiagnosticsEnable.
+  ///
+  /// In zh, this message translates to:
+  /// **'同意并开启'**
+  String get automaticDiagnosticsEnable;
+
+  /// No description provided for @automaticDiagnosticsOff.
+  ///
+  /// In zh, this message translates to:
+  /// **'已关闭'**
+  String get automaticDiagnosticsOff;
+
+  /// No description provided for @automaticDiagnosticsWaiting.
+  ///
+  /// In zh, this message translates to:
+  /// **'等待本机连接、前台与引擎可用'**
+  String get automaticDiagnosticsWaiting;
+
+  /// No description provided for @automaticDiagnosticsReady.
+  ///
+  /// In zh, this message translates to:
+  /// **'已开启 · 等待新故障'**
+  String get automaticDiagnosticsReady;
+
+  /// No description provided for @automaticDiagnosticsCollecting.
+  ///
+  /// In zh, this message translates to:
+  /// **'正在采集结构化故障信息'**
+  String get automaticDiagnosticsCollecting;
+
+  /// No description provided for @automaticDiagnosticsAnalyzing.
+  ///
+  /// In zh, this message translates to:
+  /// **'正在独立对话分析（最多 2 分钟）'**
+  String get automaticDiagnosticsAnalyzing;
+
+  /// No description provided for @automaticDiagnosticsComplete.
+  ///
+  /// In zh, this message translates to:
+  /// **'分析完成'**
+  String get automaticDiagnosticsComplete;
+
+  /// No description provided for @automaticDiagnosticsCancelled.
+  ///
+  /// In zh, this message translates to:
+  /// **'分析已停止或中断；不会自动重试'**
+  String get automaticDiagnosticsCancelled;
+
+  /// No description provided for @automaticDiagnosticsFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'分析失败；本次故障不会自动重试'**
+  String get automaticDiagnosticsFailed;
+
+  /// No description provided for @automaticDiagnosticsStoreFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'无法保存诊断设置或状态；自动分析已停止'**
+  String get automaticDiagnosticsStoreFailed;
+
+  /// No description provided for @automaticDiagnosticsCancelFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'停止请求失败；请在报告对话中检查并手动停止'**
+  String get automaticDiagnosticsCancelFailed;
+
+  /// No description provided for @automaticDiagnosticsViewReport.
+  ///
+  /// In zh, this message translates to:
+  /// **'查看最新分析对话'**
+  String get automaticDiagnosticsViewReport;
+
+  /// No description provided for @automaticDiagnosticsReportHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'仅点击时打开，不打断当前对话；报告可能仍在生成或已中断。'**
+  String get automaticDiagnosticsReportHint;
+
+  /// No description provided for @automaticDiagnosticsReportTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'自动故障分析报告'**
+  String get automaticDiagnosticsReportTitle;
+
   /// No description provided for @systemImeTitle.
   ///
   /// In zh, this message translates to:
