@@ -220,8 +220,10 @@ class VoiceCallController extends ChangeNotifier {
   /// The recognition setting changed: what is said next goes to what it names
   /// now (if that can listen; else to the one already in use).
   Future<void> refreshRecognizer() async {
-    if (_phase == CallPhase.ended || _cloud == null) return;
+    if (_phase == CallPhase.ended) return;
     final mine = ++_refreshing;
+    // Still starting: start() looks again with the new setting.
+    if (_cloud == null) return;
     final next = await recognizer();
     // A later change has the last word, whichever answer comes back first.
     if (next != null && mine == _refreshing && _phase != CallPhase.ended) _cloud = next;
@@ -239,8 +241,14 @@ class VoiceCallController extends ChangeNotifier {
     _speaker = chosen.speaker;
     _spokenHint = chosen.spokenHint;
     notifyListeners();
-    final cloud = await recognizer();
-    if (_disposed || _phase == CallPhase.ended) return;
+    VoiceCloud? cloud;
+    int mine;
+    do {
+      // Changed while this looked (refreshRecognizer during start): look again.
+      mine = ++_refreshing;
+      cloud = await recognizer();
+      if (_disposed || _phase == CallPhase.ended) return;
+    } while (mine != _refreshing);
     if (cloud == null) {
       _end(CallEnd.noRecognizer);
       return;

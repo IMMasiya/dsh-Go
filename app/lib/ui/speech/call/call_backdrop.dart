@@ -171,21 +171,26 @@ class _CompanionBackdropState extends ConsumerState<CompanionBackdrop> {
 // ── Choosing ───────────────────────────────────────────────────────────────
 
 /// The three backdrops side by side; picking one applies it at once.
-/// [inCall]: opened from a call, which also offers her voice and the recognition.
-Future<void> showCallBackdropSheet(BuildContext context, {bool inCall = false}) => showAppSheet<void>(
-  context,
-  isScrollControlled: true,
-  // Scrolls on a short screen (a phone on its side): the in-call rows are below the fold there.
-  builder: (sheet) => SafeArea(
-    top: false,
-    child: SingleChildScrollView(child: _BackdropChooser(inCall: inCall)),
-  ),
-);
+/// [inCall]: opened from a call, which also offers her voice and the
+/// recognition; [beforeVoice] runs before her voice's page opens.
+Future<void> showCallBackdropSheet(BuildContext context, {bool inCall = false, VoidCallback? beforeVoice}) =>
+    showAppSheet<void>(
+      context,
+      isScrollControlled: true,
+      // Scrolls on a short screen (a phone on its side): the in-call rows are below the fold there.
+      builder: (sheet) => SafeArea(
+        top: false,
+        child: SingleChildScrollView(
+          child: _BackdropChooser(inCall: inCall, beforeVoice: beforeVoice),
+        ),
+      ),
+    );
 
 class _BackdropChooser extends ConsumerStatefulWidget {
-  const _BackdropChooser({required this.inCall});
+  const _BackdropChooser({required this.inCall, this.beforeVoice});
 
   final bool inCall;
+  final VoidCallback? beforeVoice;
 
   @override
   ConsumerState<_BackdropChooser> createState() => _BackdropChooserState();
@@ -309,10 +314,13 @@ class _BackdropChooserState extends ConsumerState<_BackdropChooser> {
                   key: const ValueKey('call-voice'),
                   title: l10n.speechCallVoice,
                   value: Text(speechVoiceLabel(l10n, ref.watch(speechVoiceSettingsProvider))),
-                  onTap: () => unawaited(
-                    Navigator.of(context)
-                        .push(MaterialPageRoute<void>(builder: (_) => const CompanionVoicePage(shared: true))),
-                  ),
+                  onTap: () {
+                    widget.beforeVoice?.call();
+                    unawaited(
+                      Navigator.of(context)
+                          .push(MaterialPageRoute<void>(builder: (_) => const CompanionVoicePage(shared: true))),
+                    );
+                  },
                 ),
                 SettingsTile(
                   key: const ValueKey('call-recognition'),

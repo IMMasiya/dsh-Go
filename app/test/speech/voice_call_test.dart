@@ -225,6 +225,31 @@ void main() {
     rig.call.hangUp();
   });
 
+  test('a recognition change while the call starts: the latest is used from the first sentence', () async {
+    final rig = _Rig();
+    final slow = Completer<void>();
+    final first = FakeCloud('先选的');
+    final second = FakeCloud('后选的');
+    var calls = 0;
+    rig.pick = () async {
+      calls++;
+      if (calls == 1) {
+        await slow.future;
+        return first;
+      }
+      return second;
+    };
+    final starting = rig.call.start();
+    await pumpEventQueue();
+    await rig.call.refreshRecognizer();
+    slow.complete();
+    await starting;
+    await rig.say();
+    expect(second.heard, hasLength(1));
+    expect(first.heard, isEmpty);
+    rig.call.hangUp();
+  });
+
   test('停 over her: she stops and nothing is sent; the next message still says where', () async {
     final rig = await speaking();
     await over(rig, '等一下！');

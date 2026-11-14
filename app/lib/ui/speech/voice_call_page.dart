@@ -132,7 +132,9 @@ class _VoiceCallPageState extends ConsumerState<VoiceCallPage> with WidgetsBindi
       audio: audio,
       conversation: widget.conversation,
       recognizer: () async {
-        await _settleVoice();
+        // The phone's own voice warms up while the call starts, not when changed mid-reply.
+        await _settleVoice(warm: _call.phase == CallPhase.starting);
+        if (!mounted) return null;
         return ref.read(callRecognizerProvider)();
       },
       voice: () => speechOutFor(
@@ -177,7 +179,7 @@ class _VoiceCallPageState extends ConsumerState<VoiceCallPage> with WidgetsBindi
 
   /// [_voice] from the settings: DeepSeek's with nobody to pay for it here
   /// becomes the phone's own; the phone's own warms up.
-  Future<void> _settleVoice() async {
+  Future<void> _settleVoice({bool warm = false}) async {
     final mine = ++_settling;
     var next = await ref.read(speechVoiceSettingsProvider.notifier).ready();
     if (next.source == CompanionVoiceSource.deepseek) {
@@ -190,7 +192,11 @@ class _VoiceCallPageState extends ConsumerState<VoiceCallPage> with WidgetsBindi
     }
     // A later choice has the last word, whichever answer comes back first.
     if (!mounted || mine != _settling) return;
-    if (next.source != CompanionVoiceSource.deepseek) unawaited(ref.read(speechSpeakerProvider).ready(next));
+    // Warming sets the speaker up, which would cut a reply it is reading:
+    // only as the call starts; a change takes effect with the next reply.
+    if (warm && next.source != CompanionVoiceSource.deepseek) {
+      unawaited(ref.read(speechSpeakerProvider).ready(next));
+    }
     _voice = next;
   }
 
@@ -527,7 +533,10 @@ class _VoiceCallPageState extends ConsumerState<VoiceCallPage> with WidgetsBindi
                           live: !ended && _since != null,
                           blur: blur,
                           onTranscript: _openTranscript,
-                          onBackdrop: ended ? null : () => unawaited(showCallBackdropSheet(context, inCall: true)),
+                          onBackdrop: ended
+                              ? null
+                              // Trying voices out plays on her speaker: she stops this reply first.
+                              : () => unawaited(showCallBackdropSheet(context, inCall: true, beforeVoice: _call.skip)),
                         ),
                         distance: -14,
                       ),
