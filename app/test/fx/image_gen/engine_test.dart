@@ -352,9 +352,11 @@ void main() {
       reveal.startReveal(c, () {});
       expect(reveal.phase, RevealPhase.boil);
       expect(reveal.image, a);
-      expect(b.image.debugDisposed, isTrue);
+      // Still drawable until the next frame replaces the overlay.
+      expect(b.image.debugDisposed, isFalse);
       now = 100;
       reveal.frame(_frame(mode), now);
+      expect(b.image.debugDisposed, isTrue);
       expect((reveal.overlay! as FxOverlayBoil).to, c);
       reveal.clear();
       expect(reveal.phase, RevealPhase.idle);

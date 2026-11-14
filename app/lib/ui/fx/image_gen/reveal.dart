@@ -212,6 +212,7 @@ class FxReveal {
   Float64List? _boilPattern;
   Float64List? _boilField;
   RevealImage? _pending;
+  RevealImage? _retired;
   VoidCallback? _onRevealComplete;
 
   /// The image being revealed, held or churned.
@@ -239,6 +240,8 @@ class FxReveal {
 
   /// `afterShaderFrame`: advance one frame.
   void frame(FxFrame f, double nowMs) {
+    _retired?.dispose();
+    _retired = null;
     if (!_active) return;
     switch (phase) {
       case RevealPhase.reveal:
@@ -552,7 +555,7 @@ class FxReveal {
   /// instead (BLEND → RESOLVE), which settles into hold by itself.
   void startReveal(RevealImage img, VoidCallback onRevealComplete) {
     if (phase == RevealPhase.boil && _active) {
-      if (!identical(_pending, img)) _pending?.dispose();
+      if (!identical(_pending, img)) dropPending();
       _pending = img;
       _onRevealComplete = onRevealComplete;
       _boilHandoffStartMs ??= now();
@@ -601,6 +604,16 @@ class FxReveal {
     overlayOpacity = 1;
   }
 
+  /// Drop the picture handed to the churn; the churn keeps going. It is
+  /// disposed on the next frame, as this frame's overlay may still draw it.
+  void dropPending() {
+    _retired?.dispose();
+    _retired = _pending;
+    _pending = null;
+    _boilHandoffStartMs = null;
+    _onRevealComplete = null;
+  }
+
   /// Back to idle at once.
   void clear() {
     final wasActive = _active;
@@ -618,6 +631,8 @@ class FxReveal {
     image = null;
     _pending?.dispose();
     _pending = null;
+    _retired?.dispose();
+    _retired = null;
     _boilHandoffStartMs = null;
     overlay = null;
   }
