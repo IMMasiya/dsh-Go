@@ -40952,6 +40952,588 @@ abstract class L10n {
   /// **'这份草稿暂时没法试玩'**
   String get tavernDraftTrialUnsupported;
 
+  /// No description provided for @tavernPacks.
+  ///
+  /// In zh, this message translates to:
+  /// **'玩法包'**
+  String get tavernPacks;
+
+  /// No description provided for @tavernPacksSubtitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'装进来的玩法包；装上不等于启用，要在全局、角色或对话里加上才生效'**
+  String get tavernPacksSubtitle;
+
+  /// No description provided for @tavernPacksEmpty.
+  ///
+  /// In zh, this message translates to:
+  /// **'还没有玩法包'**
+  String get tavernPacksEmpty;
+
+  /// No description provided for @tavernPacksEmptyNote.
+  ///
+  /// In zh, this message translates to:
+  /// **'导入 .dshpack 文件。导入只是保存，不会启用，也不会建角色。'**
+  String get tavernPacksEmptyNote;
+
+  /// No description provided for @tavernPackImport.
+  ///
+  /// In zh, this message translates to:
+  /// **'导入玩法包'**
+  String get tavernPackImport;
+
+  /// No description provided for @tavernPackInstalled.
+  ///
+  /// In zh, this message translates to:
+  /// **'已导入「{title}」{version}'**
+  String tavernPackInstalled(String title, String version);
+
+  /// No description provided for @tavernPackAlreadyInstalled.
+  ///
+  /// In zh, this message translates to:
+  /// **'「{title}」{version} 已经装过，内容一样'**
+  String tavernPackAlreadyInstalled(String title, String version);
+
+  /// No description provided for @tavernPackVersionCount.
+  ///
+  /// In zh, this message translates to:
+  /// **'{n} 个版本'**
+  String tavernPackVersionCount(int n);
+
+  /// No description provided for @tavernPackWithdrawnShort.
+  ///
+  /// In zh, this message translates to:
+  /// **'{version}（已撤下）'**
+  String tavernPackWithdrawnShort(String version);
+
+  /// No description provided for @tavernPackWithdrawnLabel.
+  ///
+  /// In zh, this message translates to:
+  /// **'已撤下'**
+  String get tavernPackWithdrawnLabel;
+
+  /// No description provided for @tavernPackShowWithdrawn.
+  ///
+  /// In zh, this message translates to:
+  /// **'显示已撤下的版本'**
+  String get tavernPackShowWithdrawn;
+
+  /// No description provided for @tavernPackScopeGlobal.
+  ///
+  /// In zh, this message translates to:
+  /// **'全局启用'**
+  String get tavernPackScopeGlobal;
+
+  /// No description provided for @tavernPackScopeGlobalSubtitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'所有对话都用的玩法包'**
+  String get tavernPackScopeGlobalSubtitle;
+
+  /// No description provided for @tavernPackScopeCharacter.
+  ///
+  /// In zh, this message translates to:
+  /// **'这个角色的玩法包'**
+  String get tavernPackScopeCharacter;
+
+  /// No description provided for @tavernPackScopeChat.
+  ///
+  /// In zh, this message translates to:
+  /// **'这段对话的玩法包'**
+  String get tavernPackScopeChat;
+
+  /// No description provided for @tavernPackForCardSubtitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'这张卡的所有对话都用'**
+  String get tavernPackForCardSubtitle;
+
+  /// No description provided for @tavernPackBindingsSubtitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'改完点保存才生效；先预览可以看组合结果'**
+  String get tavernPackBindingsSubtitle;
+
+  /// No description provided for @tavernPackOrderNote.
+  ///
+  /// In zh, this message translates to:
+  /// **'按从上到下的顺序组合，同一个字段谁生效以预览为准。点一行可以换版本、调顺序、关联角色。'**
+  String get tavernPackOrderNote;
+
+  /// No description provided for @tavernPackAdd.
+  ///
+  /// In zh, this message translates to:
+  /// **'添加玩法包'**
+  String get tavernPackAdd;
+
+  /// No description provided for @tavernPackUnsaved.
+  ///
+  /// In zh, this message translates to:
+  /// **'未保存'**
+  String get tavernPackUnsaved;
+
+  /// No description provided for @tavernPackResetPending.
+  ///
+  /// In zh, this message translates to:
+  /// **'保存时重置一次性状态'**
+  String get tavernPackResetPending;
+
+  /// No description provided for @tavernPackCastMappedCount.
+  ///
+  /// In zh, this message translates to:
+  /// **'关联了 {n} 个角色'**
+  String tavernPackCastMappedCount(int n);
+
+  /// No description provided for @tavernPackRemovedBindings.
+  ///
+  /// In zh, this message translates to:
+  /// **'已移除'**
+  String get tavernPackRemovedBindings;
+
+  /// No description provided for @tavernPackPickVersion.
+  ///
+  /// In zh, this message translates to:
+  /// **'换版本'**
+  String get tavernPackPickVersion;
+
+  /// No description provided for @tavernPackMoveUp.
+  ///
+  /// In zh, this message translates to:
+  /// **'上移'**
+  String get tavernPackMoveUp;
+
+  /// No description provided for @tavernPackMoveDown.
+  ///
+  /// In zh, this message translates to:
+  /// **'下移'**
+  String get tavernPackMoveDown;
+
+  /// No description provided for @tavernPackResetOnce.
+  ///
+  /// In zh, this message translates to:
+  /// **'重置一次性状态'**
+  String get tavernPackResetOnce;
+
+  /// No description provided for @tavernPackRestore.
+  ///
+  /// In zh, this message translates to:
+  /// **'恢复'**
+  String get tavernPackRestore;
+
+  /// No description provided for @tavernPackRemoveBinding.
+  ///
+  /// In zh, this message translates to:
+  /// **'移除'**
+  String get tavernPackRemoveBinding;
+
+  /// No description provided for @tavernPackSaved.
+  ///
+  /// In zh, this message translates to:
+  /// **'已保存'**
+  String get tavernPackSaved;
+
+  /// No description provided for @tavernPackUnanswered.
+  ///
+  /// In zh, this message translates to:
+  /// **'没收到结果：{reason}。再点保存会按同一次操作重试'**
+  String tavernPackUnanswered(String reason);
+
+  /// No description provided for @tavernPackVersion.
+  ///
+  /// In zh, this message translates to:
+  /// **'版本'**
+  String get tavernPackVersion;
+
+  /// No description provided for @tavernPackAddGlobal.
+  ///
+  /// In zh, this message translates to:
+  /// **'加到全局'**
+  String get tavernPackAddGlobal;
+
+  /// No description provided for @tavernPackAddNote.
+  ///
+  /// In zh, this message translates to:
+  /// **'只给某个角色或对话用，在角色页或对话的舞台面板里加'**
+  String get tavernPackAddNote;
+
+  /// No description provided for @tavernPackCast.
+  ///
+  /// In zh, this message translates to:
+  /// **'角色'**
+  String get tavernPackCast;
+
+  /// No description provided for @tavernPackCastNote.
+  ///
+  /// In zh, this message translates to:
+  /// **'导入会新建一个角色，不改原来的卡，也不会自动加进群聊'**
+  String get tavernPackCastNote;
+
+  /// No description provided for @tavernPackCastFromCard.
+  ///
+  /// In zh, this message translates to:
+  /// **'完整角色卡'**
+  String get tavernPackCastFromCard;
+
+  /// No description provided for @tavernPackCastImportAction.
+  ///
+  /// In zh, this message translates to:
+  /// **'导入为角色'**
+  String get tavernPackCastImportAction;
+
+  /// No description provided for @tavernPackCastImportTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'把「{name}」导入为新角色？'**
+  String tavernPackCastImportTitle(String name);
+
+  /// No description provided for @tavernPackCastImportNote.
+  ///
+  /// In zh, this message translates to:
+  /// **'会在角色库里新建一个角色。之后改这个玩法包的版本，不会替换它。'**
+  String get tavernPackCastImportNote;
+
+  /// No description provided for @tavernPackCastImported.
+  ///
+  /// In zh, this message translates to:
+  /// **'已导入「{name}」'**
+  String tavernPackCastImported(String name);
+
+  /// No description provided for @tavernPackCastNotAdopted.
+  ///
+  /// In zh, this message translates to:
+  /// **'这次没有建成角色'**
+  String get tavernPackCastNotAdopted;
+
+  /// No description provided for @tavernPackCastUnknown.
+  ///
+  /// In zh, this message translates to:
+  /// **'结果还没确认（{state}），稍后到角色库看看'**
+  String tavernPackCastUnknown(String state);
+
+  /// No description provided for @tavernPackCastMapping.
+  ///
+  /// In zh, this message translates to:
+  /// **'关联角色'**
+  String get tavernPackCastMapping;
+
+  /// No description provided for @tavernPackCastMapped.
+  ///
+  /// In zh, this message translates to:
+  /// **'已关联'**
+  String get tavernPackCastMapped;
+
+  /// No description provided for @tavernPackResources.
+  ///
+  /// In zh, this message translates to:
+  /// **'资源'**
+  String get tavernPackResources;
+
+  /// No description provided for @tavernPackIssueCount.
+  ///
+  /// In zh, this message translates to:
+  /// **'{n} 条提示'**
+  String tavernPackIssueCount(int n);
+
+  /// No description provided for @tavernPackDeclaration.
+  ///
+  /// In zh, this message translates to:
+  /// **'声明检查'**
+  String get tavernPackDeclaration;
+
+  /// No description provided for @tavernPackDeclarationNote.
+  ///
+  /// In zh, this message translates to:
+  /// **'导入时的检查结果。装上了不等于每一块都能执行；标着 conditional 或 opaque 的部分要看具体情况。'**
+  String get tavernPackDeclarationNote;
+
+  /// No description provided for @tavernPackNothingNoted.
+  ///
+  /// In zh, this message translates to:
+  /// **'没有提示'**
+  String get tavernPackNothingNoted;
+
+  /// No description provided for @tavernPackExportOriginal.
+  ///
+  /// In zh, this message translates to:
+  /// **'导出原文件'**
+  String get tavernPackExportOriginal;
+
+  /// No description provided for @tavernPackWithdraw.
+  ///
+  /// In zh, this message translates to:
+  /// **'撤下这个版本'**
+  String get tavernPackWithdraw;
+
+  /// No description provided for @tavernPackWithdrawTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'撤下 {version}？'**
+  String tavernPackWithdrawTitle(String version);
+
+  /// No description provided for @tavernPackWithdrawNote.
+  ///
+  /// In zh, this message translates to:
+  /// **'撤下后不能再新选这个版本；已经在用它的地方保持不变。原文件和记录都保留，还能导出。'**
+  String get tavernPackWithdrawNote;
+
+  /// No description provided for @tavernPackPreview.
+  ///
+  /// In zh, this message translates to:
+  /// **'预览组合'**
+  String get tavernPackPreview;
+
+  /// No description provided for @tavernPackPreviewSubtitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'按现在的改动组合一遍，不保存、不运行'**
+  String get tavernPackPreviewSubtitle;
+
+  /// No description provided for @tavernPackPreviewSources.
+  ///
+  /// In zh, this message translates to:
+  /// **'来源'**
+  String get tavernPackPreviewSources;
+
+  /// No description provided for @tavernPackPreviewDefinitions.
+  ///
+  /// In zh, this message translates to:
+  /// **'定义'**
+  String get tavernPackPreviewDefinitions;
+
+  /// No description provided for @tavernPackPreviewConflicts.
+  ///
+  /// In zh, this message translates to:
+  /// **'组合冲突'**
+  String get tavernPackPreviewConflicts;
+
+  /// No description provided for @tavernPackPreviewFields.
+  ///
+  /// In zh, this message translates to:
+  /// **'字段来源'**
+  String get tavernPackPreviewFields;
+
+  /// No description provided for @tavernPackPreviewState.
+  ///
+  /// In zh, this message translates to:
+  /// **'当前的值'**
+  String get tavernPackPreviewState;
+
+  /// No description provided for @tavernPackPreviewNote.
+  ///
+  /// In zh, this message translates to:
+  /// **'预览只读：不保存绑定、不初始化变量、不发模型请求。'**
+  String get tavernPackPreviewNote;
+
+  /// No description provided for @tavernPackStateUnavailable.
+  ///
+  /// In zh, this message translates to:
+  /// **'当前对话还没有状态可查'**
+  String get tavernPackStateUnavailable;
+
+  /// No description provided for @tavernPackStateNotValidated.
+  ///
+  /// In zh, this message translates to:
+  /// **'这次没有验证当前的值，请看定义和组合诊断'**
+  String get tavernPackStateNotValidated;
+
+  /// No description provided for @tavernPackStateValid.
+  ///
+  /// In zh, this message translates to:
+  /// **'当前的值符合组合后的定义'**
+  String get tavernPackStateValid;
+
+  /// No description provided for @tavernPackStateInvalid.
+  ///
+  /// In zh, this message translates to:
+  /// **'当前的值和组合后的定义对不上'**
+  String get tavernPackStateInvalid;
+
+  /// No description provided for @tavernPackStateMissing.
+  ///
+  /// In zh, this message translates to:
+  /// **'当前对话里没有这个值'**
+  String get tavernPackStateMissing;
+
+  /// No description provided for @tavernPackCardExport.
+  ///
+  /// In zh, this message translates to:
+  /// **'导出（带玩法包）'**
+  String get tavernPackCardExport;
+
+  /// No description provided for @tavernPackCardExportMenuSubtitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'把选中的玩法包资源并进卡里'**
+  String get tavernPackCardExportMenuSubtitle;
+
+  /// No description provided for @tavernPackCardExportSubtitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'先预览，确认没有阻断再导出'**
+  String get tavernPackCardExportSubtitle;
+
+  /// No description provided for @tavernPackExportFormat.
+  ///
+  /// In zh, this message translates to:
+  /// **'格式'**
+  String get tavernPackExportFormat;
+
+  /// No description provided for @tavernPackExportCopyMedia.
+  ///
+  /// In zh, this message translates to:
+  /// **'带上卡里的图片'**
+  String get tavernPackExportCopyMedia;
+
+  /// No description provided for @tavernPackExportFlattenNote.
+  ///
+  /// In zh, this message translates to:
+  /// **'资源并进单张卡后，作用域、排序、预算和计时可能和在这里玩时不同'**
+  String get tavernPackExportFlattenNote;
+
+  /// No description provided for @tavernPackExportNoResources.
+  ///
+  /// In zh, this message translates to:
+  /// **'这张卡启用的玩法包里没有能并进卡的资源'**
+  String get tavernPackExportNoResources;
+
+  /// No description provided for @tavernPackExportFindings.
+  ///
+  /// In zh, this message translates to:
+  /// **'预览结果'**
+  String get tavernPackExportFindings;
+
+  /// No description provided for @tavernPackExportMappings.
+  ///
+  /// In zh, this message translates to:
+  /// **'改写 {ids} 个标识、{resources} 个资源'**
+  String tavernPackExportMappings(int ids, int resources);
+
+  /// No description provided for @tavernPackExportGo.
+  ///
+  /// In zh, this message translates to:
+  /// **'导出'**
+  String get tavernPackExportGo;
+
+  /// No description provided for @tavernPackExportPreviewFirst.
+  ///
+  /// In zh, this message translates to:
+  /// **'先预览'**
+  String get tavernPackExportPreviewFirst;
+
+  /// No description provided for @tavernPackExportBlocked.
+  ///
+  /// In zh, this message translates to:
+  /// **'有阻断项，不能导出'**
+  String get tavernPackExportBlocked;
+
+  /// No description provided for @tavernPackDraftExport.
+  ///
+  /// In zh, this message translates to:
+  /// **'导出为玩法包'**
+  String get tavernPackDraftExport;
+
+  /// No description provided for @tavernPackDraftExportSubtitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'用这份草稿的角色定义和全部 {n} 处改动做一个新的 .dshpack'**
+  String tavernPackDraftExportSubtitle(int n);
+
+  /// No description provided for @tavernPackDraftId.
+  ///
+  /// In zh, this message translates to:
+  /// **'包标识'**
+  String get tavernPackDraftId;
+
+  /// No description provided for @tavernPackDraftRoots.
+  ///
+  /// In zh, this message translates to:
+  /// **'要带上的状态路径'**
+  String get tavernPackDraftRoots;
+
+  /// No description provided for @tavernPackDraftRootsHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'如 /hp /items，空着就带整份'**
+  String get tavernPackDraftRootsHint;
+
+  /// No description provided for @tavernPackInstallMade.
+  ///
+  /// In zh, this message translates to:
+  /// **'装到本机'**
+  String get tavernPackInstallMade;
+
+  /// No description provided for @tavernPackCommitted.
+  ///
+  /// In zh, this message translates to:
+  /// **'修改已生效，但后续通知失败了'**
+  String get tavernPackCommitted;
+
+  /// No description provided for @tavernPackVersionConflict.
+  ///
+  /// In zh, this message translates to:
+  /// **'同一包标识和版本名已经有不同的内容，请换一个新版本名'**
+  String get tavernPackVersionConflict;
+
+  /// No description provided for @tavernPackRevisionConflict.
+  ///
+  /// In zh, this message translates to:
+  /// **'配置在别处变了，已刷新，请重新确认这次修改'**
+  String get tavernPackRevisionConflict;
+
+  /// No description provided for @tavernPackOperationConflict.
+  ///
+  /// In zh, this message translates to:
+  /// **'这次操作和之前的一次重名了，请重新做一遍'**
+  String get tavernPackOperationConflict;
+
+  /// No description provided for @tavernPackVersionNotFound.
+  ///
+  /// In zh, this message translates to:
+  /// **'找不到这个版本'**
+  String get tavernPackVersionNotFound;
+
+  /// No description provided for @tavernPackVersionRemoved.
+  ///
+  /// In zh, this message translates to:
+  /// **'这个版本已经撤下，不能新选'**
+  String get tavernPackVersionRemoved;
+
+  /// No description provided for @tavernPackTimerConflict.
+  ///
+  /// In zh, this message translates to:
+  /// **'这次升级改了粘滞或冷却的设置：请同时重置一次性状态，或者新加一个实例'**
+  String get tavernPackTimerConflict;
+
+  /// No description provided for @tavernPackTargetGone.
+  ///
+  /// In zh, this message translates to:
+  /// **'要改的角色、对话或绑定已经不在了'**
+  String get tavernPackTargetGone;
+
+  /// No description provided for @tavernPackAuthorityConflict.
+  ///
+  /// In zh, this message translates to:
+  /// **'角色来源变了，请刷新后再确认'**
+  String get tavernPackAuthorityConflict;
+
+  /// No description provided for @tavernPackCastUnproven.
+  ///
+  /// In zh, this message translates to:
+  /// **'确认不了这个角色是从这个包导入的'**
+  String get tavernPackCastUnproven;
+
+  /// No description provided for @tavernPackCastOtherVersion.
+  ///
+  /// In zh, this message translates to:
+  /// **'关联的角色来自这个包的另一个版本'**
+  String get tavernPackCastOtherVersion;
+
+  /// No description provided for @tavernPackExportChanged.
+  ///
+  /// In zh, this message translates to:
+  /// **'导出的来源或选项变了，请重新预览'**
+  String get tavernPackExportChanged;
+
   /// No description provided for @updateCheck.
   ///
   /// In zh, this message translates to:

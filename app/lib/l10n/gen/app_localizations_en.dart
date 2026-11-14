@@ -23613,6 +23613,335 @@ class L10nEn extends L10n {
   String get tavernDraftTrialUnsupported => 'This draft can\'t be tried yet';
 
   @override
+  String get tavernPacks => 'Gameplay packs';
+
+  @override
+  String get tavernPacksSubtitle =>
+      'Installed packs. Installing doesn\'t turn one on: add it globally, to a character or to a chat.';
+
+  @override
+  String get tavernPacksEmpty => 'No gameplay packs yet';
+
+  @override
+  String get tavernPacksEmptyNote =>
+      'Import a .dshpack file. Importing only keeps it: nothing is turned on and no character is made.';
+
+  @override
+  String get tavernPackImport => 'Import pack';
+
+  @override
+  String tavernPackInstalled(String title, String version) {
+    return 'Imported $title $version';
+  }
+
+  @override
+  String tavernPackAlreadyInstalled(String title, String version) {
+    return '$title $version is already installed with the same content';
+  }
+
+  @override
+  String tavernPackVersionCount(int n) {
+    return '$n versions';
+  }
+
+  @override
+  String tavernPackWithdrawnShort(String version) {
+    return '$version (withdrawn)';
+  }
+
+  @override
+  String get tavernPackWithdrawnLabel => 'Withdrawn';
+
+  @override
+  String get tavernPackShowWithdrawn => 'Show withdrawn versions';
+
+  @override
+  String get tavernPackScopeGlobal => 'On everywhere';
+
+  @override
+  String get tavernPackScopeGlobalSubtitle => 'Packs every chat uses';
+
+  @override
+  String get tavernPackScopeCharacter => 'This character\'s packs';
+
+  @override
+  String get tavernPackScopeChat => 'This chat\'s packs';
+
+  @override
+  String get tavernPackForCardSubtitle => 'Used by every chat with this card';
+
+  @override
+  String get tavernPackBindingsSubtitle => 'Changes take effect when saved; preview to see what they compose into';
+
+  @override
+  String get tavernPackOrderNote =>
+      'Composed top to bottom; the preview shows which pack wins each field. Tap a row to change its version, order or characters.';
+
+  @override
+  String get tavernPackAdd => 'Add a pack';
+
+  @override
+  String get tavernPackUnsaved => 'Not saved';
+
+  @override
+  String get tavernPackResetPending => 'Once-only state resets on save';
+
+  @override
+  String tavernPackCastMappedCount(int n) {
+    return '$n characters linked';
+  }
+
+  @override
+  String get tavernPackRemovedBindings => 'Removed';
+
+  @override
+  String get tavernPackPickVersion => 'Change version';
+
+  @override
+  String get tavernPackMoveUp => 'Move up';
+
+  @override
+  String get tavernPackMoveDown => 'Move down';
+
+  @override
+  String get tavernPackResetOnce => 'Reset once-only state';
+
+  @override
+  String get tavernPackRestore => 'Restore';
+
+  @override
+  String get tavernPackRemoveBinding => 'Remove';
+
+  @override
+  String get tavernPackSaved => 'Saved';
+
+  @override
+  String tavernPackUnanswered(String reason) {
+    return 'No answer: $reason. Saving again retries the same operation';
+  }
+
+  @override
+  String get tavernPackVersion => 'Version';
+
+  @override
+  String get tavernPackAddGlobal => 'Turn on everywhere';
+
+  @override
+  String get tavernPackAddNote =>
+      'For one character or chat only, add it from the character\'s page or the chat\'s stage panel';
+
+  @override
+  String get tavernPackCast => 'Characters';
+
+  @override
+  String get tavernPackCastNote =>
+      'Importing makes a new character; the original card is untouched and no group chat is joined';
+
+  @override
+  String get tavernPackCastFromCard => 'Full character card';
+
+  @override
+  String get tavernPackCastImportAction => 'Import as character';
+
+  @override
+  String tavernPackCastImportTitle(String name) {
+    return 'Import $name as a new character?';
+  }
+
+  @override
+  String get tavernPackCastImportNote =>
+      'A new character goes into the library. Changing this pack\'s version later won\'t replace it.';
+
+  @override
+  String tavernPackCastImported(String name) {
+    return 'Imported $name';
+  }
+
+  @override
+  String get tavernPackCastNotAdopted => 'No character was made this time';
+
+  @override
+  String tavernPackCastUnknown(String state) {
+    return 'Not confirmed yet ($state); check the library in a moment';
+  }
+
+  @override
+  String get tavernPackCastMapping => 'Linked characters';
+
+  @override
+  String get tavernPackCastMapped => 'Linked';
+
+  @override
+  String get tavernPackResources => 'Resources';
+
+  @override
+  String tavernPackIssueCount(int n) {
+    return '$n notes';
+  }
+
+  @override
+  String get tavernPackDeclaration => 'Declaration check';
+
+  @override
+  String get tavernPackDeclarationNote =>
+      'What the import found. Installed doesn\'t mean every block runs; conditional and opaque parts depend on the case.';
+
+  @override
+  String get tavernPackNothingNoted => 'Nothing to note';
+
+  @override
+  String get tavernPackExportOriginal => 'Export the original file';
+
+  @override
+  String get tavernPackWithdraw => 'Withdraw this version';
+
+  @override
+  String tavernPackWithdrawTitle(String version) {
+    return 'Withdraw $version?';
+  }
+
+  @override
+  String get tavernPackWithdrawNote =>
+      'It can\'t be chosen anew; places already using it stay as they are. The file and its history are kept and can still be exported.';
+
+  @override
+  String get tavernPackPreview => 'Preview';
+
+  @override
+  String get tavernPackPreviewSubtitle => 'Composed with the current changes; nothing is saved or run';
+
+  @override
+  String get tavernPackPreviewSources => 'Sources';
+
+  @override
+  String get tavernPackPreviewDefinitions => 'Definitions';
+
+  @override
+  String get tavernPackPreviewConflicts => 'Conflicts';
+
+  @override
+  String get tavernPackPreviewFields => 'Field sources';
+
+  @override
+  String get tavernPackPreviewState => 'Current value';
+
+  @override
+  String get tavernPackPreviewNote => 'Read only: no binding is saved, no variable set up, no model asked.';
+
+  @override
+  String get tavernPackStateUnavailable => 'This chat has no state to check yet';
+
+  @override
+  String get tavernPackStateNotValidated =>
+      'The current value wasn\'t validated this time; see the definitions and conflicts';
+
+  @override
+  String get tavernPackStateValid => 'The current value fits the composed definition';
+
+  @override
+  String get tavernPackStateInvalid => 'The current value doesn\'t fit the composed definition';
+
+  @override
+  String get tavernPackStateMissing => 'This chat has no such value';
+
+  @override
+  String get tavernPackCardExport => 'Export with packs';
+
+  @override
+  String get tavernPackCardExportMenuSubtitle => 'Fold chosen pack resources into the card';
+
+  @override
+  String get tavernPackCardExportSubtitle => 'Preview first; export once nothing blocks it';
+
+  @override
+  String get tavernPackExportFormat => 'Format';
+
+  @override
+  String get tavernPackExportCopyMedia => 'Include the card\'s images';
+
+  @override
+  String get tavernPackExportFlattenNote =>
+      'Inside a single card, scope, order, budget and timing may behave differently than here';
+
+  @override
+  String get tavernPackExportNoResources => 'The packs on for this card have no resources a card can carry';
+
+  @override
+  String get tavernPackExportFindings => 'Preview';
+
+  @override
+  String tavernPackExportMappings(int ids, int resources) {
+    return '$ids identities and $resources resources rewritten';
+  }
+
+  @override
+  String get tavernPackExportGo => 'Export';
+
+  @override
+  String get tavernPackExportPreviewFirst => 'Preview first';
+
+  @override
+  String get tavernPackExportBlocked => 'Something blocks the export';
+
+  @override
+  String get tavernPackDraftExport => 'Export as pack';
+
+  @override
+  String tavernPackDraftExportSubtitle(int n) {
+    return 'A new .dshpack from this draft\'s character definition and all $n changes';
+  }
+
+  @override
+  String get tavernPackDraftId => 'Pack ID';
+
+  @override
+  String get tavernPackDraftRoots => 'State paths to include';
+
+  @override
+  String get tavernPackDraftRootsHint => 'e.g. /hp /items; empty for all of it';
+
+  @override
+  String get tavernPackInstallMade => 'Install here';
+
+  @override
+  String get tavernPackCommitted => 'The change took effect, but a later notice failed';
+
+  @override
+  String get tavernPackVersionConflict =>
+      'This pack ID and version already exist with different content; use a new version name';
+
+  @override
+  String get tavernPackRevisionConflict => 'Changed elsewhere. Refreshed: please make this change again';
+
+  @override
+  String get tavernPackOperationConflict => 'This operation\'s ID was already used; please do it again';
+
+  @override
+  String get tavernPackVersionNotFound => 'Version not found';
+
+  @override
+  String get tavernPackVersionRemoved => 'This version is withdrawn and can\'t be chosen anew';
+
+  @override
+  String get tavernPackTimerConflict =>
+      'This upgrade changes sticky or cooldown settings: reset once-only state with it, or add a new instance';
+
+  @override
+  String get tavernPackTargetGone => 'The character, chat or binding is gone';
+
+  @override
+  String get tavernPackAuthorityConflict => 'The character\'s source changed; refresh and confirm again';
+
+  @override
+  String get tavernPackCastUnproven => 'Can\'t confirm this character was imported from this pack';
+
+  @override
+  String get tavernPackCastOtherVersion => 'The linked character comes from another version of this pack';
+
+  @override
+  String get tavernPackExportChanged => 'The export\'s sources or options changed; preview again';
+
+  @override
   String get updateCheck => 'Check for updates';
 
   @override
