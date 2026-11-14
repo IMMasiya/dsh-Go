@@ -55,7 +55,7 @@ whenToUse: The user wants to add something of their own to the dsh-go phone app 
    node "${DSH_HOME:-$HOME/.dsh}/skills/dsh-go-plugin/kit/bin/check.mjs" "$P" --load
    ```
    `--load` 会在隔离环境里加载你的代码：查处理函数在不在、视图函数画出来的视图 App 能不能画。
-   `--json` 给机器读；`--lang zh` 指定语言；`--budget` 检查视图预算；`--app <版本>` 按目标 App 版本判断 `minApp`（不写时按 999.0.0 判断，`minApp` 不会被拦截，检查目标版本时必须写出）；面板位置等较新字段不按版本检查。
+   `--json` 给机器读；`--lang zh` 指定语言；`--budget toolCard|panel|strip` 按工具卡、面板或状态条检查视图预算；`--app <版本>` 按目标 App 版本判断 `minApp`（不写时按 999.0.0 判断，`minApp` 不会被拦截，检查目标版本时必须写出）；面板位置等较新字段不按版本检查。
 6. **安装**（装上即生效，不用重启）：
    ```sh
    dsh plugin --profile web add "$P"
