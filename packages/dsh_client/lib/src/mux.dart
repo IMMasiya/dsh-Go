@@ -207,8 +207,10 @@ class DshMux {
       unawaited(link.close(4000, 'reconnect requested'));
     }
     // The loss above queues a backed-off retry; an explicit reconnect goes now.
+    // An attempt still starting (reconnect() from inside link.start) cannot be
+    // replaced yet, so it keeps that queued retry.
     _attempt = 0;
-    _retryTimer?.cancel();
+    if (_connecting == null) _retryTimer?.cancel();
     _ensureConnecting();
   }
 
