@@ -369,7 +369,9 @@ class _TavernPackDraftExportPageState extends ConsumerState<TavernPackDraftExpor
 
   @override
   Future<void> deliver(TavernGameplayExportRequest request, Uint8List bytes) async {
-    setState(() => _made = bytes);
+    // Changed while it was being made (the preview is gone): still handed
+    // on as asked, but not offered to install for the form as it is now.
+    if (previewed != null) setState(() => _made = bytes);
     await ref.read(tavernCardSinkProvider)(
       tavernChatFileName('${request.packId} ${request.packVersion}', extension: 'dshpack'),
       bytes,

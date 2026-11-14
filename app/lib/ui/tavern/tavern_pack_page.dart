@@ -66,6 +66,8 @@ class _TavernPackPageState extends ConsumerState<TavernPackPage> {
       action: l10n.tavernPackWithdraw,
     );
     if (!ok || !mounted) return;
+    // The list behind this page refreshes even if this page is left meanwhile.
+    final container = ProviderScope.containerOf(context, listen: false);
     setState(() => _busy = true);
     try {
       await ref
@@ -83,9 +85,8 @@ class _TavernPackPageState extends ConsumerState<TavernPackPage> {
     } on Object catch (e) {
       if (mounted) showBriefNotice(context, tavernPackErrorText(l10n, e));
     }
-    if (!mounted) return;
-    ref.invalidate(tavernPacksProvider);
-    setState(() => _busy = false);
+    container.invalidate(tavernPacksProvider);
+    if (mounted) setState(() => _busy = false);
   }
 
   Future<void> _pickVersion(List<TavernPackVersion> versions) => showAppSheet<void>(
