@@ -201,10 +201,20 @@ class DistortionWaveRoute<T> extends PageRoute<T> {
   @override
   Duration get reverseTransitionDuration => _plain ? _plainDuration : _seconds(style.duration / style.returnSpeed);
 
+  /// Asked afresh for each way: the system setting may change while the page is up.
+  bool get _plainNow => WavePrograms.ready == null || AppMotion.reduced(navigator!.context);
+
   @override
   AnimationController createAnimationController() {
-    _plain = WavePrograms.ready == null || AppMotion.reduced(navigator!.context);
+    _plain = _plainNow;
     return super.createAnimationController();
+  }
+
+  @override
+  bool didPop(T? result) {
+    _plain = _plainNow;
+    controller!.reverseDuration = reverseTransitionDuration;
+    return super.didPop(result);
   }
 
   @override

@@ -1,6 +1,7 @@
 // Portions derived from Libraries.dev Distortion waves (https://github.com/Jakubantalik/Libraries.dev), MIT, Copyright (c) 2026 Jakub Antalik. See THIRD_PARTY_NOTICES.md.
 
 import 'package:dsh_app/ui/fx/waves/distortion_wave.dart';
+import 'package:dsh_app/ui/fx/waves/wave_front.dart';
 import 'package:dsh_app/ui/fx/waves/wave_stage.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
@@ -225,5 +226,65 @@ void main() {
     await tester.pump(const Duration(milliseconds: 320));
     expect(route.animation!.isCompleted, isTrue);
     expect(find.text('tavern').hitTestable(), findsOneWidget);
+  });
+
+  testWidgets('reduced motion turned on while the page is up makes the way back a crossfade', (tester) async {
+    final reduced = ValueNotifier(false);
+    addTearDown(reduced.dispose);
+    late NavigatorState navigator;
+    await tester.pumpWidget(
+      MaterialApp(
+        builder: (context, child) => ValueListenableBuilder(
+          valueListenable: reduced,
+          builder: (context, on, _) => MediaQuery(
+            data: MediaQuery.of(context).copyWith(disableAnimations: on),
+            child: child!,
+          ),
+        ),
+        home: Builder(
+          builder: (context) {
+            navigator = Navigator.of(context);
+            return screen('home', Colors.white);
+          },
+        ),
+      ),
+    );
+    final route = DistortionWaveRoute<void>(builder: (_) => screen('tavern', Colors.brown));
+    navigator.push(route);
+    await tester.pumpAndSettle();
+    expect(route.transitionDuration, seconds(DistortionWaveStyle.vertical.duration));
+
+    reduced.value = true;
+    await tester.pump();
+    navigator.pop();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 320));
+    expect(route.animation!.isDismissed, isTrue);
+    expect(find.text('tavern'), findsNothing);
+  });
+
+  testWidgets('the outgoing side keeps its mask until the front has crossed, swell or not', (tester) async {
+    // A linear easing: the swell dies (x ≥ 0.55) well before the front crosses.
+    final style = DistortionWaveStyle.vertical.copyWith(easing: const DistortionWaveEasing(0, 0, 1, 1));
+    final p = (style.anticipation + 0.7 * style.travel) / style.duration;
+    final view = tester.view.physicalSize / tester.view.devicePixelRatio;
+    final front = WaveFront(progress: p, source: waveDefaultSource(style.type, view), size: view, style: style);
+    expect(front.launched && front.energy == 0 && !front.hasCleared, isTrue);
+
+    final outgoing = GlobalKey();
+    await tester.pumpWidget(
+      host(
+        DistortionWave(
+          isRevealed: false,
+          scrub: p,
+          style: style,
+          content: RepaintBoundary(key: outgoing, child: screen('a', Colors.white)),
+          revealed: screen('b', Colors.black),
+        ),
+      ),
+    );
+    // Drawn through the shader from a snapshot, not composited as it is.
+    final boundary = tester.renderObject<RenderRepaintBoundary>(find.byKey(outgoing));
+    expect(boundary.debugLayer!.parent, isNull);
   });
 }

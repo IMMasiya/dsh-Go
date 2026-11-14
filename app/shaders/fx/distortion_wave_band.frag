@@ -180,10 +180,15 @@ void main() {
   float hairWhite = uRimC.x;
 
   vec2 c = p - uSize * 0.5;
-  float inset = max(-continuousRectSDF(c, uSize * 0.5, cornerRadius), 0.0);
+  float edgeDistance = continuousRectSDF(c, uSize * 0.5, cornerRadius);
+  float inset = max(-edgeDistance, 0.0);
+  // Past the rounded edge (the view's corners) there is no glass for the rim
+  // and the hairline: they stop at it, antialiased over 0.75pt.
+  float inside = 1.0 - smoothstep(0.0, 0.75, edgeDistance);
   // Further in than this, even the thickest lump has faded to nothing, and the
   // hairline is far behind.
-  bool nearEdge = rim > 0.0 && inset < max(rimWidth * 2.2 * (1.0 + 1.9 * unevenness), hairWidth * 0.5 + 0.75);
+  bool nearEdge = rim > 0.0 && inside > 0.0
+    && inset < max(rimWidth * 2.2 * (1.0 + 1.9 * unevenness), hairWidth * 0.5 + 0.75);
   // Once the front's colour has gone, only the edges are left to draw.
   if (glow <= 0.0 && !nearEdge) {
     fragColor = vec4(0.0);
@@ -232,7 +237,7 @@ void main() {
     float kept = smoothstep(-rimSoftness, rimSoftness, d + (uFront.w - uGlow.z) / g);
     // Two soft swells of brightness running round the edge.
     shimmer = 0.5 + 0.5 * sin(time * 3.4 - edge.x / edge.y * 4.0 * wavePi);
-    rimA = hug * reached * kept * rim * mix(1.0, 0.7 + 0.3 * shimmer, pulse);
+    rimA = hug * reached * kept * rim * mix(1.0, 0.7 + 0.3 * shimmer, pulse) * inside;
 
     // A hairline right on the glass: brightest where the lumps are and where
     // the light runs. Wiped by a front of its own, later and slower.
@@ -241,7 +246,7 @@ void main() {
       float hairKept = smoothstep(-rimSoftness, rimSoftness, d + (uFront.w - uGlow.w) / g);
       hairA = line * reached * hairKept * rim * hairOpacity
         * mix(0.5, 1.0, smoothstep(0.1, 1.5, thickness))
-        * mix(1.0, 0.55 + 0.45 * shimmer, pulse);
+        * mix(1.0, 0.55 + 0.45 * shimmer, pulse) * inside;
     }
   }
 
