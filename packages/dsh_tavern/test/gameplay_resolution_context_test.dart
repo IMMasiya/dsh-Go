@@ -75,6 +75,14 @@ void main() {
     expect(_map(regex['resource'])['pointer'], '/extensions/regex_scripts');
     expect((regex['entries']! as List<Object?>).map((entry) => _map(entry)['stId']), ['actor-rule']);
     expect(result.conflicts, isEmpty);
+    final hostView = await h.engine.resolveGameplayConfig(TavernGameplayContext(characterId: host, chatId: chat));
+    final mutedView = await h.engine.resolveGameplayConfig(TavernGameplayContext(characterId: muted, chatId: chat));
+    expect(hostView.effectiveConfigId, result.effectiveConfigId);
+    expect(mutedView.effectiveConfigId, result.effectiveConfigId);
+    expect(
+      mutedView.resources.singleWhere((item) => item['kind'] == 'regex' && item['bucket'] == 'character')['source'],
+      {'kind': 'card', 'characterId': muted},
+    );
     expect(_rows(h), before);
     expect(await _files(h, paths), files);
     expect(randomReads, 0);
@@ -103,6 +111,15 @@ void main() {
       },
     };
     final character = await h.card('Saved values', extensions: {'dshgo': definition});
+    final withoutValueRequest = await h.engine.resolveGameplayConfig(TavernGameplayContext(characterId: character));
+    final unavailableValue = await h.engine.resolveGameplayConfig(
+      TavernGameplayContext(characterId: character),
+      validateCurrentState: true,
+    );
+    expect(unavailableValue.effectiveConfigId, withoutValueRequest.effectiveConfigId);
+    expect(unavailableValue.currentState, isNull);
+    expect(unavailableValue.conflicts.map((issue) => issue['code']), contains('not_available'));
+    expect(withoutValueRequest.conflicts.map((issue) => issue['code']), isNot(contains('not_available')));
     final variables = <Json>[
       {'dshgo': null, 'foreign': 'null-node'},
       {'foreign': 'missing-node'},

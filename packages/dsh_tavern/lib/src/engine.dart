@@ -27,6 +27,7 @@ import 'director.dart';
 import 'director/direct_tool.dart' as director_core;
 import 'dshgo_inspection.dart';
 import 'gameplay.dart';
+import 'gameplay_bindings.dart';
 import 'gameplay_packs.dart';
 import 'import_report.dart';
 import 'inspection.dart';
@@ -93,6 +94,9 @@ part 'engine_authoring_script_host.dart';
 part 'engine_tools.dart';
 part 'engine_gameplay_packs.dart';
 part 'engine_gameplay.dart';
+part 'engine_gameplay_bindings.dart';
+part 'engine_gameplay_runtime.dart';
+part 'engine_gameplay_events.dart';
 part 'gameplay_composition.dart';
 part 'engine_director.dart';
 part 'engine_director_watch.dart';
@@ -631,6 +635,17 @@ class TavernEngine implements Tavern {
   }) => _removeGameplayPackVersion(ref, expected: expected, operationId: operationId);
 
   @override
+  Future<TavernPackScopeSnapshot> readGameplayBindings(TavernPackScopeTarget scope) => _readGameplayBindings(scope);
+
+  @override
+  Future<TavernPackBindingReceipt> updateGameplayBindings(
+    TavernPackScopeTarget scope, {
+    required TavernGameplayRevision expected,
+    required String operationId,
+    required List<TavernPackBindingEdit> edits,
+  }) => _updateGameplayBindings(scope, expected: expected, operationId: operationId, edits: edits);
+
+  @override
   Future<TavernGameplayResolution> resolveGameplayConfig(
     TavernGameplayContext context, {
     List<TavernPackScopePreview> proposedScopes = const [],
@@ -1152,6 +1167,7 @@ class TavernEngine implements Tavern {
   Future<String> createChat(String characterId, {int greeting = 0}) => _operation(
     () => _libraryOperation(() async {
       if (_deletingCharacters.contains(characterId)) throw StateError('Character deletion is running.');
+      final gameplayAdmission = _captureGameplayAdmission(this, characterId: characterId, settings: const {});
       final record = await _record(characterId);
       if (record == null) throw const TavernImportError('角色不存在。');
       if (_deletingCharacters.contains(characterId)) throw StateError('Character deletion is running.');
@@ -1164,6 +1180,21 @@ class TavernEngine implements Tavern {
       final selection = _personas.resolve();
       if (_deletingPersonas.contains(selection.persona?.id)) throw StateError('Persona deletion is running.');
       final settings = _personaSettings(_effectiveSettings(), selection);
+      final gameplay = gameplayAdmission.hasActivePacks
+          ? await _prepareGameplayRuntime(this, gameplayAdmission, hostData: record.card.data, settings: settings)
+          : null;
+      if (gameplayAdmission.hasActivePacks) {
+        // The pack source read adds an await after the original settings gate.
+        if (_deletingCharacters.contains(characterId)) {
+          throw StateError('Character deletion is running.');
+        }
+        if (_globalPresetUpdate || _deletingPresets.contains(_resolvePreset().selection.effectivePresetId)) {
+          throw StateError('Preset selection is changing.');
+        }
+        if (_deletingPersonas.contains(selection.persona?.id)) {
+          throw StateError('Persona deletion is running.');
+        }
+      }
       final variables = <String, Object?>{};
       final beforeGlobals = _globalVariables.revision;
       late final String id;
@@ -1198,7 +1229,18 @@ class TavernEngine implements Tavern {
             'stChatId': id,
             'stChatIdHash': context.chatIdHash,
           };
-          _initializeDshState(_stateDefinition(data), state, settings['stateEnabled'] != false);
+          if (!_gameplayAdmissionCurrent(this, gameplayAdmission)) {
+            _gameplayCaptureConflict();
+          }
+          _initializeDshState(
+            gameplay?.state ?? _stateDefinition(data),
+            state,
+            settings['stateEnabled'] != false,
+            gameplay: gameplay,
+          );
+          if (gameplay != null && state['dshgoPackDefinitionConfigId'] == gameplay.effectiveConfigId) {
+            _ensureGameplayConfig(this, gameplay);
+          }
           _store.append(
             id,
             parentId: null,
@@ -2314,8 +2356,9 @@ class TavernEngine implements Tavern {
   }
 
   void _setInspection(_Turn turn, TavernTurnInspection value) {
-    turn.inspection = value;
-    _latestInspections[turn.chat.id] = value;
+    final captured = _gameplayInspection(value, turn.gameplay);
+    turn.inspection = captured;
+    _latestInspections[turn.chat.id] = captured;
   }
 
   Map<String, Object?> _inspectionExtra(Map<String, Object?> extra, TavernTurnInspection value) => {
@@ -3469,8 +3512,18 @@ class TavernEngine implements Tavern {
     Map<String, Object?>? settingsOverride,
     TavernModelConfig? configOverride,
     ModelCancellation? cancellation,
+    _GameplayAdmission? gameplayAdmission,
+    _GameplayRuntime? gameplayOverride,
   }) async {
     final chat = _store.chat(chatId);
+    final admission =
+        gameplayAdmission ??
+        _captureGameplayAdmission(
+          this,
+          characterId: actor?.id ?? chat.characterId,
+          chatId: chatId,
+          settings: settingsOverride ?? const {},
+        );
     final group = groupView?.group ?? _store.groupChat(chatId);
     final host = groupView?.host ?? (group == null ? null : await _groups._card(group.hostCharacterId));
     final names = groupView == null && group != null ? await _groups.captureNames(group) : null;
@@ -3498,6 +3551,31 @@ class TavernEngine implements Tavern {
         settingsOverride ??
         _personaSettings(_effectiveSettings(chat, metadata), _personas.resolve(personaId: chat.personaId));
     final config = configOverride ?? _config;
+    final previousGameplay = _gameplayHistoricalConfig(this, state).config;
+    final gameplay =
+        gameplayOverride ??
+        (admission.hasActivePacks || state.containsKey('dshgoPackDefinitionConfigId')
+            ? await _prepareGameplayRuntime(
+                this,
+                admission,
+                hostData: host?.card.data ?? record.card.data,
+                force: state.containsKey('dshgoPackDefinitionConfigId'),
+                settings: settings,
+                capturedCards: groupView == null
+                    ? null
+                    : {
+                        groupView.host.id: groupView.host.card.data,
+                        for (final member in groupView.group.members)
+                          member.characterId: groupView.cards[member.characterId]?.card.data,
+                      },
+              )
+            : null);
+    final gameplayIssues = _gameplayValueIssues(
+      gameplay,
+      state,
+      initializing: leaf == null,
+      previousConfig: previousGameplay,
+    );
     cancellation?.check();
     final history = _historyTo(chatId, leaf);
     final presetRaw = _map(settings['preset']);
@@ -3567,21 +3645,35 @@ class TavernEngine implements Tavern {
       state,
       environment,
       stateCardData: host?.card.data ?? record.card.data,
-      stateEnabled: settings['stateEnabled'] != false,
+      stateEnabled: settings['stateEnabled'] != false && (gameplay == null || leaf == null && gameplayIssues.isEmpty),
+      gameplay: gameplay,
     );
+    final initializedGameplay =
+        gameplay != null &&
+        !_map(state['messageVariables']).containsKey('dshgo') &&
+        _map(nextState['messageVariables']).containsKey('dshgo');
     final narratorName = metadata['narrator_name'];
     final name = narrator
         ? speaker ?? (narratorName is String && narratorName.isNotEmpty ? narratorName : 'System')
         : environment.userName;
     cancellation?.check();
     final message = _store.transaction(() {
+      if (!_gameplayAdmissionCurrent(this, admission)) {
+        _gameplayCaptureConflict();
+      }
+      if (initializedGameplay) {
+        _ensureGameplayConfig(this, gameplay);
+      }
       final message = _store.append(
         chatId,
         parentId: leaf,
         role: narrator ? TavernRole.narrator : TavernRole.user,
         speaker: name,
         text: expanded,
-        extra: narrator ? const {'type': 'narrator'} : const {},
+        extra: {
+          if (narrator) 'type': 'narrator',
+          if (gameplayIssues.isNotEmpty) 'dshgo': {'stateIssues': gameplayIssues},
+        },
         state: nextState,
       );
       _store.updateChat(
@@ -3744,6 +3836,12 @@ class TavernEngine implements Tavern {
             actorId: actorId,
             profile: profile,
           );
+          running.gameplayAdmission = _captureGameplayAdmission(
+            this,
+            characterId: actorId,
+            chatId: chatId,
+            settings: running.settings,
+          );
           turn = running;
           running.directorCaptured = _directors.latestSuccess(chatId);
           if (_secretsEnabled(running.settings) && kind != _TurnKind.impersonate) {
@@ -3863,13 +3961,51 @@ class TavernEngine implements Tavern {
           : _copy(turn.chat.variables);
       turn.variables = local;
       turn.state = state;
+      turn.gameplayInitializing = parent == null && turn.chat.currentLeafId == null;
+      turn.gameplayPreviousConfig = _gameplayHistoricalConfig(this, state).config;
+      final gameplayAdmission = turn.gameplayAdmission!;
+      if (turn.gameplay == null &&
+          (gameplayAdmission.hasActivePacks || state.containsKey('dshgoPackDefinitionConfigId'))) {
+        turn.gameplay = await turn.cancellation.wait(
+          _trackOperation(
+            _prepareGameplayRuntime(
+              this,
+              gameplayAdmission,
+              hostData: hostData,
+              force: state.containsKey('dshgoPackDefinitionConfigId'),
+              settings: turn.settings,
+              capturedCards: turn.groupView == null
+                  ? null
+                  : {
+                      turn.groupView!.host.id: turn.groupView!.host.card.data,
+                      for (final member in turn.groupView!.group.members)
+                        member.characterId: turn.groupView!.cards[member.characterId]?.card.data,
+                    },
+            ),
+          ),
+        );
+        turn.cancellation.check();
+        _requireOrdinaryOwnership(this, turn, StoredToolPhase.native);
+      }
+      final gameplayIssues = _gameplayValueIssues(
+        turn.gameplay,
+        state,
+        initializing: turn.gameplayInitializing,
+        previousConfig: turn.gameplayPreviousConfig,
+      );
+      turn.gameplayValueEligible = gameplayIssues.isEmpty;
+      turn.statePreparationIssues.addAll(gameplayIssues);
+      _setInspection(turn, turn.inspection);
       _bindSecretTurn(this, turn, hostData, parent, target, (next, restored) {
         state = next;
         turn.state = next;
         target = restored;
         turn.originalTarget = restored;
       });
+      final hadGameplayValue = _map(turn.state['messageVariables']).containsKey('dshgo');
       _prepareStateTurn(turn, hostData);
+      turn.gameplayInitialized =
+          turn.gameplay != null && !hadGameplayValue && _map(turn.state['messageVariables']).containsKey('dshgo');
       final presetRaw = _map(turn.settings['preset']);
       final preset = ChatPreset({
         ...(presetRaw.isEmpty ? ChatPreset.stDefault().raw : presetRaw),
@@ -4442,10 +4578,11 @@ class TavernEngine implements Tavern {
       }),
     );
     StreamSubscription<ModelDelta>? subscription;
+    final requestCancellation = _gameplayRequestCancellation(this, turn.gameplayAdmission, turn.cancellation);
     final requestContext = request == null
         ? null
         : ModelRequestContext(
-            cancellation: turn.cancellation,
+            cancellation: requestCancellation,
             onUsageReport: (report) {
               if (completed.isCompleted) return;
               try {
@@ -4479,7 +4616,7 @@ class TavernEngine implements Tavern {
         throw const _ToolLoopFailure('protocol_invalid', 'The actual request authorization changed.');
       }
       final secretInspection = _prepareSecretRequest(this, turn);
-      turn.cancellation.check();
+      requestCancellation.check();
       if (secretInspection != null) {
         turn.secretRequestAttempted = true;
         _setInspection(turn, secretInspection);
@@ -4488,7 +4625,7 @@ class TavernEngine implements Tavern {
           .generate(
             config: turn.config,
             body: body,
-            cancellation: requestContext ?? turn.cancellation,
+            cancellation: requestContext ?? requestCancellation,
             onRequestStarted: request == null
                 ? null
                 : (attempt) {
@@ -4675,11 +4812,15 @@ class TavernEngine implements Tavern {
     if (storySettlement != null) {
       inspection = inspection.copyWith(director: {...inspection.director, 'story': storySettlement.trace});
     }
+    inspection = _gameplayInspection(inspection, turn.gameplay);
     if (turn.kind != _TurnKind.impersonate) {
       _commitOrdinaryToolFinal(this, turn, inspection, state, ownAudit, stateSettlement, storySettlement);
       return;
     } else {
       _store.transaction(() {
+        if (inspection.status == TavernInspectionStatus.completed) {
+          _ensureAdoptedGameplay(this, turn, state, stateSettlement, storySettlement);
+        }
         final leaf = turn.chat.currentLeafId;
         if (leaf != null && _impersonationStateChanged(turn.chat.id, leaf, state)) {
           _writeNodeState(turn.chat.id, leaf, state);
@@ -4742,6 +4883,7 @@ class TavernEngine implements Tavern {
       director: {...currentInspection.director, 'story': settlement.trace},
     );
     _store.transaction(() {
+      _ensureAdoptedGameplay(this, turn, settlement.state, null, settlement);
       final extra = _store.rawNodeExtra(chat.id, nodeId);
       final own = _map(extra['dshgo']);
       extra['dshgo'] = {
@@ -5290,6 +5432,8 @@ class _Turn {
     String? actorId,
     this.groupView,
     this.groupRound,
+    this.gameplayAdmission,
+    this.gameplay,
     _TurnProfile? profile,
     String? previewId,
     ModelCancellation? previewCancellation,
@@ -5325,6 +5469,12 @@ class _Turn {
   final String actorId;
   _GroupView? groupView;
   final _GroupRound? groupRound;
+  _GameplayAdmission? gameplayAdmission;
+  _GameplayRuntime? gameplay;
+  _GameplayRuntime? gameplayPreviousConfig;
+  bool gameplayValueEligible = true;
+  bool gameplayInitializing = false;
+  bool gameplayInitialized = false;
   void Function(TavernEvent)? onEvent;
   final ModelCancellation cancellation;
   final String generationId;
@@ -5408,6 +5558,9 @@ class _Turn {
   Map<String, Object?>? directorCard;
   state_core.CardEventDefinition? cardEventDefinition;
   final cardEventAuthorizedHandlers = <String>{};
+  final cardEventAuthorizedHandlerRefs = <state_core.CardEventHandlerRef>{};
+  final cardEventOfferedPackPrompts = <String, _GameplayEventPromptRef>{};
+  final cardEventSentPackPrompts = <_GameplayEventPromptRef>{};
   final cardEventProposals = <state_core.CardEventProposal>[];
   final cardEventPreparationIssues = <Map<String, Object?>>[];
   final cardEventOfferedPrompts = <String, String>{};

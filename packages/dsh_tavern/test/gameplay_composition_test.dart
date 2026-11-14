@@ -548,7 +548,11 @@ void main() {
         .toList();
     expect(enabled.map((row) => (row['entries']! as List<Object?>).map(_map).last['effective']), [true, false, true]);
     expect(enabled.map((row) => (row['entries']! as List<Object?>).map(_map).first['disabled']), everyElement(isTrue));
-    expect(reopened.effectiveConfigId, isNot(result.effectiveConfigId));
+    expect(
+      reopened.effectiveConfigId,
+      result.effectiveConfigId,
+      reason: 'Resource enablement changes the resource view, not the host definition identity.',
+    );
     expect((await h.engine.readGameplayPackResource(ref, 'regex'))!.bytes, _bytes(scripts));
     expect((await h.engine.readGameplayPackResource(ref, 'book'))!.bytes, bookBytes);
     expect((await h.engine.readGameplayPackResource(ref, 'cast'))!.bytes, castBytes);

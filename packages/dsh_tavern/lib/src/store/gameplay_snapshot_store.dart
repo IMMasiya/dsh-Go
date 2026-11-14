@@ -15,6 +15,8 @@ final class StoredGameplaySnapshot {
     required this.selectedPreset,
     required this.presetRows,
     required this.packs,
+    required this.scopeSnapshots,
+    required this.resolvedScopes,
   });
 
   final String domainId;
@@ -26,14 +28,22 @@ final class StoredGameplaySnapshot {
   final StoredPreset? selectedPreset;
   final Map<String, Map<String, Object?>?> presetRows;
   final Map<(String, String), StoredGameplayPack> packs;
+  final List<TavernPackScopeSnapshot> scopeSnapshots;
+  final List<TavernPackScopePreview> resolvedScopes;
 }
 
 extension GameplaySnapshotStore on ChatStore {
   StoredGameplaySnapshot readGameplaySnapshot({
     String? chatId,
-    required List<TavernPackVersionRef> packRefs,
+    String? characterId,
+    List<TavernPackVersionRef> packRefs = const [],
+    bool readBindings = false,
+    List<TavernPackScopePreview> proposedScopes = const [],
     Set<(String, String)> resourcesFor = const {},
     bool readInitialState = false,
+    bool readResources = true,
+    bool readContext = true,
+    List<String> additionalCharacterIds = const [],
   }) {
     _ensureOpen();
     final failure = _transactionFailure;
@@ -53,7 +63,7 @@ extension GameplaySnapshotStore on ChatStore {
       final domain = authoringDomainId;
       final currentChat = chatId == null ? null : chat(chatId);
       final group = chatId == null ? null : groupChat(chatId);
-      final leaf = currentChat?.currentLeafId;
+      final leaf = readContext ? currentChat?.currentLeafId : null;
       final currentNode = leaf == null ? null : node(chatId!, leaf);
       Map<String, Object?>? state;
       if (currentNode != null) {
@@ -62,7 +72,7 @@ extension GameplaySnapshotStore on ChatStore {
         // A portable override is the existing reader's first choice. Do not
         // read a separate physical delta chain which that reader never uses.
         state = override is Map<String, Object?> ? override : nodeState(chatId!, currentNode.message.nodeId);
-      } else if (chatId != null && readInitialState) {
+      } else if (readContext && chatId != null && readInitialState) {
         state = groupInitialState(chatId);
       }
       final defaultId = defaultPresetId;
@@ -76,20 +86,73 @@ extension GameplaySnapshotStore on ChatStore {
       }
 
       final bound = currentChat?.presetId;
-      if ((bound == null || !selectPreset(bound)) &&
+      if (readContext &&
+          (bound == null || !selectPreset(bound)) &&
           !(currentChat?.settings.containsKey('preset') ?? false) &&
           defaultId != null) {
         selectPreset(defaultId);
       }
+      final scopeSnapshots = <TavernPackScopeSnapshot>[];
+      if (readBindings) {
+        final host = currentChat?.characterId ?? characterId;
+        if (host == null) {
+          throw ArgumentError('Binding capture requires an actual character or chat context.');
+        }
+        scopeSnapshots.add(_readGameplayScopeData(const TavernPackScopeTarget(kind: TavernGameplayScope.global)));
+        for (final id in <String>{
+          ...?group?.members.map((member) => member.characterId),
+          ...additionalCharacterIds,
+          host,
+          ?characterId,
+        }) {
+          scopeSnapshots.add(
+            _readGameplayScopeData(TavernPackScopeTarget(kind: TavernGameplayScope.character, targetId: id)),
+          );
+        }
+        if (currentChat != null) {
+          scopeSnapshots.add(
+            _readGameplayScopeData(TavernPackScopeTarget(kind: TavernGameplayScope.chat, targetId: currentChat.id)),
+          );
+        }
+      }
+      final resolved = <(TavernGameplayScope, String?), TavernPackScopePreview>{
+        for (final saved in scopeSnapshots)
+          (saved.scope.kind, saved.scope.targetId): TavernPackScopePreview(
+            scope: saved.scope.kind,
+            targetId: saved.scope.targetId,
+            bindings: [
+              for (final binding in saved.bindings)
+                TavernPackBindingPreview(
+                  bindingId: binding.bindingId,
+                  packRef: binding.packRef,
+                  enabled: binding.enabled && !binding.removed,
+                  aliases: binding.aliases,
+                ),
+            ],
+          ),
+        for (final proposed in proposedScopes) (proposed.scope, proposed.targetId): proposed,
+      };
+      final resolvedScopes = resolved.values.toList();
+      final refs = [
+        ...packRefs,
+        for (final scope in resolvedScopes)
+          for (final binding in scope.bindings) binding.packRef,
+      ];
+      final resources = {
+        ...resourcesFor,
+        for (final scope in resolvedScopes)
+          for (final binding in scope.bindings)
+            if (binding.enabled) (binding.packRef.installedPackId, binding.packRef.packVersion),
+      };
       final packs = <(String, String), StoredGameplayPack>{};
-      for (final ref in packRefs) {
+      for (final ref in refs) {
         final key = (ref.installedPackId, ref.packVersion);
         if (packs.containsKey(key)) {
           continue;
         }
         final version = _readGameplayVersion(ref);
         final files = <String, Uint8List>{};
-        if (version != null && !version.removed && resourcesFor.contains(key)) {
+        if (readResources && version != null && !version.removed && resources.contains(key)) {
           for (final resource in gameplayPackResources(version.manifest)) {
             if (!const {'lorebook', 'regex', 'castCard'}.contains(resource['kind'])) {
               continue;
@@ -122,6 +185,8 @@ extension GameplaySnapshotStore on ChatStore {
         selectedPreset: selected,
         presetRows: presetRows,
         packs: packs,
+        scopeSnapshots: scopeSnapshots,
+        resolvedScopes: resolvedScopes,
       );
       if (owns) {
         _db.execute('COMMIT');

@@ -18,6 +18,7 @@ import 'authoring_simulation.dart';
 import 'backup.dart';
 import 'director.dart';
 import 'gameplay.dart';
+import 'gameplay_bindings.dart';
 import 'gameplay_packs.dart';
 import 'import_report.dart';
 import 'inspection.dart';
@@ -629,8 +630,20 @@ abstract interface class Tavern {
     required String operationId,
   });
 
-  /// Resolves explicit proposed scopes without saving bindings or initializing
-  /// state. A real group context may use its host or an actual roster member.
+  /// Reads a complete persisted scope, including disabled and removed slots.
+  Future<TavernPackScopeSnapshot> readGameplayBindings(TavernPackScopeTarget scope);
+
+  /// Applies one operation atomically to one scope. Retry with the original
+  /// domain token, operation id, and complete parameters to replay its receipt.
+  Future<TavernPackBindingReceipt> updateGameplayBindings(
+    TavernPackScopeTarget scope, {
+    required TavernGameplayRevision expected,
+    required String operationId,
+    required List<TavernPackBindingEdit> edits,
+  });
+
+  /// Resolves current bindings with explicit candidate scopes substituted.
+  /// This neither saves bindings nor initializes an absent state value.
   Future<TavernGameplayResolution> resolveGameplayConfig(
     TavernGameplayContext context, {
     List<TavernPackScopePreview> proposedScopes = const [],

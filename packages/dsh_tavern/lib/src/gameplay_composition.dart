@@ -263,12 +263,12 @@ bool _gameplayDefinitionScope(_GameplayPackInput input, _GameplayCompositionCont
 
 List<_GameplayDeclaration> _gameplayDeclarations(
   List<_GameplayPackInput> snapshot,
-  Map<String, _AuthoringCapturedResource> cards,
+  Map<String, Map<String, Object?>?> cards,
   _GameplayCompositionContext context,
 ) {
   final result = <_GameplayDeclaration>[];
   for (final entry in cards.entries) {
-    final data = entry.value.document?['data'];
+    final data = entry.value;
     final extensions = data is Map<String, Object?> ? data['extensions'] : null;
     final present = extensions is Map<String, Object?> && extensions.containsKey('dshgo');
     result.add(
@@ -315,9 +315,23 @@ List<_GameplayDeclaration> _gameplayDeclarations(
 TavernGameplayResolution _composeGameplay(
   List<_GameplayPackInput> snapshot,
   Map<String, _AuthoringCapturedResource> capturedCards,
-  _GameplayCompositionContext context,
-) {
-  final sources = _gameplayDeclarations(snapshot, capturedCards, context);
+  _GameplayCompositionContext context, {
+  Map<String, Object?>? bindingIdentity,
+}) => _composeGameplayData(
+  snapshot,
+  {for (final entry in capturedCards.entries) entry.key: entry.value.document?['data'] as Map<String, Object?>?},
+  context,
+  bindingIdentity: bindingIdentity,
+);
+
+/// Both preview and an admitted execution use the same owned card declarations.
+TavernGameplayResolution _composeGameplayData(
+  List<_GameplayPackInput> snapshot,
+  Map<String, Map<String, Object?>?> cards,
+  _GameplayCompositionContext context, {
+  Map<String, Object?>? bindingIdentity,
+}) {
+  final sources = _gameplayDeclarations(snapshot, cards, context);
   final host = sources.firstWhere((source) => source.pack == null && source.roles.contains('host'));
   final declarationSources = [
     host,
@@ -672,7 +686,7 @@ TavernGameplayResolution _composeGameplay(
       ],
     ),
   );
-  final cardData = capturedCards[context.hostCharacterId]!.document!['data']! as Map<String, Object?>;
+  final cardData = cards[context.hostCharacterId]!;
   final tools = parseToolCardDeclaration(cardData);
   definitions.add(
     _gameplayDefinition(
@@ -729,6 +743,19 @@ TavernGameplayResolution _composeGameplay(
               },
           ],
         );
+  final sourceJson = [for (final source in sources) source.toSourceJson()];
+  final identity = _directorHash(
+    _gameplayConfigurationIdentity(
+      cards,
+      context,
+      sourceJson,
+      effective,
+      definitions,
+      provenance.values,
+      conflicts,
+      bindingIdentity: bindingIdentity,
+    ),
+  );
   if (context.validateCurrentState && current == null) {
     conflicts.add(
       _gameplayConflict(
@@ -737,23 +764,6 @@ TavernGameplayResolution _composeGameplay(
       ),
     );
   }
-  final sourceJson = [for (final source in sources) source.toSourceJson()];
-  final identity = _directorHash({
-    'hostCharacterId': context.hostCharacterId,
-    'actorCharacterId': context.request.characterId,
-    'chatId': context.request.chatId,
-    'isGroup': context.isGroup,
-    'rosterCharacterIds': context.rosterCharacterIds,
-    'regexEnabled': context.regexEnabled,
-    'characterRegexEnabled': context.characterRegexEnabled,
-    'cards': {
-      for (final entry in capturedCards.entries)
-        entry.key: {'snapshot': entry.value.snapshot.toJson(), 'mediaRefs': entry.value.mediaRefs},
-    },
-    'sources': sourceJson,
-    'effective': effective,
-    'resources': resources,
-  });
   return TavernGameplayResolution(
     context: context.request,
     hostCharacterId: context.hostCharacterId,
@@ -769,6 +779,58 @@ TavernGameplayResolution _composeGameplay(
     effectiveConfigId: identity,
   );
 }
+
+/// A definition configuration is host-scoped even when another group member
+/// speaks. Public resource views retain their actual actor/regex/WI roles;
+/// persisted explanation sources retain only roles used to authorize definitions.
+List<Map<String, Object?>> _gameplayDefinitionSources(List<Map<String, Object?>> sources) {
+  final cards = sources.where((row) => row['kind'] == 'card').toList()
+    ..sort((left, right) => (left['characterId']! as String).compareTo(right['characterId']! as String));
+  return [
+    for (final row in [...cards, ...sources.where((row) => row['kind'] != 'card')])
+      {
+        ...row,
+        'roles': [
+          for (final role in row['roles']! as List<Object?>)
+            if (role == 'host' || role == 'definition') role,
+        ],
+      },
+  ];
+}
+
+/// The definition identity omits preview-only file witnesses, current-value
+/// diagnostics and the speaking actor's resource roles. Source membership,
+/// availability and stable mappings still distinguish equal flattened values.
+Map<String, Object?> _gameplayConfigurationIdentity(
+  Map<String, Map<String, Object?>?> cards,
+  _GameplayCompositionContext context,
+  List<Map<String, Object?>> sources,
+  Map<String, Object?> effective,
+  List<Map<String, Object?>> definitions,
+  List<Map<String, Object?>> fieldSources,
+  List<Map<String, Object?>> conflicts, {
+  Map<String, Object?>? bindingIdentity,
+}) => {
+  'v': 1,
+  'hostCharacterId': context.hostCharacterId,
+  'chatId': context.request.chatId,
+  'isGroup': context.isGroup,
+  'rosterCharacterIds': context.rosterCharacterIds,
+  'cards': {
+    for (final entry in cards.entries)
+      entry.key: {
+        'present': entry.value != null,
+        'extensionsPresent': entry.value?.containsKey('extensions') ?? false,
+        'extensions': entry.value?['extensions'],
+      },
+  },
+  'bindings': bindingIdentity,
+  'sources': _gameplayDefinitionSources(sources),
+  'effective': effective,
+  'definitions': definitions,
+  'fieldSources': fieldSources,
+  'conflicts': conflicts,
+};
 
 ({Map<String, Object?> definition, Map<String, Object?>? display, Map<_GameplayDeclaration, Set<String>> names})
 _gameplayEventDefinitions(
@@ -1080,8 +1142,26 @@ void _gameplayReferences(
     final seen = <String>{};
     for (final (index, raw) in declared.indexed) {
       final path = '/references/$index';
+      final rawPointer = raw is Map<String, Object?> ? raw['pointer'] : null;
+      final pointer = rawPointer is String ? rawPointer : null;
+      final tokens = pointer == null ? null : _gameplayCompositionPointer(pointer);
+      final supportedEvent = tokens != null && _gameplayReferencePosition(source.raw, 'event', tokens);
+      void retainUnresolvedEvent() {
+        if (supportedEvent) {
+          // An explicit but malformed/ambiguous reference at a real event
+          // position cannot fall back to that source's unqualified raw name.
+          references.add({
+            'source': source.source,
+            'sourcePath': path,
+            'pointer': pointer,
+            'kind': 'event',
+            'resolved': false,
+          });
+        }
+      }
+
       if (raw is! Map<String, Object?> ||
-          raw['pointer'] is! String ||
+          pointer == null ||
           raw['kind'] is! String ||
           raw['source'] is! String ||
           raw['localId'] is! String) {
@@ -1093,10 +1173,9 @@ void _gameplayReferences(
             sourcePath: path,
           ),
         );
+        retainUnresolvedEvent();
         continue;
       }
-      final pointer = raw['pointer']! as String;
-      final tokens = _gameplayCompositionPointer(pointer);
       final kind = raw['kind']! as String;
       if (tokens == null || !seen.add(pointer) || !_gameplayReferencePosition(source.raw, kind, tokens)) {
         conflicts.add(
@@ -1107,6 +1186,7 @@ void _gameplayReferences(
             sourcePath: path,
           ),
         );
+        retainUnresolvedEvent();
         continue;
       }
       final targetName = raw['source']! as String;

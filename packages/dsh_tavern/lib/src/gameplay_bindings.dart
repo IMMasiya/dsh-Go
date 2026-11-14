@@ -1,0 +1,209 @@
+import 'gameplay.dart';
+import 'gameplay_packs.dart';
+
+/// A persisted scope identity. Global has no targetId; character/chat retain
+/// their actual opaque target ID even when the target is later removed.
+final class TavernPackScopeTarget {
+  const TavernPackScopeTarget({required this.kind, this.targetId});
+
+  final TavernGameplayScope kind;
+  final String? targetId;
+
+  Map<String, Object?> toJson() => {'kind': kind.name, 'targetId': targetId};
+}
+
+/// One binding instance. Selecting a version does not change binding identity
+/// or onceEpoch. sourceMap is allocated by storage, never supplied by an edit.
+final class TavernPackBinding {
+  const TavernPackBinding({
+    required this.bindingId,
+    required this.bindingRevision,
+    required this.packRef,
+    required this.enabled,
+    required this.removed,
+    required this.order,
+    required this.onceEpoch,
+    required this.aliases,
+    required this.sourceMap,
+  });
+
+  final String bindingId;
+  final int bindingRevision;
+  final TavernPackVersionRef packRef;
+  final bool enabled;
+  final bool removed;
+  final int order;
+  final int onceEpoch;
+  final Map<String, String> aliases;
+  final List<Map<String, Object?>> sourceMap;
+
+  Map<String, Object?> toJson() => {
+    'bindingId': bindingId,
+    'bindingRevision': bindingRevision,
+    'packRef': packRef.toJson(),
+    'enabled': enabled,
+    'removed': removed,
+    'order': order,
+    'onceEpoch': onceEpoch,
+    'aliases': aliases,
+    'sourceMap': sourceMap,
+  };
+}
+
+/// A detached ordered scope, including disabled and removed bindings.
+/// An absent scope has revision zero; reading it does not insert a row.
+final class TavernPackScopeSnapshot {
+  const TavernPackScopeSnapshot({
+    required this.scope,
+    required this.token,
+    required this.bindings,
+    this.issues = const [],
+  });
+
+  final TavernPackScopeTarget scope;
+  final TavernGameplayRevision token;
+  final List<TavernPackBinding> bindings;
+  final List<Map<String, Object?>> issues;
+
+  Map<String, Object?> toJson() => {
+    'scope': scope.toJson(),
+    'token': token.toJson(),
+    'bindings': [for (final binding in bindings) binding.toJson()],
+    'issues': issues,
+  };
+}
+
+/// The original adopted result of one scope operation.
+/// A no-change request still records its receipt after checking the token.
+final class TavernPackBindingReceipt {
+  const TavernPackBindingReceipt({
+    required this.operationId,
+    required this.snapshot,
+    required this.createdBindings,
+    required this.changed,
+  });
+
+  final String operationId;
+  final TavernPackScopeSnapshot snapshot;
+  final Map<String, String> createdBindings;
+  final bool changed;
+
+  Map<String, Object?> toJson() => {
+    'operationId': operationId,
+    'snapshot': snapshot.toJson(),
+    'createdBindings': createdBindings,
+    'changed': changed,
+  };
+}
+
+/// Edits are applied in order to one scope; the final result is committed by
+/// one domain/revision CAS. Alias maps replace the complete previous map.
+sealed class TavernPackBindingEdit {
+  const TavernPackBindingEdit();
+
+  factory TavernPackBindingEdit.create({
+    required String clientKey,
+    required TavernPackVersionRef packRef,
+    bool enabled = true,
+    Map<String, String> aliases = const {},
+  }) => TavernPackBindingCreate(clientKey: clientKey, packRef: packRef, enabled: enabled, aliases: aliases);
+
+  factory TavernPackBindingEdit.selectVersion({required String bindingId, required String packVersion}) =>
+      TavernPackBindingSelectVersion(bindingId: bindingId, packVersion: packVersion);
+
+  factory TavernPackBindingEdit.setEnabled({required String bindingId, required bool enabled}) =>
+      TavernPackBindingSetEnabled(bindingId: bindingId, enabled: enabled);
+
+  factory TavernPackBindingEdit.reorder({required List<String> bindingIds}) =>
+      TavernPackBindingReorder(bindingIds: bindingIds);
+
+  factory TavernPackBindingEdit.remove({required String bindingId}) => TavernPackBindingRemove(bindingId: bindingId);
+
+  factory TavernPackBindingEdit.resetOnce({required String bindingId}) =>
+      TavernPackBindingResetOnce(bindingId: bindingId);
+
+  factory TavernPackBindingEdit.setAliases({required String bindingId, required Map<String, String> aliases}) =>
+      TavernPackBindingSetAliases(bindingId: bindingId, aliases: aliases);
+
+  Map<String, Object?> toJson();
+}
+
+final class TavernPackBindingCreate extends TavernPackBindingEdit {
+  const TavernPackBindingCreate({
+    required this.clientKey,
+    required this.packRef,
+    this.enabled = true,
+    this.aliases = const {},
+  });
+
+  final String clientKey;
+  final TavernPackVersionRef packRef;
+  final bool enabled;
+  final Map<String, String> aliases;
+
+  @override
+  Map<String, Object?> toJson() => {
+    'kind': 'create',
+    'clientKey': clientKey,
+    'packRef': packRef.toJson(),
+    'enabled': enabled,
+    'aliases': aliases,
+  };
+}
+
+final class TavernPackBindingSelectVersion extends TavernPackBindingEdit {
+  const TavernPackBindingSelectVersion({required this.bindingId, required this.packVersion});
+
+  final String bindingId;
+  final String packVersion;
+
+  @override
+  Map<String, Object?> toJson() => {'kind': 'selectVersion', 'bindingId': bindingId, 'packVersion': packVersion};
+}
+
+final class TavernPackBindingSetEnabled extends TavernPackBindingEdit {
+  const TavernPackBindingSetEnabled({required this.bindingId, required this.enabled});
+
+  final String bindingId;
+  final bool enabled;
+
+  @override
+  Map<String, Object?> toJson() => {'kind': 'setEnabled', 'bindingId': bindingId, 'enabled': enabled};
+}
+
+final class TavernPackBindingReorder extends TavernPackBindingEdit {
+  const TavernPackBindingReorder({required this.bindingIds});
+
+  final List<String> bindingIds;
+
+  @override
+  Map<String, Object?> toJson() => {'kind': 'reorder', 'bindingIds': bindingIds};
+}
+
+final class TavernPackBindingRemove extends TavernPackBindingEdit {
+  const TavernPackBindingRemove({required this.bindingId});
+
+  final String bindingId;
+
+  @override
+  Map<String, Object?> toJson() => {'kind': 'remove', 'bindingId': bindingId};
+}
+
+final class TavernPackBindingResetOnce extends TavernPackBindingEdit {
+  const TavernPackBindingResetOnce({required this.bindingId});
+
+  final String bindingId;
+
+  @override
+  Map<String, Object?> toJson() => {'kind': 'resetOnce', 'bindingId': bindingId};
+}
+
+final class TavernPackBindingSetAliases extends TavernPackBindingEdit {
+  const TavernPackBindingSetAliases({required this.bindingId, required this.aliases});
+
+  final String bindingId;
+  final Map<String, String> aliases;
+
+  @override
+  Map<String, Object?> toJson() => {'kind': 'setAliases', 'bindingId': bindingId, 'aliases': aliases};
+}

@@ -61,6 +61,7 @@ Map<String, Object?> _prepareAppendedMessageState(
   _MacroEnvironment environment, {
   required Map<String, Object?> stateCardData,
   required bool stateEnabled,
+  _GameplayRuntime? gameplay,
 }) {
   final next = <String, Object?>{
     ...state,
@@ -68,7 +69,7 @@ Map<String, Object?> _prepareAppendedMessageState(
     'stChatId': environment.chatId,
     'stChatIdHash': environment.chatIdHash,
   };
-  _initializeDshState(_stateDefinition(stateCardData), next, stateEnabled);
+  _initializeDshState(gameplay?.state ?? _stateDefinition(stateCardData), next, stateEnabled, gameplay: gameplay);
   return next;
 }
 

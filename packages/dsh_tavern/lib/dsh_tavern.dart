@@ -16,6 +16,7 @@ export 'src/director.dart';
 export 'src/dshgo_inspection.dart';
 export 'src/engine.dart';
 export 'src/gameplay.dart';
+export 'src/gameplay_bindings.dart';
 export 'src/gameplay_packs.dart';
 export 'src/import_report.dart';
 export 'src/inspection.dart';
@@ -51,6 +52,9 @@ export 'src/store/character_library.dart'
     hide AuthoringCardMedia, AuthoringCharacterCapture, replayAuthoringSaveAs, authoringSaveAsReceipt;
 export 'src/store/chat_store.dart'
     hide
+        GameplayBindingStore,
+        GameplaySimulationStore,
+        StoredGameplaySimulationData,
         AuthoringStore,
         StoredAuthoringDraft,
         AuthoringAuthorityStore,

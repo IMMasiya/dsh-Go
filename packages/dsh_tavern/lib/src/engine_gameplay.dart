@@ -7,20 +7,23 @@ extension _GameplayResolutionOperations on TavernEngine {
     bool validateCurrentState = false,
   }) => _authoringOperation(() async {
     // Capture all caller-owned collections before the first asynchronous read.
-    final scopes = _captureGameplayScopes(proposedScopes);
+    final proposed = _captureGameplayScopes(proposedScopes);
     final snapshot = _store.readGameplaySnapshot(
       chatId: context.chatId,
-      packRefs: [
-        for (final scope in scopes)
-          for (final binding in scope.bindings) binding.packRef,
-      ],
-      resourcesFor: {
-        for (final scope in scopes)
-          for (final binding in scope.bindings)
-            if (binding.enabled) (binding.packRef.installedPackId, binding.packRef.packVersion),
-      },
+      characterId: context.characterId,
+      readBindings: true,
+      proposedScopes: proposed,
       readInitialState: validateCurrentState,
     );
+    final scopes = snapshot.resolvedScopes;
+    final bindingIds = <String>{};
+    for (final scope in scopes) {
+      for (final binding in scope.bindings) {
+        if (!bindingIds.add(binding.bindingId)) {
+          throw ArgumentError('A gameplay context requires unique binding identities across its scopes.');
+        }
+      }
+    }
     final chat = snapshot.chat;
     final group = snapshot.group;
     final actorId = context.characterId;
@@ -126,20 +129,15 @@ extension _GameplayResolutionOperations on TavernEngine {
             _store.defaultPresetId != snapshot.defaultPresetId) {
           _gameplayCaptureConflict();
         }
-        for (final entry in snapshot.packs.entries) {
-          final before = entry.value.version;
-          final now = _store.readGameplayPackVersion(
-            TavernPackVersionRef(installedPackId: entry.key.$1, packVersion: entry.key.$2),
-          );
-          if ((before == null) != (now == null) ||
-              before != null &&
-                  now != null &&
-                  (before.digest != now.digest ||
-                      before.availability.domainId != now.availability.domainId ||
-                      before.availability.revision != now.availability.revision ||
-                      before.removed != now.removed)) {
-            _gameplayCaptureConflict();
-          }
+        final current = _store.readGameplaySnapshot(
+          chatId: context.chatId,
+          characterId: context.characterId,
+          readBindings: true,
+          proposedScopes: proposed,
+          readResources: false,
+        );
+        if (!_stateJsonEqual(_gameplayBindingIdentity(current), _gameplayBindingIdentity(snapshot))) {
+          _gameplayCaptureConflict();
         }
       },
     );
@@ -188,6 +186,7 @@ extension _GameplayResolutionOperations on TavernEngine {
             settings['characterRegexEnabled'] != false &&
             !_strings(settings['disabledCharacterRegex']).contains(actorId),
       ),
+      bindingIdentity: _gameplayBindingIdentity(snapshot),
     );
   });
 }
@@ -222,10 +221,8 @@ List<TavernPackScopePreview> _captureGameplayScopes(List<TavernPackScopePreview>
   return result;
 }
 
-Never _gameplayCaptureConflict() => throw const TavernGameplayException(
-  code: 'capture_conflict',
-  message: 'A gameplay preview source changed during capture.',
-);
+Never _gameplayCaptureConflict() =>
+    throw const TavernGameplayException(code: 'capture_conflict', message: 'A gameplay source changed during capture.');
 
 Future<List<_GameplayLegacyResource>> _captureGameplayLegacyResources({
   required String actorId,
