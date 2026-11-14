@@ -295,11 +295,13 @@ class BackgroundDisplay internal constructor(
         val readPackages = LinkedHashSet<String>()
         while (pages < maxPages.coerceIn(1, 30)) {
             if (!allowed()) { stop = PhoneTasks.STOPPED_MESSAGE; break }
-            if (!canRead(source)) { stop = "本页内容不允许读取"; break } // l10n:keep agent screen result
             val snap = observeFrame(detail = false, image = false, requestLocalText = false)
             last = snap
-            if (!canRead(source)) { stop = "本页内容不允许读取"; break } // l10n:keep agent screen result
-            source?.let(readPackages::add)
+            // Each page is read under the rules of the app it shows: a scroll may have brought up
+            // another app, and what was allowed for the first one says nothing about that one.
+            val shown = snap.packageName
+            if (!canRead(shown)) { stop = "本页内容不允许读取"; break } // l10n:keep agent screen result
+            shown?.let(readPackages::add)
             val before = seen.size
             for (e in lastElements) if (e.label.isNotEmpty()) seen.add(e.label)
             pages++
@@ -307,7 +309,7 @@ class BackgroundDisplay internal constructor(
             if (seen.size == before) { stop = "listEnd"; break }
             if (pages >= maxPages) { stop = "pageLimit"; break }
             // Preserve the legacy whole-page collect path; explicit list tracking is separate.
-            val result = perform(PhoneAction.Scroll(snap.id, null, PhoneAction.Direction.DOWN)) { allowed() && canRead(source) }
+            val result = perform(PhoneAction.Scroll(snap.id, null, PhoneAction.Direction.DOWN)) { allowed() && canRead(shown) }
             if (!result.ok) { stop = result.message; break }
         }
         return CollectResult(seen.toList(), pages, stop, last, readPackages.toSet())

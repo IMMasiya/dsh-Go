@@ -200,6 +200,21 @@ class BackgroundPostActionInvalidationTest : AndroidTestCase() {
         } finally { f.finish() }
     }
 
+    fun testCollectingPagesChecksTheReadRuleOfTheAppEachPageShows() {
+        val f = Fixture(withText = true)
+        try {
+            val first = f.driver.observe(false, false)
+            // The list is collected from A, but the first page read now shows B, which may not be read.
+            f.replyPackage = "other.app"; f.replyUid = 10200
+            val asked = mutableListOf<String?>()
+            val result = f.driver.collect(first.id, 1, 3, null, { true }) { pkg -> asked.add(pkg); pkg != "other.app" }
+            assertEquals("本页内容不允许读取", result.stopReason)
+            assertTrue(result.items.isEmpty()) // B's text is not among what is handed back
+            assertTrue(asked.toString(), "other.app" in asked)
+            assertFalse(result.readPackages.toString(), "other.app" in result.readPackages)
+        } finally { f.finish() }
+    }
+
     fun testAnEmptyScreenIsReportedAsItIsWithWhereTheOpenedAppWent() {
         val f = Fixture()
         try {
