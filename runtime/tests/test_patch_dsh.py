@@ -59,7 +59,7 @@ class PatchDsh(unittest.TestCase):
         os.makedirs(os.path.join(self.prefix, os.path.dirname(REL)))
         os.makedirs(self.patches)
         self.target = os.path.join(self.prefix, REL)
-        with open(self.target, "w") as f:
+        with open(self.target, "w", newline="\n") as f:
             f.write(ORIGINAL)
         with open(os.path.join(self.patches, "guard.diff"), "w") as f:
             f.write(DIFF)
@@ -100,7 +100,7 @@ class PatchDsh(unittest.TestCase):
         self.assertEqual(r.returncode, 0, r.stdout)
         self.assertIn("already patched", r.stdout)
         # a fresh original applies to exactly the pinned result, by replacing the file (hard links survive)
-        with open(self.target + ".orig", "w") as f:
+        with open(self.target + ".orig", "w", newline="\n") as f:
             f.write(ORIGINAL)
         os.replace(self.target + ".orig", self.target)
         link = self.target + ".link"
@@ -113,7 +113,7 @@ class PatchDsh(unittest.TestCase):
 
     def test_unpinned_version_fails(self):
         self.run_cli("--dsh-version", "1.0.0", "--record")
-        with open(self.target, "w") as f:
+        with open(self.target, "w", newline="\n") as f:
             f.write(ORIGINAL)
         r = self.run_cli("--dsh-version", "1.0.1")
         self.assertNotEqual(r.returncode, 0)
@@ -144,7 +144,7 @@ class PatchDsh(unittest.TestCase):
             self.prefix = os.path.join(self.tmp.name, name)
             target = Path(self.prefix, REL)
             target.parent.mkdir(parents=True)
-            target.write_text(ORIGINAL)
+            target.write_text(ORIGINAL, newline="\n")
             return target
 
         # Recording requires original input: never retry --record on the patched tree.
@@ -164,7 +164,7 @@ class PatchDsh(unittest.TestCase):
 
     def test_drifted_original_fails(self):
         self.run_cli("--dsh-version", "1.0.0", "--record")
-        with open(self.target, "w") as f:
+        with open(self.target, "w", newline="\n") as f:
             f.write(ORIGINAL + "// upstream change\n")
         r = self.run_cli("--dsh-version", "1.0.0")
         self.assertNotEqual(r.returncode, 0)
@@ -188,7 +188,7 @@ class PatchDsh(unittest.TestCase):
     def test_ordered_hash_chain_is_idempotent_at_final_and_intermediate(self):
         first, final = self.chain_fixture()
         for starting in (ORIGINAL, first, final):
-            with open(self.target, "w") as out:
+            with open(self.target, "w", newline="\n") as out:
                 out.write(starting)
             result = self.run_cli("--dsh-version", "1.0.0")
             self.assertEqual(result.returncode, 0, result.stdout)
@@ -234,7 +234,7 @@ class PatchDsh(unittest.TestCase):
 
     def test_unknown_hash_is_not_accepted_by_chain_idempotency(self):
         _, final = self.chain_fixture()
-        with open(self.target, "w") as out:
+        with open(self.target, "w", newline="\n") as out:
             out.write(final + "unexpected modification\n")
         result = self.run_cli("--dsh-version", "1.0.0")
         self.assertNotEqual(result.returncode, 0)
@@ -260,7 +260,7 @@ class PatchDsh(unittest.TestCase):
         for names in ([], ["guard.diff", "guard.diff"], ["missing.diff"],
                       ["guard.diff", "missing.diff"]):
             with self.subTest(names=names):
-                with open(self.target, "w") as f:
+                with open(self.target, "w", newline="\n") as f:
                     f.write(ORIGINAL)
                 pins_path = os.path.join(self.patches, "pins.json")
                 if os.path.exists(pins_path):
@@ -312,12 +312,12 @@ class PatchDsh(unittest.TestCase):
         self.assertEqual(read(self.target), "original\n")
 
     def test_record_refuses_ambiguous_or_missing_context(self):
-        with open(self.target, "w") as f:
+        with open(self.target, "w", newline="\n") as f:
             f.write(ORIGINAL + ORIGINAL)          # every hunk matches twice
         r = self.run_cli("--dsh-version", "2.0.0", "--record")
         self.assertNotEqual(r.returncode, 0)
         self.assertIn("matches 2 places", r.stdout)
-        with open(self.target, "w") as f:
+        with open(self.target, "w", newline="\n") as f:
             f.write(ORIGINAL.replace("await route.handler", "await route.run"))
         r = self.run_cli("--dsh-version", "2.0.0", "--record")
         self.assertNotEqual(r.returncode, 0)
