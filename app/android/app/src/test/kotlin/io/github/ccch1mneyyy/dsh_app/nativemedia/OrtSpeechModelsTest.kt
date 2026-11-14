@@ -14,9 +14,10 @@ class OrtSpeechModelsTest {
         val vad = OrtSilero(silero.readBytes())
         val turn = OrtSmartTurn(smart.readBytes())
         // CPU ORT 1.23.2, official exports, zero PCM. No sigmoid on smart-turn's output.
+        // The last digits move between processors (ORT picks AVX2 / AVX-512 kernels).
         assertEquals(0f, vad.probability(ShortArray(320)), 0f)
-        assertEquals(0.0016697943f, vad.probability(ShortArray(320)), 0.000001f)
-        assertEquals(0.9870367f, turn.probability(FloatArray(128000)), 0.00001f)
+        assertEquals(0.0016697943f, vad.probability(ShortArray(320)), 0.0001f)
+        assertEquals(0.9870367f, turn.probability(FloatArray(128000)), 0.001f)
         vad.reset()
         NeuralGate(vad, turn).use { gate ->
             repeat(100) { assertEquals(SpeechGate.Edge.NONE, gate.consume(ShortArray(320), -100.0, it * 20L)) }
