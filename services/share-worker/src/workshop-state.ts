@@ -13,7 +13,9 @@ export const STATE_CAP = 8 * 1024 * 1024;
 export const AUDIT_RETENTION_MS = 186 * 24 * 60 * 60 * 1000;
 export const STATUSES = ['draft', 'pending', 'approved', 'rejected', 'withdrawn'] as const;
 export type Status = typeof STATUSES[number];
-export interface Owner { forumOrigin: string; forumUserId: number; username: string }
+/// Authors are GitHub accounts; the origin is kept so a stored identity names its account system.
+export const ACCOUNT_ORIGIN = 'https://github.com';
+export interface Owner { accountOrigin: string; accountId: number; username: string }
 export interface Submission {
   submissionId: string; owner: Owner; metadata: SubmissionMeta; status: Status; createdAt: string; updatedAt: string;
   submittedAt?: string; validation?: PackSummary; preview?: PublicPreview;
@@ -37,10 +39,9 @@ export interface State {
 export interface Snapshot { etag: string | null; state: State }
 const timestamp = (v: unknown): v is string => typeof v === 'string' && /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z$/.test(v) && Number.isFinite(Date.parse(v)) && new Date(v).toISOString() === v;
 const token = (v: unknown): v is string => typeof v === 'string' && v.length === 32 && /^[a-f0-9]{32}$/.test(v);
-export const sameOwner = (a: Owner, b: Owner) => a.forumOrigin === b.forumOrigin && a.forumUserId === b.forumUserId;
+export const sameOwner = (a: Owner, b: Owner) => a.accountOrigin === b.accountOrigin && a.accountId === b.accountId;
 function validOwner(v: unknown): v is Owner {
-  if (!record(v) || !whole(v.forumUserId, 1, Number.MAX_SAFE_INTEGER) || !text(v.username, 256) || !text(v.forumOrigin, 2048)) return false;
-  try { const url = new URL(v.forumOrigin); return url.protocol === 'https:' && url.origin === v.forumOrigin && !url.username && !url.password; } catch { return false; }
+  return record(v) && v.accountOrigin === ACCOUNT_ORIGIN && whole(v.accountId, 1, Number.MAX_SAFE_INTEGER) && text(v.username, 256);
 }
 function validSummary(v: unknown): v is PackSummary {
   return record(v) && text(v.validator, 256) && whole(v.files, 1, 1000) && whole(v.expandedBytes, 1, 64 * 1024 * 1024) &&

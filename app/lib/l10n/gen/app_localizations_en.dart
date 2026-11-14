@@ -26146,17 +26146,17 @@ class L10nEn extends L10n {
   String get workshopErrorOtherOrigin => 'This was installed from a different Workshop.';
 
   @override
-  String get workshopErrorSignIn => 'Sign in to the forum first.';
+  String get workshopErrorSignIn => 'Sign in with GitHub first.';
 
   @override
   String get workshopErrorConsent => 'Agree to let the Workshop check your sign-in first.';
 
   @override
-  String get workshopErrorForumMismatch =>
-      'The forum you signed in to isn\'t the one this Workshop uses. Sign in again.';
+  String get workshopErrorAccountMismatch =>
+      'The account you signed in with isn\'t the kind this Workshop uses. Sign in again.';
 
   @override
-  String get workshopErrorForumDown => 'The forum can\'t be reached right now. Try again later.';
+  String get workshopErrorAccountDown => 'Couldn\'t confirm who you are with GitHub right now. Try again later.';
 
   @override
   String get workshopErrorPreferences => 'Couldn\'t save the record on this phone, so this step didn\'t continue.';
@@ -26175,25 +26175,25 @@ class L10nEn extends L10n {
   String get workshopErrorGeneric => 'That didn\'t work. Try again later.';
 
   @override
-  String get workshopDisclosureTitle => 'Let the Workshop confirm who you are';
+  String get workshopDisclosureTitle => 'Let the Workshop confirm your GitHub identity';
 
   @override
   String get workshopDisclosureLead =>
-      'To submit, manage your submissions or report something, the Workshop needs to know who you are. To find out, your forum sign-in credential (a User API Key) is sent to the Workshop service below, which asks the forum which account it belongs to.';
+      'To submit, manage your submissions or report something, the Workshop needs to know who you are. To find out, your GitHub sign-in credential is sent to the Workshop service below, which asks GitHub which account it belongs to.';
 
   @override
   String get workshopDisclosureWorker => 'Workshop that receives the credential';
 
   @override
-  String get workshopDisclosureForum => 'Forum that confirms who you are';
+  String get workshopDisclosureAccount => 'Account service that confirms who you are';
 
   @override
   String get workshopDisclosureUse =>
-      'It is sent when you submit, view or withdraw your submissions, or report something. The Workshop only uses it to confirm your identity with the forum and does not keep it.';
+      'It is sent when you submit, view or withdraw your submissions, or report something. The Workshop only uses it to confirm your identity with GitHub and does not keep it.';
 
   @override
   String get workshopDisclosureKept =>
-      'This phone only remembers that you agreed to these two addresses, with no extra copy of the credential. If either changes, you\'ll be asked again.';
+      'The credential stays on this phone, which also remembers that you agreed to these two addresses. If either changes, you\'ll be asked again.';
 
   @override
   String get workshopDisclosureStale => 'The addresses just changed. Please confirm the ones shown now.';
@@ -26207,6 +26207,59 @@ class L10nEn extends L10n {
   @override
   String get workshopDisclosureUnsaved =>
       'Your consent counts for now, but it couldn\'t be saved on this phone. You may be asked again.';
+
+  @override
+  String get workshopSignInTitle => 'Sign in with GitHub';
+
+  @override
+  String get workshopSignInLead =>
+      'The Workshop knows authors by their GitHub account. This sign-in can only read your public profile (username and account number), not your repositories.';
+
+  @override
+  String get workshopSignInPreparing => 'Getting a code from GitHub…';
+
+  @override
+  String get workshopSignInSteps =>
+      'Enter this code on GitHub\'s verification page and authorize, then come back here.';
+
+  @override
+  String get workshopSignInOpen => 'Copy and open GitHub';
+
+  @override
+  String get workshopSignInCopied => 'Code copied';
+
+  @override
+  String get workshopSignInWaiting => 'Waiting for you to authorize on GitHub…';
+
+  @override
+  String get workshopSignInExpired => 'The code expired.';
+
+  @override
+  String get workshopSignInDenied => 'You cancelled the authorization on GitHub.';
+
+  @override
+  String get workshopSignInNetwork => 'Can\'t reach GitHub. Check the connection and try again.';
+
+  @override
+  String get workshopSignInUnconfigured => 'This Workshop hasn\'t set up GitHub sign-in yet.';
+
+  @override
+  String get workshopSignInAgain => 'Get a new code';
+
+  @override
+  String workshopAccountLine(String login) {
+    return 'GitHub account $login';
+  }
+
+  @override
+  String get workshopAccountSignOut => 'Sign out';
+
+  @override
+  String get workshopAccountSignedOut =>
+      'Signed out. To withdraw the authorization completely, revoke it under Applications in your GitHub settings.';
+
+  @override
+  String get workshopAccountSignOutFailed => 'Couldn\'t sign out. Try again later.';
 
   @override
   String get workshopInstalledEmptyTitle => 'Nothing from the Workshop yet';
@@ -26357,7 +26410,7 @@ class L10nEn extends L10n {
   String get workshopMinePublishHint => 'Shows up in Discover once approved';
 
   @override
-  String get workshopMineSignInTitle => 'Submissions belong to a forum account';
+  String get workshopMineSignInTitle => 'Submissions belong to a GitHub account';
 
   @override
   String get workshopMineSignInMessage => 'Sign in to see what you have sent in.';
@@ -26367,7 +26420,7 @@ class L10nEn extends L10n {
 
   @override
   String get workshopMineConsentMessage =>
-      'The workshop checks who you are with your forum sign-in. Agree to that to see your submissions.';
+      'The workshop checks who you are with your GitHub sign-in. Agree to that to see your submissions.';
 
   @override
   String get workshopMineConsentAction => 'See details';
@@ -26523,14 +26576,14 @@ class L10nEn extends L10n {
   String get workshopReportDone => 'Report received. A reviewer will look at it.';
 
   @override
-  String get workshopReportSignInTitle => 'Reporting needs a forum account';
+  String get workshopReportSignInTitle => 'Reporting needs a GitHub account';
 
   @override
   String get workshopReportSignInMessage => 'Sign in to send a report.';
 
   @override
   String get workshopReportConsentMessage =>
-      'The workshop checks who you are with your forum sign-in. Agree to that to report.';
+      'The workshop checks who you are with your GitHub sign-in. Agree to that to report.';
 
   @override
   String get workshopReportUnknownTitle => 'Not sure it arrived';
@@ -26557,13 +26610,13 @@ class L10nEn extends L10n {
   String get workshopPublishClosedMessage => 'What you already sent is still under My uploads.';
 
   @override
-  String get workshopPublishSignInTitle => 'Sign in to the forum first';
+  String get workshopPublishSignInTitle => 'Sign in with GitHub first';
 
   @override
-  String get workshopPublishSignInMessage => 'The Workshop uses your forum account to know who is submitting.';
+  String get workshopPublishSignInMessage => 'The Workshop uses your GitHub account to know who is submitting.';
 
   @override
-  String get workshopPublishProfileTitle => 'Couldn\'t read your forum account yet';
+  String get workshopPublishProfileTitle => 'Couldn\'t read your GitHub account yet';
 
   @override
   String get workshopPublishProfileMessage => 'Submitting needs to know which account you are.';
@@ -26871,13 +26924,13 @@ class L10nEn extends L10n {
   String get workshopPublishLetGoTitle => 'Let go of this phone\'s record?';
 
   @override
-  String workshopPublishLetGoAccount(String forum, String worker) {
-    return 'Only this phone\'s unfinished record for the account on forum $forum at Workshop $worker is removed.';
+  String workshopPublishLetGoAccount(String worker) {
+    return 'Only this phone\'s unfinished record for this GitHub account at Workshop $worker is removed.';
   }
 
   @override
-  String workshopPublishLetGoAll(String forum, String worker) {
-    return 'The submission records on this phone can\'t be read as a whole. Letting go removes the unfinished-submission records of every account on this phone, not just the one for forum $forum at Workshop $worker.';
+  String workshopPublishLetGoAll(String worker) {
+    return 'The submission records on this phone can\'t be read as a whole. Letting go removes the unfinished-submission records of every account on this phone, not just the one for this GitHub account at Workshop $worker.';
   }
 
   @override

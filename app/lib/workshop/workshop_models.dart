@@ -300,27 +300,43 @@ class WorkshopPreviewCapabilities {
   final Set<String> sources;
 }
 
+/// Where authors sign in. A null [clientId] means this deployment has not
+/// registered a GitHub OAuth App, so nobody can sign in to it yet.
+class WorkshopAccountCapabilities {
+  WorkshopAccountCapabilities._(this.origin, this.clientId);
+  factory WorkshopAccountCapabilities.fromJson(Object? value) {
+    final m = workshopMap(value), origin = m['origin'], clientId = m['clientId'];
+    if (origin is! String || clientId != null && (clientId is! String ||
+        !RegExp(r'^[A-Za-z0-9._-]{1,64}$').hasMatch(clientId))) {
+      workshopInvalid();
+    }
+    final parsed = Uri.tryParse(origin);
+    if (parsed == null) workshopInvalid();
+    return WorkshopAccountCapabilities._(workshopOrigin(parsed), clientId as String?);
+  }
+  final Uri origin;
+  final String? clientId;
+}
+
 class WorkshopCapabilities {
-  WorkshopCapabilities._(this.features, this.kinds, this.licenses, this.forumOrigin, this.archiveBytes,
+  WorkshopCapabilities._(this.features, this.kinds, this.licenses, this.account, this.archiveBytes,
     this.expandedBytes, this.maxMocVersion, this.preview);
   factory WorkshopCapabilities.fromJson(Object? value) {
     final m = workshopMap(value), limits = workshopMap(m['limits']);
-    final kinds = m['kinds'], licenses = m['licenses'], origin = m['forumOrigin'];
+    final kinds = m['kinds'], licenses = m['licenses'];
     if (m['schema'] != 1 || kinds is! List || kinds.any((k) => !workshopId(k)) || licenses is! List ||
-        licenses.any((k) => !workshopText(k, 100)) || origin is! String || limits['archiveBytes'] is! int ||
+        licenses.any((k) => !workshopText(k, 100)) || limits['archiveBytes'] is! int ||
         (limits['archiveBytes'] as int) < 1 || limits['expandedBytes'] is! int || (limits['expandedBytes'] as int) < 1 ||
         m['maxMocVersion'] is! int || (m['maxMocVersion'] as int) < 1) {
       workshopInvalid();
     }
-    final parsedOrigin = Uri.tryParse(origin);
-    if (parsedOrigin == null) workshopInvalid();
     return WorkshopCapabilities._(WorkshopFeatures.fromJson(m['features']), Set.unmodifiable(kinds.cast<String>()), Set.unmodifiable(licenses.cast<String>()),
-      workshopOrigin(parsedOrigin), limits['archiveBytes'] as int, limits['expandedBytes'] as int, m['maxMocVersion'] as int,
+      WorkshopAccountCapabilities.fromJson(m['account']), limits['archiveBytes'] as int, limits['expandedBytes'] as int, m['maxMocVersion'] as int,
       m.containsKey('preview') ? WorkshopPreviewCapabilities.fromJson(m['preview']) : null);
   }
   final WorkshopFeatures features;
   final Set<String> kinds, licenses;
-  final Uri forumOrigin;
+  final WorkshopAccountCapabilities account;
   final int archiveBytes, expandedBytes, maxMocVersion;
   final WorkshopPreviewCapabilities? preview;
 }
@@ -334,7 +350,7 @@ class WorkshopSubmission {
     final m = workshopMap(value), owner = workshopMap(m['owner']);
     final id = m['submissionId'], status = WorkshopSubmissionStatus.values.asNameMap()[m['status']];
     if (id is! String || !RegExp(r'^[a-f0-9]{32}$').hasMatch(id) || status == null ||
-        owner['forumUserId'] is! int || (owner['forumUserId'] as int) < 1 || !workshopText(owner['username'], 256) || owner['forumOrigin'] is! String) {
+        owner['accountId'] is! int || (owner['accountId'] as int) < 1 || !workshopText(owner['username'], 256) || owner['accountOrigin'] is! String) {
       workshopInvalid();
     }
     String? reason(Object? v) {
@@ -343,11 +359,11 @@ class WorkshopSubmission {
       if (!workshopText(r, 2000)) workshopInvalid();
       return r as String;
     }
-    final origin = Uri.tryParse(owner['forumOrigin'] as String);
+    final origin = Uri.tryParse(owner['accountOrigin'] as String);
     if (origin == null) workshopInvalid();
     final metadata = WorkshopMetadata.fromJson(m['metadata']);
     return WorkshopSubmission._(id, metadata, status, workshopTime(m['createdAt']), workshopTime(m['updatedAt']),
-      workshopOrigin(origin), owner['forumUserId'] as int, owner['username'] as String, reason(m['review']), reason(m['withdrawal']),
+      workshopOrigin(origin), owner['accountId'] as int, owner['username'] as String, reason(m['review']), reason(m['withdrawal']),
       m.containsKey('preview') ? WorkshopPreview.fromJson(m['preview'], metadata: metadata) : null);
   }
   final String id;

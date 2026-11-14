@@ -96,7 +96,7 @@ String? workshopPublishBlock(WorkshopAccessState access, String kind) {
   if (!access.uploadsEnabled) return 'workshop_upload_disabled';
   if (!(access.capabilities?.kinds.contains(kind) ?? false)) return 'workshop_unsupported_kind';
   if (kind == 'companion' && !access.companionEnabled) return 'workshop_companion_disabled';
-  return 'workshop_forum_auth_required';
+  return 'workshop_account_auth_required';
 }
 
 /// The name a source goes by on this page.

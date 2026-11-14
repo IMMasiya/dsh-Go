@@ -22,7 +22,6 @@ String workshopErrorLine(L10n l10n, String code) => switch (code) {
   'workshop_state_invalid' ||
   'workshop_state_conflict' ||
   'workshop_capacity' ||
-  'workshop_forum_configuration' ||
   'workshop_moc_policy_unavailable' => l10n.workshopErrorServer,
   'workshop_rate_limited' => l10n.workshopErrorRateLimited,
   'workshop_bad_response' ||
@@ -45,10 +44,11 @@ String workshopErrorLine(L10n l10n, String code) => switch (code) {
   'workshop_readers_busy' => l10n.workshopErrorReadersBusy,
   'workshop_install_record' || 'workshop_install_conflict' => l10n.workshopErrorInstallRecord,
   'workshop_other_origin' => l10n.workshopErrorOtherOrigin,
-  'workshop_forum_auth_required' || 'workshop_forum_auth_invalid' || 'workshop_profile_required' => l10n.workshopErrorSignIn,
+  'workshop_account_auth_required' || 'workshop_account_auth_invalid' || 'workshop_profile_required' => l10n.workshopErrorSignIn,
   'workshop_consent_required' || 'workshop_confirmation_stale' => l10n.workshopErrorConsent,
-  'workshop_forum_origin' => l10n.workshopErrorForumMismatch,
-  'workshop_forum_unavailable' => l10n.workshopErrorForumDown,
+  // The getters keep their old names until the sign-in wording is rewritten.
+  'workshop_account_origin' => l10n.workshopErrorAccountMismatch,
+  'workshop_account_unavailable' => l10n.workshopErrorAccountDown,
   'workshop_preferences' => l10n.workshopErrorPreferences,
   'workshop_busy' => l10n.workshopErrorBusy,
   'workshop_cancelled' => l10n.workshopErrorCancelled,

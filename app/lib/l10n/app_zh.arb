@@ -15673,25 +15673,48 @@
   "workshopErrorReadersBusy": "她正在用着，先离开伙伴小屋或关掉悬浮窗再试。",
   "workshopErrorInstallRecord": "本机的安装记录对不上，没有动它。",
   "workshopErrorOtherOrigin": "这是从别的工坊装的。",
-  "workshopErrorSignIn": "需要先登录论坛账号。",
+  "workshopErrorSignIn": "需要先登录 GitHub 账号。",
   "workshopErrorConsent": "需要先同意把登录凭据交给工坊核对身份。",
-  "workshopErrorForumMismatch": "登录的论坛和工坊认的不是同一个，请重新登录。",
-  "workshopErrorForumDown": "论坛暂时联系不上，稍后再试。",
+  "workshopErrorAccountMismatch": "登录的账号来源和工坊认的不一致，请重新登录。",
+  "workshopErrorAccountDown": "暂时没能向 GitHub 核对身份，稍后再试。",
   "workshopErrorPreferences": "没能保存本机的记录，这一步没有继续。",
   "workshopErrorBusy": "上一步还没结束，稍等。",
   "workshopErrorCancelled": "已取消。",
   "workshopErrorUnknownResult": "不确定有没有成功。先刷新看看，别急着重试。",
   "workshopErrorGeneric": "没有成功，稍后再试。",
-  "workshopDisclosureTitle": "让工坊核对你的论坛身份",
-  "workshopDisclosureLead": "投稿、管理自己的投稿和举报，工坊都要先知道你是谁。办法是把你的论坛登录凭据（User API Key）发给下面这个工坊服务，由它去问论坛你是哪个账号。",
+  "workshopDisclosureTitle": "让工坊核对你的 GitHub 身份",
+  "workshopDisclosureLead": "投稿、管理自己的投稿和举报，工坊都要先知道你是谁。办法是把你的 GitHub 登录凭据发给下面这个工坊服务，由它去问 GitHub 你是哪个账号。",
   "workshopDisclosureWorker": "收到凭据的工坊",
-  "workshopDisclosureForum": "核对身份的论坛",
-  "workshopDisclosureUse": "投稿、查看或撤回自己的投稿、举报时都会带上它。工坊只拿它向论坛确认身份，不保存。",
-  "workshopDisclosureKept": "本机只记下你同意过这两个地址，不另存凭据；换了其中一个会再问。",
+  "workshopDisclosureAccount": "核对身份的账号服务",
+  "workshopDisclosureUse": "投稿、查看或撤回自己的投稿、举报时都会带上它。工坊只拿它向 GitHub 确认身份，不保存。",
+  "workshopDisclosureKept": "凭据只存在这台手机上，本机另外记下你同意过这两个地址；换了其中一个会再问。",
   "workshopDisclosureStale": "地址刚刚有变化，请按现在显示的重新确认。",
   "workshopDisclosureAccept": "同意并继续",
   "workshopDisclosureDecline": "暂不",
   "workshopDisclosureUnsaved": "这次同意已经生效，但没能记在本机，下次可能再问一遍。",
+  "workshopSignInTitle": "用 GitHub 登录",
+  "workshopSignInLead": "工坊用 GitHub 账号认人。这次授权只能读你的公开资料（用户名和账号编号），不能动你的仓库。",
+  "workshopSignInPreparing": "正在向 GitHub 要验证码…",
+  "workshopSignInSteps": "在 GitHub 验证页输入验证码并授权，再回到这里。",
+  "workshopSignInOpen": "复制并打开 GitHub",
+  "workshopSignInCopied": "验证码已复制",
+  "workshopSignInWaiting": "等你在 GitHub 上授权…",
+  "workshopSignInExpired": "验证码过期了。",
+  "workshopSignInDenied": "你在 GitHub 上取消了授权。",
+  "workshopSignInNetwork": "连不上 GitHub，检查网络后再试。",
+  "workshopSignInUnconfigured": "这个工坊还没开通 GitHub 登录。",
+  "workshopSignInAgain": "重新获取验证码",
+  "workshopAccountLine": "GitHub 账号 {login}",
+  "@workshopAccountLine": {
+    "placeholders": {
+      "login": {
+        "type": "String"
+      }
+    }
+  },
+  "workshopAccountSignOut": "退出登录",
+  "workshopAccountSignedOut": "已退出。要彻底收回授权，去 GitHub 设置里的 Applications 页撤销。",
+  "workshopAccountSignOutFailed": "没能退出，稍后再试。",
   "workshopInstalledEmptyTitle": "还没有从工坊装过东西",
   "workshopInstalledEmptyMessage": "在「发现」里装上的宠物和伙伴会列在这里。",
   "workshopInstalledEmptyAction": "去发现",
@@ -15751,10 +15774,10 @@
   "workshopInstalledDismissFailure": "知道了",
   "workshopMinePublish": "投稿",
   "workshopMinePublishHint": "审核通过后出现在「发现」里",
-  "workshopMineSignInTitle": "投稿记在论坛账号上",
+  "workshopMineSignInTitle": "投稿记在 GitHub 账号上",
   "workshopMineSignInMessage": "登录后就能看到自己发过的作品。",
   "workshopMineConsentTitle": "还差一步确认",
-  "workshopMineConsentMessage": "工坊要用你的论坛登录凭据核对身份，同意后才能看到自己的投稿。",
+  "workshopMineConsentMessage": "工坊要用你的 GitHub 登录凭据核对身份，同意后才能看到自己的投稿。",
   "workshopMineConsentAction": "查看说明",
   "workshopMineEmptyTitle": "还没有投稿",
   "workshopMineEmptyMessage": "做了宠物或伙伴的话，可以发上来给大家用。",
@@ -15827,9 +15850,9 @@
   "workshopReportSubmit": "提交举报",
   "workshopReportSending": "正在提交…",
   "workshopReportDone": "举报已送达，审核员会查看。",
-  "workshopReportSignInTitle": "举报需要论坛账号",
+  "workshopReportSignInTitle": "举报需要 GitHub 账号",
   "workshopReportSignInMessage": "登录后才能提交举报。",
-  "workshopReportConsentMessage": "工坊要用你的论坛登录凭据核对身份，同意后才能举报。",
+  "workshopReportConsentMessage": "工坊要用你的 GitHub 登录凭据核对身份，同意后才能举报。",
   "workshopReportUnknownTitle": "不确定有没有送达",
   "workshopReportUnknownMessage": "上一次举报可能已经收到，也可能没有，现在查不到结果。再发一次可能变成重复举报。",
   "workshopReportUnknownOther": "那一次举报的是 {id} {version}。",
@@ -15847,9 +15870,9 @@
   "workshopPublishTitle": "投稿",
   "workshopPublishClosedTitle": "工坊暂时不接收投稿",
   "workshopPublishClosedMessage": "已经交上去的仍然可以在「我的投稿」里看。",
-  "workshopPublishSignInTitle": "先登录论坛账号",
-  "workshopPublishSignInMessage": "工坊靠论坛账号确认投稿的人是谁。",
-  "workshopPublishProfileTitle": "还没读到论坛账号资料",
+  "workshopPublishSignInTitle": "先登录 GitHub 账号",
+  "workshopPublishSignInMessage": "工坊靠 GitHub 账号确认投稿的人是谁。",
+  "workshopPublishProfileTitle": "还没读到 GitHub 账号资料",
   "workshopPublishProfileMessage": "要先知道你是哪个账号，才能投稿。",
   "workshopPublishCheckFailedTitle": "没能读出上一次投稿的记录",
   "workshopPublishCheckLocked": "为了不重复投稿，读出来之前不能开始新的。",
@@ -15954,23 +15977,17 @@
   "workshopPublishErrorPreviewUnsupported": "这个工坊现在不收预览图。去掉预览图可以照常投稿。",
   "workshopPublishLetGo": "放下这条记录",
   "workshopPublishLetGoTitle": "放下本机的这条记录？",
-  "workshopPublishLetGoAccount": "只删除这台手机上，论坛 {forum} 的账号在工坊 {worker} 的这条未完成记录。",
+  "workshopPublishLetGoAccount": "只删除这台手机上，这个 GitHub 账号在工坊 {worker} 的这条未完成记录。",
   "@workshopPublishLetGoAccount": {
     "placeholders": {
-      "forum": {
-        "type": "String"
-      },
       "worker": {
         "type": "String"
       }
     }
   },
-  "workshopPublishLetGoAll": "这台手机上的投稿记录整体读不出来了。放下会清掉本机所有账号的未完成投稿记录，不只是论坛 {forum} 在工坊 {worker} 的这一条。",
+  "workshopPublishLetGoAll": "这台手机上的投稿记录整体读不出来了。放下会清掉本机所有账号的未完成投稿记录，不只是这个 GitHub 账号在工坊 {worker} 的这一条。",
   "@workshopPublishLetGoAll": {
     "placeholders": {
-      "forum": {
-        "type": "String"
-      },
       "worker": {
         "type": "String"
       }

@@ -24814,16 +24814,16 @@ class L10nZh extends L10n {
   String get workshopErrorOtherOrigin => '这是从别的工坊装的。';
 
   @override
-  String get workshopErrorSignIn => '需要先登录论坛账号。';
+  String get workshopErrorSignIn => '需要先登录 GitHub 账号。';
 
   @override
   String get workshopErrorConsent => '需要先同意把登录凭据交给工坊核对身份。';
 
   @override
-  String get workshopErrorForumMismatch => '登录的论坛和工坊认的不是同一个，请重新登录。';
+  String get workshopErrorAccountMismatch => '登录的账号来源和工坊认的不一致，请重新登录。';
 
   @override
-  String get workshopErrorForumDown => '论坛暂时联系不上，稍后再试。';
+  String get workshopErrorAccountDown => '暂时没能向 GitHub 核对身份，稍后再试。';
 
   @override
   String get workshopErrorPreferences => '没能保存本机的记录，这一步没有继续。';
@@ -24841,22 +24841,22 @@ class L10nZh extends L10n {
   String get workshopErrorGeneric => '没有成功，稍后再试。';
 
   @override
-  String get workshopDisclosureTitle => '让工坊核对你的论坛身份';
+  String get workshopDisclosureTitle => '让工坊核对你的 GitHub 身份';
 
   @override
-  String get workshopDisclosureLead => '投稿、管理自己的投稿和举报，工坊都要先知道你是谁。办法是把你的论坛登录凭据（User API Key）发给下面这个工坊服务，由它去问论坛你是哪个账号。';
+  String get workshopDisclosureLead => '投稿、管理自己的投稿和举报，工坊都要先知道你是谁。办法是把你的 GitHub 登录凭据发给下面这个工坊服务，由它去问 GitHub 你是哪个账号。';
 
   @override
   String get workshopDisclosureWorker => '收到凭据的工坊';
 
   @override
-  String get workshopDisclosureForum => '核对身份的论坛';
+  String get workshopDisclosureAccount => '核对身份的账号服务';
 
   @override
-  String get workshopDisclosureUse => '投稿、查看或撤回自己的投稿、举报时都会带上它。工坊只拿它向论坛确认身份，不保存。';
+  String get workshopDisclosureUse => '投稿、查看或撤回自己的投稿、举报时都会带上它。工坊只拿它向 GitHub 确认身份，不保存。';
 
   @override
-  String get workshopDisclosureKept => '本机只记下你同意过这两个地址，不另存凭据；换了其中一个会再问。';
+  String get workshopDisclosureKept => '凭据只存在这台手机上，本机另外记下你同意过这两个地址；换了其中一个会再问。';
 
   @override
   String get workshopDisclosureStale => '地址刚刚有变化，请按现在显示的重新确认。';
@@ -24869,6 +24869,56 @@ class L10nZh extends L10n {
 
   @override
   String get workshopDisclosureUnsaved => '这次同意已经生效，但没能记在本机，下次可能再问一遍。';
+
+  @override
+  String get workshopSignInTitle => '用 GitHub 登录';
+
+  @override
+  String get workshopSignInLead => '工坊用 GitHub 账号认人。这次授权只能读你的公开资料（用户名和账号编号），不能动你的仓库。';
+
+  @override
+  String get workshopSignInPreparing => '正在向 GitHub 要验证码…';
+
+  @override
+  String get workshopSignInSteps => '在 GitHub 验证页输入验证码并授权，再回到这里。';
+
+  @override
+  String get workshopSignInOpen => '复制并打开 GitHub';
+
+  @override
+  String get workshopSignInCopied => '验证码已复制';
+
+  @override
+  String get workshopSignInWaiting => '等你在 GitHub 上授权…';
+
+  @override
+  String get workshopSignInExpired => '验证码过期了。';
+
+  @override
+  String get workshopSignInDenied => '你在 GitHub 上取消了授权。';
+
+  @override
+  String get workshopSignInNetwork => '连不上 GitHub，检查网络后再试。';
+
+  @override
+  String get workshopSignInUnconfigured => '这个工坊还没开通 GitHub 登录。';
+
+  @override
+  String get workshopSignInAgain => '重新获取验证码';
+
+  @override
+  String workshopAccountLine(String login) {
+    return 'GitHub 账号 $login';
+  }
+
+  @override
+  String get workshopAccountSignOut => '退出登录';
+
+  @override
+  String get workshopAccountSignedOut => '已退出。要彻底收回授权，去 GitHub 设置里的 Applications 页撤销。';
+
+  @override
+  String get workshopAccountSignOutFailed => '没能退出，稍后再试。';
 
   @override
   String get workshopInstalledEmptyTitle => '还没有从工坊装过东西';
@@ -25010,7 +25060,7 @@ class L10nZh extends L10n {
   String get workshopMinePublishHint => '审核通过后出现在「发现」里';
 
   @override
-  String get workshopMineSignInTitle => '投稿记在论坛账号上';
+  String get workshopMineSignInTitle => '投稿记在 GitHub 账号上';
 
   @override
   String get workshopMineSignInMessage => '登录后就能看到自己发过的作品。';
@@ -25019,7 +25069,7 @@ class L10nZh extends L10n {
   String get workshopMineConsentTitle => '还差一步确认';
 
   @override
-  String get workshopMineConsentMessage => '工坊要用你的论坛登录凭据核对身份，同意后才能看到自己的投稿。';
+  String get workshopMineConsentMessage => '工坊要用你的 GitHub 登录凭据核对身份，同意后才能看到自己的投稿。';
 
   @override
   String get workshopMineConsentAction => '查看说明';
@@ -25172,13 +25222,13 @@ class L10nZh extends L10n {
   String get workshopReportDone => '举报已送达，审核员会查看。';
 
   @override
-  String get workshopReportSignInTitle => '举报需要论坛账号';
+  String get workshopReportSignInTitle => '举报需要 GitHub 账号';
 
   @override
   String get workshopReportSignInMessage => '登录后才能提交举报。';
 
   @override
-  String get workshopReportConsentMessage => '工坊要用你的论坛登录凭据核对身份，同意后才能举报。';
+  String get workshopReportConsentMessage => '工坊要用你的 GitHub 登录凭据核对身份，同意后才能举报。';
 
   @override
   String get workshopReportUnknownTitle => '不确定有没有送达';
@@ -25204,13 +25254,13 @@ class L10nZh extends L10n {
   String get workshopPublishClosedMessage => '已经交上去的仍然可以在「我的投稿」里看。';
 
   @override
-  String get workshopPublishSignInTitle => '先登录论坛账号';
+  String get workshopPublishSignInTitle => '先登录 GitHub 账号';
 
   @override
-  String get workshopPublishSignInMessage => '工坊靠论坛账号确认投稿的人是谁。';
+  String get workshopPublishSignInMessage => '工坊靠 GitHub 账号确认投稿的人是谁。';
 
   @override
-  String get workshopPublishProfileTitle => '还没读到论坛账号资料';
+  String get workshopPublishProfileTitle => '还没读到 GitHub 账号资料';
 
   @override
   String get workshopPublishProfileMessage => '要先知道你是哪个账号，才能投稿。';
@@ -25506,13 +25556,13 @@ class L10nZh extends L10n {
   String get workshopPublishLetGoTitle => '放下本机的这条记录？';
 
   @override
-  String workshopPublishLetGoAccount(String forum, String worker) {
-    return '只删除这台手机上，论坛 $forum 的账号在工坊 $worker 的这条未完成记录。';
+  String workshopPublishLetGoAccount(String worker) {
+    return '只删除这台手机上，这个 GitHub 账号在工坊 $worker 的这条未完成记录。';
   }
 
   @override
-  String workshopPublishLetGoAll(String forum, String worker) {
-    return '这台手机上的投稿记录整体读不出来了。放下会清掉本机所有账号的未完成投稿记录，不只是论坛 $forum 在工坊 $worker 的这一条。';
+  String workshopPublishLetGoAll(String worker) {
+    return '这台手机上的投稿记录整体读不出来了。放下会清掉本机所有账号的未完成投稿记录，不只是这个 GitHub 账号在工坊 $worker 的这一条。';
   }
 
   @override

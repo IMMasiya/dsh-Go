@@ -1,5 +1,5 @@
 // Original synthetic pixels/archives only; these fixtures carry no licensed
-// model data, real credentials, user settings, or real forum identities.
+// model data, real credentials, user settings, or real account identities.
 import { deflateRawSync, deflateSync } from 'node:zlib';
 import { crc32 } from '../src/workshop-archive';
 import type { SubmissionMeta } from '../src/workshop-common';

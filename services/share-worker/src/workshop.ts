@@ -1,12 +1,12 @@
 // Workshop routes: public catalog/bytes and explicitly authenticated moderation.
-// All lower-level exceptions are translated here; never log a forum key, its
+// All lower-level exceptions are translated here; never log an account token, its
 // upstream response, or an exception that might contain request headers.
 import { json, readCapped } from './api';
 import type { Env } from './env';
 import { COMMON, matchesEtag, parseHttpDate, serveObject, type Ctx } from './files';
 import { record } from './pet-catalog';
 import { readBounded, storedAsset } from './pet-market-io';
-import { admin, enabled, features, forumOrigin, jsonBody, limitBurst, quota, user } from './workshop-auth';
+import { account, admin, enabled, features, jsonBody, limitBurst, quota, user } from './workshop-auth';
 import { WORKSHOP_ADMIN_HTML, WORKSHOP_ADMIN_SCRIPT } from './workshop-admin-page';
 import { assetUrl, blobKey, encoder, EXPANDED_CAP, id, KINDS, kind, LICENSES, MEMBER_CAP, metadata, PREVIEW_CONTRACT, previewKey, releaseId,
   requireWorkshop as need, sha256, validVersion, text, UPLOAD_CAP, WorkshopError, type PublicPreview, type SubmissionMeta } from './workshop-common';
@@ -198,7 +198,7 @@ async function userRoute(request: Request, env: Env, ctx: Ctx, url: URL): Promis
   if (path === '/submissions' && request.method === 'POST') {
     enabled(env); const owner = await user(request, env), body = await jsonBody(request), meta = metadata(body); enabled(env, meta.kind);
     need(text(body.requestId, 128) && /^[A-Za-z0-9_-]{16,128}$/.test(body.requestId), 'bad_request_id');
-    const sid = (await sha256(`${owner.forumOrigin}\n${owner.forumUserId}\n${body.requestId}`)).slice(0, 32), previous = await loadState(env);
+    const sid = (await sha256(`${owner.accountOrigin}\n${owner.accountId}\n${body.requestId}`)).slice(0, 32), previous = await loadState(env);
     const existing = previous.state.submissions.find(s => s.submissionId === sid);
     if (existing) {
       need(sameOwner(existing.owner, owner) && JSON.stringify(existing.metadata) === JSON.stringify(meta), 'request_id_reused', 409);
@@ -379,7 +379,7 @@ export async function workshop(request: Request, env: Env, ctx: Ctx): Promise<Re
     if (url.pathname.startsWith('/market/')) return await publicRoute(request, env, ctx, url);
     if (url.pathname === `${API}/capabilities`) {
       method(request, 'GET'); return json(200, { schema: 1, features: features(env), kinds: KINDS, licenses: LICENSES,
-        forumOrigin: forumOrigin(env), maxMocVersion: MAX_MOC_VERSION, preview: PREVIEW_CONTRACT,
+        account: account(env), maxMocVersion: MAX_MOC_VERSION, preview: PREVIEW_CONTRACT,
         limits: { archiveBytes: UPLOAD_CAP, expandedBytes: EXPANDED_CAP, companionMemberBytes: MEMBER_CAP, companionEntries: 1000, petEntries: 256 } });
     }
     need(url.pathname.startsWith(API + '/'), 'not_found', 404);

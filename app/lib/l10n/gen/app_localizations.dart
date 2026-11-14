@@ -45119,7 +45119,7 @@ abstract class L10n {
   /// No description provided for @workshopErrorSignIn.
   ///
   /// In zh, this message translates to:
-  /// **'需要先登录论坛账号。'**
+  /// **'需要先登录 GitHub 账号。'**
   String get workshopErrorSignIn;
 
   /// No description provided for @workshopErrorConsent.
@@ -45128,17 +45128,17 @@ abstract class L10n {
   /// **'需要先同意把登录凭据交给工坊核对身份。'**
   String get workshopErrorConsent;
 
-  /// No description provided for @workshopErrorForumMismatch.
+  /// No description provided for @workshopErrorAccountMismatch.
   ///
   /// In zh, this message translates to:
-  /// **'登录的论坛和工坊认的不是同一个，请重新登录。'**
-  String get workshopErrorForumMismatch;
+  /// **'登录的账号来源和工坊认的不一致，请重新登录。'**
+  String get workshopErrorAccountMismatch;
 
-  /// No description provided for @workshopErrorForumDown.
+  /// No description provided for @workshopErrorAccountDown.
   ///
   /// In zh, this message translates to:
-  /// **'论坛暂时联系不上，稍后再试。'**
-  String get workshopErrorForumDown;
+  /// **'暂时没能向 GitHub 核对身份，稍后再试。'**
+  String get workshopErrorAccountDown;
 
   /// No description provided for @workshopErrorPreferences.
   ///
@@ -45173,13 +45173,13 @@ abstract class L10n {
   /// No description provided for @workshopDisclosureTitle.
   ///
   /// In zh, this message translates to:
-  /// **'让工坊核对你的论坛身份'**
+  /// **'让工坊核对你的 GitHub 身份'**
   String get workshopDisclosureTitle;
 
   /// No description provided for @workshopDisclosureLead.
   ///
   /// In zh, this message translates to:
-  /// **'投稿、管理自己的投稿和举报，工坊都要先知道你是谁。办法是把你的论坛登录凭据（User API Key）发给下面这个工坊服务，由它去问论坛你是哪个账号。'**
+  /// **'投稿、管理自己的投稿和举报，工坊都要先知道你是谁。办法是把你的 GitHub 登录凭据发给下面这个工坊服务，由它去问 GitHub 你是哪个账号。'**
   String get workshopDisclosureLead;
 
   /// No description provided for @workshopDisclosureWorker.
@@ -45188,22 +45188,22 @@ abstract class L10n {
   /// **'收到凭据的工坊'**
   String get workshopDisclosureWorker;
 
-  /// No description provided for @workshopDisclosureForum.
+  /// No description provided for @workshopDisclosureAccount.
   ///
   /// In zh, this message translates to:
-  /// **'核对身份的论坛'**
-  String get workshopDisclosureForum;
+  /// **'核对身份的账号服务'**
+  String get workshopDisclosureAccount;
 
   /// No description provided for @workshopDisclosureUse.
   ///
   /// In zh, this message translates to:
-  /// **'投稿、查看或撤回自己的投稿、举报时都会带上它。工坊只拿它向论坛确认身份，不保存。'**
+  /// **'投稿、查看或撤回自己的投稿、举报时都会带上它。工坊只拿它向 GitHub 确认身份，不保存。'**
   String get workshopDisclosureUse;
 
   /// No description provided for @workshopDisclosureKept.
   ///
   /// In zh, this message translates to:
-  /// **'本机只记下你同意过这两个地址，不另存凭据；换了其中一个会再问。'**
+  /// **'凭据只存在这台手机上，本机另外记下你同意过这两个地址；换了其中一个会再问。'**
   String get workshopDisclosureKept;
 
   /// No description provided for @workshopDisclosureStale.
@@ -45229,6 +45229,102 @@ abstract class L10n {
   /// In zh, this message translates to:
   /// **'这次同意已经生效，但没能记在本机，下次可能再问一遍。'**
   String get workshopDisclosureUnsaved;
+
+  /// No description provided for @workshopSignInTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'用 GitHub 登录'**
+  String get workshopSignInTitle;
+
+  /// No description provided for @workshopSignInLead.
+  ///
+  /// In zh, this message translates to:
+  /// **'工坊用 GitHub 账号认人。这次授权只能读你的公开资料（用户名和账号编号），不能动你的仓库。'**
+  String get workshopSignInLead;
+
+  /// No description provided for @workshopSignInPreparing.
+  ///
+  /// In zh, this message translates to:
+  /// **'正在向 GitHub 要验证码…'**
+  String get workshopSignInPreparing;
+
+  /// No description provided for @workshopSignInSteps.
+  ///
+  /// In zh, this message translates to:
+  /// **'在 GitHub 验证页输入验证码并授权，再回到这里。'**
+  String get workshopSignInSteps;
+
+  /// No description provided for @workshopSignInOpen.
+  ///
+  /// In zh, this message translates to:
+  /// **'复制并打开 GitHub'**
+  String get workshopSignInOpen;
+
+  /// No description provided for @workshopSignInCopied.
+  ///
+  /// In zh, this message translates to:
+  /// **'验证码已复制'**
+  String get workshopSignInCopied;
+
+  /// No description provided for @workshopSignInWaiting.
+  ///
+  /// In zh, this message translates to:
+  /// **'等你在 GitHub 上授权…'**
+  String get workshopSignInWaiting;
+
+  /// No description provided for @workshopSignInExpired.
+  ///
+  /// In zh, this message translates to:
+  /// **'验证码过期了。'**
+  String get workshopSignInExpired;
+
+  /// No description provided for @workshopSignInDenied.
+  ///
+  /// In zh, this message translates to:
+  /// **'你在 GitHub 上取消了授权。'**
+  String get workshopSignInDenied;
+
+  /// No description provided for @workshopSignInNetwork.
+  ///
+  /// In zh, this message translates to:
+  /// **'连不上 GitHub，检查网络后再试。'**
+  String get workshopSignInNetwork;
+
+  /// No description provided for @workshopSignInUnconfigured.
+  ///
+  /// In zh, this message translates to:
+  /// **'这个工坊还没开通 GitHub 登录。'**
+  String get workshopSignInUnconfigured;
+
+  /// No description provided for @workshopSignInAgain.
+  ///
+  /// In zh, this message translates to:
+  /// **'重新获取验证码'**
+  String get workshopSignInAgain;
+
+  /// No description provided for @workshopAccountLine.
+  ///
+  /// In zh, this message translates to:
+  /// **'GitHub 账号 {login}'**
+  String workshopAccountLine(String login);
+
+  /// No description provided for @workshopAccountSignOut.
+  ///
+  /// In zh, this message translates to:
+  /// **'退出登录'**
+  String get workshopAccountSignOut;
+
+  /// No description provided for @workshopAccountSignedOut.
+  ///
+  /// In zh, this message translates to:
+  /// **'已退出。要彻底收回授权，去 GitHub 设置里的 Applications 页撤销。'**
+  String get workshopAccountSignedOut;
+
+  /// No description provided for @workshopAccountSignOutFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'没能退出，稍后再试。'**
+  String get workshopAccountSignOutFailed;
 
   /// No description provided for @workshopInstalledEmptyTitle.
   ///
@@ -45503,7 +45599,7 @@ abstract class L10n {
   /// No description provided for @workshopMineSignInTitle.
   ///
   /// In zh, this message translates to:
-  /// **'投稿记在论坛账号上'**
+  /// **'投稿记在 GitHub 账号上'**
   String get workshopMineSignInTitle;
 
   /// No description provided for @workshopMineSignInMessage.
@@ -45521,7 +45617,7 @@ abstract class L10n {
   /// No description provided for @workshopMineConsentMessage.
   ///
   /// In zh, this message translates to:
-  /// **'工坊要用你的论坛登录凭据核对身份，同意后才能看到自己的投稿。'**
+  /// **'工坊要用你的 GitHub 登录凭据核对身份，同意后才能看到自己的投稿。'**
   String get workshopMineConsentMessage;
 
   /// No description provided for @workshopMineConsentAction.
@@ -45815,7 +45911,7 @@ abstract class L10n {
   /// No description provided for @workshopReportSignInTitle.
   ///
   /// In zh, this message translates to:
-  /// **'举报需要论坛账号'**
+  /// **'举报需要 GitHub 账号'**
   String get workshopReportSignInTitle;
 
   /// No description provided for @workshopReportSignInMessage.
@@ -45827,7 +45923,7 @@ abstract class L10n {
   /// No description provided for @workshopReportConsentMessage.
   ///
   /// In zh, this message translates to:
-  /// **'工坊要用你的论坛登录凭据核对身份，同意后才能举报。'**
+  /// **'工坊要用你的 GitHub 登录凭据核对身份，同意后才能举报。'**
   String get workshopReportConsentMessage;
 
   /// No description provided for @workshopReportUnknownTitle.
@@ -45875,19 +45971,19 @@ abstract class L10n {
   /// No description provided for @workshopPublishSignInTitle.
   ///
   /// In zh, this message translates to:
-  /// **'先登录论坛账号'**
+  /// **'先登录 GitHub 账号'**
   String get workshopPublishSignInTitle;
 
   /// No description provided for @workshopPublishSignInMessage.
   ///
   /// In zh, this message translates to:
-  /// **'工坊靠论坛账号确认投稿的人是谁。'**
+  /// **'工坊靠 GitHub 账号确认投稿的人是谁。'**
   String get workshopPublishSignInMessage;
 
   /// No description provided for @workshopPublishProfileTitle.
   ///
   /// In zh, this message translates to:
-  /// **'还没读到论坛账号资料'**
+  /// **'还没读到 GitHub 账号资料'**
   String get workshopPublishProfileTitle;
 
   /// No description provided for @workshopPublishProfileMessage.
@@ -46475,14 +46571,14 @@ abstract class L10n {
   /// No description provided for @workshopPublishLetGoAccount.
   ///
   /// In zh, this message translates to:
-  /// **'只删除这台手机上，论坛 {forum} 的账号在工坊 {worker} 的这条未完成记录。'**
-  String workshopPublishLetGoAccount(String forum, String worker);
+  /// **'只删除这台手机上，这个 GitHub 账号在工坊 {worker} 的这条未完成记录。'**
+  String workshopPublishLetGoAccount(String worker);
 
   /// No description provided for @workshopPublishLetGoAll.
   ///
   /// In zh, this message translates to:
-  /// **'这台手机上的投稿记录整体读不出来了。放下会清掉本机所有账号的未完成投稿记录，不只是论坛 {forum} 在工坊 {worker} 的这一条。'**
-  String workshopPublishLetGoAll(String forum, String worker);
+  /// **'这台手机上的投稿记录整体读不出来了。放下会清掉本机所有账号的未完成投稿记录，不只是这个 GitHub 账号在工坊 {worker} 的这一条。'**
+  String workshopPublishLetGoAll(String worker);
 
   /// No description provided for @workshopPublishLetGoFacts.
   ///

@@ -7,16 +7,16 @@ import { PetBucket } from './pet-market-fakes';
 import { companion, metaFor, pet, petManifest } from './workshop-fixtures';
 
 const API = '/api/workshop/v1';
-let forumUser = 42;
+let githubUser = 42;
 beforeEach(() => {
-  forumUser = 42;
-  vi.spyOn(globalThis, 'fetch').mockImplementation(async () => new Response(JSON.stringify({ current_user: { id: forumUser, username: `synthetic-${forumUser}` } })));
+  githubUser = 42;
+  vi.spyOn(globalThis, 'fetch').mockImplementation(async () => new Response(JSON.stringify({ id: githubUser, login: `synthetic-${githubUser}` })));
 });
 afterEach(() => vi.restoreAllMocks());
 function setup() {
   const bucket = new PetBucket(), f = makeEnv({ BUCKET: bucket as unknown as R2Bucket });
   const call = (path: string, method = 'GET', body?: object | Uint8Array, admin = false, extra: Record<string, string> = {}) => worker.fetch(new Request('https://example.org' + path, {
-    method, headers: { ...(path.startsWith(API) ? { 'User-Api-Key': 'synthetic-forum-key', 'X-Workshop-Forum-Origin': 'https://forum.dshtui.com' } : {}), ...(admin ? { 'X-Admin-Key': f.env.ADMIN_KEY! } : {}),
+    method, headers: { ...(path.startsWith(API) ? { Authorization: 'Bearer synthetic_github_token', 'X-Workshop-Account-Origin': 'https://github.com' } : {}), ...(admin ? { 'X-Admin-Key': f.env.ADMIN_KEY! } : {}),
       ...(body ? { 'Content-Type': body instanceof Uint8Array ? 'application/zip' : 'application/json' } : {}), ...extra },
     ...(body ? { body: body instanceof Uint8Array ? body : JSON.stringify(body) } : {}),
   }), f.env, makeCtx().ctx);
@@ -41,44 +41,54 @@ it('starts with both capabilities enabled and keeps old pet routes separate', as
   expect(f.dl.objects.size).toBe(0);
   expect((await f.call('/market/pets.json')).status).toBe(404);
 });
-it('requires the forum assertion at every author identity entry before any upstream call', async () => {
-  const f = setup(), sid = '0123456789abcdef0123456789abcdef';
-  const routes = [
-    ['/submissions', 'GET'], ['/submissions', 'POST'], [`/submissions/${sid}`, 'GET'],
-    [`/submissions/${sid}/archive`, 'PUT'], [`/submissions/${sid}/withdraw`, 'POST'], ['/reports', 'POST'],
-  ] as const;
-  for (const expected of [undefined, '', 'https://another-forum.example']) {
-    for (const [path, method] of routes) {
+const AUTHOR_ROUTES = (sid: string) => [
+  ['/submissions', 'GET'], ['/submissions', 'POST'], [`/submissions/${sid}`, 'GET'],
+  [`/submissions/${sid}/archive`, 'PUT'], [`/submissions/${sid}/withdraw`, 'POST'], ['/reports', 'POST'],
+] as const;
+it('requires a well-formed GitHub bearer token at every author entry before any upstream call', async () => {
+  const f = setup();
+  for (const authorization of [undefined, '', 'Bearer ', 'token synthetic_github_token', 'Bearer gho-has-dash',
+    'Bearer two words', `Bearer ${'a'.repeat(256)}`]) {
+    for (const [path, method] of AUTHOR_ROUTES('0123456789abcdef0123456789abcdef')) {
       const response = await worker.fetch(new Request('https://example.org' + API + path, {
-        method, headers: { 'User-Api-Key': 'synthetic-forum-key', ...(expected === undefined ? {} : { 'X-Workshop-Forum-Origin': expected }) },
+        method, headers: { 'X-Workshop-Account-Origin': 'https://github.com', ...(authorization === undefined ? {} : { Authorization: authorization }) },
       }), f.env, makeCtx().ctx);
-      expect(response.status).toBe(409);
-      expect(await response.json()).toEqual({ error: 'workshop_forum_origin' });
+      expect(response.status).toBe(401); expect(await response.json()).toEqual({ error: 'workshop_account_auth_required' });
     }
   }
   expect(fetch).not.toHaveBeenCalled(); expect(f.bucket.objects.size).toBe(0);
 });
-it('checks the configured forum again after capabilities and never routes from the assertion', async () => {
-  const f = setup(), announced = await (await f.call(API + '/capabilities')).json() as any;
-  expect(announced.forumOrigin).toBe('https://forum.dshtui.com');
-  f.env.WORKSHOP_FORUM_URL = 'https://another-forum.example';
-  const changed = await f.call(API + '/submissions');
-  expect(changed.status).toBe(409); expect(await changed.json()).toEqual({ error: 'workshop_forum_origin' });
-  expect(fetch).not.toHaveBeenCalled();
-  const current = await f.call(API + '/submissions', 'GET', undefined, false, { 'X-Workshop-Forum-Origin': 'https://another-forum.example' });
-  expect(current.status).toBe(200);
-  expect(vi.mocked(fetch).mock.calls.map(([url]) => url)).toEqual(['https://another-forum.example/session/current.json']);
+it('requires the GitHub account assertion at every author entry before any upstream call', async () => {
+  const f = setup();
+  for (const expected of [undefined, '', 'https://github.com/', 'https://api.github.com', 'https://forum.dshtui.com']) {
+    for (const [path, method] of AUTHOR_ROUTES('0123456789abcdef0123456789abcdef')) {
+      const response = await worker.fetch(new Request('https://example.org' + API + path, {
+        method, headers: { Authorization: 'Bearer synthetic_github_token', ...(expected === undefined ? {} : { 'X-Workshop-Account-Origin': expected }) },
+      }), f.env, makeCtx().ctx);
+      expect(response.status).toBe(409); expect(await response.json()).toEqual({ error: 'workshop_account_origin' });
+    }
+  }
+  expect(fetch).not.toHaveBeenCalled(); expect(f.bucket.objects.size).toBe(0);
 });
-it('compares the canonical IPv6 forum but forwards only the configured destination and allowed headers', async () => {
-  const f = setup(); f.env.WORKSHOP_FORUM_URL = 'https://[2001:0db8:0000:0000:0000:0000:0000:0001]:443/';
-  const announced = await (await f.call(API + '/capabilities')).json() as any;
-  expect(announced.forumOrigin).toBe('https://[2001:db8::1]');
-  const response = await f.call(API + '/submissions', 'GET', undefined, false, { 'X-Workshop-Forum-Origin': announced.forumOrigin });
-  expect(response.status).toBe(200);
-  const [url, init] = vi.mocked(fetch).mock.calls[0]!;
-  expect(url).toBe('https://[2001:db8::1]/session/current.json');
-  expect(init?.headers).toEqual({ 'User-Api-Key': 'synthetic-forum-key', Accept: 'application/json' });
-  expect(init?.redirect).toBe('manual'); expect(fetch).toHaveBeenCalledTimes(1);
+it('announces GitHub accounts with only a well-formed public client id', async () => {
+  const f = setup();
+  for (const [configured, announced] of [[undefined, null], ['', null], ['Iv23li.Synthetic_id-01', 'Iv23li.Synthetic_id-01'],
+    ['bad id', null], ['x'.repeat(65), null], ['x'.repeat(64), 'x'.repeat(64)]] as const) {
+    f.env.WORKSHOP_GITHUB_CLIENT_ID = configured;
+    const value = await (await f.call(API + '/capabilities')).json() as any;
+    expect(value.account).toEqual({ origin: 'https://github.com', clientId: announced }); expect(value).not.toHaveProperty('forumOrigin');
+  }
+});
+it('verifies only against the operator-configured GitHub API origin', async () => {
+  const f = setup(); f.env.WORKSHOP_GITHUB_API_URL = 'https://127.0.0.1:8443/';
+  expect((await f.call(API + '/submissions')).status).toBe(200);
+  expect(vi.mocked(fetch).mock.calls.map(([url]) => url)).toEqual(['https://127.0.0.1:8443/user']);
+  for (const configured of ['http://127.0.0.1:8443', 'https://example.org/api', 'https://user:pass@example.org', 'not a url']) {
+    f.env.WORKSHOP_GITHUB_API_URL = configured;
+    const response = await f.call(API + '/submissions'); expect(response.status).toBe(503);
+    expect(await response.json()).toEqual({ error: 'workshop_account_unavailable' });
+  }
+  expect(fetch).toHaveBeenCalledTimes(1);
 });
 it('keeps public queries and the independent admin gate free of author assertion requirements', async () => {
   const f = setup();
@@ -90,16 +100,19 @@ it('keeps public queries and the independent admin gate free of author assertion
   }), f.env, makeCtx().ctx);
   expect(admin.status).toBe(200); expect(fetch).not.toHaveBeenCalled();
 });
-it('binds idempotency, fixed forum identity and metadata without retaining the key', async () => {
+it('binds idempotency, GitHub identity and metadata without retaining the token', async () => {
   const f = setup(), item = await f.create();
   const same = await f.call(API + '/submissions', 'POST', { ...item.meta, requestId: item.requestId }); expect(same.status).toBe(200);
   const changed = await f.call(API + '/submissions', 'POST', { ...item.meta, title: { zh: '变更', en: 'Changed' }, requestId: item.requestId }); expect(changed.status).toBe(409);
   const [origin, init] = vi.mocked(fetch).mock.calls[0]!;
-  expect(origin).toBe('https://forum.dshtui.com/session/current.json'); expect(init?.redirect).toBe('manual');
-  expect(init?.headers).toEqual({ 'User-Api-Key': 'synthetic-forum-key', Accept: 'application/json' });
-  expect(JSON.stringify(f.state())).not.toContain('synthetic-forum-key');
-  expect(f.state().audit[0]).toMatchObject({ action: 'create', actor: { forumUserId: 42 }, submissionId: item.sid });
-  forumUser = 43; expect((await f.call(`${API}/submissions/${item.sid}`)).status).toBe(404);
+  expect(origin).toBe('https://api.github.com/user'); expect(init?.redirect).toBe('manual');
+  expect(init?.headers).toEqual({ Authorization: 'Bearer synthetic_github_token', Accept: 'application/vnd.github+json',
+    'X-GitHub-Api-Version': '2022-11-28', 'User-Agent': 'dshgo-workshop' });
+  expect(JSON.stringify(f.state())).not.toContain('synthetic_github_token');
+  const owner = { accountOrigin: 'https://github.com', accountId: 42, username: 'synthetic-42' };
+  expect(f.state().submissions[0].owner).toEqual(owner); expect((await same.json() as any).submission.owner).toEqual(owner);
+  expect(f.state().audit[0]).toEqual(expect.objectContaining({ action: 'create', actor: owner, submissionId: item.sid }));
+  githubUser = 43; expect((await f.call(`${API}/submissions/${item.sid}`)).status).toBe(404);
   expect((await f.call(`${API}/submissions/${item.sid}/archive`, 'PUT', item.bytes)).status).toBe(404);
 });
 it('retains optional display metadata through creation and publication without embedding it in the pack', async () => {
@@ -134,7 +147,7 @@ it('refuses the admin routes when the configured key is shorter than the share A
   for (const key of [undefined, 'short', 'x'.repeat(31)]) {
     const weak = makeEnv({ ADMIN_KEY: key, BUCKET: new PetBucket() as unknown as R2Bucket });
     const response = await worker.fetch(new Request(`https://example.org${API}/admin/reports`, {
-      headers: { 'User-Api-Key': 'synthetic-forum-key', ...(key ? { 'X-Admin-Key': key } : {}) },
+      headers: { Authorization: 'Bearer synthetic_github_token', ...(key ? { 'X-Admin-Key': key } : {}) },
     }), weak.env, makeCtx().ctx);
     expect(response.status).toBe(503);
   }
@@ -156,9 +169,9 @@ it('blocks same-version byte rewrites and ownership transfer across upgrades and
   const changedPack = petManifest(); changedPack.animations.idle.frames[0]!.ms = 101;
   const changed = await f.create(pet(changedPack)); await f.upload(changed);
   expect(await (await f.review(changed.sid)).json()).toEqual({ error: 'workshop_version_rewritten' });
-  forumUser = 43; const outsider = await f.create(first.bytes, { version: '3.0.0' }); await f.upload(outsider);
+  githubUser = 43; const outsider = await f.create(first.bytes, { version: '3.0.0' }); await f.upload(outsider);
   expect(await (await f.review(outsider.sid)).json()).toEqual({ error: 'workshop_owner_conflict' });
-  forumUser = 42;
+  githubUser = 42;
   expect((await f.call(`${API}/submissions/${first.sid}/withdraw`, 'POST', { reason: 'Withdraw old version' })).status).toBe(200);
   const catalog = await (await f.call('/market/workshop.json')).json() as any;
   expect(catalog.entries[0]).toMatchObject({ version: '2.0.0', blockedVersions: ['1.0.0'] });
@@ -175,14 +188,21 @@ it('uses the same authority and kill switch for companion catalog/GET/HEAD/Range
   const main = await (await f.call('/market/workshop.json')).json() as any; expect(main.entries).toEqual([]); expect(main.features.companion).toBe(false);
   expect((await f.call(`${API}/admin/submissions/${item.sid}/archive`, 'GET', undefined, true)).status).toBe(200);
 });
-it('returns stable failures for invalid/revoked forum keys without persisting or logging upstream text', async () => {
+it('maps GitHub answers to stable failures without persisting or logging upstream text', async () => {
   const f = setup(), logged = vi.spyOn(console, 'error').mockImplementation(() => {});
-  vi.mocked(fetch).mockResolvedValueOnce(new Response('synthetic secret must not escape', { status: 403 }));
-  const response = await f.call(API + '/submissions'); expect(response.status).toBe(401); expect(await response.json()).toEqual({ error: 'workshop_forum_auth_invalid' });
+  vi.mocked(fetch).mockResolvedValueOnce(new Response('synthetic secret must not escape', { status: 401 }));
+  const revoked = await f.call(API + '/submissions'); expect(revoked.status).toBe(401); expect(await revoked.json()).toEqual({ error: 'workshop_account_auth_invalid' });
+  for (const answer of [
+    new Response('{"message":"API rate limit exceeded"}', { status: 403 }), new Response('synthetic secret must not escape', { status: 500 }),
+    new Response(null, { status: 302, headers: { Location: 'https://redirected.invalid/user' } }),
+    new Response(JSON.stringify({ id: 42 })), new Response(JSON.stringify({ id: 0, login: 'zero' })),
+  ]) {
+    vi.mocked(fetch).mockResolvedValueOnce(answer);
+    const response = await f.call(API + '/submissions'); expect(response.status).toBe(503);
+    expect(await response.json()).toEqual({ error: 'workshop_account_unavailable' });
+  }
   vi.mocked(fetch).mockRejectedValueOnce(new Error('synthetic upstream credential failure'));
   const unavailable = await f.call(API + '/submissions'); expect(unavailable.status).toBe(503); expect(await unavailable.text()).not.toContain('credential');
-  f.env.WORKSHOP_FORUM_URL = 'https://example.org/another/path';
-  expect(await (await f.call(API + '/submissions')).json()).toEqual({ error: 'workshop_forum_configuration' });
   expect(logged).not.toHaveBeenCalled(); expect(f.bucket.objects.size).toBe(0);
 });
 it('charges invalid archive attempts and verifies both declared SHA and actual byte count', async () => {
@@ -231,7 +251,7 @@ it('keeps rejected submissions private and pages only the requesting owner recor
   expect(first.submissions).toHaveLength(2); expect(first.nextCursor).toBeTruthy();
   const second = await (await f.call(API + '/submissions?limit=2&cursor=' + first.nextCursor)).json() as any;
   expect(second.submissions).toHaveLength(1); expect(second.nextCursor).toBe(null);
-  forumUser = 43; expect((await (await f.call(API + '/submissions')).json() as any).submissions).toEqual([]);
+  githubUser = 43; expect((await (await f.call(API + '/submissions')).json() as any).submissions).toEqual([]);
   expect((await (await f.call(API + '/admin/submissions?status=rejected', 'GET', undefined, true)).json() as any).submissions).toHaveLength(1);
 });
 it('recovers an unknown successful CAS outcome by the same requestId without duplicating a submission', async () => {

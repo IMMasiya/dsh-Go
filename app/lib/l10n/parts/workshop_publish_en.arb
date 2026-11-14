@@ -2,9 +2,9 @@
   "workshopPublishTitle": "Submit",
   "workshopPublishClosedTitle": "The Workshop isn't taking submissions right now",
   "workshopPublishClosedMessage": "What you already sent is still under My uploads.",
-  "workshopPublishSignInTitle": "Sign in to the forum first",
-  "workshopPublishSignInMessage": "The Workshop uses your forum account to know who is submitting.",
-  "workshopPublishProfileTitle": "Couldn't read your forum account yet",
+  "workshopPublishSignInTitle": "Sign in with GitHub first",
+  "workshopPublishSignInMessage": "The Workshop uses your GitHub account to know who is submitting.",
+  "workshopPublishProfileTitle": "Couldn't read your GitHub account yet",
   "workshopPublishProfileMessage": "Submitting needs to know which account you are.",
   "workshopPublishCheckFailedTitle": "Couldn't read the record of your last submission",
   "workshopPublishCheckLocked": "To avoid sending something twice, a new one can't start until it is read.",
@@ -109,23 +109,17 @@
   "workshopPublishErrorPreviewUnsupported": "This Workshop isn't taking previews right now. Submit without one as usual.",
   "workshopPublishLetGo": "Let go of this record",
   "workshopPublishLetGoTitle": "Let go of this phone's record?",
-  "workshopPublishLetGoAccount": "Only this phone's unfinished record for the account on forum {forum} at Workshop {worker} is removed.",
+  "workshopPublishLetGoAccount": "Only this phone's unfinished record for this GitHub account at Workshop {worker} is removed.",
   "@workshopPublishLetGoAccount": {
     "placeholders": {
-      "forum": {
-        "type": "String"
-      },
       "worker": {
         "type": "String"
       }
     }
   },
-  "workshopPublishLetGoAll": "The submission records on this phone can't be read as a whole. Letting go removes the unfinished-submission records of every account on this phone, not just the one for forum {forum} at Workshop {worker}.",
+  "workshopPublishLetGoAll": "The submission records on this phone can't be read as a whole. Letting go removes the unfinished-submission records of every account on this phone, not just the one for this GitHub account at Workshop {worker}.",
   "@workshopPublishLetGoAll": {
     "placeholders": {
-      "forum": {
-        "type": "String"
-      },
       "worker": {
         "type": "String"
       }
