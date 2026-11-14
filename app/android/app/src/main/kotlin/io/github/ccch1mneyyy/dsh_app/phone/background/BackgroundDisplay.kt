@@ -552,7 +552,7 @@ class BackgroundDisplay internal constructor(
             // The original lane never replays a request after a missing/throwing reply.
             return ActionResult(false, COORDINATE_UNKNOWN)
         } ?: return ActionResult(false, PhoneTasks.STOPPED_MESSAGE)
-        val result = BackgroundCoordinateImage.Result.parse(image, target) { response.get(it) }
+        val result = BackgroundCoordinateImage.Result.parse(image) { response.get(it) }
         if (result == null) { clearSnapshot(); return ActionResult(false, COORDINATE_UNKNOWN) }
         if (!result.ok) {
             clearSnapshot()
