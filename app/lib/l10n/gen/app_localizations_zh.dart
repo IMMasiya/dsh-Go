@@ -22325,6 +22325,323 @@ class L10nZh extends L10n {
   String get tavernDraftTrialUnsupported => '这份草稿暂时没法试玩';
 
   @override
+  String get tavernPacks => '玩法包';
+
+  @override
+  String get tavernPacksSubtitle => '装进来的玩法包；装上不等于启用，要在全局、角色或对话里加上才生效';
+
+  @override
+  String get tavernPacksEmpty => '还没有玩法包';
+
+  @override
+  String get tavernPacksEmptyNote => '导入 .dshpack 文件。导入只是保存，不会启用，也不会建角色。';
+
+  @override
+  String get tavernPackImport => '导入玩法包';
+
+  @override
+  String tavernPackInstalled(String title, String version) {
+    return '已导入「$title」$version';
+  }
+
+  @override
+  String tavernPackAlreadyInstalled(String title, String version) {
+    return '「$title」$version 已经装过，内容一样';
+  }
+
+  @override
+  String tavernPackVersionCount(int n) {
+    return '$n 个版本';
+  }
+
+  @override
+  String tavernPackWithdrawnShort(String version) {
+    return '$version（已撤下）';
+  }
+
+  @override
+  String get tavernPackWithdrawnLabel => '已撤下';
+
+  @override
+  String get tavernPackShowWithdrawn => '显示已撤下的版本';
+
+  @override
+  String get tavernPackScopeGlobal => '全局启用';
+
+  @override
+  String get tavernPackScopeGlobalSubtitle => '所有对话都用的玩法包';
+
+  @override
+  String get tavernPackScopeCharacter => '这个角色的玩法包';
+
+  @override
+  String get tavernPackScopeChat => '这段对话的玩法包';
+
+  @override
+  String get tavernPackForCardSubtitle => '这张卡的所有对话都用';
+
+  @override
+  String get tavernPackBindingsSubtitle => '改完点保存才生效；先预览可以看组合结果';
+
+  @override
+  String get tavernPackOrderNote => '按从上到下的顺序组合，同一个字段谁生效以预览为准。点一行可以换版本、调顺序、关联角色。';
+
+  @override
+  String get tavernPackAdd => '添加玩法包';
+
+  @override
+  String get tavernPackUnsaved => '未保存';
+
+  @override
+  String get tavernPackResetPending => '保存时重置一次性状态';
+
+  @override
+  String tavernPackCastMappedCount(int n) {
+    return '关联了 $n 个角色';
+  }
+
+  @override
+  String get tavernPackRemovedBindings => '已移除';
+
+  @override
+  String get tavernPackPickVersion => '换版本';
+
+  @override
+  String get tavernPackMoveUp => '上移';
+
+  @override
+  String get tavernPackMoveDown => '下移';
+
+  @override
+  String get tavernPackResetOnce => '重置一次性状态';
+
+  @override
+  String get tavernPackRestore => '恢复';
+
+  @override
+  String get tavernPackRemoveBinding => '移除';
+
+  @override
+  String get tavernPackSaved => '已保存';
+
+  @override
+  String tavernPackUnanswered(String reason) {
+    return '没收到结果：$reason。再点保存会按同一次操作重试';
+  }
+
+  @override
+  String get tavernPackVersion => '版本';
+
+  @override
+  String get tavernPackAddGlobal => '加到全局';
+
+  @override
+  String get tavernPackAddNote => '只给某个角色或对话用，在角色页或对话的舞台面板里加';
+
+  @override
+  String get tavernPackCast => '角色';
+
+  @override
+  String get tavernPackCastNote => '导入会新建一个角色，不改原来的卡，也不会自动加进群聊';
+
+  @override
+  String get tavernPackCastFromCard => '完整角色卡';
+
+  @override
+  String get tavernPackCastImportAction => '导入为角色';
+
+  @override
+  String tavernPackCastImportTitle(String name) {
+    return '把「$name」导入为新角色？';
+  }
+
+  @override
+  String get tavernPackCastImportNote => '会在角色库里新建一个角色。之后改这个玩法包的版本，不会替换它。';
+
+  @override
+  String tavernPackCastImported(String name) {
+    return '已导入「$name」';
+  }
+
+  @override
+  String get tavernPackCastNotAdopted => '这次没有建成角色';
+
+  @override
+  String tavernPackCastUnknown(String state) {
+    return '结果还没确认（$state），稍后到角色库看看';
+  }
+
+  @override
+  String get tavernPackCastMapping => '关联角色';
+
+  @override
+  String get tavernPackCastMapped => '已关联';
+
+  @override
+  String get tavernPackResources => '资源';
+
+  @override
+  String tavernPackIssueCount(int n) {
+    return '$n 条提示';
+  }
+
+  @override
+  String get tavernPackDeclaration => '声明检查';
+
+  @override
+  String get tavernPackDeclarationNote => '导入时的检查结果。装上了不等于每一块都能执行；标着 conditional 或 opaque 的部分要看具体情况。';
+
+  @override
+  String get tavernPackNothingNoted => '没有提示';
+
+  @override
+  String get tavernPackExportOriginal => '导出原文件';
+
+  @override
+  String get tavernPackWithdraw => '撤下这个版本';
+
+  @override
+  String tavernPackWithdrawTitle(String version) {
+    return '撤下 $version？';
+  }
+
+  @override
+  String get tavernPackWithdrawNote => '撤下后不能再新选这个版本；已经在用它的地方保持不变。原文件和记录都保留，还能导出。';
+
+  @override
+  String get tavernPackPreview => '预览组合';
+
+  @override
+  String get tavernPackPreviewSubtitle => '按现在的改动组合一遍，不保存、不运行';
+
+  @override
+  String get tavernPackPreviewSources => '来源';
+
+  @override
+  String get tavernPackPreviewDefinitions => '定义';
+
+  @override
+  String get tavernPackPreviewConflicts => '组合冲突';
+
+  @override
+  String get tavernPackPreviewFields => '字段来源';
+
+  @override
+  String get tavernPackPreviewState => '当前的值';
+
+  @override
+  String get tavernPackPreviewNote => '预览只读：不保存绑定、不初始化变量、不发模型请求。';
+
+  @override
+  String get tavernPackStateUnavailable => '当前对话还没有状态可查';
+
+  @override
+  String get tavernPackStateNotValidated => '这次没有验证当前的值，请看定义和组合诊断';
+
+  @override
+  String get tavernPackStateValid => '当前的值符合组合后的定义';
+
+  @override
+  String get tavernPackStateInvalid => '当前的值和组合后的定义对不上';
+
+  @override
+  String get tavernPackStateMissing => '当前对话里没有这个值';
+
+  @override
+  String get tavernPackCardExport => '导出（带玩法包）';
+
+  @override
+  String get tavernPackCardExportMenuSubtitle => '把选中的玩法包资源并进卡里';
+
+  @override
+  String get tavernPackCardExportSubtitle => '先预览，确认没有阻断再导出';
+
+  @override
+  String get tavernPackExportFormat => '格式';
+
+  @override
+  String get tavernPackExportCopyMedia => '带上卡里的图片';
+
+  @override
+  String get tavernPackExportFlattenNote => '资源并进单张卡后，作用域、排序、预算和计时可能和在这里玩时不同';
+
+  @override
+  String get tavernPackExportNoResources => '这张卡启用的玩法包里没有能并进卡的资源';
+
+  @override
+  String get tavernPackExportFindings => '预览结果';
+
+  @override
+  String tavernPackExportMappings(int ids, int resources) {
+    return '改写 $ids 个标识、$resources 个资源';
+  }
+
+  @override
+  String get tavernPackExportGo => '导出';
+
+  @override
+  String get tavernPackExportPreviewFirst => '先预览';
+
+  @override
+  String get tavernPackExportBlocked => '有阻断项，不能导出';
+
+  @override
+  String get tavernPackDraftExport => '导出为玩法包';
+
+  @override
+  String tavernPackDraftExportSubtitle(int n) {
+    return '用这份草稿的角色定义和全部 $n 处改动做一个新的 .dshpack';
+  }
+
+  @override
+  String get tavernPackDraftId => '包标识';
+
+  @override
+  String get tavernPackDraftRoots => '要带上的状态路径';
+
+  @override
+  String get tavernPackDraftRootsHint => '如 /hp /items，空着就带整份';
+
+  @override
+  String get tavernPackInstallMade => '装到本机';
+
+  @override
+  String get tavernPackCommitted => '修改已生效，但后续通知失败了';
+
+  @override
+  String get tavernPackVersionConflict => '同一包标识和版本名已经有不同的内容，请换一个新版本名';
+
+  @override
+  String get tavernPackRevisionConflict => '配置在别处变了，已刷新，请重新确认这次修改';
+
+  @override
+  String get tavernPackOperationConflict => '这次操作和之前的一次重名了，请重新做一遍';
+
+  @override
+  String get tavernPackVersionNotFound => '找不到这个版本';
+
+  @override
+  String get tavernPackVersionRemoved => '这个版本已经撤下，不能新选';
+
+  @override
+  String get tavernPackTimerConflict => '这次升级改了粘滞或冷却的设置：请同时重置一次性状态，或者新加一个实例';
+
+  @override
+  String get tavernPackTargetGone => '要改的角色、对话或绑定已经不在了';
+
+  @override
+  String get tavernPackAuthorityConflict => '角色来源变了，请刷新后再确认';
+
+  @override
+  String get tavernPackCastUnproven => '确认不了这个角色是从这个包导入的';
+
+  @override
+  String get tavernPackCastOtherVersion => '关联的角色来自这个包的另一个版本';
+
+  @override
+  String get tavernPackExportChanged => '导出的来源或选项变了，请重新预览';
+
+  @override
   String get updateCheck => '检查更新';
 
   @override
