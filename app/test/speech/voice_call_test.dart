@@ -405,4 +405,25 @@ void main() {
     expect(rig.call.phase, CallPhase.listening);
     expect(rig.conversation.interrupts, 0);
   });
+
+  test('skip before she begins: none of this reply is read, it goes on in the conversation', () async {
+    final rig = _Rig();
+    await rig.call.start();
+    await rig.say();
+    rig.conversation.reply('北京晴，');
+    expect(rig.call.phase, CallPhase.thinking);
+    rig.call.skip();
+    expect(rig.outs.single.stopped, isTrue);
+    expect(rig.call.phase, CallPhase.listening);
+    rig.conversation.reply('北京晴，最高二十度。', done: true);
+    expect(rig.outs.single.added, ['北京晴，']);
+
+    // Before any text: none comes to her voice either.
+    await rig.say();
+    rig.call.skip();
+    rig.conversation.reply('好的。', done: true);
+    expect(rig.outs, hasLength(1));
+    expect(rig.call.phase, CallPhase.listening);
+    expect(rig.conversation.interrupts, 0);
+  });
 }

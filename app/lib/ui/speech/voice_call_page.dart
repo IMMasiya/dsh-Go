@@ -192,10 +192,12 @@ class _VoiceCallPageState extends ConsumerState<VoiceCallPage> with WidgetsBindi
     }
     // A later choice has the last word, whichever answer comes back first.
     if (!mounted || mine != _settling) return;
-    // Warming sets the speaker up, which would cut a reply it is reading:
-    // only as the call starts; a change takes effect with the next reply.
-    if (warm && next.source != CompanionVoiceSource.deepseek) {
-      unawaited(ref.read(speechSpeakerProvider).ready(next));
+    // Setting the speaker up would cut a reply it is reading: that only as the
+    // call starts; a change later only starts the phone's engine, and takes
+    // effect with the next reply.
+    if (next.source != CompanionVoiceSource.deepseek) {
+      final speaker = ref.read(speechSpeakerProvider);
+      unawaited(warm ? speaker.ready(next) : speaker.warmPhone());
     }
     _voice = next;
   }

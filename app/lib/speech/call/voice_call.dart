@@ -522,8 +522,11 @@ class VoiceCallController extends ChangeNotifier {
   }
 
   /// Tapped while she speaks: she stops, the reply goes on in the conversation.
+  /// Before she has begun (her voice about to be tried out on the same
+  /// speaker), she won't read this reply at all.
   void skip() {
-    if (_phase != CallPhase.speaking) return;
+    if (_phase != CallPhase.speaking && _phase != CallPhase.thinking) return;
+    _cueTimer?.cancel();
     _stopVoice();
     // The rest is there to read.
     _voiced = false;
