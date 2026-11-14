@@ -10,6 +10,7 @@ import 'dart:typed_data';
 
 import 'authoring.dart';
 import 'authoring_preview.dart';
+import 'authoring_render.dart';
 import 'authoring_run.dart';
 import 'authoring_seed.dart';
 import 'backup.dart';
@@ -574,6 +575,14 @@ abstract interface class Tavern {
   /// Prepares the complete selected prompt in an isolated captured context.
   /// Unsupported dependencies return no assembly and never fall back to live execution.
   TavernAuthoringTask<TavernAuthoringPromptPreview> previewAuthoringPrompt(TavernAuthoringPromptRequest request);
+
+  /// Renders selected saved content through an App-owned independent static
+  /// renderer. No prompt preparation, live scripts or model request is run.
+  /// Completion/cancellation waits for the session's actual work and close.
+  TavernAuthoringTask<TavernAuthoringRenderResult> renderAuthoringDraft(
+    TavernAuthoringRenderRequest request, {
+    required TavernAuthoringPreviewHost host,
+  });
 
   // Library ------------------------------------------------------------------
 

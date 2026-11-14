@@ -16,6 +16,7 @@ import 'api.dart';
 import 'authoring.dart';
 import 'authoring_authority.dart';
 import 'authoring_preview.dart';
+import 'authoring_render.dart';
 import 'authoring_run.dart';
 import 'authoring_seed.dart';
 import 'backup.dart';
@@ -24,6 +25,7 @@ import 'director/direct_tool.dart' as director_core;
 import 'import_report.dart';
 import 'inspection.dart';
 import 'io/authoring_text.dart';
+import 'io/authoring_image.dart';
 import 'io/card_codec.dart' show CardCodec, DecodedCardSeed, TavernCard;
 import 'io/chat_jsonl.dart';
 import 'io/import_intake.dart';
@@ -71,6 +73,7 @@ part 'engine_authoring_seed.dart';
 part 'engine_authoring_capture.dart';
 part 'engine_authoring_facts.dart';
 part 'engine_authoring_preview.dart';
+part 'engine_authoring_render.dart';
 part 'engine_prompt_preparation.dart';
 part 'engine_authoring_context.dart';
 part 'engine_authoring_scripts.dart';
@@ -527,6 +530,12 @@ class TavernEngine implements Tavern {
   @override
   TavernAuthoringTask<TavernAuthoringPromptPreview> previewAuthoringPrompt(TavernAuthoringPromptRequest request) =>
       _previewAuthoringPrompt(request);
+
+  @override
+  TavernAuthoringTask<TavernAuthoringRenderResult> renderAuthoringDraft(
+    TavernAuthoringRenderRequest request, {
+    required TavernAuthoringPreviewHost host,
+  }) => _renderAuthoringDraft(request, host);
 
   // Acquire this queue before chat barriers for bind/delete. Taking them in
   // the reverse order could leave a binder waiting behind a deletion that is
