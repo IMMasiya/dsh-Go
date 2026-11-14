@@ -131,7 +131,7 @@ class SystemActions(private val app: Context) : SystemApi {
                 Intent.createChooser(intent, AppStrings.get(app, R.string.phone_share_chooser))
                     .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK), noticeWhat))
         }
-        val unknown = NativeLaunch(SystemTarget.UserChoice,
+        val unknown = NativeLaunch(SystemTarget.Unknown,
             Intent(intent).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK), noticeWhat)
         return try {
             val candidates = candidates(intent, flags)

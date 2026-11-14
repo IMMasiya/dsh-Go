@@ -1934,17 +1934,12 @@ class PhoneTaskSessionsTest {
         } finally { bodyExit.countDown(); cleanupExit.countDown() }
     }
 
-    @Test fun chooserIsConfirmedWithoutInventingIdentityAndDispatchedOnce() {
+    @Test fun chooserHasNoInventedKnownIdentityAndIsNotConfirmedAgain() {
         assertFalse(invoke("holder", tool = PhoneToolCatalog.SCREEN).isError)
         val chooser = TestSystemLaunch(SystemTarget.UserChoice, "url")
         val prepared = AtomicLong(); val started = AtomicLong(); val waiting = CountDownLatch(1)
         val confirmations = AtomicLong()
-        confirm = { request ->
-            assertNull(request.packageName)
-            assertFalse(request.offerTaskWaiver)
-            confirmations.incrementAndGet()
-            Decision.ALLOW_ONCE
-        }
+        confirm = { confirmations.incrementAndGet(); Decision.ALLOW_ONCE }
         prepareUrl = { prepared.incrementAndGet(); chooser }
         launch = { plan, dispatch ->
             assertSame(chooser, plan); assertTrue(dispatch.commitStart()); started.incrementAndGet()
@@ -1956,7 +1951,7 @@ class PhoneTaskSessionsTest {
         assertEquals(mapOf("kind" to "unknown"), sessions.snapshot().single { it["sessionId"] == "B" }["waitingForApp"])
         end("holder")
         assertTrue(b.get(5, TimeUnit.SECONDS).text.contains("chooser attempted"))
-        assertEquals(2L, prepared.get()); assertEquals(1L, confirmations.get()); assertEquals(1L, started.get())
+        assertEquals(2L, prepared.get()); assertEquals(0L, confirmations.get()); assertEquals(1L, started.get())
         assertTrue(task("B").holdsUnknownApp); assertTrue(task("B").heldApps.isEmpty())
     }
 

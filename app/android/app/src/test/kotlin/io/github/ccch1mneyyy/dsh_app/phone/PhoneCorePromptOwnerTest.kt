@@ -843,15 +843,15 @@ class PhoneCorePromptOwnerTest {
 
     @Test fun unknownSystemTargetsAskEveryTimeEvenInAlwaysMode() {
         policies = PhonePolicies(confirmMode = ConfirmMode.ALWAYS)
-        freshTarget = Either.Right(SystemTarget.UserChoice)
-        preparedTarget = SystemTarget.UserChoice
+        freshTarget = Either.Right(SystemTarget.Unknown)
+        preparedTarget = SystemTarget.Unknown
         for (call in listOf(::openApp, ::openUrl, ::shareIntent)) {
             val before = launches + urls + intents
             val result = call()
             assertFalse(result.text, result.isError)
             assertEquals(before + 1, launches + urls + intents)
             assertEquals(before + 1, asked)
-            assertSame(SystemTarget.UserChoice, startedPlan!!.target)
+            assertSame(SystemTarget.Unknown, startedPlan!!.target)
             assertNull(focusRequests.last().packageName)
             assertFalse(focusRequests.last().offerTaskWaiver)
         }
@@ -860,7 +860,7 @@ class PhoneCorePromptOwnerTest {
     }
 
     @Test fun unknownHandlerStillChecksTheExplicitIntentPackage() {
-        preparedTarget = SystemTarget.UserChoice
+        preparedTarget = SystemTarget.Unknown
         preparedPackage = NavUris.AMAP
         policies = PhonePolicies(denyPackages = listOf(NavUris.AMAP))
         val result = core.call(PhoneToolCatalog.INTENT,
@@ -872,7 +872,7 @@ class PhoneCorePromptOwnerTest {
     }
 
     @Test fun deniedUnknownRequestDoesNotBlockTheNextRequest() {
-        preparedTarget = SystemTarget.UserChoice
+        preparedTarget = SystemTarget.Unknown
         confirm = { Decision.DENY }
         assertTrue(openUrl().isError)
         assertEquals("denied", core.log.last()!!.decision)
@@ -886,7 +886,7 @@ class PhoneCorePromptOwnerTest {
     }
 
     @Test fun lockingDuringUnknownConfirmationPreventsDispatchAndCanRecover() {
-        preparedTarget = SystemTarget.UserChoice
+        preparedTarget = SystemTarget.Unknown
         confirm = { locked = true; Decision.ALLOW_ONCE }
         assertTrue(openUrl().isError)
         assertEquals("refused:locked", core.log.last()!!.decision)

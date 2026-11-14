@@ -20,6 +20,8 @@ data class AppEntry(val label: String, val identity: PhoneAppIdentity) {
 sealed interface SystemTarget {
     data class Known(val app: AppEntry) : SystemTarget
     data object UserChoice : SystemTarget
+    /** PM could not name the handler; the Intent is sent as it is, after a one-time confirmation. */
+    data object Unknown : SystemTarget
 }
 
 /** Android keeps the Intent private; Core checks its prepared target and explicit package for approval. */

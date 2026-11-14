@@ -712,7 +712,8 @@ class PhoneCore(
 
     private fun confirmSystem(plan: SystemLaunch, scope: SerialWorker.Scope,
                               owner: PhoneTasks.Owner, summary: String): Out? {
-        if (plan.target is SystemTarget.Known) return null
+        // A chooser is already the user's own pick; only an unnamed handler needs a confirmation.
+        if (plan.target !is SystemTarget.Unknown) return null
         plan.packageName?.let { pkg ->
             safety.checkOpen(pkg, null)?.let {
                 return Out(it.message, error = true, summary = summary, decision = "refused:${it.rule}")
