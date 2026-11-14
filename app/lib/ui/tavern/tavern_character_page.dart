@@ -23,6 +23,7 @@ import '../theme/theme.dart';
 import 'tavern_character_edit_page.dart';
 import 'tavern_chat_files.dart';
 import 'tavern_chat_page.dart';
+import 'tavern_drafts_page.dart';
 import 'tavern_home_page.dart' show plainPreview;
 import 'tavern_live2d_tile.dart';
 import 'tavern_lorebooks_page.dart';
@@ -276,6 +277,15 @@ class _TavernCharacterPageState extends ConsumerState<TavernCharacterPage> {
                   note: l10n.tavernLorebookCharacterNote,
                 ),
                 TavernLive2dTile(character: character),
+                // A copy to change with the AI, applied when chosen.
+                SettingsTile(
+                  key: const ValueKey('tavern-character-drafts'),
+                  icon: AppIcons.askAi,
+                  tinted: false,
+                  title: l10n.tavernDraftsForCard,
+                  subtitle: l10n.tavernDraftsForCardSubtitle,
+                  onTap: () => Navigator.of(context).push(TavernDraftsPage.route(characterId: character.id)),
+                ),
                 // How its chats show the card: its own, or as 酒馆设置 say.
                 ...switch (ref.watch(tavernCharacterRenderProvider(character.id))) {
                   final own => [
