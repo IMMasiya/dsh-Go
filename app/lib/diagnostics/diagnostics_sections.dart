@@ -13,8 +13,7 @@ Map<String, Object?> diagnosticsAnalysisFacts(DiagnosticsSnapshot s) {
       ? value
       : null;
   Map<String, Object?> fields(Map<String, Object?> source, List<String> keys) => {
-    for (final key in keys)
-      if (fact(source[key]) case final value?) key: value,
+    for (final key in keys) key: ?fact(source[key]),
   };
   final failure = s.status.failure;
   return {

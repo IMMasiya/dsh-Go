@@ -8,7 +8,6 @@ import 'package:dsh_app/diagnostics/diagnostics_publish.dart';
 import 'package:dsh_app/diagnostics/diagnostics_sections.dart';
 import 'package:dsh_app/runtime/runtime_bridge.dart';
 import 'package:dsh_app/state/settings_state.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 DiagnosticsSnapshot snapshot({List<String> engine = const [], Map<String, Object?>? evidence}) => DiagnosticsSnapshot(
@@ -63,9 +62,9 @@ void main() {
   });
 
   test('all six tool sections are separately bounded valid JSON and preserve newest evidence', () {
-    final location = 'package:dsh_app/' + ('a' * 105) + '.dart:1234567:1234567';
+    final location = 'package:dsh_app/${'a' * 105}.dart:1234567:1234567';
     final input = snapshot(
-      engine: List.generate(2000, (i) => 'line $i ' + ('long log \"' * 100)),
+      engine: List.generate(2000, (i) => 'line $i ${'long log' * 100}'),
       evidence: {
         'availability': {'appErrors': 'available'},
         'appErrors': List.generate(

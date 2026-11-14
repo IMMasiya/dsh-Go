@@ -31,9 +31,8 @@ class AppErrorRecord {
 /// synchronous and in memory; content-free persistence is queued separately.
 /// No connection/provider reads or synchronous IO happen in an error handler.
 class AppErrorLog {
-  AppErrorLog({DateTime Function()? clock, DiagnosticsChannel diagnostics = const DiagnosticsChannel()})
-    : _clock = clock ?? DateTime.now,
-      _diagnostics = diagnostics;
+  AppErrorLog({DateTime Function()? clock, this._diagnostics = const DiagnosticsChannel()})
+    : _clock = clock ?? DateTime.now;
 
   static const maxRecords = 40;
   static const maxMessageLength = 4000;

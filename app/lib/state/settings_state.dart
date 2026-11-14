@@ -232,12 +232,18 @@ class SettingsController extends Notifier<AppSettings> {
   Future<void> setAutomaticDiagnostics(bool value) async {
     await _loaded;
     if (!ref.mounted) return;
-    // Revoke in memory before awaiting persistence, including an in-flight send.
-    state = state.copyWith(automaticDiagnostics: value);
-    final prefs = await SharedPreferences.getInstance();
-    if (!await prefs.setBool(_automaticDiagnosticsKey, value)) {
+    // Revocation is immediate; enabling must not start a paid request before
+    // its opt-in is durably saved. Storage exceptions fail closed too.
+    if (!value) state = state.copyWith(automaticDiagnostics: false);
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      if (!await prefs.setBool(_automaticDiagnosticsKey, value)) {
+        throw StateError('automatic_diagnostics_store_failed');
+      }
+      if (ref.mounted && value) state = state.copyWith(automaticDiagnostics: true);
+    } catch (_) {
       if (ref.mounted) state = state.copyWith(automaticDiagnostics: false);
-      throw StateError('automatic_diagnostics_store_failed');
+      rethrow;
     }
   }
 

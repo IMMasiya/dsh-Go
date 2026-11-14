@@ -117,8 +117,9 @@ Map<String, Object?> diagnosticEvidenceFacts(Object? raw) {
             ? stack.split('\n').where((s) => s.length <= 160 && _evidenceLocation.hasMatch(s)).take(6).join('\n')
             : '';
       } else if (kind == 'voiceStages') {
-        if (!diagnosticVoiceStages.contains(row['stage']) || !diagnosticVoiceBackends.contains(row['backend']))
+        if (!diagnosticVoiceStages.contains(row['stage']) || !diagnosticVoiceBackends.contains(row['backend'])) {
           continue;
+        }
         fields['stage'] = row['stage'];
         fields['backend'] = row['backend'];
         if (row['code'] is int) fields['code'] = row['code'];
@@ -191,7 +192,7 @@ class DiagnosticsChannel {
 
   Future<void> recordVoiceStage(String stage, {String backend = 'unknown', int? code}) async {
     if (!diagnosticVoiceStages.contains(stage) || !diagnosticVoiceBackends.contains(backend)) return;
-    await _record('recordVoiceStage', {'stage': stage, 'backend': backend, if (code != null) 'code': code});
+    await _record('recordVoiceStage', {'stage': stage, 'backend': backend, 'code': ?code});
   }
 
   Future<void> recordAppError({required String source, required String errorType, required String stack}) =>

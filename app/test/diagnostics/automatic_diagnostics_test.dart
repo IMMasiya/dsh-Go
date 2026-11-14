@@ -380,8 +380,9 @@ class AnalysisClient extends DshClient {
     calls.add('prompt:$text');
     onPrompt?.call();
     await promptGate?.future;
-    if (promptGate == null)
+    if (promptGate == null) {
       events.add(TurnEndedEvent(1, DateTime.now(), const {}, turn: 1, reason: const TurnEndReason('completed')));
+    }
     return 'request';
   }
 

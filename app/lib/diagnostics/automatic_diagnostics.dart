@@ -158,8 +158,12 @@ class AutomaticDiagnostics extends ChangeNotifier {
       for (final e in next.entries) {
         if (e.value > (_through[e.key] ?? 0)) _through[e.key] = e.value;
       }
-      for (final signature in signatures) _fingerprints[signature] = now;
-      while (_fingerprints.length > 32) _fingerprints.remove(_fingerprints.keys.first);
+      for (final signature in signatures) {
+        _fingerprints[signature] = now;
+      }
+      while (_fingerprints.length > 32) {
+        _fingerprints.remove(_fingerprints.keys.first);
+      }
       phase = signatures.isEmpty ? previousPhase : AutomaticDiagnosticsPhase.analyzing;
       if (signatures.isNotEmpty) failureCode = null;
       // Consumed even on failure. Persist BEFORE create/prompt, never retry the
@@ -298,7 +302,7 @@ Future<void> sendDiagnosticAnalysis(
       // prompt queues a request; its timeout does not abort the original RPC.
       // cancel accepts idle sessions too, so never send it before that RPC
       // settles. Keep the raw future for a single late cancellation, not retry.
-      final settled = pending.then<void>((_) {}, onError: (Object _, StackTrace __) {});
+      final settled = pending.then<void>((_) {}, onError: (Object _, StackTrace _) {});
       try {
         await settled.timeout(rpcWait);
       } on TimeoutException {
@@ -328,7 +332,9 @@ Future<void> sendDiagnosticAnalysis(
   void observe(DshEvent event) {
     if (event is SessionSnapshotEvent) {
       if (!ready.isCompleted) ready.complete();
-      for (final item in event.events) observe(item);
+      for (final item in event.events) {
+        observe(item);
+      }
     } else if (event is TurnEndedEvent && !ended.isCompleted) {
       ended.complete(event.reason.kind);
     }
@@ -364,7 +370,7 @@ Future<void> sendDiagnosticAnalysis(
     if (submitted && current()) await stop();
     rethrow;
   } finally {
-    await subscription?.cancel();
+    await subscription.cancel();
   }
 }
 
