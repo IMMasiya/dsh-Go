@@ -26,6 +26,7 @@ import 'backup.dart';
 import 'director.dart';
 import 'director/direct_tool.dart' as director_core;
 import 'dshgo_inspection.dart';
+import 'gameplay.dart';
 import 'gameplay_packs.dart';
 import 'import_report.dart';
 import 'inspection.dart';
@@ -91,6 +92,8 @@ part 'engine_authoring_scripts.dart';
 part 'engine_authoring_script_host.dart';
 part 'engine_tools.dart';
 part 'engine_gameplay_packs.dart';
+part 'engine_gameplay.dart';
+part 'gameplay_composition.dart';
 part 'engine_director.dart';
 part 'engine_director_watch.dart';
 part 'engine_story.dart';
@@ -626,6 +629,13 @@ class TavernEngine implements Tavern {
     required TavernGameplayRevision expected,
     required String operationId,
   }) => _removeGameplayPackVersion(ref, expected: expected, operationId: operationId);
+
+  @override
+  Future<TavernGameplayResolution> resolveGameplayConfig(
+    TavernGameplayContext context, {
+    List<TavernPackScopePreview> proposedScopes = const [],
+    bool validateCurrentState = false,
+  }) => _resolveGameplayConfig(context, proposedScopes: proposedScopes, validateCurrentState: validateCurrentState);
 
   // Acquire this queue before chat barriers for bind/delete. Taking them in
   // the reverse order could leave a binder waiting behind a deletion that is

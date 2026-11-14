@@ -21,6 +21,7 @@ part 'authoring_authority_store.dart';
 part 'authoring_run_store.dart';
 part 'authoring_seed_store.dart';
 part 'gameplay_pack_store.dart';
+part 'gameplay_snapshot_store.dart';
 
 // Mark only persisted ancestor-path damage while preserving legacy StateError semantics.
 class _StoredAncestorDataError extends StateError {

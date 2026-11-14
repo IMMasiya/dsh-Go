@@ -247,7 +247,7 @@ class _Rule {
   final List<_Json> actions;
 }
 
-void _compileRules(StateDefinition definition) {
+void _compileRules(StateDefinition definition, {int slotLimit = 256}) {
   final raw = definition._raw as _Json;
   if (!raw.containsKey('rules')) return;
   final rules = raw['rules'];
@@ -266,7 +266,7 @@ void _compileRules(StateDefinition definition) {
     }
   }
   final occurrences = <String, int>{};
-  for (var i = 0; i < rules.length && i < 256; i++) {
+  for (var i = 0; i < rules.length && i < slotLimit; i++) {
     final path = '/rules/$i', rule = rules[i];
     try {
       if (rule is! _Json ||

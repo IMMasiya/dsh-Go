@@ -15,6 +15,7 @@ export 'src/backup.dart';
 export 'src/director.dart';
 export 'src/dshgo_inspection.dart';
 export 'src/engine.dart';
+export 'src/gameplay.dart';
 export 'src/gameplay_packs.dart';
 export 'src/import_report.dart';
 export 'src/inspection.dart';

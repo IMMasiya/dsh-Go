@@ -17,6 +17,7 @@ import 'authoring_seed.dart';
 import 'authoring_simulation.dart';
 import 'backup.dart';
 import 'director.dart';
+import 'gameplay.dart';
 import 'gameplay_packs.dart';
 import 'import_report.dart';
 import 'inspection.dart';
@@ -626,6 +627,14 @@ abstract interface class Tavern {
     TavernPackVersionRef ref, {
     required TavernGameplayRevision expected,
     required String operationId,
+  });
+
+  /// Resolves explicit proposed scopes without saving bindings or initializing
+  /// state. A real group context may use its host or an actual roster member.
+  Future<TavernGameplayResolution> resolveGameplayConfig(
+    TavernGameplayContext context, {
+    List<TavernPackScopePreview> proposedScopes = const [],
+    bool validateCurrentState = false,
   });
 
   // Library ------------------------------------------------------------------

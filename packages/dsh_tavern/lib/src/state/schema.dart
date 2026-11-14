@@ -544,6 +544,9 @@ class StateDefinition {
     }
     _compileRules(this);
   }
+
+  StateDefinition._uncompiled(Map<String, Object?> rawState) : _raw = _copy(rawState), _version = 1;
+
   final Object? _raw;
   final Object? _version;
   final List<_Json> _issues = [];

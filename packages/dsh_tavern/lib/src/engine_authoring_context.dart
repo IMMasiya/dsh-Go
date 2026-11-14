@@ -1284,19 +1284,23 @@ extension _AuthoringPromptContexts on TavernEngine {
 
 Map<String, Object?> _authoringContextSettings(
   Map<String, Object?> global,
-  StoredChat chat,
+  StoredChat? chat,
   Map<String, Object?> metadata, {
   required Map<String, Object?>? selectedPreset,
   required List<Map<String, Object?>> managedRegex,
 }) {
-  var result = _merge(
-    global,
-    _chatMetadataSettings(metadata, _map(chat.settings['stLorebookIds']), _map(global['authorNote'])),
-  );
-  result = _merge(result, chat.settings);
+  var result = chat == null
+      ? _copy(global)
+      : _merge(
+          global,
+          _chatMetadataSettings(metadata, _map(chat.settings['stLorebookIds']), _map(global['authorNote'])),
+        );
+  if (chat != null) {
+    result = _merge(result, chat.settings);
+  }
   if (selectedPreset != null) {
     result['preset'] = _copy(selectedPreset);
-  } else if (chat.settings.containsKey('preset')) {
+  } else if (chat != null && chat.settings.containsKey('preset')) {
     result['preset'] = _map(chat.settings['preset']);
   }
   final overrides = _map(result['presetOverrides']);

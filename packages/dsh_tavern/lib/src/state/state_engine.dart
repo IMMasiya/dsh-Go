@@ -14,6 +14,7 @@ part 'json_value.dart';
 part 'json_logic.dart';
 part 'schema.dart';
 part 'session.dart';
+part 'composition.dart';
 part 'projection.dart';
 part 'card_events.dart';
 part 'secret_prepare.dart';
