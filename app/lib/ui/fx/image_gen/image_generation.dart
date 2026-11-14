@@ -115,7 +115,7 @@ class ImageGeneration extends StatefulWidget {
 }
 
 class _ImageGenerationState extends State<ImageGeneration> with SingleTickerProviderStateMixin {
-  late final Ticker _ticker = createTicker(_onTick);
+  late final Ticker _ticker;
   final _renderer = FxRenderer();
 
   /// Engine frame serial; the painter repaints on it.
@@ -154,6 +154,8 @@ class _ImageGenerationState extends State<ImageGeneration> with SingleTickerProv
   @override
   void initState() {
     super.initState();
+    // Made here, not lazily: under reduced motion it may first be touched in dispose().
+    _ticker = createTicker(_onTick);
     FxPrograms.load().then((_) {
       if (mounted) _frame.value++;
     });
@@ -215,12 +217,14 @@ class _ImageGenerationState extends State<ImageGeneration> with SingleTickerProv
           _cycle.triggerOnce(img);
         }
       }
-    } else if (widget.generating) {
-      if (shown) _regenerate();
-    } else if (shown) {
+    } else if (widget.generating && shown) {
+      _regenerate();
+    } else if (img == null && !widget.generating && (shown || phase == RevealPhase.boil)) {
       _cycle.triggerHide();
-    } else if (phase == RevealPhase.boil) {
-      _reveal.startHide(_cycle.fadeOutMs);
+    } else {
+      // Nothing may be revealed now: forget a decode still running, or a
+      // picture already handed to the churn.
+      _cycle.cancel();
     }
     _updateTicker();
   }
@@ -313,7 +317,11 @@ class _ImageGenerationState extends State<ImageGeneration> with SingleTickerProv
         img.dispose();
         return;
       }
-      setState(() => _still = img);
+      // The same picture may have been asked for twice; keep the newer decode.
+      setState(() {
+        _still?.dispose();
+        _still = img;
+      });
     }, onError: _onLoadError);
   }
 

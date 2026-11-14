@@ -1,5 +1,6 @@
 // Portions derived from Libraries.dev Image (https://github.com/Jakubantalik/Libraries.dev), MIT, Copyright (c) 2026 Jakub Antalik. See THIRD_PARTY_NOTICES.md.
 
+import 'dart:async';
 import 'dart:ui' as ui;
 
 import 'package:dsh_app/ui/fx/image_gen/image_generation.dart';
@@ -24,6 +25,27 @@ class _TestImage extends ImageProvider<_TestImage> {
 
   @override
   bool operator ==(Object other) => other is _TestImage && other.name == name;
+
+  @override
+  int get hashCode => name.hashCode;
+}
+
+/// A picture whose decode finishes when the test says so.
+class _LateImage extends ImageProvider<_LateImage> {
+  _LateImage(this.name);
+
+  final String name;
+  final decoded = Completer<ImageInfo>();
+
+  @override
+  Future<_LateImage> obtainKey(ImageConfiguration configuration) => SynchronousFuture(this);
+
+  @override
+  ImageStreamCompleter loadImage(_LateImage key, ImageDecoderCallback decode) =>
+      OneFrameImageStreamCompleter(decoded.future);
+
+  @override
+  bool operator ==(Object other) => other is _LateImage && other.name == name;
 
   @override
   int get hashCode => name.hashCode;
@@ -181,5 +203,76 @@ void main() {
     expect(tester.takeException(), isNull);
     await tester.pumpWidget(const SizedBox());
     a.dispose();
+  });
+
+  testWidgets('reduced motion from the first frame unmounts cleanly', (tester) async {
+    await tester.pumpWidget(_host(const ImageGeneration(generating: true), reduced: true));
+    await tester.pumpWidget(const SizedBox());
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('a decode that lands after generating restarts, or the image went, never shows', (tester) async {
+    final a = (await tester.runAsync(() => createTestImage(width: 64, height: 48)))!;
+    for (final (i, keep, generating) in [(0, true, true), (1, false, false)]) {
+      final late = _LateImage('late$i');
+      final phases = <ImageGenerationPhase>[];
+      Future<void> show(ImageProvider? image, bool generating) => tester.pumpWidget(
+        _host(ImageGeneration(key: ValueKey(i), image: image, generating: generating, onPhase: phases.add)),
+      );
+      await show(late, false);
+      await tester.pump(const Duration(milliseconds: 100));
+      await show(keep ? late : null, generating);
+      late.decoded.complete(ImageInfo(image: a.clone()));
+      for (var f = 0; f < 40; f++) {
+        await tester.pump(const Duration(milliseconds: 100));
+      }
+      expect(phases, isEmpty, reason: 'case $i');
+    }
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox());
+    a.dispose();
+  });
+
+  testWidgets('during a handoff a newer image wins, and clearing it lets later images in', (tester) async {
+    final pics = [for (var k = 0; k < 4; k++) (await tester.runAsync(() => createTestImage(width: 64, height: 48)))!];
+    final phases = <ImageGenerationPhase>[];
+    Future<void> show(ImageProvider? image, {bool generating = false}) =>
+        tester.pumpWidget(_host(ImageGeneration(image: image, generating: generating, onPhase: phases.add)));
+    Future<void> frames(int n) async {
+      for (var f = 0; f < n; f++) {
+        await tester.pump(const Duration(milliseconds: 100));
+      }
+    }
+
+    final a = _TestImage(pics[0], 'a'), b = _TestImage(pics[1], 'b');
+    final c = _TestImage(pics[2], 'c'), d = _TestImage(pics[3], 'd');
+    await show(a);
+    await frames(34);
+    await show(a, generating: true);
+    await frames(10);
+    phases.clear();
+    // b starts dissolving in over the churn; c arrives before it settles.
+    await show(b);
+    await frames(1);
+    await show(c);
+    await frames(40);
+    expect(phases, [ImageGenerationPhase.reveal, ImageGenerationPhase.reveal, ImageGenerationPhase.visible]);
+
+    await show(c, generating: true);
+    await frames(10);
+    await show(d);
+    await frames(1);
+    // Cleared mid-handoff: the churn fades out, and the next picture still comes in.
+    await show(null);
+    await frames(6);
+    await show(b);
+    await frames(40);
+    expect(phases.sublist(phases.length - 2), [ImageGenerationPhase.reveal, ImageGenerationPhase.visible]);
+    expect(phases, contains(ImageGenerationPhase.hide));
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox());
+    for (final p in pics) {
+      p.dispose();
+    }
   });
 }

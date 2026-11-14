@@ -45,11 +45,15 @@ class FxCycle {
     _timer = null;
   }
 
+  /// A picture is being handed to the churn (BLEND → RESOLVE).
+  bool get _handingOff => phase == ImageGenerationPhase.reveal && reveal.phase == RevealPhase.boil;
+
   /// Reveal [src] and keep it until [triggerHide] or [triggerBoil]. No-op
-  /// while a reveal, hold or hide runs; over a boil the image dissolves in
+  /// while a reveal, hold or hide runs, except that a newer picture replaces
+  /// one still being handed to the churn; over a boil the image dissolves in
   /// over the churn.
   void triggerOnce(ImageProvider src) {
-    if (phase != ImageGenerationPhase.idle) return;
+    if (phase != ImageGenerationPhase.idle && !_handingOff) return;
     _clearTimer();
     _running = true;
     currentSrc = src;
@@ -76,16 +80,32 @@ class FxCycle {
     );
   }
 
-  /// Fade the shown picture back to the mosaic. No-op unless revealing or visible.
+  /// Forget a reveal that hasn't shown yet: a picture still decoding, or one
+  /// handed to the churn. A churn keeps churning.
+  void cancel() {
+    currentSrc = null;
+    _running = false;
+    if (_handingOff) {
+      reveal.dropPending();
+      _emit(ImageGenerationPhase.idle);
+    }
+  }
+
+  /// Fade the shown picture, or the churn, back to the mosaic; a picture
+  /// still decoding is dropped. No-op otherwise.
   void triggerHide() {
-    if (phase != ImageGenerationPhase.reveal && phase != ImageGenerationPhase.visible) return;
+    if (phase != ImageGenerationPhase.reveal &&
+        phase != ImageGenerationPhase.visible &&
+        reveal.phase != RevealPhase.boil) {
+      return;
+    }
+    _running = false;
     _emit(ImageGenerationPhase.hide);
     reveal.startHide(fadeOutMs);
     _clearTimer();
     _timer = Timer(Duration(microseconds: (fadeOutMs * 1000).round()), () {
       _timer = null;
       currentSrc = null;
-      _running = false;
       _emit(ImageGenerationPhase.idle);
     });
   }
