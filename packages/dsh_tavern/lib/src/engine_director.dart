@@ -988,6 +988,23 @@ class _DirectorCoordinator {
     unawaited(_changes.close());
   }
 
+  // Simulation waits for the finite work admitted by its real turn. This
+  // does not cancel a helper or prove its ignored transport cancel drained;
+  // the simulation's recording client owns that separate original Future.
+  Future<void> drainNaturally(String chatId) async {
+    while (true) {
+      final pending = <Future<void>>[
+        for (final job in _queues[chatId] ?? const <_DirectorJob>[]) job.done.future,
+        for (final entry in _preparations.entries)
+          if (entry.key.chatId == chatId) entry.value,
+      ];
+      if (pending.isEmpty) {
+        return;
+      }
+      await Future.wait(pending);
+    }
+  }
+
   Future<TavernDirectorSnapshot> read(String chatId) async {
     final before = engine._store.chat(chatId);
     final record = await engine._record(before.characterId);

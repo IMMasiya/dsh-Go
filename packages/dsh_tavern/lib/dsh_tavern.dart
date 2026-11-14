@@ -10,6 +10,7 @@ export 'src/authoring_render.dart';
 export 'src/authoring_run.dart';
 export 'src/authoring_script_preview.dart';
 export 'src/authoring_seed.dart';
+export 'src/authoring_simulation.dart';
 export 'src/backup.dart';
 export 'src/director.dart';
 export 'src/engine.dart';

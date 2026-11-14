@@ -33,6 +33,7 @@ final class _AuthoringPromptContextCapture {
     required Map<String, Object?>? bindingExtra,
     bool groupUserPrepared = false,
     this.preparedGroupRegexTrace = const [],
+    this.simulationSeed,
   }) : _history = history,
        _secretFacts = secretFacts,
        _contextPath = contextPath,
@@ -73,6 +74,7 @@ final class _AuthoringPromptContextCapture {
   final StoredAgentRun? _persistedProposal;
   bool _groupUserPrepared;
   final List<Map<String, Object?>> preparedGroupRegexTrace;
+  final _AuthoringSimulationSeed? simulationSeed;
 
   // A native group round appends its user before constructing the actor's
   // empty-input turn. This local branch follows that same preparation order.
@@ -340,6 +342,7 @@ extension _AuthoringPromptContexts on TavernEngine {
     String captureId,
     ModelCancellation cancellation, {
     _AuthoringPromptHostOwner? hostOwner,
+    bool simulationBootstrap = false,
   }) async {
     cancellation.check();
     final storedDraft = _requireAuthoringDraft(request.draftId, request.draftRevision);
@@ -347,6 +350,13 @@ extension _AuthoringPromptContexts on TavernEngine {
     final candidates = _materializeAuthoring(draft, request.changeIds.toSet(), includeDiffs: false).candidates;
     final draftText = jsonEncode(storedDraft.data);
     final sourceById = {for (final source in draft.sources) source.physicalResourceId: source};
+    final simulationSources = simulationBootstrap
+        ? <String, Map<String, Object?>>{
+            for (final source in (storedDraft.data['sources']! as List<Object?>).cast<Map<String, Object?>>())
+              _authoringTarget(source['target']! as Map<String, Object?>).physicalResourceId: source,
+          }
+        : null;
+    final simulationSettings = simulationBootstrap ? _copy(_document) : null;
     final domain = _authoringAuthority.domainId;
     final configVersion = _authoringConfigVersion;
     final personaVersion = _personas.authoringVersion;
@@ -494,6 +504,19 @@ extension _AuthoringPromptContexts on TavernEngine {
       liveLocalFingerprint = null;
       persona = _personas.resolve(personaId: sample.personaId);
     }
+    final simulationPresets = simulationBootstrap
+        ? _store.readAuthoringSimulationPresetRows({?chat.presetId, ?defaultPresetId})
+        : null;
+    final simulationPersonas = simulationBootstrap
+        ? <String, Object?>{
+            'version': 1,
+            'defaultPersonaId': _personas.defaultPersonaId,
+            'personas': [
+              for (final id in {?chat.personaId, ?_personas.defaultPersonaId})
+                if (_personas.get(id) case final value?) value.toJson(),
+            ],
+          }
+        : null;
     final admissionChat = chat;
     final admissionParent = parent;
     final selectedPath = hostOwner == null || parent == chat.currentLeafId
@@ -688,7 +711,9 @@ extension _AuthoringPromptContexts on TavernEngine {
     final regex = await capture(
       const TavernAuthoringTarget(kind: TavernAuthoringTargetKind.regexLibrary, id: 'global'),
     );
-    final managedRegex = candidates['regex-library'] == null
+    final managedRegex = simulationBootstrap
+        ? <Map<String, Object?>>[]
+        : candidates['regex-library'] == null
         ? [
             for (final script in regex._regexRecords!) {...script.raw, if (!script.compatible) 'disabled': true},
           ]
@@ -1122,6 +1147,10 @@ extension _AuthoringPromptContexts on TavernEngine {
             jsonEncode(freshDraft.data) != draftText) {
           _authoringContextConflict();
         }
+        if (simulationPresets != null &&
+            !_stateJsonEqual(simulationPresets, _store.readAuthoringSimulationPresetRows(simulationPresets.keys))) {
+          _authoringContextConflict();
+        }
         if (real) {
           if (_authoringAuditText(_directors.latestSuccess(chat.id)) != _authoringAuditText(director)) {
             _authoringContextConflict();
@@ -1172,6 +1201,21 @@ extension _AuthoringPromptContexts on TavernEngine {
       missingBooks: missing,
       groupUserPrepared: groupUserPrepared,
       preparedGroupRegexTrace: preparedGroupRegexTrace,
+      simulationSeed: simulationBootstrap
+          ? _AuthoringSimulationSeed(
+              resources: resources,
+              candidates: candidates,
+              sources: simulationSources!,
+              settingsDocument: simulationSettings!,
+              global: global,
+              personas: simulationPersonas!,
+              presetRows: simulationPresets!,
+              defaultPresetId: defaultPresetId,
+              chat: chat,
+              history: history,
+              state: initialState,
+            )
+          : null,
       scripts: scripts,
       secretFacts: secretFacts,
       contextPath: contextPath,
@@ -1191,6 +1235,16 @@ extension _AuthoringPromptContexts on TavernEngine {
         'kind': real ? 'chat' : 'sample',
         'chatId': real ? chat.id : null,
         'contextNodeId': parent,
+        if (simulationBootstrap) 'semantics': 'captured-file-fresh-open',
+        if (simulationBootstrap)
+          'regexLoadedRuntimeHash': _directorHash([
+            for (final record in regex._regexRecords!)
+              {
+                'id': record.id,
+                'raw': record.raw,
+                'diagnostics': [for (final diagnostic in record.diagnostics) diagnostic.toJson()],
+              },
+          ]),
         'actorId': actorId,
         'generationType': turn.generationType,
         'model': config.model,

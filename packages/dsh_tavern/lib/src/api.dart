@@ -14,6 +14,7 @@ import 'authoring_render.dart';
 import 'authoring_run.dart';
 import 'authoring_script_preview.dart';
 import 'authoring_seed.dart';
+import 'authoring_simulation.dart';
 import 'backup.dart';
 import 'director.dart';
 import 'import_report.dart';
@@ -591,6 +592,13 @@ abstract interface class Tavern {
     TavernAuthoringRenderRequest request, {
     required TavernAuthoringPreviewHost host,
   });
+
+  /// Runs one to four real normal sends in a private temporary sample chat.
+  /// This uses captured files with their original IDs and saved diagnostics,
+  /// then the real fresh-open loaders. Helpers/retries are additional actual
+  /// requests. Repeating requestId is a new invocation and can spend again.
+  /// Cancellation waits for real requests, key suppliers, close and cleanup.
+  TavernAuthoringSimulationTask simulateAuthoringDraft(TavernAuthoringSimulationRequest request);
 
   // Library ------------------------------------------------------------------
 

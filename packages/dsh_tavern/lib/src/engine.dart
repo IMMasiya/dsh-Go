@@ -21,6 +21,7 @@ import 'authoring_render.dart';
 import 'authoring_run.dart';
 import 'authoring_script_preview.dart';
 import 'authoring_seed.dart';
+import 'authoring_simulation.dart';
 import 'backup.dart';
 import 'director.dart';
 import 'director/direct_tool.dart' as director_core;
@@ -73,6 +74,9 @@ part 'engine_authoring_apply.dart';
 part 'engine_authoring_run.dart';
 part 'engine_authoring_images.dart';
 part 'engine_authoring_seed.dart';
+part 'engine_authoring_simulation_seed.dart';
+part 'engine_authoring_simulation_client.dart';
+part 'engine_authoring_simulation.dart';
 part 'engine_authoring_capture.dart';
 part 'engine_authoring_binding.dart';
 part 'engine_authoring_facts.dart';
@@ -259,7 +263,42 @@ class TavernEngine implements Tavern {
     int Function(int max)? rollRandom,
   }) async {
     final identity = await _directoryIdentity(directory);
-    if (!_reserveTavernRoot(identity)) throw StateError('The tavern directory overlaps an open or restoring root.');
+    if (!_reserveTavernRoot(identity)) {
+      throw StateError('The tavern directory overlaps an open or restoring root.');
+    }
+    try {
+      return await _openReservedDirectory(
+        directory,
+        identity,
+        config: config,
+        modelClient: modelClient,
+        counter: counter,
+        clock: clock,
+        random: random,
+        rollRandom: rollRandom,
+      );
+    } catch (_) {
+      _ownedTavernRoots.remove(identity);
+      rethrow;
+    }
+  }
+
+  // The caller already owns this canonical root. Simulations retain that
+  // reservation through close and directory removal, without reopening a gap.
+  static Future<TavernEngine> _openReservedDirectory(
+    Directory directory,
+    String identity, {
+    TavernModelConfig? config,
+    TavernModelClient? modelClient,
+    PromptTokenCounter counter = const EstimatedTokenCounter(),
+    DateTime Function()? clock,
+    double Function()? random,
+    int Function(int max)? rollRandom,
+    bool releaseRootOnClose = true,
+    void Function()? onFailedOpenDrained,
+  }) async {
+    var acquired = false;
+    var drained = false;
     try {
       await backup_io.recoverPendingTavernRestore(directory);
       await directory.create(recursive: true);
@@ -279,9 +318,12 @@ class TavernEngine implements Tavern {
       final document = settingsText == null
           ? <String, Object?>{'version': 1, 'settings': <String, Object?>{}, 'globalVariables': <String, Object?>{}}
           : _decodeObject(settingsText, 'Tavern settings');
-      if (document['version'] != 1) throw const FormatException('Unsupported Tavern settings version.');
+      if (document['version'] != 1) {
+        throw const FormatException('Unsupported Tavern settings version.');
+      }
       final now = clock ?? DateTime.now;
       final personas = await PersonaStore.open(directory);
+      acquired = true;
       final regexWorker = RegexWorker();
       final regexLibrary = RegexLibrary(directory, regexWorker, clock: now);
       ChatStore? store;
@@ -307,21 +349,26 @@ class TavernEngine implements Tavern {
           regexLibrary,
         );
         result._directoryOwnerKey = identity;
+        result._releaseDirectoryOwnerOnClose = releaseRootOnClose;
         return result;
       } catch (_) {
         await regexWorker.close();
         await store?.close();
         await personas.close();
+        drained = true;
         rethrow;
       }
     } catch (_) {
-      _ownedTavernRoots.remove(identity);
+      if (!acquired || drained) {
+        onFailedOpenDrained?.call();
+      }
       rethrow;
     }
   }
 
   final Directory directory;
   late final String _directoryOwnerKey;
+  bool _releaseDirectoryOwnerOnClose = true;
   final ChatStore _store;
   final AuthoringAuthority _authoringAuthority;
   final CharacterLibrary _library;
@@ -547,6 +594,10 @@ class TavernEngine implements Tavern {
     TavernAuthoringRenderRequest request, {
     required TavernAuthoringPreviewHost host,
   }) => _renderAuthoringDraft(request, host);
+
+  @override
+  TavernAuthoringSimulationTask simulateAuthoringDraft(TavernAuthoringSimulationRequest request) =>
+      _simulateAuthoringDraft(request);
 
   // Acquire this queue before chat barriers for bind/delete. Taking them in
   // the reverse order could leave a binder waiting behind a deletion that is
@@ -4970,7 +5021,9 @@ class TavernEngine implements Tavern {
     unawaited(_paths.close());
     await _personas.close();
     await _store.close();
-    _ownedTavernRoots.remove(_directoryOwnerKey);
+    if (_releaseDirectoryOwnerOnClose) {
+      _ownedTavernRoots.remove(_directoryOwnerKey);
+    }
   }
 }
 
