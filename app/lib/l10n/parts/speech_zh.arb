@@ -33,12 +33,44 @@
   "speechCallSection": "语音通话",
   "speechCallFooter": "通话时说完一句停一下，就会发出去；回答边写边读。",
   "speechCallBargeIn": "插话打断",
-  "speechCallBargeInHint": "AI 说话时你一开口，它就停下来听你说",
+  "speechCallBargeInHint": "AI 说话时你一开口，它先轻下来；「嗯」「对」它接着说，说别的它就停下听你",
   "speechCallSpoken": "口语回答",
   "speechCallSpokenHint": "通话的第一条消息会请 AI 简短、口语化地回答",
   "speechCallSpeaker": "默认免提",
   "speechCallSpeakerHint": "接上耳机时总用耳机",
   "speechCallHint": "（这是语音通话，我说的话由语音识别转成文字。请用简短、口语化的中文回答，不要用 Markdown、列表、表格和代码块。）",
+  "speechCallCutNote": "（你说到「{heard}」时我打断了你，后面的我没听到。）",
+  "@speechCallCutNote": {
+    "placeholders": {
+      "heard": {
+        "type": "String"
+      }
+    }
+  },
+  "speechCallCutEarly": "（你刚开口我就打断了你，这条回答我没听到。）",
+  "speechCallCue": "思考提示音",
+  "speechCallCueHint": "回答一时没出声时，轻响一声表示还在想",
+  "speechLiveSection": "实时字幕",
+  "speechLiveName": "流式识别模型",
+  "speechLiveAbsentNote": "下载后，通话时一边说一边出字，插话也停得更快。约 {mb}，在手机上运行",
+  "@speechLiveAbsentNote": {
+    "placeholders": {
+      "mb": {
+        "type": "String"
+      }
+    }
+  },
+  "speechLiveReadyNote": "已占用 {mb}，通话时自动使用",
+  "@speechLiveReadyNote": {
+    "placeholders": {
+      "mb": {
+        "type": "String"
+      }
+    }
+  },
+  "speechLiveFooter": "字幕和插话判断在手机上完成；发给 AI 的文字仍由上面选的识别方式给出，选了云端识别录音就会上传。",
+  "speechLiveDeleteTitle": "删除流式识别模型？",
+  "speechLiveDeleteBody": "删除后通话不再显示实时字幕，随时可以重新下载。",
   "speechCallStarting": "正在接通",
   "speechCallListening": "在听",
   "speechCallHearing": "你在说",
@@ -68,5 +100,9 @@
   "speechBackdropNoCompanion": "先在伙伴小屋里请她住进来，才能把她放进通话里。",
   "speechBackdropReplace": "换一张图",
   "speechBackdropPickFailed": "这张图用不了，换一张试试",
+  "speechCallVisual": "光效",
+  "speechCallVisualRing": "光环",
+  "speechCallVisualMono": "细线",
+  "speechCallVisualGlass": "光球",
   "speechInsecure": "这个云端服务的地址不是 https，Key 不能这样发出去"
 }

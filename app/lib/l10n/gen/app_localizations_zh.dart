@@ -8894,6 +8894,9 @@ class L10nZh extends L10n {
   String get launchFitCenter => '居中';
 
   @override
+  String get launchFrame => '调整位置';
+
+  @override
   String get launchBackground => '背景色';
 
   @override
@@ -17497,7 +17500,7 @@ class L10nZh extends L10n {
   String get speechCallBargeIn => '插话打断';
 
   @override
-  String get speechCallBargeInHint => 'AI 说话时你一开口，它就停下来听你说';
+  String get speechCallBargeInHint => 'AI 说话时你一开口，它先轻下来；「嗯」「对」它接着说，说别的它就停下听你';
 
   @override
   String get speechCallSpoken => '口语回答';
@@ -17513,6 +17516,45 @@ class L10nZh extends L10n {
 
   @override
   String get speechCallHint => '（这是语音通话，我说的话由语音识别转成文字。请用简短、口语化的中文回答，不要用 Markdown、列表、表格和代码块。）';
+
+  @override
+  String speechCallCutNote(String heard) {
+    return '（你说到「$heard」时我打断了你，后面的我没听到。）';
+  }
+
+  @override
+  String get speechCallCutEarly => '（你刚开口我就打断了你，这条回答我没听到。）';
+
+  @override
+  String get speechCallCue => '思考提示音';
+
+  @override
+  String get speechCallCueHint => '回答一时没出声时，轻响一声表示还在想';
+
+  @override
+  String get speechLiveSection => '实时字幕';
+
+  @override
+  String get speechLiveName => '流式识别模型';
+
+  @override
+  String speechLiveAbsentNote(String mb) {
+    return '下载后，通话时一边说一边出字，插话也停得更快。约 $mb，在手机上运行';
+  }
+
+  @override
+  String speechLiveReadyNote(String mb) {
+    return '已占用 $mb，通话时自动使用';
+  }
+
+  @override
+  String get speechLiveFooter => '字幕和插话判断在手机上完成；发给 AI 的文字仍由上面选的识别方式给出，选了云端识别录音就会上传。';
+
+  @override
+  String get speechLiveDeleteTitle => '删除流式识别模型？';
+
+  @override
+  String get speechLiveDeleteBody => '删除后通话不再显示实时字幕，随时可以重新下载。';
 
   @override
   String get speechCallStarting => '正在接通';
@@ -17600,6 +17642,18 @@ class L10nZh extends L10n {
 
   @override
   String get speechBackdropPickFailed => '这张图用不了，换一张试试';
+
+  @override
+  String get speechCallVisual => '光效';
+
+  @override
+  String get speechCallVisualRing => '光环';
+
+  @override
+  String get speechCallVisualMono => '细线';
+
+  @override
+  String get speechCallVisualGlass => '光球';
 
   @override
   String get speechInsecure => '这个云端服务的地址不是 https，Key 不能这样发出去';

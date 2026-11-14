@@ -20,6 +20,7 @@ import '../../companion/companion_voice_source.dart';
 import '../../l10n/l10n.dart';
 import '../../performance/performance_state.dart';
 import '../../speech/call/chat_call.dart';
+import '../../speech/call/thinking_cue.dart';
 import '../../speech/call/voice_call.dart';
 import '../../speech/deepseek_speech.dart';
 import '../../speech/read_aloud.dart';
@@ -31,8 +32,14 @@ import '../../state/voice_state.dart';
 import '../chat/voice/voice_bridge.dart';
 import '../companion/companion_ask.dart';
 import '../companion/companion_stage.dart';
+import '../fx/voice_ring/voice_ring.dart';
 import '../theme/app_icons.dart';
 import '../theme/theme.dart';
+import '../../state/streaming_asr_model_state.dart';
+import '../../state/streaming_asr_state.dart';
+import '../../state/streaming_pcm_state.dart';
+import '../../voice/live_words.dart';
+import '../../voice/streaming_pcm.dart';
 import 'call/call_backdrop.dart';
 import 'call/call_parts.dart';
 import 'call/call_visuals.dart';
@@ -130,10 +137,34 @@ class _VoiceCallPageState extends ConsumerState<VoiceCallPage> with WidgetsBindi
         );
       },
       permission: () async => await bridge.requestPermission() == VoicePermission.granted,
+      cutNote: (heard) => heard.isEmpty ? appL10n.speechCallCutEarly : appL10n.speechCallCutNote(heard),
+      thinkingCue: () async {
+        // Asked again after the settings: her voice may have begun meanwhile.
+        if ((await callSettings.ready()).cue && _call.cueStill) await playThinkingCue(audio);
+      },
     )..addListener(_changed);
     HapticFeedback.mediumImpact();
     _enter.forward();
-    unawaited(_call.start());
+    unawaited(_start());
+  }
+
+  /// Live captions, once the call listens, when the streaming model is on the phone.
+  LiveWords? _live;
+
+  Future<void> _start() async {
+    final pcm = ref.read(streamingPcmCaptureProvider);
+    final asr = ref.read(streamingAsrProvider);
+    final store = ref.read(streamingAsrModelStoreProvider.future);
+    await _call.start();
+    try {
+      final model = await (await store).installed();
+      if (model == null || !mounted || _call.phase == CallPhase.ended) return;
+      final live = _live = LiveWords(pcm, asr, model, StreamingPcmSource.call, _call.live);
+      await live.start();
+    } on Object {
+      // Without live captions the call goes on as before.
+      _live = null;
+    }
   }
 
   void _changed() {
@@ -212,6 +243,7 @@ class _VoiceCallPageState extends ConsumerState<VoiceCallPage> with WidgetsBindi
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    unawaited(_live?.stop());
     _leave?.cancel();
     _enter.dispose();
     _call
@@ -251,6 +283,33 @@ class _VoiceCallPageState extends ConsumerState<VoiceCallPage> with WidgetsBindi
       CallPhase.speaking => (l10n.speechCallSpeaking, false),
       CallPhase.ended => (l10n.speechCallEnded, false),
     };
+  }
+
+  /// The light in the middle: Libraries.dev's voice ring (its ribbon or its single line),
+  /// listening to the person, speaking with her voice, turning while it thinks; or the glass orb.
+  Widget _light(CallVisual visual, CallPalette palette, bool dark, double size) {
+    if (visual == CallVisual.glass) {
+      return CallLight(key: const ValueKey('glass'), scene: _scene, palette: palette, size: size);
+    }
+    final phase = _call.phase;
+    return VoiceRing(
+      key: ValueKey(visual),
+      type: visual == CallVisual.mono ? VoiceRingType.mono : VoiceRingType.ring,
+      state: switch (phase) {
+        CallPhase.starting || CallPhase.thinking => VoiceRingState.processing,
+        CallPhase.listening || CallPhase.hearing => VoiceRingState.listening,
+        CallPhase.speaking => VoiceRingState.speaking,
+        CallPhase.ended => VoiceRingState.idle,
+      },
+      size: size * 0.82,
+      theme: dark ? VoiceRingTheme.dark : VoiceRingTheme.light,
+      paused: phase == CallPhase.ended,
+      level: () => switch (_call.phase) {
+        CallPhase.hearing when !_call.muted => VoiceRingLevel.mic(_call.micLevel),
+        CallPhase.speaking => VoiceRingLevel.playback(_call.voiceLevel),
+        _ => 0,
+      },
+    );
   }
 
   /// [child] coming in with the page: a fade and a short rise, starting at [from] (0–1).
@@ -334,7 +393,8 @@ class _VoiceCallPageState extends ConsumerState<VoiceCallPage> with WidgetsBindi
                     _ => const SizedBox.expand(key: ValueKey('sea')),
                   },
                 ),
-                CallEdgeGlow(scene: _scene, palette: palette),
+                // The screen's edge glows only with the glass orb; the ring is light enough on its own.
+                if (settings.visual == CallVisual.glass) CallEdgeGlow(scene: _scene, palette: palette),
                 if (her)
                   // Her feet fade into the water so the words below stay readable.
                   const IgnorePointer(
@@ -388,10 +448,9 @@ class _VoiceCallPageState extends ConsumerState<VoiceCallPage> with WidgetsBindi
                                         _pressed ? AppMotion.press : const Duration(milliseconds: 420),
                                       ),
                                       curve: _pressed ? Curves.easeOut : Curves.elasticOut,
-                                      child: CallLight(
-                                        scene: _scene,
-                                        palette: palette,
-                                        size: math.min(340, width * 0.86),
+                                      child: AnimatedSwitcher(
+                                        duration: AppMotion.of(context, AppMotion.slow),
+                                        child: _light(settings.visual, palette, dark, math.min(340, width * 0.86)),
                                       ),
                                     ),
                                   ),
@@ -425,7 +484,7 @@ class _VoiceCallPageState extends ConsumerState<VoiceCallPage> with WidgetsBindi
                               )
                             : RevealText(
                                 key: const ValueKey('call-reply'),
-                                text: speakable(_call.reply).replaceAll('\n', ' '),
+                                text: speakable(_call.caption).replaceAll('\n', ' '),
                                 style: theme.textTheme.bodyLarge?.copyWith(
                                   color: ink.fg.withValues(alpha: 0.92),
                                   height: 1.55,

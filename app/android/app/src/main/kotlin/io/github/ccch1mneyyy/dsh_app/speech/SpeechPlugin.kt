@@ -17,6 +17,7 @@ import io.flutter.embedding.engine.plugins.activity.ActivityPluginBinding
 import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
 import io.github.ccch1mneyyy.dsh_app.nativemedia.MicArbiter
+import io.github.ccch1mneyyy.dsh_app.nativemedia.SpeechGates
 
 /**
  * Speech audio for 朗读 and 语音通话: MethodChannel `dsh/speech` (lib/speech/speech_audio.dart).
@@ -108,6 +109,11 @@ class SpeechPlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandl
             }
             "stop" -> {
                 stream?.stop()
+                result.success(null)
+            }
+            "duck" -> {
+                val s = stream
+                if (s != null && s.id == call.argument<String>("id")) s.duck(call.argument<Boolean>("on") == true)
                 result.success(null)
             }
             "callStart" -> result.success(startCall(call.argument<Boolean>("bargeIn") ?: true))
@@ -212,7 +218,7 @@ class SpeechPlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandl
         }
         endCall()
         mic = MicArbiter.beginDictation()
-        val c = CallCapture(main, captureListener)
+        val c = CallCapture(main, captureListener) { SpeechGates.create(context.assets, it) }
         c.bargeIn = bargeIn
         val am = audio
         if (am != null) {
@@ -232,8 +238,9 @@ class SpeechPlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandl
 
     private val captureListener = object : CallCapture.Listener {
         override fun onSpeechStart(overPlayback: Boolean) {
-            // Barge-in: the voice stops here, before Dart hears of it.
-            if (overPlayback) stream?.takeIf { it.call }?.stop()
+            // Spoken over: the voice steps back at once, before Dart hears of it; Dart
+            // decides from what was said whether it stops or comes back up.
+            if (overPlayback) stream?.takeIf { it.call }?.duck(true)
             send("speechStart", "over" to overPlayback)
         }
 
