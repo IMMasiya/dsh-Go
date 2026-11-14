@@ -24,6 +24,14 @@
         }
       }
     },
+    "config-editor-lock-order.diff": {
+      "0.2.2-rc.1": {
+        "node_modules/@deepseek-ai/dsh-config-editor/lib/index.js": {
+          "after": "5afb26351f03086d97f5c3028bf80c49c495c367dd68f26473a1da0424601427",
+          "before": "8bcc6f2ea0ace1438ea5497fbc5417b1af53f8805b663b776e8d6a5231c1940f"
+        }
+      }
+    },
     "cordis-effect-dispose-completion.diff": {
       "0.2.2-rc.1": {
         "node_modules/@deepseek-ai/cordis/lib/index.js": {
@@ -43,6 +51,14 @@
         "node_modules/@deepseek-ai/dsh-credentials-local/lib/index.js": {
           "after": "4c4c3af9ed5580d9b6105d8c1767a2a58e2e294b001e585032c2fd68b711dd9f",
           "before": "6b4926ef62bfeb95bc3d7687b85303d739a41e813fe05ac06de50111361da069"
+        }
+      }
+    },
+    "deepseek-attachment-error.diff": {
+      "0.2.2-rc.1": {
+        "node_modules/@deepseek-ai/dsh-llm-deepseek/lib/index.js": {
+          "after": "33932219045bc1f31f96c94ce2a18883ad108ecdf0f7f74d7911e8a7d6257917",
+          "before": "2e265c0bb1b759035682f65a8243ac8c9a33d7c6e793530fa290b48b0c55605f"
         }
       }
     },
