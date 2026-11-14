@@ -1,5 +1,7 @@
+import 'dart:async';
 import 'dart:typed_data';
 
+import 'package:dsh_app/companion/companion_voice_source.dart';
 import 'package:dsh_app/speech/deepseek_speech.dart';
 import 'package:dsh_app/speech/speech_audio.dart';
 import 'package:dsh_app/speech/speech_settings.dart';
@@ -280,6 +282,21 @@ void main() {
     await tester.pump(const Duration(seconds: 1));
   });
 
+  testWidgets('hung up while her voice is still being read: the closed page is asked nothing more', (tester) async {
+    final gate = Completer<void>();
+    await pumpCall(tester, extra: [speechVoiceSettingsProvider.overrideWith(() => _SlowVoice(gate.future))]);
+    await tester.tap(find.byKey(const ValueKey('call-hang-up')));
+    for (var i = 0; i < 20; i++) {
+      await tester.pump(const Duration(milliseconds: 60));
+    }
+    expect(find.byType(VoiceCallPage), findsNothing);
+    // DeepSeek's voice by default: it would look up who pays for it next.
+    gate.complete();
+    await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 20)));
+    await tester.pump();
+    expect(tester.takeException(), isNull);
+  });
+
   for (final still in [false, true]) {
     testWidgets(still ? 'less motion: the keys are there at once' : 'the keys rise in with the page', (tester) async {
       final hangUp = find.byKey(const ValueKey('call-hang-up'));
@@ -334,4 +351,17 @@ void main() {
     expect(again.read(callSettingsProvider).backdrop, CallBackdrop.image);
     expect(again.read(callSettingsProvider).image, '/x/backdrop-1.jpg');
   });
+}
+
+/// Her voice's settings, read only once [_gate] opens.
+class _SlowVoice extends SpeechVoiceSettingsController {
+  _SlowVoice(this._gate);
+
+  final Future<void> _gate;
+
+  @override
+  Future<CompanionVoiceSettings> ready() async {
+    await _gate;
+    return super.ready();
+  }
 }

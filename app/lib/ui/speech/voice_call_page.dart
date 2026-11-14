@@ -182,6 +182,7 @@ class _VoiceCallPageState extends ConsumerState<VoiceCallPage> with WidgetsBindi
   Future<void> _settleVoice({bool warm = false}) async {
     final mine = ++_settling;
     var next = await ref.read(speechVoiceSettingsProvider.notifier).ready();
+    if (!mounted) return;
     if (next.source == CompanionVoiceSource.deepseek) {
       final speech = await ref.read(deepSeekSpeechProvider)();
       if (speech == null) {
