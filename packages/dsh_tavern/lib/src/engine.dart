@@ -18,6 +18,7 @@ import 'authoring_authority.dart';
 import 'authoring_preview.dart';
 import 'authoring_render.dart';
 import 'authoring_run.dart';
+import 'authoring_script_preview.dart';
 import 'authoring_seed.dart';
 import 'backup.dart';
 import 'director.dart';
@@ -78,6 +79,7 @@ part 'engine_authoring_render.dart';
 part 'engine_prompt_preparation.dart';
 part 'engine_authoring_context.dart';
 part 'engine_authoring_scripts.dart';
+part 'engine_authoring_script_host.dart';
 part 'engine_tools.dart';
 part 'engine_director.dart';
 part 'engine_director_watch.dart';
@@ -529,8 +531,10 @@ class TavernEngine implements Tavern {
   );
 
   @override
-  TavernAuthoringTask<TavernAuthoringPromptPreview> previewAuthoringPrompt(TavernAuthoringPromptRequest request) =>
-      _previewAuthoringPrompt(request);
+  TavernAuthoringTask<TavernAuthoringPromptPreview> previewAuthoringPrompt(
+    TavernAuthoringPromptRequest request, {
+    TavernAuthoringPromptHost? host,
+  }) => _previewAuthoringPrompt(request, host: host);
 
   @override
   TavernAuthoringTask<TavernAuthoringRenderResult> renderAuthoringDraft(

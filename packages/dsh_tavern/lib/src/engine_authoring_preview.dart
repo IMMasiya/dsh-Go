@@ -5,13 +5,18 @@ part of 'engine.dart';
 Future<String?> _noAuthoringTransportKey() async => null;
 
 final class _AuthoringPromptTask implements TavernAuthoringTask<TavernAuthoringPromptPreview> {
-  _AuthoringPromptTask(this.request, this.captureId, {ModelCancellation? cancellation})
+  _AuthoringPromptTask(this.request, this.captureId, {ModelCancellation? cancellation, TavernAuthoringPromptHost? host})
     : cancellation = cancellation ?? ModelCancellation() {
     unawaited(_result.future.then<void>((_) {}, onError: (Object _, StackTrace _) {}));
+    unawaited(drained.future.then<void>((_) {}, onError: (Object _, StackTrace _) {}));
+    if (host != null) {
+      hostOwner = _AuthoringPromptHostOwner(host, this.cancellation);
+    }
   }
   final TavernAuthoringPromptRequest request;
   final String captureId;
   final ModelCancellation cancellation;
+  _AuthoringPromptHostOwner? hostOwner;
   final drained = Completer<void>();
   final _result = Completer<TavernAuthoringPromptPreview>();
   @override
@@ -21,6 +26,7 @@ final class _AuthoringPromptTask implements TavernAuthoringTask<TavernAuthoringP
   @override
   Future<void> cancel() {
     cancellation.cancel();
+    hostOwner?.stop();
     return drained.future;
   }
 
@@ -45,20 +51,33 @@ final class _AuthoringPromptTask implements TavernAuthoringTask<TavernAuthoringP
       'seed': request.seed,
       'sealed': false,
       ...origin,
+      if (hostOwner case final owner?)
+        'scriptPreparation': {
+          'calls': owner.calls,
+          'effects': owner.workspace?.effects ?? const [],
+          'scope': 'preview',
+        },
     },
     status: status,
     assembly: assembly,
     worldInfo: worldInfo,
     regexTrace: regexTrace,
     secretTrace: secretTrace,
-    issues: issues,
+    issues: [
+      ...issues,
+      if (hostOwner?.workspace case final workspace?)
+        for (final issue in workspace.turn.hookIssues) TavernAuthoringIssue(type: issue.code, message: issue.message),
+    ],
   );
 }
 
 extension _AuthoringPromptPreviews on TavernEngine {
-  TavernAuthoringTask<TavernAuthoringPromptPreview> _previewAuthoringPrompt(TavernAuthoringPromptRequest input) {
+  TavernAuthoringTask<TavernAuthoringPromptPreview> _previewAuthoringPrompt(
+    TavernAuthoringPromptRequest input, {
+    TavernAuthoringPromptHost? host,
+  }) {
     _ensureAdmission();
-    return _startAuthoringPrompt(input);
+    return _startAuthoringPrompt(input, host: host);
   }
 
   // An already-admitted author run may continue while backup waits for its
@@ -66,6 +85,7 @@ extension _AuthoringPromptPreviews on TavernEngine {
   TavernAuthoringTask<TavernAuthoringPromptPreview> _startAuthoringPrompt(
     TavernAuthoringPromptRequest input, {
     ModelCancellation? cancellation,
+    TavernAuthoringPromptHost? host,
   }) {
     cancellation?.check();
     _ensureOpen();
@@ -86,6 +106,7 @@ extension _AuthoringPromptPreviews on TavernEngine {
       request,
       'authoring:${_directorHash(request.toJson())}',
       cancellation: cancellation,
+      host: host,
     );
     _operations.add(task.drained.future);
     _authoringPreviewCancellations.add(task.cancellation);
@@ -99,6 +120,7 @@ extension _AuthoringPromptPreviews on TavernEngine {
     TavernAuthoringPromptPreview? result;
     Object? failure;
     StackTrace? failureStack;
+    var closeFailed = false;
     var origin = <String, Object?>{};
     _AuthoringPromptContextCapture? capture;
     try {
@@ -111,11 +133,18 @@ extension _AuthoringPromptPreviews on TavernEngine {
         );
       }
       task.cancellation.check();
-      final captured = await _captureAuthoringPromptContext(task.request, task.captureId, task.cancellation);
+      final captured = await _captureAuthoringPromptContext(
+        task.request,
+        task.captureId,
+        task.cancellation,
+        hostOwner: task.hostOwner,
+      );
       capture = captured;
       origin = {...captured.origin, 'sealed': true};
       task.cancellation.check();
-      final regexTrace = <Map<String, Object?>>[];
+      await task.hostOwner?.closeAndDrain();
+      task.cancellation.check();
+      final regexTrace = <Map<String, Object?>>[...captured.preparedGroupRegexTrace];
       captured.prepareGroupUser(task.request.text, task.captureId, regexTrace);
       captured.prepareBeforeUser();
       result = await _assembleAuthoringPrompt(task, captured, origin, regexTrace);
@@ -155,7 +184,9 @@ extension _AuthoringPromptPreviews on TavernEngine {
       );
     } on TavernScriptException catch (error) {
       result = task.value(
-        TavernAuthoringPreviewStatus.failed,
+        error.code == TavernScriptErrorCode.revisionConflict
+            ? TavernAuthoringPreviewStatus.conflict
+            : TavernAuthoringPreviewStatus.failed,
         origin: origin,
         secretTrace: capture?.secretTrace ?? const {},
         issues: [TavernAuthoringIssue(type: error.code.name, message: error.message)],
@@ -166,9 +197,26 @@ extension _AuthoringPromptPreviews on TavernEngine {
       failure = error;
       failureStack = stack;
     } finally {
-      _authoringPreviewCancellations.remove(task.cancellation);
-      _operations.remove(task.drained.future);
-      task.drained.complete();
+      try {
+        await task.hostOwner?.closeAndDrain();
+      } catch (error, stack) {
+        if (task.hostOwner?.closeFailed == true) {
+          closeFailed = true;
+          failure = error;
+          failureStack = stack;
+        } else {
+          failure ??= error;
+          failureStack ??= stack;
+        }
+      }
+      if (!closeFailed) {
+        _authoringPreviewCancellations.remove(task.cancellation);
+        _operations.remove(task.drained.future);
+        task.drained.complete();
+      }
+    }
+    if (closeFailed) {
+      task.drained.completeError(failure!, failureStack!);
     }
     if (failure != null) {
       task._result.completeError(failure, failureStack!);

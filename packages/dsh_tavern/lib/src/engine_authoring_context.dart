@@ -31,6 +31,8 @@ final class _AuthoringPromptContextCapture {
     required Map<String, Object?>? bindingSource,
     required Map<String, Object?>? bindingState,
     required Map<String, Object?>? bindingExtra,
+    bool groupUserPrepared = false,
+    this.preparedGroupRegexTrace = const [],
   }) : _history = history,
        _secretFacts = secretFacts,
        _contextPath = contextPath,
@@ -45,7 +47,8 @@ final class _AuthoringPromptContextCapture {
        _persistedProposal = persistedProposal,
        _bindingSource = bindingSource,
        _bindingState = bindingState,
-       _bindingExtra = bindingExtra;
+       _bindingExtra = bindingExtra,
+       _groupUserPrepared = groupUserPrepared;
 
   final _Turn turn;
   final List<StoredNode> _history;
@@ -68,93 +71,38 @@ final class _AuthoringPromptContextCapture {
   final List<StoredRememberMemory> _remembered;
   final Set<String> _physicalParents;
   final StoredAgentRun? _persistedProposal;
+  bool _groupUserPrepared;
+  final List<Map<String, Object?>> preparedGroupRegexTrace;
 
   // A native group round appends its user before constructing the actor's
   // empty-input turn. This local branch follows that same preparation order.
   void prepareGroupUser(String input, String captureId, List<Map<String, Object?>> regexTrace) {
-    final view = turn.groupView;
-    if (view == null || turn.kind != _TurnKind.send || input.isEmpty) {
+    if (_groupUserPrepared) {
       return;
     }
-    final presetRaw = _map(turn.settings['preset']);
-    final preset = ChatPreset({
-      ...(presetRaw.isEmpty ? ChatPreset.stDefault().raw : presetRaw),
-      'show_thoughts': turn.config.thinking,
-    });
-    final environment = _MacroEnvironment(
-      actorData,
-      turn.settings,
-      turn.variables,
-      global,
-      history,
-      turn.config,
-      turn.at,
-      random.nextDouble,
-      macroChatIdentity,
-      input,
-      'normal',
-      chatIdHash: _finiteNumber(turn.metadata['chat_id_hash']),
-      pickRerollSeed: turn.metadata['pick_reroll_seed'],
-      characterId: turn.actorId,
-      groupNames: view.names,
-      groupNotMuted: view.enabledNames,
-      preset: preset,
+    final prepared = _prepareAuthoringGroupUser(
+      turn,
+      history: history,
+      parent: parent,
+      actorData: actorData,
+      global: global,
+      random: random,
+      macroChatIdentity: macroChatIdentity,
+      input: input,
+      captureId: captureId,
+      userSiblingIndex: userSiblingIndex,
+      regexTrace: regexTrace,
     );
-    final text = _preparePromptUser(environment, input, regexTrace: regexTrace);
-    final state = _prepareAppendedMessageState(
-      turn.state,
-      environment,
-      stateCardData: view.host.card.data,
-      stateEnabled: turn.settings['stateEnabled'] != false,
-    );
-    turn.cancellation.check();
-    final at = DateTime.fromMillisecondsSinceEpoch(turn.at.millisecondsSinceEpoch, isUtc: true);
-    final message = TavernMessage(
-      nodeId: '$captureId:user',
-      parentId: parent,
-      role: TavernRole.user,
-      speaker: environment.userName,
-      text: text,
-      at: at,
-      siblingIndex: userSiblingIndex,
-      siblingCount: userSiblingIndex + 1,
-    );
-    final saved = _copy(state);
-    final node = StoredNode(
-      message: message,
-      depth: history.isEmpty ? 1 : history.last.depth + 1,
-      extra: {
-        'dshgo': {'tavernState': saved},
-      },
-      original: const {},
-    );
-    history.add(node);
-    parent = message.nodeId;
-    _contextPath.add(message.nodeId);
-    final before = turn.chat;
-    turn.chat = StoredChat(
-      id: before.id,
-      characterId: before.characterId,
-      title: before.title,
-      createdAt: before.createdAt,
-      updatedAt: at,
-      metadata: _runtimeMetadata(before.metadata, state),
-      variables: _copy(turn.variables),
-      settings: before.settings,
-      personaId: before.personaId,
-      presetId: before.presetId,
-      currentLeafId: parent,
-      selectedRootId: history.first.message.nodeId,
-    );
-    // This existing projection uses only the owned chat/state, including the
-    // original JSONL source carrier; it performs no store or clock read.
-    turn.metadata = ChatJsonlCodec().metadataForState(turn.chat, saved);
-    turn.state = state;
-    turn.inspection = turn.inspection.copyWith(contextNodeId: parent);
-    macroChatIdentity = _macroChatIdentity(turn.chat, saved, turn.metadata, turn.sourceFile, node: node);
+    if (prepared == null) {
+      return;
+    }
+    _groupUserPrepared = true;
+    parent = prepared.parent;
+    _contextPath.add(prepared.parent);
+    macroChatIdentity = prepared.macroChatIdentity;
     _directorSource = _capturedDirectorSource;
-    _authorizationSource = _secretStateSource(saved);
-    _storyState = saved;
+    _authorizationSource = _secretStateSource(turn.state);
+    _storyState = turn.state;
   }
 
   void prepareBeforeUser() {
@@ -243,6 +191,102 @@ final class _AuthoringPromptContextCapture {
   }
 }
 
+({String parent, String macroChatIdentity})? _prepareAuthoringGroupUser(
+  _Turn turn, {
+  required List<StoredNode> history,
+  required String? parent,
+  required Map<String, Object?> actorData,
+  required Map<String, Object?> global,
+  required Random random,
+  required String macroChatIdentity,
+  required String input,
+  required String captureId,
+  required int userSiblingIndex,
+  required List<Map<String, Object?>> regexTrace,
+  void Function()? saveGlobals,
+}) {
+  final view = turn.groupView;
+  if (view == null || turn.kind != _TurnKind.send || input.isEmpty) {
+    return null;
+  }
+  final presetRaw = _map(turn.settings['preset']);
+  final preset = ChatPreset({
+    ...(presetRaw.isEmpty ? ChatPreset.stDefault().raw : presetRaw),
+    'show_thoughts': turn.config.thinking,
+  });
+  final environment = _MacroEnvironment(
+    actorData,
+    turn.settings,
+    turn.variables,
+    global,
+    history,
+    turn.config,
+    turn.at,
+    random.nextDouble,
+    macroChatIdentity,
+    input,
+    'normal',
+    chatIdHash: _finiteNumber(turn.metadata['chat_id_hash']),
+    pickRerollSeed: turn.metadata['pick_reroll_seed'],
+    characterId: turn.actorId,
+    groupNames: view.names,
+    groupNotMuted: view.enabledNames,
+    preset: preset,
+  );
+  final text = _preparePromptUser(environment, input, regexTrace: regexTrace);
+  saveGlobals?.call();
+  final state = _prepareAppendedMessageState(
+    turn.state,
+    environment,
+    stateCardData: view.host.card.data,
+    stateEnabled: turn.settings['stateEnabled'] != false,
+  );
+  turn.cancellation.check();
+  final at = DateTime.fromMillisecondsSinceEpoch(turn.at.millisecondsSinceEpoch, isUtc: true);
+  final message = TavernMessage(
+    nodeId: '$captureId:user',
+    parentId: parent,
+    role: TavernRole.user,
+    speaker: environment.userName,
+    text: text,
+    at: at,
+    siblingIndex: userSiblingIndex,
+    siblingCount: userSiblingIndex + 1,
+  );
+  final saved = _copy(state);
+  final node = StoredNode(
+    message: message,
+    depth: history.isEmpty ? 1 : history.last.depth + 1,
+    extra: {
+      'dshgo': {'tavernState': saved},
+    },
+    original: const {},
+  );
+  history.add(node);
+  final before = turn.chat;
+  turn.chat = StoredChat(
+    id: before.id,
+    characterId: before.characterId,
+    title: before.title,
+    createdAt: before.createdAt,
+    updatedAt: at,
+    metadata: _runtimeMetadata(before.metadata, state),
+    variables: _copy(turn.variables),
+    settings: before.settings,
+    personaId: before.personaId,
+    presetId: before.presetId,
+    currentLeafId: message.nodeId,
+    selectedRootId: history.first.message.nodeId,
+  );
+  turn.metadata = ChatJsonlCodec().metadataForState(turn.chat, saved);
+  turn.state = state;
+  turn.inspection = turn.inspection.copyWith(contextNodeId: message.nodeId);
+  return (
+    parent: message.nodeId,
+    macroChatIdentity: _macroChatIdentity(turn.chat, saved, turn.metadata, turn.sourceFile, node: node),
+  );
+}
+
 /// B or a prepared group user can change current director eligibility. Capture that
 /// possible dependency without moving a failed read ahead of its real gate.
 final class _AuthoringCapturedLegacy {
@@ -294,8 +338,9 @@ extension _AuthoringPromptContexts on TavernEngine {
   Future<_AuthoringPromptContextCapture> _captureAuthoringPromptContext(
     TavernAuthoringPromptRequest request,
     String captureId,
-    ModelCancellation cancellation,
-  ) async {
+    ModelCancellation cancellation, {
+    _AuthoringPromptHostOwner? hostOwner,
+  }) async {
     cancellation.check();
     final storedDraft = _requireAuthoringDraft(request.draftId, request.draftRevision);
     final draft = _authoringView(storedDraft);
@@ -309,17 +354,23 @@ extension _AuthoringPromptContexts on TavernEngine {
     final globalSettings = _map(settingsIdentity);
     final settingsText = jsonEncode(globalSettings);
     final globalObservation = _globalVariables.observation;
-    final global = _runtimeCopy(_globalVariables);
+    Map<String, Object?> global = _runtimeCopy(_globalVariables);
+    final capturedGlobal = hostOwner == null
+        ? null
+        : _ScriptRawVariable(
+            _document.containsKey('globalVariables'),
+            _copy({'value': _document['globalVariables']})['value'],
+          );
     final defaultPresetId = _store.defaultPresetId;
     final context = request.context;
     final real = context is TavernAuthoringChatContext;
-    final StoredChat chat;
+    StoredChat chat;
     final TavernGroupChat? group;
     final _TurnKind kind;
-    final StoredNode? target;
+    StoredNode? target;
     final String actorId;
-    final String? parent, sourceFile;
-    final Map<String, Object?> metadata, initialState, identityState, local;
+    String? parent, sourceFile;
+    Map<String, Object?> metadata, initialState, identityState, local;
     final List<StoredNode> history;
     final PersonaSelection persona;
     final TavernModelConfig selectedConfig;
@@ -443,6 +494,18 @@ extension _AuthoringPromptContexts on TavernEngine {
       liveLocalFingerprint = null;
       persona = _personas.resolve(personaId: sample.personaId);
     }
+    final admissionChat = chat;
+    final admissionParent = parent;
+    final selectedPath = hostOwner == null || parent == chat.currentLeafId
+        ? history
+        : real
+        ? _historyTo(chat.id, chat.currentLeafId)
+        : history;
+    final initialGroupState = hostOwner == null
+        ? const <String, Object?>{}
+        : real
+        ? _store.groupInitialState(chat.id)
+        : _copy(initialState);
     String? selectedPresetId;
     Map<String, Object?>? presetRaw;
     final presetRows = <String, Map<String, Object?>?>{};
@@ -506,8 +569,10 @@ extension _AuthoringPromptContexts on TavernEngine {
       chatId: real ? chat.id : null,
       metadata: metadata,
       persistentSource: metadataSource,
+      isolatedHost: hostOwner != null,
     );
     final resources = <String, _AuthoringCapturedResource>{};
+    final pendingResources = <String, Future<_AuthoringCapturedResource>>{};
     final auditReads = <String, _AuthoringAuditRead>{};
     final audits = _AuthoringCapturedAudits(auditReads);
     final reservedProofIds = <String>{if (director != null) director.id, if (secret != null) secret.id};
@@ -552,11 +617,13 @@ extension _AuthoringPromptContexts on TavernEngine {
       if (previous != null) {
         return previous;
       }
-      cancellation.check();
-      final value = await _captureAuthoringResource(target, seedDraft: storedDraft);
-      cancellation.check();
-      resources[target.physicalResourceId] = value;
-      return value;
+      return pendingResources.putIfAbsent(target.physicalResourceId, () async {
+        cancellation.check();
+        final value = await _captureAuthoringResource(target, seedDraft: storedDraft);
+        cancellation.check();
+        resources[target.physicalResourceId] = value;
+        return value;
+      });
     }
 
     void captureAudit(String id) {
@@ -689,13 +756,177 @@ extension _AuthoringPromptContexts on TavernEngine {
       turn.toolPolicy = captureToolPolicy(scope: policyScope!, host: hostPolicy, actor: actorPolicy);
     }
 
+    final random = Random(request.seed);
+    String? macroChatIdentity;
+    final preparedGroupRegexTrace = <Map<String, Object?>>[];
+    var groupUserPrepared = false;
+    _AuthoringScriptWorkspace? workspace;
+    if (hostOwner != null) {
+      checkAdmission();
+      final localWorkspace = workspace = _AuthoringScriptWorkspace(
+        turn: turn,
+        scripts: scripts,
+        history: history,
+        currentPath: selectedPath,
+        global: global,
+        storedGlobal: capturedGlobal!,
+        groupInitial: initialGroupState,
+        liveLocal: liveLocal == null ? null : (leaf: liveLocal.leaf, values: _runtimeCopy(liveLocal.values)),
+        rawHostData: host.card.data,
+        settingsForMetadata: (currentChat, currentMetadata) => _authoringContextSettings(
+          globalSettings,
+          currentChat,
+          currentMetadata,
+          selectedPreset: presetRaw,
+          managedRegex: managedRegex,
+        ),
+        readNode: (id) {
+          checkAdmission();
+          if (!real) {
+            final node = selectedPath.firstWhere((value) => value.message.nodeId == id);
+            return (node: node, state: _copy(initialState), rawExtra: node.extra);
+          }
+          final node = _store.node(chat.id, id);
+          return (
+            node: node,
+            state: _stateFromNode(chat.id, node, chat: admissionChat),
+            rawExtra: _store.rawNodeExtra(chat.id, id),
+          );
+        },
+      );
+      global = localWorkspace.globals;
+      macroChatIdentity = _macroChatIdentity(
+        chat,
+        identityState,
+        metadata,
+        sourceFile,
+        node: target ?? history.lastOrNull,
+      );
+      final beforeGlobals = localWorkspace.globals.revision;
+      final prepared = _prepareAuthoringGroupUser(
+        turn,
+        history: history,
+        parent: parent,
+        actorData: data,
+        global: global,
+        random: random,
+        macroChatIdentity: macroChatIdentity,
+        input: request.text,
+        captureId: captureId,
+        userSiblingIndex: userSiblingIndex,
+        regexTrace: preparedGroupRegexTrace,
+        saveGlobals: () => localWorkspace.saveGroupGlobals(beforeGlobals),
+      );
+      if (prepared != null) {
+        groupUserPrepared = true;
+        if (parent != null) {
+          physicalParents.add(parent);
+        }
+        parent = prepared.parent;
+        macroChatIdentity = prepared.macroChatIdentity;
+        localWorkspace.adoptGroupUser();
+      }
+      final reader = hostOwner.reader = _AuthoringRenderReader(cancellation, candidates, capture);
+      await hostOwner.open(
+        TavernAuthoringPromptHostCapture(
+          request: TavernAuthoringPromptRequest.fromJson(_copy(request.toJson())),
+          captureId: captureId,
+          contexts: scripts.activeContexts,
+          workspace: localWorkspace.publicView(),
+          resources: {
+            for (final resource in resources.values)
+              resource.target.physicalResourceId: _renderResourceView(
+                resource,
+                candidates[resource.target.physicalResourceId],
+              ),
+          },
+          reader: reader,
+        ),
+        localWorkspace,
+      );
+      await hostOwner.prepare(request.requestId, captureId);
+      final metadataNode = target?.message.nodeId ?? localWorkspace.chat.currentLeafId;
+      final postHookMetadata = localWorkspace.metadataFor(metadataNode);
+      final postHookSource = _chatCodec.metadataSourceTargetForState(
+        localWorkspace.chat,
+        metadataNode == null ? const {} : localWorkspace.stateAt(metadataNode),
+      );
+      await hostOwner.filter(request.requestId, captureId, postHookMetadata, postHookSource);
+      // Native preparation rereads its operation target and parent after the
+      // scripts. Message writes change only their physical local carrier.
+      // A sample has no active live contexts. Merely supplying a reader host
+      // must retain its independent state and variables inputs unchanged.
+      if (real) {
+        chat = localWorkspace.chat;
+        if (target != null) {
+          target = localWorkspace.node(target.message.nodeId).node;
+        }
+        parent = kind == _TurnKind.regenerate
+            ? target!.message.parentId
+            : kind == _TurnKind.continueReply
+            ? target!.message.nodeId
+            : chat.currentLeafId;
+        final sourceNodeId = target?.message.nodeId ?? chat.currentLeafId;
+        final sourceState = localWorkspace.stateAt(sourceNodeId);
+        metadata = localWorkspace.metadataFor(sourceNodeId);
+        final rawSource =
+            sourceState['chatJsonlSourceFile'] ?? _map(_map(chat.metadata['dshgo'])['chatJsonl'])['rootFile'];
+        sourceFile = rawSource is String ? rawSource : null;
+        initialState = parent == null && group == null && chat.currentLeafId == null && kind != _TurnKind.regenerate
+            ? _emptyChatState(metadata)
+            : localWorkspace.stateAt(parent);
+        identityState = localWorkspace.stateAt(target?.message.nodeId ?? parent);
+        final runtimeLocal = localWorkspace.liveLocal;
+        local = kind != _TurnKind.regenerate && runtimeLocal != null && runtimeLocal.leaf == parent
+            ? _runtimeCopy(runtimeLocal.values)
+            : initialState.containsKey('variables')
+            ? _map(initialState['variables'])
+            : kind == _TurnKind.regenerate || parent != null && sourceFile != null
+            ? <String, Object?>{}
+            : _copy(chat.variables);
+        turn.originalTarget = target;
+        turn.metadata = metadata;
+        turn.sourceFile = sourceFile;
+        turn.variables = local;
+        turn.state = _copy(initialState);
+        if (sourceFile != null) {
+          turn.state['chatJsonlSourceFile'] = sourceFile;
+        }
+        turn.inspection = turn.inspection.copyWith(contextNodeId: parent, clearContextNodeId: parent == null);
+        macroChatIdentity = _macroChatIdentity(
+          chat,
+          identityState,
+          metadata,
+          sourceFile,
+          node: target ?? history.lastOrNull,
+        );
+      }
+    }
+
     checkAdmission();
+    Map<String, Object?> readState(String? id) => workspace?.stateAt(id) ?? _stateAt(chat.id, id);
+    Map<String, Object?> readDirectorSource(String? id) {
+      final localWorkspace = workspace;
+      if (localWorkspace == null) {
+        return _directorSource(this, chat.id, id);
+      }
+      final sourceHistory = id == null
+          ? <StoredNode>[]
+          : history.take(history.indexWhere((node) => node.message.nodeId == id) + 1).toList();
+      final saved = id == null && group == null
+          ? _emptyChatState(localWorkspace.metadataFor(chat.currentLeafId))
+          : localWorkspace.stateAt(id);
+      return _directorSourceFromFacts(id, sourceHistory, group, saved);
+    }
+
     Map<String, Object?>? currentSettings;
     Map<String, Object?> readCurrentSettings() {
       if (currentSettings case final value?) {
         return value;
       }
-      final currentMetadata = real ? _chatCodec.metadataForNode(_store, chat.id) : metadata;
+      final currentMetadata = real
+          ? workspace?.metadataFor(chat.currentLeafId) ?? _chatCodec.metadataForNode(_store, chat.id)
+          : metadata;
       return currentSettings = _authoringContextSettings(
         globalSettings,
         chat,
@@ -722,13 +953,15 @@ extension _AuthoringPromptContexts on TavernEngine {
         if (!(run.sourceKind == 'empty' && kind == _TurnKind.regenerate) &&
             _directorPathReason(run, parent, contextPath) == null) {
           directorOnPath = run;
-          directorSource = _directorSource(this, chat.id, run.sourceNodeId);
+          directorSource = readDirectorSource(run.sourceNodeId);
           capturedDirectorSource = directorSource;
           if (_directorSourceReason(run, hostData, _directorPersona(persona, settings), directorSource) == null) {
             final current = readCurrentSettings();
             final authorizationState = parent == null && group == null
-                ? _emptyChatState(_chatCodec.metadataForNode(_store, chat.id))
-                : _stateAt(chat.id, parent);
+                ? _emptyChatState(
+                    workspace?.metadataFor(chat.currentLeafId) ?? _chatCodec.metadataForNode(_store, chat.id),
+                  )
+                : readState(parent);
             authorizationSource = _secretStateSource(authorizationState);
             captureLedger(authorizationState);
             final policy = _ordinarySecretInputFromFacts(
@@ -747,7 +980,7 @@ extension _AuthoringPromptContexts on TavernEngine {
             if (reason == null) {
               final definition = _storyDefinition(hostData);
               if (definition.defined && definition.executable) {
-                storyState = parent == null ? <String, Object?>{} : _stateAt(chat.id, parent);
+                storyState = parent == null ? <String, Object?>{} : readState(parent);
               }
               directorEligible =
                   _storyDirectorEligibilityFromState(director, hostData, storyState, definition: definition) == null;
@@ -783,14 +1016,14 @@ extension _AuthoringPromptContexts on TavernEngine {
       persistedProposal = audits[secret.id];
       if (_secretProposalPersisted(secret, persistedProposal) &&
           _secretPersonaReason(turn, secretFacts.persona) == null) {
-        bindingSource = _directorSource(this, chat.id, parent);
+        bindingSource = readDirectorSource(parent);
         if (_directorSourceFingerprint(bindingSource, _directorCard(hostData), secretFacts.persona) ==
             secret.result['sourceFingerprint']) {
-          bindingState = _stateAt(chat.id, parent);
+          bindingState = readState(parent);
           final input = _StateInput(bindingState);
           final protection = _SecretProtection(hostData, bindingState);
           if (input.writable && input.valueExists && !protection.unknown && protection.definition.executable) {
-            bindingExtra = _store.rawNodeExtra(chat.id, parent!);
+            bindingExtra = workspace?.node(parent!).rawExtra ?? _store.rawNodeExtra(chat.id, parent!);
           }
         }
       }
@@ -871,8 +1104,14 @@ extension _AuthoringPromptContexts on TavernEngine {
     }
     // Appending a local group user changes no existing source body/epoch or
     // ancestor membership, so the captured remember qualification is stable.
-    final remembered = real ? _store.rememberMemories(chat.id, requestedLeafId: parent) : <StoredRememberMemory>[];
+    final remembered = real
+        ? _store.rememberMemories(chat.id, requestedLeafId: admissionParent)
+        : <StoredRememberMemory>[];
     final legacyText = _authoringLegacyText(legacy.rows), rememberedText = _authoringRememberedText(remembered);
+    if (hostOwner != null) {
+      hostOwner.reader!.closeAdmission();
+      await hostOwner.reader!.drain();
+    }
     await _recheckCapturedAuthoringResources(
       resources.values,
       check: () {
@@ -908,11 +1147,13 @@ extension _AuthoringPromptContexts on TavernEngine {
           if (captureDirectorDependencies &&
                   legacy.error == null &&
                   _authoringLegacyText(_store.directorMemories(chat.id)) != legacyText ||
-              _authoringRememberedText(_store.rememberMemories(chat.id, requestedLeafId: parent)) != rememberedText) {
+              _authoringRememberedText(_store.rememberMemories(chat.id, requestedLeafId: admissionParent)) !=
+                  rememberedText) {
             _authoringContextConflict();
           }
         }
         _scripts.recheckAuthoringScripts(scripts);
+        hostOwner?.checkSource();
       },
     );
     return _AuthoringPromptContextCapture(
@@ -923,16 +1164,14 @@ extension _AuthoringPromptContexts on TavernEngine {
       actorData: data,
       hostData: hostData,
       global: global,
-      random: Random(request.seed),
-      macroChatIdentity: _macroChatIdentity(
-        chat,
-        identityState,
-        metadata,
-        sourceFile,
-        node: target ?? history.lastOrNull,
-      ),
+      random: random,
+      macroChatIdentity:
+          macroChatIdentity ??
+          _macroChatIdentity(chat, identityState, metadata, sourceFile, node: target ?? history.lastOrNull),
       books: loaded,
       missingBooks: missing,
+      groupUserPrepared: groupUserPrepared,
+      preparedGroupRegexTrace: preparedGroupRegexTrace,
       scripts: scripts,
       secretFacts: secretFacts,
       contextPath: contextPath,

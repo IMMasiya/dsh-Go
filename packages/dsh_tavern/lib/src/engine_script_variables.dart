@@ -650,92 +650,14 @@ extension _ScriptVariableOperations on _ScriptCoordinator {
     Map<String, Object?> extra = const {},
   }) {
     _checkDataContext(context);
-    final requested = _captureScriptObject(data);
-    final old = baseline['messageVariables'];
-    final oldObject = old is Map<String, Object?> ? old : null;
-    final sameDshgo =
-        oldObject != null &&
-        oldObject.containsKey('dshgo') == requested.containsKey('dshgo') &&
-        _stateJsonEqual(oldObject['dshgo'], requested['dshgo']);
-    final next = _copy(baseline)..['messageVariables'] = requested;
-    if (!context.definition.hasSchema ||
-        sameDshgo ||
-        (oldObject == null && !baseline.containsKey('messageVariables') && !requested.containsKey('dshgo'))) {
-      return _ScriptPreparedData(next, null, null, null);
-    }
-    final input = _StateInput(baseline);
-    final invocation = _newStateId();
-    final issues = [...input.issues];
-    var receipts = <Map<String, Object?>>[];
-    var changes = <Map<String, Object?>>[];
-    var effects = <Map<String, Object?>>[];
-    var applied = false;
-    var changed = false;
-    Map<String, Object?> candidate = next;
-    if (input.writable) {
-      final session = context.definition.startSession(
-        valueExists: input.valueExists,
-        value: input.value,
-        runtimeExists: input.runtimeExists,
-        runtime: input.runtime,
-      );
-      final remove = !requested.containsKey('dshgo');
-      final operation = session.apply(
-        [
-          {'op': remove ? 'remove' : 'set', 'path': '', 'why': 'script', if (!remove) 'value': requested['dshgo']},
-        ],
-        actor: state_core.StateActor.user,
-        source: 'script',
-      );
-      final result = session.finish(runRules: operation.acceptedCount > 0);
-      receipts = result.receipts;
-      issues.addAll(result.issues);
-      applied = operation.acceptedCount == 1 && operation.rejectedCount == 0 && result.valid;
-      if (applied) {
-        changed = result.changed;
-        changes = result.changes;
-        effects = _identifiedEffects(result.effects, invocation);
-        candidate = _stateResultSnapshot(next, result, effects, const {});
-      }
-    }
-    final audit = _stateOwnAudit(invocation, changes, effects, issues);
-    final panel = _statePanel(
-      context.chatId,
-      nodeId,
-      applied ? candidate : baseline,
-      applied ? _stateNodeExtra(extra, candidate, audit) : extra,
-      context.definition,
-      context.settings,
-      protection: _SecretProtection(context.hostData, applied ? candidate : baseline),
+    return _prepareScriptMessageData(
+      context,
+      nodeId: nodeId,
+      baseline: baseline,
+      data: data,
+      extra: extra,
+      createInvocation: _newStateId,
     );
-    final stateEdit = TavernStateEditResult(
-      applied: applied,
-      changed: changed,
-      snapshot: panel,
-      receipts: receipts,
-      issues: issues,
-    );
-    if (!applied) {
-      throw _scriptError(
-        TavernScriptErrorCode.stateValidation,
-        'messageData',
-        'The complete message-variable replacement was rejected.',
-        nodeId: nodeId,
-        stateEdit: stateEdit,
-      );
-    }
-    return _ScriptPreparedData(candidate, stateEdit, audit, {
-      'version': 1,
-      'invocationId': invocation,
-      'source': 'script',
-      'definitionFingerprint': context.definition.fingerprint,
-      'committed': true,
-      'changed': changed,
-      'receipts': receipts,
-      'changes': changes,
-      'effects': effects,
-      'issues': issues,
-    });
   }
 
   void _commitMessageData(String chatId, String nodeId, _ScriptPreparedData prepared) {
@@ -762,6 +684,104 @@ extension _ScriptVariableOperations on _ScriptCoordinator {
       );
     }
   }
+}
+
+/// Shared calculation only. The native wrapper still checks its live context
+/// and commits at its original boundary; an authoring caller adopts locally.
+_ScriptPreparedData _prepareScriptMessageData(
+  _ScriptDataContext context, {
+  required String? nodeId,
+  required Map<String, Object?> baseline,
+  required Map<String, Object?> data,
+  required Map<String, Object?> extra,
+  required String Function() createInvocation,
+}) {
+  final requested = _captureScriptObject(data);
+  final old = baseline['messageVariables'];
+  final oldObject = old is Map<String, Object?> ? old : null;
+  final sameDshgo =
+      oldObject != null &&
+      oldObject.containsKey('dshgo') == requested.containsKey('dshgo') &&
+      _stateJsonEqual(oldObject['dshgo'], requested['dshgo']);
+  final next = _copy(baseline)..['messageVariables'] = requested;
+  if (!context.definition.hasSchema ||
+      sameDshgo ||
+      (oldObject == null && !baseline.containsKey('messageVariables') && !requested.containsKey('dshgo'))) {
+    return _ScriptPreparedData(next, null, null, null);
+  }
+  final input = _StateInput(baseline);
+  final invocation = createInvocation();
+  final issues = [...input.issues];
+  var receipts = <Map<String, Object?>>[];
+  var changes = <Map<String, Object?>>[];
+  var effects = <Map<String, Object?>>[];
+  var applied = false;
+  var changed = false;
+  Map<String, Object?> candidate = next;
+  if (input.writable) {
+    final session = context.definition.startSession(
+      valueExists: input.valueExists,
+      value: input.value,
+      runtimeExists: input.runtimeExists,
+      runtime: input.runtime,
+    );
+    final remove = !requested.containsKey('dshgo');
+    final operation = session.apply(
+      [
+        {'op': remove ? 'remove' : 'set', 'path': '', 'why': 'script', if (!remove) 'value': requested['dshgo']},
+      ],
+      actor: state_core.StateActor.user,
+      source: 'script',
+    );
+    final result = session.finish(runRules: operation.acceptedCount > 0);
+    receipts = result.receipts;
+    issues.addAll(result.issues);
+    applied = operation.acceptedCount == 1 && operation.rejectedCount == 0 && result.valid;
+    if (applied) {
+      changed = result.changed;
+      changes = result.changes;
+      effects = _identifiedEffects(result.effects, invocation);
+      candidate = _stateResultSnapshot(next, result, effects, const {});
+    }
+  }
+  final audit = _stateOwnAudit(invocation, changes, effects, issues);
+  final panel = _statePanel(
+    context.chatId,
+    nodeId,
+    applied ? candidate : baseline,
+    applied ? _stateNodeExtra(extra, candidate, audit) : extra,
+    context.definition,
+    context.settings,
+    protection: _SecretProtection(context.hostData, applied ? candidate : baseline),
+  );
+  final stateEdit = TavernStateEditResult(
+    applied: applied,
+    changed: changed,
+    snapshot: panel,
+    receipts: receipts,
+    issues: issues,
+  );
+  if (!applied) {
+    throw _scriptError(
+      TavernScriptErrorCode.stateValidation,
+      'messageData',
+      'The complete message-variable replacement was rejected.',
+      nodeId: nodeId,
+      stateEdit: stateEdit,
+    );
+  }
+  return _ScriptPreparedData(candidate, stateEdit, audit, {
+    'version': 1,
+    'invocationId': invocation,
+    'source': 'script',
+    'definitionFingerprint': context.definition.fingerprint,
+    'committed': true,
+    'changed': changed,
+    'receipts': receipts,
+    'changes': changes,
+    'effects': effects,
+    'issues': issues,
+  });
 }
 
 void _checkOwnerIdentity(TavernScriptOwner owner) {
