@@ -29,6 +29,7 @@ import '../../speech/speech_out.dart';
 import '../../speech/speech_settings.dart';
 import '../../speech/voice_cloud.dart';
 import '../../state/app_notes.dart';
+import '../../state/notify_state.dart';
 import '../../state/voice_state.dart';
 import '../chat/voice/voice_bridge.dart';
 import '../companion/companion_ask.dart';
@@ -48,10 +49,14 @@ import 'speech_ui.dart';
 
 /// Opens a call with the main chat's conversation. [session] gives its id,
 /// creating it for a new chat; [title] heads the page.
-Future<void> openChatCall(BuildContext context, {required String title, required Future<String?> Function() session}) {
+Future<void> openChatCall(
+  BuildContext context, {
+  required String title,
+  required Future<String?> Function() session,
+}) async {
   final container = ProviderScope.containerOf(context, listen: false);
   container.read(readAloudProvider.notifier).stop();
-  return Navigator.of(context).push(
+  await Navigator.of(context).push(
     PageRouteBuilder<void>(
       opaque: true,
       fullscreenDialog: true,
@@ -68,6 +73,8 @@ Future<void> openChatCall(BuildContext context, {required String title, required
       },
     ),
   );
+  // Off the call: its conversation is no longer the one being heard (ChatCallConversation set it).
+  container.read(callChatProvider.notifier).set(null);
 }
 
 class VoiceCallPage extends ConsumerStatefulWidget {

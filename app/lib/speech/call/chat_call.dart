@@ -9,6 +9,8 @@ import 'package:dsh_client/dsh_client.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../state/chat_state.dart';
+import '../../state/hosts_state.dart';
+import '../../state/notify_state.dart';
 import 'voice_call.dart';
 
 class ChatCallConversation implements CallConversation {
@@ -47,6 +49,8 @@ class ChatCallConversation implements CallConversation {
     _sub?.close();
     _id = id;
     _sub = _container.listen<ChatState>(chatProvider(id), (_, next) => _changed(next));
+    // Its replies are heard here: no banner for them while the call is up.
+    _container.read(callChatProvider.notifier).set((host: _container.read(activeHostProvider), sessionId: id));
   }
 
   @override
