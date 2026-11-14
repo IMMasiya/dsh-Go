@@ -605,7 +605,8 @@ class PetLayerState extends ConsumerState<PetLayer> with TickerProviderStateMixi
   }
 
   /// Plays [anim] over the state's own animation for one pass, then back.
-  void _startVariant(PetAnimation anim) {
+  void _startVariant(PetAnimation? anim) {
+    if (anim == null) return;
     final pack = _pack;
     _variant = anim;
     _variantTimer?.cancel();
