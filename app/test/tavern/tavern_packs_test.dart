@@ -177,6 +177,19 @@ class _Packs extends PreviewTavern {
     return preview;
   }
 
+  /// When set, making a pack from a draft waits for it.
+  Completer<void>? holdExport;
+
+  @override
+  Future<Uint8List> exportGameplayPackFromDraft(
+    TavernGameplayExportRequest request, {
+    required String expectedPreviewId,
+  }) async {
+    exported.add((request, expectedPreviewId));
+    await holdExport?.future;
+    return Uint8List.fromList([9]);
+  }
+
   @override
   Future<Uint8List> exportCharacterWithPacks(
     TavernGameplayExportRequest request, {
@@ -387,5 +400,71 @@ void main() {
 
     expect(find.byKey(const ValueKey('tavern-pack-export-findings')), findsNothing);
     expect(tester.widget<SettingsTile>(find.byKey(const ValueKey('tavern-pack-export-go'))).onTap, isNull);
+  });
+
+  testWidgets('a draft pack still goes out if the form changes while it is made, but is not offered to install', (
+    tester,
+  ) async {
+    const card = TavernAuthoringTarget(kind: TavernAuthoringTargetKind.character, id: 'lin');
+    const book = TavernAuthoringTarget(kind: TavernAuthoringTargetKind.lorebook, id: 'b1');
+    final draft = TavernAuthoringDraft(
+      id: 'd1',
+      draftRevision: 1,
+      sources: const [
+        TavernAuthoringSource(
+          target: card,
+          sourceFormat: 'chara_card_v3',
+          base: {
+            'data': {'name': '林晚'},
+          },
+          applySupported: true,
+        ),
+        TavernAuthoringSource(target: book, sourceFormat: 'lorebook', base: {'name': '旧城'}, applySupported: true),
+      ],
+      changes: const [],
+      createdAt: DateTime.utc(2026),
+      updatedAt: DateTime.utc(2026),
+    );
+    final tavern = _Packs()
+      ..preview = const TavernGameplayExportPreview(
+        previewId: 'p1',
+        sources: [],
+        mergedRaw: {},
+        idMappings: [],
+        resourceMappings: [],
+        issues: [],
+      )
+      ..holdExport = Completer<void>();
+    final shared = <String>[];
+    await _open(
+      tester,
+      tavern,
+      TavernPackDraftExportPage(draft: draft, cardResourceId: card.physicalResourceId),
+      overrides: [
+        tavernCardSinkProvider.overrideWith(
+          (ref) =>
+              (name, bytes, mime) async => shared.add(name),
+        ),
+      ],
+    );
+    await tester.ensureVisible(find.byKey(const ValueKey('tavern-pack-export-preview')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('tavern-pack-export-preview')));
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.byKey(const ValueKey('tavern-pack-export-go')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('tavern-pack-export-go')));
+    await tester.pump();
+
+    // The lorebook switched on while the pack is being made.
+    await tester.ensureVisible(find.byKey(ValueKey('tavern-pack-draft-book-${book.physicalResourceId}')));
+    await tester.tap(find.byKey(ValueKey('tavern-pack-draft-book-${book.physicalResourceId}')));
+    await tester.pump();
+    tavern.holdExport!.complete();
+    await tester.pumpAndSettle();
+
+    expect(tavern.exported.single.$1.draftResources, isEmpty);
+    expect(shared.single, '林晚 1.dshpack');
+    expect(find.byKey(const ValueKey('tavern-pack-draft-install')), findsNothing);
   });
 }
