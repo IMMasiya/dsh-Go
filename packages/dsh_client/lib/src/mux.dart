@@ -201,13 +201,14 @@ class DshMux {
   void reconnect() {
     if (_closed) return;
     _running = true;
-    _attempt = 0;
-    _retryTimer?.cancel();
     final link = _link;
     if (link != null) {
       _handleLoss(link, const DshCarrierLostException('reconnect requested'));
       unawaited(link.close(4000, 'reconnect requested'));
     }
+    // The loss above queues a backed-off retry; an explicit reconnect goes now.
+    _attempt = 0;
+    _retryTimer?.cancel();
     _ensureConnecting();
   }
 
