@@ -2,6 +2,7 @@
 // one batch on its snapshot, and the two-step export taking exactly what
 // was previewed.
 
+import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:dsh_app/tavern/tavern_preview.dart';
@@ -166,9 +167,13 @@ class _Packs extends PreviewTavern {
   final previewed = <TavernGameplayExportRequest>[];
   final exported = <(TavernGameplayExportRequest, String)>[];
 
+  /// When set, a preview waits for it.
+  Completer<void>? hold;
+
   @override
   Future<TavernGameplayExportPreview> previewGameplayExport(TavernGameplayExportRequest request) async {
     previewed.add(request);
+    await hold?.future;
     return preview;
   }
 
@@ -349,5 +354,38 @@ void main() {
     expect(tavern.exported.single.$2, 'p2');
     expect(identical(tavern.exported.single.$1, tavern.previewed.last), isTrue);
     expect(shared.single, '林晚.png');
+  });
+
+  testWidgets('a preview answered after an option changed is not shown, and export stays off', (tester) async {
+    final tavern = _Packs()
+      ..installed = [_version('beta', '1')]
+      ..preview = const TavernGameplayExportPreview(
+        previewId: 'p1',
+        sources: [],
+        mergedRaw: {},
+        idMappings: [],
+        resourceMappings: [],
+        issues: [],
+      )
+      ..hold = Completer<void>();
+    await _open(
+      tester,
+      tavern,
+      const TavernPackCardExportPage(
+        character: TavernCharacter(id: 'lin', name: '林晚'),
+      ),
+    );
+    await tester.scrollUntilVisible(find.byKey(const ValueKey('tavern-pack-export-preview')), 200);
+    await tester.tap(find.byKey(const ValueKey('tavern-pack-export-preview')));
+    await tester.pump();
+
+    // Changed while the preview is out.
+    await tester.tap(find.byKey(const ValueKey('tavern-pack-export-b-book')));
+    await tester.pump();
+    tavern.hold!.complete();
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const ValueKey('tavern-pack-export-findings')), findsNothing);
+    expect(tester.widget<SettingsTile>(find.byKey(const ValueKey('tavern-pack-export-go'))).onTap, isNull);
   });
 }
