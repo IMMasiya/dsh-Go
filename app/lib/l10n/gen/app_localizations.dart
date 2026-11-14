@@ -32426,6 +32426,30 @@ abstract class L10n {
   /// **'通话背景'**
   String get speechBackdropTitle;
 
+  /// No description provided for @speechCallSettings.
+  ///
+  /// In zh, this message translates to:
+  /// **'通话设置'**
+  String get speechCallSettings;
+
+  /// No description provided for @speechCallSpeechSection.
+  ///
+  /// In zh, this message translates to:
+  /// **'声音和识别'**
+  String get speechCallSpeechSection;
+
+  /// No description provided for @speechCallVoice.
+  ///
+  /// In zh, this message translates to:
+  /// **'她的声音'**
+  String get speechCallVoice;
+
+  /// No description provided for @speechCallSpeechHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'改了从下一句开始生效。'**
+  String get speechCallSpeechHint;
+
   /// No description provided for @speechBackdropSea.
   ///
   /// In zh, this message translates to:

@@ -32,6 +32,7 @@ import '../../speech/voice_cloud.dart';
 import '../../state/account_state.dart';
 import '../../state/app_notes.dart';
 import '../../state/notify_state.dart';
+import '../../state/voice_settings.dart';
 import '../../state/voice_state.dart';
 import '../chat/voice/voice_bridge.dart';
 import '../companion/companion_ask.dart';
@@ -122,32 +123,22 @@ class _VoiceCallPageState extends ConsumerState<VoiceCallPage> with WidgetsBindi
     final callSettings = ref.read(callSettingsProvider.notifier);
     final voices = ref.read(speechVoiceSettingsProvider.notifier);
     // The chosen voice, as soon as the settings have been read (the first reply comes later).
-    var voice = ref.read(speechVoiceSettingsProvider) ?? voices.defaults;
+    _voice = ref.read(speechVoiceSettingsProvider) ?? voices.defaults;
     final speaker = ref.read(speechSpeakerProvider);
     final audio = ref.read(speechAudioProvider);
     final deepseek = ref.read(deepSeekSpeechProvider);
-    final recognize = ref.read(callRecognizerProvider);
     final bridge = ref.read(voiceBridgeProvider);
     _call = VoiceCallController(
       audio: audio,
       conversation: widget.conversation,
       recognizer: () async {
-        voice = await voices.ready();
-        // DeepSeek's voice with nobody to pay for it here: she speaks with the phone's own.
-        if (voice.source == CompanionVoiceSource.deepseek) {
-          final speech = await deepseek();
-          if (speech == null) {
-            voice = voice.copyWith(source: CompanionVoiceSource.system);
-          } else {
-            speech.close();
-          }
-        }
-        // The phone's own voice warms up while the recognizer is found.
-        if (voice.source != CompanionVoiceSource.deepseek) unawaited(speaker.ready(voice));
-        return recognize();
+        // The phone's own voice warms up while the call starts, not when changed mid-reply.
+        await _settleVoice(warm: _call.phase == CallPhase.starting);
+        if (!mounted) return null;
+        return ref.read(callRecognizerProvider)();
       },
       voice: () => speechOutFor(
-        voice,
+        _voice,
         deepseek: deepseek,
         audio: audio,
         speaker: speaker,
@@ -171,6 +162,10 @@ class _VoiceCallPageState extends ConsumerState<VoiceCallPage> with WidgetsBindi
         if ((await callSettings.ready()).cue && _call.cueStill) await playThinkingCue(audio);
       },
     )..addListener(_changed);
+    // Changed in 通话设置 (or anywhere) during the call: from the next sentence on.
+    ref.listenManual(speechVoiceSettingsProvider, (_, _) => unawaited(_settleVoice()));
+    ref.listenManual(voiceSettingsProvider, (_, _) => unawaited(_call.refreshRecognizer()));
+    ref.listenManual(cloudAsrProvider, (_, _) => unawaited(_call.refreshRecognizer()));
     HapticFeedback.mediumImpact();
     _enter.forward();
     unawaited(_start());
@@ -178,6 +173,37 @@ class _VoiceCallPageState extends ConsumerState<VoiceCallPage> with WidgetsBindi
 
   /// Live captions, once the call listens, when the streaming model is on the phone.
   LiveWords? _live;
+
+  /// Her voice for the next reply.
+  late CompanionVoiceSettings _voice;
+
+  /// [_voice] from the settings: DeepSeek's with nobody to pay for it here
+  /// becomes the phone's own; the phone's own warms up.
+  Future<void> _settleVoice({bool warm = false}) async {
+    final mine = ++_settling;
+    var next = await ref.read(speechVoiceSettingsProvider.notifier).ready();
+    if (!mounted) return;
+    if (next.source == CompanionVoiceSource.deepseek) {
+      final speech = await ref.read(deepSeekSpeechProvider)();
+      if (speech == null) {
+        next = next.copyWith(source: CompanionVoiceSource.system);
+      } else {
+        speech.close();
+      }
+    }
+    // A later choice has the last word, whichever answer comes back first.
+    if (!mounted || mine != _settling) return;
+    // Setting the speaker up would cut a reply it is reading: that only as the
+    // call starts; a change later only starts the phone's engine, and takes
+    // effect with the next reply.
+    if (next.source != CompanionVoiceSource.deepseek) {
+      final speaker = ref.read(speechSpeakerProvider);
+      unawaited(warm ? speaker.ready(next) : speaker.warmPhone());
+    }
+    _voice = next;
+  }
+
+  int _settling = 0;
 
   Future<void> _start() async {
     final pcm = ref.read(streamingPcmCaptureProvider);
@@ -510,7 +536,10 @@ class _VoiceCallPageState extends ConsumerState<VoiceCallPage> with WidgetsBindi
                           live: !ended && _since != null,
                           blur: blur,
                           onTranscript: _openTranscript,
-                          onBackdrop: ended ? null : () => unawaited(showCallBackdropSheet(context)),
+                          onBackdrop: ended
+                              ? null
+                              // Trying voices out plays on her speaker: she stops this reply first.
+                              : () => unawaited(showCallBackdropSheet(context, inCall: true, beforeVoice: _call.skip)),
                         ),
                         distance: -14,
                       ),
@@ -718,8 +747,8 @@ class _TopBar extends StatelessWidget {
           const SizedBox(width: 10),
           _RoundKey(
             key: const ValueKey('call-backdrop'),
-            icon: AppIcons.theme,
-            label: l10n.speechBackdropTitle,
+            icon: AppIcons.settings,
+            label: l10n.speechCallSettings,
             blur: blur,
             onTap: onBackdrop,
           ),

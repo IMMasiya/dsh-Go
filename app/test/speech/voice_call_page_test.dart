@@ -1,5 +1,7 @@
+import 'dart:async';
 import 'dart:typed_data';
 
+import 'package:dsh_app/companion/companion_voice_source.dart';
 import 'package:dsh_app/speech/deepseek_speech.dart';
 import 'package:dsh_app/speech/speech_audio.dart';
 import 'package:dsh_app/speech/speech_settings.dart';
@@ -252,7 +254,10 @@ void main() {
     final (_, _) = await pumpCall(tester, extra: [callBackdropPickerProvider.overrideWithValue(() async => null)]);
     await tester.tap(find.byKey(const ValueKey('call-backdrop')));
     await tester.pump(const Duration(milliseconds: 600));
-    expect(find.text('通话背景'), findsOneWidget);
+    expect(find.text('通话设置'), findsOneWidget);
+    // In a call the sheet also offers her voice and the recognition.
+    expect(find.byKey(const ValueKey('call-voice')), findsOneWidget);
+    expect(find.byKey(const ValueKey('call-recognition')), findsOneWidget);
     expect(find.text('深海'), findsOneWidget);
     expect(find.text('选一张图'), findsOneWidget);
     // No companion pack in tests: her card is there but can't be chosen.
@@ -275,6 +280,21 @@ void main() {
     expect(find.text('听筒'), findsOneWidget);
     await tester.tap(find.byKey(const ValueKey('call-hang-up')));
     await tester.pump(const Duration(seconds: 1));
+  });
+
+  testWidgets('hung up while her voice is still being read: the closed page is asked nothing more', (tester) async {
+    final gate = Completer<void>();
+    await pumpCall(tester, extra: [speechVoiceSettingsProvider.overrideWith(() => _SlowVoice(gate.future))]);
+    await tester.tap(find.byKey(const ValueKey('call-hang-up')));
+    for (var i = 0; i < 20; i++) {
+      await tester.pump(const Duration(milliseconds: 60));
+    }
+    expect(find.byType(VoiceCallPage), findsNothing);
+    // DeepSeek's voice by default: it would look up who pays for it next.
+    gate.complete();
+    await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 20)));
+    await tester.pump();
+    expect(tester.takeException(), isNull);
   });
 
   for (final still in [false, true]) {
@@ -331,4 +351,17 @@ void main() {
     expect(again.read(callSettingsProvider).backdrop, CallBackdrop.image);
     expect(again.read(callSettingsProvider).image, '/x/backdrop-1.jpg');
   });
+}
+
+/// Her voice's settings, read only once [_gate] opens.
+class _SlowVoice extends SpeechVoiceSettingsController {
+  _SlowVoice(this._gate);
+
+  final Future<void> _gate;
+
+  @override
+  Future<CompanionVoiceSettings> ready() async {
+    await _gate;
+    return super.ready();
+  }
 }

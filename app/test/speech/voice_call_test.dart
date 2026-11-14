@@ -22,7 +22,7 @@ class _Rig {
     call = VoiceCallController(
       audio: audio,
       conversation: conversation,
-      recognizer: () async => noRecognizer ? null : this.cloud,
+      recognizer: () async => noRecognizer ? null : (pick != null ? await pick!() : (next ?? this.cloud)),
       voice: () {
         final out = FakeOut();
         outs.add(out);
@@ -38,6 +38,12 @@ class _Rig {
 
   final FakeAudio audio;
   final FakeCloud cloud;
+
+  /// What the recognition setting names now, when changed during the call.
+  FakeCloud? next;
+
+  /// Or, answered later: the recognizer as the provider would find it.
+  Future<FakeCloud> Function()? pick;
   final conversation = FakeConversation();
   final outs = <FakeOut>[];
   int cues = 0;
@@ -178,6 +184,69 @@ void main() {
     expect(rig.call.turns.first.cut, isTrue);
     expect(rig.call.turns.last.you, '我想问别的');
     expect(rig.call.turns.last.her, isEmpty);
+    rig.call.hangUp();
+  });
+
+  test('another recognition setting during the call takes the next sentence', () async {
+    final rig = _Rig();
+    await rig.call.start();
+    final other = FakeCloud('换了识别方式');
+    rig.next = other;
+    await rig.call.refreshRecognizer();
+    await rig.say();
+    expect(other.heard, hasLength(1));
+    expect(rig.cloud.heard, isEmpty);
+    expect(rig.conversation.sent.last, endsWith('换了识别方式'));
+    rig.call.hangUp();
+  });
+
+  test('two quick recognition changes: the later one stays, however the answers come back', () async {
+    final rig = _Rig();
+    await rig.call.start();
+    final slow = Completer<void>();
+    final first = FakeCloud('先选的');
+    final second = FakeCloud('后选的');
+    var calls = 0;
+    rig.pick = () async {
+      calls++;
+      if (calls == 1) {
+        await slow.future;
+        return first;
+      }
+      return second;
+    };
+    final earlier = rig.call.refreshRecognizer();
+    await rig.call.refreshRecognizer();
+    slow.complete();
+    await earlier;
+    await rig.say();
+    expect(second.heard, hasLength(1));
+    expect(first.heard, isEmpty);
+    rig.call.hangUp();
+  });
+
+  test('a recognition change while the call starts: the latest is used from the first sentence', () async {
+    final rig = _Rig();
+    final slow = Completer<void>();
+    final first = FakeCloud('先选的');
+    final second = FakeCloud('后选的');
+    var calls = 0;
+    rig.pick = () async {
+      calls++;
+      if (calls == 1) {
+        await slow.future;
+        return first;
+      }
+      return second;
+    };
+    final starting = rig.call.start();
+    await pumpEventQueue();
+    await rig.call.refreshRecognizer();
+    slow.complete();
+    await starting;
+    await rig.say();
+    expect(second.heard, hasLength(1));
+    expect(first.heard, isEmpty);
     rig.call.hangUp();
   });
 
@@ -335,5 +404,50 @@ void main() {
     expect(rig.outs.single.stopped, isTrue);
     expect(rig.call.phase, CallPhase.listening);
     expect(rig.conversation.interrupts, 0);
+  });
+
+  test('skip before she begins: none of this reply is read, it goes on in the conversation', () async {
+    final rig = _Rig();
+    await rig.call.start();
+    await rig.say();
+    rig.conversation.reply('北京晴，');
+    expect(rig.call.phase, CallPhase.thinking);
+    rig.call.skip();
+    expect(rig.outs.single.stopped, isTrue);
+    expect(rig.call.phase, CallPhase.listening);
+    rig.conversation.reply('北京晴，最高二十度。', done: true);
+    expect(rig.outs.single.added, ['北京晴，']);
+
+    // Before any text: none comes to her voice either.
+    await rig.say();
+    rig.call.skip();
+    rig.conversation.reply('好的。', done: true);
+    expect(rig.outs, hasLength(1));
+    expect(rig.call.phase, CallPhase.listening);
+    expect(rig.conversation.interrupts, 0);
+  });
+
+  test('skip while what was said is still being made out: it is sent, its reply not read', () async {
+    final rig = _Rig();
+    await rig.call.start();
+    final gate = Completer<void>();
+    rig.cloud.wait = gate.future;
+    await rig.say();
+    expect(rig.call.phase, CallPhase.thinking);
+    rig.call.skip();
+    gate.complete();
+    await pumpEventQueue();
+    expect(rig.conversation.sent.single, endsWith('今天天气怎么样'));
+    expect(rig.call.phase, CallPhase.listening);
+    rig.conversation.reply('晴。', done: true);
+    expect(rig.outs, isEmpty);
+    expect(rig.call.phase, CallPhase.listening);
+
+    // The next one is read again.
+    rig.cloud.wait = null;
+    await rig.say();
+    rig.conversation.reply('好的。');
+    expect(rig.outs, hasLength(1));
+    rig.call.hangUp();
   });
 }

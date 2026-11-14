@@ -177,6 +177,9 @@ class VoiceCallController extends ChangeNotifier {
   bool _replyDone = true;
   int _turn = 0;
   int _recognizing = 0;
+
+  /// The recognition under way when she was skipped before speaking.
+  int _hushed = 0;
   bool _disposed = false;
 
   final _turns = <CallTurn>[];
@@ -217,6 +220,20 @@ class VoiceCallController extends ChangeNotifier {
   /// sending, the voice); cleared when the next turn starts.
   Object? get error => _error;
 
+  /// The recognition setting changed: what is said next goes to what it names
+  /// now (if that can listen; else to the one already in use).
+  Future<void> refreshRecognizer() async {
+    if (_phase == CallPhase.ended) return;
+    final mine = ++_refreshing;
+    // Still starting: start() looks again with the new setting.
+    if (_cloud == null) return;
+    final next = await recognizer();
+    // A later change has the last word, whichever answer comes back first.
+    if (next != null && mine == _refreshing && _phase != CallPhase.ended) _cloud = next;
+  }
+
+  int _refreshing = 0;
+
   Future<void> start() async {
     unawaited(const DiagnosticsChannel().recordVoiceStage('call_started'));
     _replySub = conversation.replies.listen(_onReply);
@@ -227,8 +244,14 @@ class VoiceCallController extends ChangeNotifier {
     _speaker = chosen.speaker;
     _spokenHint = chosen.spokenHint;
     notifyListeners();
-    final cloud = await recognizer();
-    if (_disposed || _phase == CallPhase.ended) return;
+    VoiceCloud? cloud;
+    int mine;
+    do {
+      // Changed while this looked (refreshRecognizer during start): look again.
+      mine = ++_refreshing;
+      cloud = await recognizer();
+      if (_disposed || _phase == CallPhase.ended) return;
+    } while (mine != _refreshing);
     if (cloud == null) {
       _end(CallEnd.noRecognizer);
       return;
@@ -356,7 +379,9 @@ class VoiceCallController extends ChangeNotifier {
     _voiced = false;
     _spoken = 0;
     _turn++;
-    _replyDone = false;
+    // Skipped while this was being made out: it still goes, its reply is not read.
+    final hushed = mine == _hushed;
+    _replyDone = hushed;
     final hint = _spokenHint;
     final cut = _cutAt;
     _cutAt = null;
@@ -365,8 +390,12 @@ class VoiceCallController extends ChangeNotifier {
     _hinted = true;
     _cued = false;
     _cueTimer?.cancel();
-    _cueTimer = Timer(cueAfter, _cue);
-    _set(CallPhase.thinking);
+    if (hushed) {
+      if (!_disposed) notifyListeners();
+    } else {
+      _cueTimer = Timer(cueAfter, _cue);
+      _set(CallPhase.thinking);
+    }
     final sent = await conversation.send(message);
     if (_phase == CallPhase.ended) return;
     if (!sent) {
@@ -502,8 +531,13 @@ class VoiceCallController extends ChangeNotifier {
   }
 
   /// Tapped while she speaks: she stops, the reply goes on in the conversation.
+  /// Before she has begun (her voice about to be tried out on the same
+  /// speaker), she won't read this reply at all.
   void skip() {
-    if (_phase != CallPhase.speaking) return;
+    if (_phase != CallPhase.speaking && _phase != CallPhase.thinking) return;
+    // Thinking may still be making out what was said: that reply stays quiet too.
+    if (_phase == CallPhase.thinking) _hushed = _recognizing;
+    _cueTimer?.cancel();
     _stopVoice();
     // The rest is there to read.
     _voiced = false;

@@ -17710,6 +17710,18 @@ class L10nZh extends L10n {
   String get speechBackdropTitle => '通话背景';
 
   @override
+  String get speechCallSettings => '通话设置';
+
+  @override
+  String get speechCallSpeechSection => '声音和识别';
+
+  @override
+  String get speechCallVoice => '她的声音';
+
+  @override
+  String get speechCallSpeechHint => '改了从下一句开始生效。';
+
+  @override
   String get speechBackdropSea => '深海';
 
   @override

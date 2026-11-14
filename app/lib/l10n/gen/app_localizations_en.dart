@@ -18690,6 +18690,18 @@ class L10nEn extends L10n {
   String get speechBackdropTitle => 'Call background';
 
   @override
+  String get speechCallSettings => 'Call settings';
+
+  @override
+  String get speechCallSpeechSection => 'Voice and recognition';
+
+  @override
+  String get speechCallVoice => 'Her voice';
+
+  @override
+  String get speechCallSpeechHint => 'Changes apply from the next sentence.';
+
+  @override
   String get speechBackdropSea => 'Deep sea';
 
   @override

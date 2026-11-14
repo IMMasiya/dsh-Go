@@ -173,12 +173,16 @@ class FakeCloud implements VoiceCloud {
   Object? fail;
   final heard = <Uint8List>[];
 
+  /// Answers once this completes, when set.
+  Future<void>? wait;
+
   @override
   int get maxSeconds => 118;
 
   @override
   Future<String> transcribe(Uint8List wav) async {
     heard.add(wav);
+    if (wait case final gate?) await gate;
     if (fail case final error?) throw error;
     return text;
   }
