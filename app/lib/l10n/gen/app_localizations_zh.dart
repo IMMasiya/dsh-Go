@@ -22034,6 +22034,297 @@ class L10nZh extends L10n {
   String get tavernChannelKeyCleared => 'Key 会在保存时清除';
 
   @override
+  String get tavernDrafts => '草稿';
+
+  @override
+  String get tavernDraftsSubtitle => '改动先放在草稿里，挑好再应用到真的卡上';
+
+  @override
+  String get tavernDraftsForCard => '用 AI 改这张卡';
+
+  @override
+  String get tavernDraftsForCardSubtitle => '在草稿里改，挑好再应用';
+
+  @override
+  String get tavernDraftsEmpty => '还没有草稿';
+
+  @override
+  String get tavernDraftsEmptyOwn => '新建一份草稿，告诉 AI 想怎么改这张卡。';
+
+  @override
+  String get tavernDraftsEmptyAll => '从角色页开一份草稿，或者从文件起稿：文件先当草稿，不会直接导入。';
+
+  @override
+  String get tavernDraftNew => '新草稿';
+
+  @override
+  String get tavernDraftFromFile => '从文件起稿';
+
+  @override
+  String tavernDraftSeedUnsupported(String name) {
+    return '$name 不是角色卡或世界书，没法起稿';
+  }
+
+  @override
+  String get tavernDraft => '草稿';
+
+  @override
+  String get tavernDraftSubtitle => '草稿里的改动还没用到真的卡上';
+
+  @override
+  String get tavernDraftGone => '这份草稿已经不在了';
+
+  @override
+  String get tavernDraftKindCharacter => '角色卡';
+
+  @override
+  String get tavernDraftKindPreset => '预设';
+
+  @override
+  String tavernDraftNewSource(String name) {
+    return '$name（还没存）';
+  }
+
+  @override
+  String get tavernDraftGreetings => '备选开场白';
+
+  @override
+  String tavernDraftEntry(int n) {
+    return '第 $n 条';
+  }
+
+  @override
+  String get tavernDraftNoChanges => '还没有改动';
+
+  @override
+  String get tavernDraftNoChangesHint => '在下面告诉 AI 想怎么改';
+
+  @override
+  String get tavernDraftBefore => '原来';
+
+  @override
+  String get tavernDraftAfter => '改成';
+
+  @override
+  String get tavernDraftAbsent => '（没有）';
+
+  @override
+  String get tavernDraftRemoved => '删掉';
+
+  @override
+  String get tavernDraftAppliedChange => '已应用';
+
+  @override
+  String tavernDraftDependsOn(int n) {
+    return '要和它前面的 $n 处改动一起用';
+  }
+
+  @override
+  String get tavernDraftRemoveChange => '从草稿里去掉这处';
+
+  @override
+  String tavernDraftApply(int n) {
+    return '应用 $n 处';
+  }
+
+  @override
+  String get tavernDraftSaveNew => '另存为新的';
+
+  @override
+  String get tavernDraftSavedNew => '已另存为新的';
+
+  @override
+  String get tavernDraftChecked => '检查过，没发现问题';
+
+  @override
+  String get tavernDraftCannotApply => '正则和预设的草稿暂时只能预览，不能应用';
+
+  @override
+  String tavernDraftApplied(String name) {
+    return '已应用到「$name」';
+  }
+
+  @override
+  String get tavernDraftNoChange => '和现在的一样，没有要改的';
+
+  @override
+  String tavernDraftNotApplied(String reason) {
+    return '没有应用：$reason';
+  }
+
+  @override
+  String get tavernDraftUnconfirmed => '写入结果还没确认。先别重复点，过一会儿看历史版本里有没有。';
+
+  @override
+  String tavernDraftApplyUnknown(String reason) {
+    return '没收到结果（$reason），再点一次会接着同一次操作';
+  }
+
+  @override
+  String tavernDraftBehind(String name) {
+    return '「$name」在起草之后改过了（也可能是刚应用过）。按现在的版本继续，再看一遍改动。';
+  }
+
+  @override
+  String get tavernDraftCatchUp => '按现在的版本继续';
+
+  @override
+  String get tavernDraftChangedMeanwhile => '草稿刚被改过，已刷新';
+
+  @override
+  String get tavernDraftPending => '上一次写入还没确认，暂时不能再应用';
+
+  @override
+  String get tavernDraftDelete => '删除草稿';
+
+  @override
+  String get tavernDraftDeleteTitle => '删除这份草稿？';
+
+  @override
+  String get tavernDraftDeleteBody => '只删草稿，已经应用到卡上的不受影响。';
+
+  @override
+  String get tavernDraftAskHint => '想怎么改？比如：开场白冷淡一点';
+
+  @override
+  String get tavernDraftAiSend => '让 AI 改';
+
+  @override
+  String get tavernDraftAiStop => '停下';
+
+  @override
+  String get tavernDraftAiTitle => 'AI';
+
+  @override
+  String get tavernDraftAiRunning => '正在改…';
+
+  @override
+  String get tavernDraftAiDone => '改好了，改动在上面，挑好再应用';
+
+  @override
+  String get tavernDraftAiStopped => '已停下';
+
+  @override
+  String get tavernDraftAiConflict => '草稿在这期间被改过，AI 停下了';
+
+  @override
+  String get tavernDraftAiBudget => '四次请求用完了，先停在这里';
+
+  @override
+  String get tavernDraftAiFailed => '出错了';
+
+  @override
+  String get tavernDraftAiInterrupted => '中断了（App 关过）';
+
+  @override
+  String get tavernDraftEarlier => '之前问过的';
+
+  @override
+  String tavernDraftRunReceipts(int changes, int requests) {
+    return '改了 $changes 次 · $requests 次请求';
+  }
+
+  @override
+  String get tavernDraftHistory => '历史版本';
+
+  @override
+  String get tavernDraftHistoryEmpty => '还没有记下的版本';
+
+  @override
+  String get tavernDraftHistoryNote => '回到某一版会另存成新的一版，之后的版本都还在；图片和对话不受影响。';
+
+  @override
+  String tavernDraftVersion(int n) {
+    return '第 $n 版';
+  }
+
+  @override
+  String get tavernDraftVersionCurrent => '现在';
+
+  @override
+  String get tavernDraftRestore => '回到这一版';
+
+  @override
+  String tavernDraftRestoreTitle(int n) {
+    return '回到第 $n 版？';
+  }
+
+  @override
+  String get tavernDraftRestoreBody => '会另存成新的一版。';
+
+  @override
+  String tavernDraftRestored(int n) {
+    return '已回到第 $n 版';
+  }
+
+  @override
+  String get tavernDraftRestoreMoved => '这期间又改过了，刷新后再试';
+
+  @override
+  String get tavernDraftPrompt => '用草稿看提示词';
+
+  @override
+  String get tavernDraftPromptSubtitle => '把勾选的改动放进去，看下一轮会发什么；什么都不发送';
+
+  @override
+  String get tavernDraftPromptFrom => '接着哪段对话';
+
+  @override
+  String get tavernDraftPromptFirst => '新对话的第一句';
+
+  @override
+  String get tavernDraftPromptText => '下一句（可不填）';
+
+  @override
+  String get tavernDraftPromptTextHint => '你会说的话';
+
+  @override
+  String get tavernDraftPromptShow => '看提示词';
+
+  @override
+  String get tavernDraftPromptComplete => '提示词';
+
+  @override
+  String get tavernDraftPromptUnsupported => '这张卡有些内容在预览里没法照实拼出来';
+
+  @override
+  String get tavernDraftPromptNote => '卡里的脚本在预览里不运行。';
+
+  @override
+  String tavernDraftUsagePartial(String prompt, String completion) {
+    return '已报告：输入 $prompt · 输出 $completion（有请求没报告用量）';
+  }
+
+  @override
+  String get tavernDraftTrial => '试玩';
+
+  @override
+  String get tavernDraftTrialSubtitle => '用草稿在一段临时对话里聊几句，真实对话不受影响';
+
+  @override
+  String get tavernDraftTrialNote => '会真的请求模型，按实际用量计费；最多四句。';
+
+  @override
+  String tavernDraftTrialLine(int n) {
+    return '第 $n 句';
+  }
+
+  @override
+  String get tavernDraftTrialMore => '再加一句';
+
+  @override
+  String get tavernDraftTrialPlay => '开始试玩';
+
+  @override
+  String get tavernDraftTrialRunning => '正在试…';
+
+  @override
+  String get tavernDraftTrialDone => '试完了';
+
+  @override
+  String get tavernDraftTrialUnsupported => '这份草稿暂时没法试玩';
+
+  @override
   String get updateCheck => '检查更新';
 
   @override

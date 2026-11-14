@@ -174,6 +174,131 @@ class PreviewTavern implements Tavern, TavernPreview {
   Future<List<TavernToolTurnSummary>> recentToolTurns(String chatId, {int limit = 20}) =>
       _noTool('recentToolTurns', chatId: chatId);
 
+  // 做卡草稿 (stage 2A): the preview keeps none; there is nothing to list or
+  // read, and nothing is made up for a draft that would be written.
+  static Future<T> _noDraft<T>() => Future<T>.error(UnsupportedError('The preview keeps no authoring drafts.'));
+
+  @override
+  Future<List<TavernAuthoringDraftSummary>> listAuthoringDrafts() async => const [];
+
+  @override
+  Future<TavernAuthoringDraft?> readAuthoringDraft(String draftId) async => null;
+
+  @override
+  TavernAuthoringRun startAuthoringRun(
+    TavernAuthoringRunRequest request, {
+    TavernAuthoringPromptHost? promptHost,
+    TavernAuthoringPreviewHost? renderHost,
+  }) => throw UnsupportedError('The preview runs no authoring.');
+
+  @override
+  TavernAuthoringTask<TavernAuthoringPromptPreview> previewAuthoringPrompt(
+    TavernAuthoringPromptRequest request, {
+    TavernAuthoringPromptHost? host,
+  }) => throw UnsupportedError('The preview runs no authoring.');
+
+  @override
+  TavernAuthoringSimulationTask simulateAuthoringDraft(TavernAuthoringSimulationRequest request) =>
+      throw UnsupportedError('The preview runs no authoring.');
+
+  @override
+  TavernAuthoringTask<TavernAuthoringRenderResult> renderAuthoringDraft(
+    TavernAuthoringRenderRequest request, {
+    required TavernAuthoringPreviewHost host,
+  }) => throw UnsupportedError('The preview runs no authoring.');
+
+  @override
+  Future<TavernAuthoringRunSnapshot?> readAuthoringRun(String runId) async => null;
+
+  @override
+  Future<List<TavernAuthoringRunSummary>> listAuthoringRuns({
+    String? draftId,
+    int limit = 30,
+    String? beforeRunId,
+  }) async => const [];
+
+  @override
+  Future<TavernAuthoringToolReceipt?> readAuthoringToolReceipt(String runId, String receiptId) async => null;
+
+  @override
+  Future<void> cancelAuthoringRun(String runId) => _noDraft();
+
+  @override
+  Future<TavernAuthoringDraft> createAuthoringSeed(TavernAuthoringSeedInput input) => _noDraft();
+
+  @override
+  Future<TavernAuthoringSaveAsReceipt> saveAuthoringAsNew(
+    String draftId, {
+    required int draftRevision,
+    required String physicalResourceId,
+    required List<String> changeIds,
+    required String operationId,
+    required TavernAuthoringMediaSelection media,
+    String? domainId,
+  }) => _noDraft();
+
+  @override
+  Future<TavernAuthoringReceipt> applyAuthoringChanges(
+    String draftId, {
+    required int draftRevision,
+    required String physicalResourceId,
+    required List<String> changeIds,
+    required TavernAuthorityRevision expectedAuthorityRevision,
+    required String operationId,
+  }) => _noDraft();
+
+  @override
+  Future<TavernAuthoringOperation?> readAuthoringOperation(String operationId, {required String domainId}) async =>
+      null;
+
+  @override
+  Future<List<TavernAuthoringRevisionSummary>> listAuthoringRevisions(String physicalResourceId) async => const [];
+
+  @override
+  Future<TavernAuthoringReceipt> restoreAuthoringRevision(
+    String physicalResourceId, {
+    required TavernAuthorityRevision revision,
+    required TavernAuthorityRevision expectedAuthorityRevision,
+    required String operationId,
+  }) => _noDraft();
+
+  @override
+  Future<TavernAuthoringDraft> createAuthoringDraft(List<TavernAuthoringTarget> targets) => _noDraft();
+
+  @override
+  Future<TavernAuthoringDraft> editAuthoringDraft(
+    String draftId, {
+    required int draftRevision,
+    required List<TavernAuthoringChange> changes,
+  }) => _noDraft();
+
+  @override
+  Future<TavernAuthoringDraft> rebaseAuthoringDraft(
+    String draftId, {
+    required int draftRevision,
+    required List<TavernAuthoringChange> changes,
+  }) => _noDraft();
+
+  @override
+  Future<void> deleteAuthoringDraft(String draftId, {required int draftRevision}) => _noDraft();
+
+  @override
+  Future<TavernAuthoringPreview> previewAuthoringDraft(
+    String draftId, {
+    required int draftRevision,
+    required List<String> changeIds,
+  }) => _noDraft();
+
+  @override
+  Future<TavernAuthoringRegexTest> testAuthoringRegex(
+    String draftId, {
+    required int draftRevision,
+    required List<String> changeIds,
+    required String physicalResourceId,
+    required String scriptPath,
+    required String text,
+  }) => _noDraft();
+
   /// The engine sums in one query; the preview adds up its line, a page at
   /// a time through [path] (as a test's line overrides it), the same way.
   @override

@@ -23228,6 +23228,300 @@ class L10nEn extends L10n {
   String get tavernChannelKeyCleared => 'The key is cleared when you save';
 
   @override
+  String get tavernDrafts => 'Drafts';
+
+  @override
+  String get tavernDraftsSubtitle => 'Changes wait in a draft until you pick what goes into the real one';
+
+  @override
+  String get tavernDraftsForCard => 'Change this card with AI';
+
+  @override
+  String get tavernDraftsForCardSubtitle => 'In a draft; apply what you pick';
+
+  @override
+  String get tavernDraftsEmpty => 'No drafts yet';
+
+  @override
+  String get tavernDraftsEmptyOwn => 'Start a draft and tell the AI how to change this card.';
+
+  @override
+  String get tavernDraftsEmptyAll =>
+      'Start one from a character\'s page, or from a file: it stays a draft, nothing is imported.';
+
+  @override
+  String get tavernDraftNew => 'New draft';
+
+  @override
+  String get tavernDraftFromFile => 'Draft from a file';
+
+  @override
+  String tavernDraftSeedUnsupported(String name) {
+    return '$name isn\'t a card or a lorebook';
+  }
+
+  @override
+  String get tavernDraft => 'Draft';
+
+  @override
+  String get tavernDraftSubtitle => 'Nothing here is in the real one yet';
+
+  @override
+  String get tavernDraftGone => 'This draft is gone';
+
+  @override
+  String get tavernDraftKindCharacter => 'Card';
+
+  @override
+  String get tavernDraftKindPreset => 'Preset';
+
+  @override
+  String tavernDraftNewSource(String name) {
+    return '$name (not saved yet)';
+  }
+
+  @override
+  String get tavernDraftGreetings => 'Other greetings';
+
+  @override
+  String tavernDraftEntry(int n) {
+    return 'Entry $n';
+  }
+
+  @override
+  String get tavernDraftNoChanges => 'No changes yet';
+
+  @override
+  String get tavernDraftNoChangesHint => 'Tell the AI below what to change';
+
+  @override
+  String get tavernDraftBefore => 'Was';
+
+  @override
+  String get tavernDraftAfter => 'Becomes';
+
+  @override
+  String get tavernDraftAbsent => '(none)';
+
+  @override
+  String get tavernDraftRemoved => 'Removed';
+
+  @override
+  String get tavernDraftAppliedChange => 'Applied';
+
+  @override
+  String tavernDraftDependsOn(int n) {
+    return 'Goes with $n earlier change(s)';
+  }
+
+  @override
+  String get tavernDraftRemoveChange => 'Take this out of the draft';
+
+  @override
+  String tavernDraftApply(int n) {
+    return 'Apply $n';
+  }
+
+  @override
+  String get tavernDraftSaveNew => 'Save as new';
+
+  @override
+  String get tavernDraftSavedNew => 'Saved as new';
+
+  @override
+  String get tavernDraftChecked => 'Checked: nothing found';
+
+  @override
+  String get tavernDraftCannotApply => 'Regex and preset drafts can be previewed, not applied yet';
+
+  @override
+  String tavernDraftApplied(String name) {
+    return 'Applied to $name';
+  }
+
+  @override
+  String get tavernDraftNoChange => 'Same as now: nothing to change';
+
+  @override
+  String tavernDraftNotApplied(String reason) {
+    return 'Not applied: $reason';
+  }
+
+  @override
+  String get tavernDraftUnconfirmed =>
+      'The write isn\'t confirmed yet. Don\'t repeat it; check the history in a while.';
+
+  @override
+  String tavernDraftApplyUnknown(String reason) {
+    return 'No answer ($reason); tapping again continues the same one';
+  }
+
+  @override
+  String tavernDraftBehind(String name) {
+    return '$name changed after this draft began (maybe just now, by applying). Continue from it and look the changes over again.';
+  }
+
+  @override
+  String get tavernDraftCatchUp => 'Continue from now';
+
+  @override
+  String get tavernDraftChangedMeanwhile => 'The draft just changed; reloaded';
+
+  @override
+  String get tavernDraftPending => 'The last write isn\'t confirmed; it can\'t be applied again yet';
+
+  @override
+  String get tavernDraftDelete => 'Delete draft';
+
+  @override
+  String get tavernDraftDeleteTitle => 'Delete this draft?';
+
+  @override
+  String get tavernDraftDeleteBody => 'Only the draft goes; what was applied stays.';
+
+  @override
+  String get tavernDraftAskHint => 'What to change? e.g. a cooler greeting';
+
+  @override
+  String get tavernDraftAiSend => 'Ask the AI';
+
+  @override
+  String get tavernDraftAiStop => 'Stop';
+
+  @override
+  String get tavernDraftAiTitle => 'AI';
+
+  @override
+  String get tavernDraftAiRunning => 'Working…';
+
+  @override
+  String get tavernDraftAiDone => 'Done: the changes are above; pick and apply';
+
+  @override
+  String get tavernDraftAiStopped => 'Stopped';
+
+  @override
+  String get tavernDraftAiConflict => 'The draft changed meanwhile; the AI stopped';
+
+  @override
+  String get tavernDraftAiBudget => 'Four requests used; it stopped here';
+
+  @override
+  String get tavernDraftAiFailed => 'Something went wrong';
+
+  @override
+  String get tavernDraftAiInterrupted => 'Interrupted (the app closed)';
+
+  @override
+  String get tavernDraftEarlier => 'Asked before';
+
+  @override
+  String tavernDraftRunReceipts(int changes, int requests) {
+    return '$changes edit(s) · $requests request(s)';
+  }
+
+  @override
+  String get tavernDraftHistory => 'Versions';
+
+  @override
+  String get tavernDraftHistoryEmpty => 'No versions recorded yet';
+
+  @override
+  String get tavernDraftHistoryNote =>
+      'Going back saves it as a new version; later ones stay. Pictures and chats aren\'t touched.';
+
+  @override
+  String tavernDraftVersion(int n) {
+    return 'Version $n';
+  }
+
+  @override
+  String get tavernDraftVersionCurrent => 'Current';
+
+  @override
+  String get tavernDraftRestore => 'Go back to it';
+
+  @override
+  String tavernDraftRestoreTitle(int n) {
+    return 'Go back to version $n?';
+  }
+
+  @override
+  String get tavernDraftRestoreBody => 'It is saved as a new version.';
+
+  @override
+  String tavernDraftRestored(int n) {
+    return 'Back to version $n';
+  }
+
+  @override
+  String get tavernDraftRestoreMoved => 'It changed meanwhile; try again';
+
+  @override
+  String get tavernDraftPrompt => 'Prompt with the draft';
+
+  @override
+  String get tavernDraftPromptSubtitle => 'What the next turn would send with the ticked changes; nothing is sent';
+
+  @override
+  String get tavernDraftPromptFrom => 'After which chat';
+
+  @override
+  String get tavernDraftPromptFirst => 'A new chat';
+
+  @override
+  String get tavernDraftPromptText => 'Next line (optional)';
+
+  @override
+  String get tavernDraftPromptTextHint => 'What you would say';
+
+  @override
+  String get tavernDraftPromptShow => 'Show the prompt';
+
+  @override
+  String get tavernDraftPromptComplete => 'Prompt';
+
+  @override
+  String get tavernDraftPromptUnsupported => 'Part of this card can\'t be put together faithfully in a preview';
+
+  @override
+  String get tavernDraftPromptNote => 'The card\'s scripts don\'t run in a preview.';
+
+  @override
+  String tavernDraftUsagePartial(String prompt, String completion) {
+    return 'Reported: in $prompt · out $completion (some requests reported nothing)';
+  }
+
+  @override
+  String get tavernDraftTrial => 'Try it';
+
+  @override
+  String get tavernDraftTrialSubtitle => 'A few lines with the draft in a chat of its own; real chats aren\'t touched';
+
+  @override
+  String get tavernDraftTrialNote => 'The model is really asked and billed as used; four lines at most.';
+
+  @override
+  String tavernDraftTrialLine(int n) {
+    return 'Line $n';
+  }
+
+  @override
+  String get tavernDraftTrialMore => 'Add a line';
+
+  @override
+  String get tavernDraftTrialPlay => 'Start';
+
+  @override
+  String get tavernDraftTrialRunning => 'Playing…';
+
+  @override
+  String get tavernDraftTrialDone => 'Done';
+
+  @override
+  String get tavernDraftTrialUnsupported => 'This draft can\'t be tried yet';
+
+  @override
   String get updateCheck => 'Check for updates';
 
   @override

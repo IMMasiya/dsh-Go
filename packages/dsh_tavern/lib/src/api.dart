@@ -8,6 +8,13 @@
 
 import 'dart:typed_data';
 
+import 'authoring.dart';
+import 'authoring_preview.dart';
+import 'authoring_render.dart';
+import 'authoring_run.dart';
+import 'authoring_script_preview.dart';
+import 'authoring_seed.dart';
+import 'authoring_simulation.dart';
 import 'backup.dart';
 import 'director.dart';
 import 'import_report.dart';
@@ -466,6 +473,133 @@ abstract interface class Tavern {
   /// Persisted script data and awaited App lifecycle bridge. Capabilities
   /// distinguish the implemented surface from later script/generation layers.
   TavernScriptBridge get scripts;
+
+  // Authoring drafts ----------------------------------------------------------
+
+  /// Captures existing sources in their actual writer queues. Characters and
+  /// standalone books include a durable authority revision. Other targets
+  /// support drafts and static checks, but not adoption.
+  Future<TavernAuthoringDraft> createAuthoringDraft(List<TavernAuthoringTarget> targets);
+  Future<TavernAuthoringDraft?> readAuthoringDraft(String draftId);
+
+  /// Summary discovery does not validate every saved change; read or preview
+  /// a draft to validate its complete persisted structure.
+  Future<List<TavernAuthoringDraftSummary>> listAuthoringDrafts();
+
+  /// Replaces the change list, keeping its saved base, and advances the draft
+  /// revision. Input values are captured before the first asynchronous wait.
+  Future<TavernAuthoringDraft> editAuthoringDraft(
+    String draftId, {
+    required int draftRevision,
+    required List<TavernAuthoringChange> changes,
+  });
+
+  /// Explicitly captures a new base and adopts only the resubmitted changes.
+  /// An empty list resets the draft for a subsequent editing step.
+  Future<TavernAuthoringDraft> rebaseAuthoringDraft(
+    String draftId, {
+    required int draftRevision,
+    required List<TavernAuthoringChange> changes,
+  });
+  Future<void> deleteAuthoringDraft(String draftId, {required int draftRevision});
+
+  /// Selects explicit change IDs, checks dependency closure, and runs static
+  /// intake checks. It does not execute macros or write an import report.
+  Future<TavernAuthoringPreview> previewAuthoringDraft(
+    String draftId, {
+    required int draftRevision,
+    required List<String> changeIds,
+  });
+  Future<TavernAuthoringRegexTest> testAuthoringRegex(
+    String draftId, {
+    required int draftRevision,
+    required List<String> changeIds,
+    required String physicalResourceId,
+    required String scriptPath,
+    required String text,
+  });
+
+  /// Adopts one physical resource after checking its saved base, the supplied
+  /// durable revision and the fresh source inside its actual writer queue.
+  /// The draft stays unchanged. Further changes to an adopted target require
+  /// an explicit rebase; untouched targets can still use their saved bases.
+  /// Reusing an operation ID with the same parameters returns its receipt,
+  /// including after the draft was deleted, without repeating the write.
+  Future<TavernAuthoringReceipt> applyAuthoringChanges(
+    String draftId, {
+    required int draftRevision,
+    required String physicalResourceId,
+    required List<String> changeIds,
+    required TavernAuthorityRevision expectedAuthorityRevision,
+    required String operationId,
+  });
+
+  Future<TavernAuthoringOperation?> readAuthoringOperation(String operationId, {required String domainId});
+
+  /// Lists confirmed adoptions only. Prepared and unconfirmed operations are
+  /// available through readAuthoringOperation and are not committed versions.
+  Future<List<TavernAuthoringRevisionSummary>> listAuthoringRevisions(String physicalResourceId);
+
+  /// Uses a historical JSON after-image as a new adoption with a new version.
+  /// The target must still exist; a character must retain the same library
+  /// identity and available media. This does not restore deleted media or
+  /// overwrite library.json, original imports or attachments.
+  Future<TavernAuthoringReceipt> restoreAuthoringRevision(
+    String physicalResourceId, {
+    required TavernAuthorityRevision revision,
+    required TavernAuthorityRevision expectedAuthorityRevision,
+    required String operationId,
+  });
+
+  /// Starts a separate authoring conversation whose tools only edit drafts.
+  /// Reusing the same run identity never sends another model request.
+  TavernAuthoringRun startAuthoringRun(
+    TavernAuthoringRunRequest request, {
+    TavernAuthoringPromptHost? promptHost,
+    TavernAuthoringPreviewHost? renderHost,
+  });
+  Future<TavernAuthoringRunSnapshot?> readAuthoringRun(String runId);
+  Future<List<TavernAuthoringRunSummary>> listAuthoringRuns({String? draftId, int limit = 30, String? beforeRunId});
+  Future<TavernAuthoringToolReceipt?> readAuthoringToolReceipt(String runId, String receiptId);
+  Future<void> cancelAuthoringRun(String runId);
+
+  /// Saves an imported container as a draft, retaining its raw source and media.
+  Future<TavernAuthoringDraft> createAuthoringSeed(TavernAuthoringSeedInput input);
+
+  /// Creates one new resource without changing the source draft. Preserve the
+  /// returned operation domain on retries, especially after a root restore.
+  Future<TavernAuthoringSaveAsReceipt> saveAuthoringAsNew(
+    String draftId, {
+    required int draftRevision,
+    required String physicalResourceId,
+    required List<String> changeIds,
+    required String operationId,
+    required TavernAuthoringMediaSelection media,
+    String? domainId,
+  });
+
+  /// Prepares the complete selected prompt in an isolated captured context.
+  /// Unsupported dependencies return no assembly and never fall back to live execution.
+  TavernAuthoringTask<TavernAuthoringPromptPreview> previewAuthoringPrompt(
+    TavernAuthoringPromptRequest request, {
+    TavernAuthoringPromptHost? host,
+  });
+
+  /// Renders selected saved content through an App-owned independent static
+  /// renderer. No prompt preparation, live scripts or model request is run.
+  /// Completion/cancellation waits for the session's actual work and close.
+  TavernAuthoringTask<TavernAuthoringRenderResult> renderAuthoringDraft(
+    TavernAuthoringRenderRequest request, {
+    required TavernAuthoringPreviewHost host,
+  });
+
+  /// Runs one to four real normal sends in a private temporary sample chat.
+  /// This uses captured files with their original IDs and saved diagnostics,
+  /// then the real fresh-open loaders. Helpers/retries are additional actual
+  /// requests. Repeating requestId is a new invocation and can spend again.
+  /// Cancellation waits for real requests, key suppliers, close and cleanup.
+  TavernAuthoringSimulationTask simulateAuthoringDraft(TavernAuthoringSimulationRequest request);
+
   // Library ------------------------------------------------------------------
 
   /// The saved capability snapshot, or null for a missing/legacy asset.
