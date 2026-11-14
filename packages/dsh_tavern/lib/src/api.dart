@@ -17,6 +17,7 @@ import 'authoring_seed.dart';
 import 'authoring_simulation.dart';
 import 'backup.dart';
 import 'director.dart';
+import 'gameplay_packs.dart';
 import 'import_report.dart';
 import 'inspection.dart';
 import 'lorebook_library.dart';
@@ -599,6 +600,33 @@ abstract interface class Tavern {
   /// requests. Repeating requestId is a new invocation and can spend again.
   /// Cancellation waits for real requests, key suppliers, close and cleanup.
   TavernAuthoringSimulationTask simulateAuthoringDraft(TavernAuthoringSimulationRequest request);
+
+  // Gameplay pack catalog ----------------------------------------------------
+
+  /// Saves immutable dshpack v1 bytes and original import diagnostics.
+  /// This does not bind or execute the pack. castCard files are full CCv3 JSON.
+  /// A post-COMMIT publication failure carries the adopted import result.
+  Future<TavernPackImportResult> importGameplayPack(Uint8List bytes);
+
+  /// Lists installed versions; tombstones are omitted unless requested.
+  Future<List<TavernPackVersion>> listGameplayPacks({bool includeRemoved = false});
+
+  /// Returns saved data, including tombstones, or null for a missing version.
+  Future<TavernPackVersion?> readGameplayPack(TavernPackVersionRef ref);
+
+  /// Returns exact resource bytes or null for a missing version/local identity.
+  Future<TavernPackResource?> readGameplayPackResource(TavernPackVersionRef ref, String localId);
+
+  /// Returns the originally saved ZIP, also for a removed version.
+  Future<Uint8List> exportInstalledGameplayPack(TavernPackVersionRef ref);
+
+  /// Marks availability removed without deleting payload. Preserve expected's
+  /// domain and the complete operation parameters when retrying.
+  Future<TavernPackRemovalReceipt> removeGameplayPackVersion(
+    TavernPackVersionRef ref, {
+    required TavernGameplayRevision expected,
+    required String operationId,
+  });
 
   // Library ------------------------------------------------------------------
 

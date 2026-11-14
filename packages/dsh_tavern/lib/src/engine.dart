@@ -25,12 +25,15 @@ import 'authoring_simulation.dart';
 import 'backup.dart';
 import 'director.dart';
 import 'director/direct_tool.dart' as director_core;
+import 'dshgo_inspection.dart';
+import 'gameplay_packs.dart';
 import 'import_report.dart';
 import 'inspection.dart';
 import 'io/authoring_text.dart';
 import 'io/authoring_image.dart';
 import 'io/card_codec.dart' show CardCodec, DecodedCardSeed, TavernCard;
 import 'io/chat_jsonl.dart';
+import 'io/gameplay_pack_codec.dart';
 import 'io/import_intake.dart';
 import 'io/preset_codec.dart';
 import 'io/regex_intake.dart';
@@ -87,6 +90,7 @@ part 'engine_authoring_context.dart';
 part 'engine_authoring_scripts.dart';
 part 'engine_authoring_script_host.dart';
 part 'engine_tools.dart';
+part 'engine_gameplay_packs.dart';
 part 'engine_director.dart';
 part 'engine_director_watch.dart';
 part 'engine_story.dart';
@@ -598,6 +602,30 @@ class TavernEngine implements Tavern {
   @override
   TavernAuthoringSimulationTask simulateAuthoringDraft(TavernAuthoringSimulationRequest request) =>
       _simulateAuthoringDraft(request);
+
+  @override
+  Future<TavernPackImportResult> importGameplayPack(Uint8List bytes) => _importGameplayPack(bytes);
+
+  @override
+  Future<List<TavernPackVersion>> listGameplayPacks({bool includeRemoved = false}) =>
+      _listGameplayPacks(includeRemoved: includeRemoved);
+
+  @override
+  Future<TavernPackVersion?> readGameplayPack(TavernPackVersionRef ref) => _readGameplayPack(ref);
+
+  @override
+  Future<TavernPackResource?> readGameplayPackResource(TavernPackVersionRef ref, String localId) =>
+      _readGameplayPackResource(ref, localId);
+
+  @override
+  Future<Uint8List> exportInstalledGameplayPack(TavernPackVersionRef ref) => _exportInstalledGameplayPack(ref);
+
+  @override
+  Future<TavernPackRemovalReceipt> removeGameplayPackVersion(
+    TavernPackVersionRef ref, {
+    required TavernGameplayRevision expected,
+    required String operationId,
+  }) => _removeGameplayPackVersion(ref, expected: expected, operationId: operationId);
 
   // Acquire this queue before chat barriers for bind/delete. Taking them in
   // the reverse order could leave a binder waiting behind a deletion that is
