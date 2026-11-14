@@ -1010,9 +1010,12 @@ class _TunnelLink implements DshMuxLink {
   Future<void> close(int code, String reason) async {
     if (_closed) return;
     _closed = true;
-    await _events?.cancel();
     // A link the mux abandons (ready timeout, $events closed, reconnect(),
     // client close) takes its connection with it; the next link is fresh.
-    await _carrier._closeSession(_session);
+    // Detach the session before the first await so an immediate reconnect
+    // cannot pick up this closing one.
+    final closing = _carrier._closeSession(_session);
+    await _events?.cancel();
+    await closing;
   }
 }
