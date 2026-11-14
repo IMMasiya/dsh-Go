@@ -18,9 +18,12 @@ import '../../../companion/companion_pack.dart';
 import '../../../companion/companion_state.dart';
 import '../../../l10n/l10n.dart';
 import '../../../speech/speech_settings.dart';
+import '../../../state/voice_settings.dart';
 import '../../common/app_sheet.dart';
-import '../../common/segmented_pill.dart';
 import '../../companion/companion_stage.dart';
+import '../../companion/companion_voice_page.dart';
+import '../../settings/settings_widgets.dart';
+import '../../settings/voice_settings_page.dart';
 import '../../theme/app_icons.dart';
 import '../../theme/theme.dart';
 
@@ -168,14 +171,17 @@ class _CompanionBackdropState extends ConsumerState<CompanionBackdrop> {
 // ── Choosing ───────────────────────────────────────────────────────────────
 
 /// The three backdrops side by side; picking one applies it at once.
-Future<void> showCallBackdropSheet(BuildContext context) => showAppSheet<void>(
+/// [inCall]: opened from a call, which also offers her voice and the recognition.
+Future<void> showCallBackdropSheet(BuildContext context, {bool inCall = false}) => showAppSheet<void>(
   context,
   isScrollControlled: true,
-  builder: (sheet) => const SafeArea(top: false, child: _BackdropChooser()),
+  builder: (sheet) => SafeArea(top: false, child: _BackdropChooser(inCall: inCall)),
 );
 
 class _BackdropChooser extends ConsumerStatefulWidget {
-  const _BackdropChooser();
+  const _BackdropChooser({required this.inCall});
+
+  final bool inCall;
 
   @override
   ConsumerState<_BackdropChooser> createState() => _BackdropChooserState();
@@ -216,7 +222,7 @@ class _BackdropChooserState extends ConsumerState<_BackdropChooser> {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(l10n.speechBackdropTitle, style: theme.textTheme.titleMedium),
+          Text(widget.inCall ? l10n.speechCallSettings : l10n.speechBackdropTitle, style: theme.textTheme.titleMedium),
           const SizedBox(height: 16),
           Row(
             spacing: 12,
@@ -288,6 +294,38 @@ class _BackdropChooserState extends ConsumerState<_BackdropChooser> {
             selected: settings.visual,
             onChanged: (visual) => unawaited(_set(settings.copyWith(visual: visual))),
           ),
+          if (widget.inCall) ...[
+            const SizedBox(height: 20),
+            Text(l10n.speechCallSpeechSection, style: theme.textTheme.titleSmall),
+            const SizedBox(height: 6),
+            SheetGroup(
+              margin: EdgeInsets.zero,
+              children: [
+                SettingsTile(
+                  key: const ValueKey('call-voice'),
+                  title: l10n.speechCallVoice,
+                  value: Text(speechVoiceLabel(l10n, ref.watch(speechVoiceSettingsProvider))),
+                  onTap: () => unawaited(
+                    Navigator.of(context)
+                        .push(MaterialPageRoute<void>(builder: (_) => const CompanionVoicePage(shared: true))),
+                  ),
+                ),
+                SettingsTile(
+                  key: const ValueKey('call-recognition'),
+                  title: l10n.voiceModeSection,
+                  value: Text(voiceModeLabel(l10n, ref.watch(voiceSettingsProvider))),
+                  onTap: () => unawaited(
+                    Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => const VoiceSettingsPage())),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Text(
+              l10n.speechCallSpeechHint,
+              style: theme.textTheme.bodySmall?.copyWith(color: DshColors.of(context).textTertiary),
+            ),
+          ],
         ],
       ),
     );

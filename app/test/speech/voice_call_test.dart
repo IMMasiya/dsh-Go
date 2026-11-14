@@ -22,7 +22,7 @@ class _Rig {
     call = VoiceCallController(
       audio: audio,
       conversation: conversation,
-      recognizer: () async => noRecognizer ? null : this.cloud,
+      recognizer: () async => noRecognizer ? null : (next ?? this.cloud),
       voice: () {
         final out = FakeOut();
         outs.add(out);
@@ -38,6 +38,9 @@ class _Rig {
 
   final FakeAudio audio;
   final FakeCloud cloud;
+
+  /// What the recognition setting names now, when changed during the call.
+  FakeCloud? next;
   final conversation = FakeConversation();
   final outs = <FakeOut>[];
   int cues = 0;
@@ -178,6 +181,19 @@ void main() {
     expect(rig.call.turns.first.cut, isTrue);
     expect(rig.call.turns.last.you, '我想问别的');
     expect(rig.call.turns.last.her, isEmpty);
+    rig.call.hangUp();
+  });
+
+  test('another recognition setting during the call takes the next sentence', () async {
+    final rig = _Rig();
+    await rig.call.start();
+    final other = FakeCloud('换了识别方式');
+    rig.next = other;
+    await rig.call.refreshRecognizer();
+    await rig.say();
+    expect(other.heard, hasLength(1));
+    expect(rig.cloud.heard, isEmpty);
+    expect(rig.conversation.sent.last, endsWith('换了识别方式'));
     rig.call.hangUp();
   });
 

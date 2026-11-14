@@ -217,6 +217,14 @@ class VoiceCallController extends ChangeNotifier {
   /// sending, the voice); cleared when the next turn starts.
   Object? get error => _error;
 
+  /// The recognition setting changed: what is said next goes to what it names
+  /// now (if that can listen; else to the one already in use).
+  Future<void> refreshRecognizer() async {
+    if (_phase == CallPhase.ended || _cloud == null) return;
+    final next = await recognizer();
+    if (next != null && _phase != CallPhase.ended) _cloud = next;
+  }
+
   Future<void> start() async {
     unawaited(const DiagnosticsChannel().recordVoiceStage('call_started'));
     _replySub = conversation.replies.listen(_onReply);

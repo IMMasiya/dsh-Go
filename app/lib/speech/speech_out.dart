@@ -121,8 +121,13 @@ String speakable(String markdown) {
 final _sentenceEnd = RegExp(r'[。！？!?…~～；;\n]+|[.](?=\s)');
 final _pause = RegExp(r'[，,、：:）)」』]');
 
+/// Where the first piece may end before its sentence does: a comma or a colon
+/// (an ASCII one only before a space, so 1,000 and 3:30 stay whole).
+final _firstPause = RegExp(r'[，、：；]|[,:](?=\s)');
+
 /// Cuts text arriving in pieces into what can be spoken: whole sentences,
-/// the first one short (to start soon), later ones grouped up to [target].
+/// the first one short (to start soon: it may end at a comma once it has
+/// [first] characters), later ones grouped up to [target].
 class SpeechChunker {
   SpeechChunker({this.first = 8, this.target = 120, this.max = 300});
 
@@ -142,6 +147,11 @@ class SpeechChunker {
       final want = _given == 0 ? first : target;
       // The first sentence end once there is enough to say.
       int? cut = _sentenceEnd.allMatches(rest).where((m) => m.end >= want).firstOrNull?.end;
+      // The very first piece goes at a comma already: her voice starts sooner.
+      if (_given == 0) {
+        final pause = _firstPause.allMatches(rest).where((m) => m.end >= want).firstOrNull?.end;
+        if (pause != null && (cut == null || pause < cut)) cut = pause;
+      }
       if (cut != null && cut > max) cut = null;
       if (cut == null && rest.length >= max) {
         // Too long without an end: the last sentence end or pause before max, else max.
