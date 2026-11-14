@@ -1,4 +1,6 @@
 {
+  "automaticDiagnosticsRecover": "Recover local records",
+  "automaticDiagnosticsRecoverHint": "Only recovers analysis records on this phone, skips retained failures, and never resends old requests.",
   "automaticDiagnosticsTitle": "Automatic failure analysis",
   "automaticDiagnosticsHint": "Off by default. Local, foreground and engine-ready only. Same-version failures are merged for 24 hours. Disabling stops new requests; sent data cannot be retracted.",
   "automaticDiagnosticsConsentTitle": "Enable automatic failure analysis?",

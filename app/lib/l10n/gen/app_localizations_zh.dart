@@ -5779,6 +5779,12 @@ class L10nZh extends L10n {
   String get companionAdaptNetwork => '网络不通';
 
   @override
+  String get automaticDiagnosticsRecover => '恢复本地记录';
+
+  @override
+  String get automaticDiagnosticsRecoverHint => '仅在本机恢复分析记录，跳过已留存故障，不重新发送旧请求。';
+
+  @override
   String get automaticDiagnosticsTitle => '自动故障分析';
 
   @override

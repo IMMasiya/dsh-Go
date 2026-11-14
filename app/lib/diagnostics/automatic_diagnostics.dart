@@ -54,6 +54,7 @@ class AutomaticDiagnostics extends ChangeNotifier {
   Future<void> Function()? _cancel;
 
   bool get eligible => _send != null;
+  bool get busy => _busy;
 
   /// The integration replaces the owner on disable, background, host change or
   /// reconnect. Every awaited boundary checks this generation before more RPCs.
@@ -120,12 +121,84 @@ class AutomaticDiagnostics extends ChangeNotifier {
         _ => AutomaticDiagnosticsPhase.waiting,
       };
       failureCode = saved['failureCode'] is String ? saved['failureCode'] as String : null;
+      _storageFailed = failureCode == 'store_failed';
+      if (_storageFailed) phase = AutomaticDiagnosticsPhase.failed;
     } catch (_) {
       _storageFailed = true;
       phase = AutomaticDiagnosticsPhase.failed;
       failureCode = 'store_failed';
     }
     if (!_disposed) notifyListeners();
+  }
+
+  /// Explicit local recovery only. Baseline retained failures before unlocking;
+  /// this method never creates a conversation or calls the model sender.
+  Future<void> recoverStorage({required bool Function() isCurrent}) async {
+    if (_disposed || _busy || !_storageFailed || !isCurrent()) return;
+    _busy = true;
+    final epoch = _epoch;
+    bool current() => !_disposed && epoch == _epoch && isCurrent();
+    notifyListeners();
+    try {
+      await ready;
+      if (!current()) return;
+      Map<String, Object?> saved = const {};
+      try {
+        saved = await load().timeout(const Duration(seconds: 5));
+      } catch (_) {
+        // Only this deliberate recovery may rebuild unreadable local state.
+      }
+      if (!current()) return;
+      final through = saved['through'];
+      if (through is Map) {
+        for (final key in const ['appErrors', 'voiceStages', 'processExits']) {
+          final at = through[key];
+          if (at is int && at > (_through[key] ?? 0)) _through[key] = at;
+        }
+      }
+      final fingerprints = saved['fingerprints'];
+      if (fingerprints is Map) {
+        for (final entry in fingerprints.entries.take(32)) {
+          if (entry.key is String && entry.value is int && entry.value > (_fingerprints[entry.key] ?? 0)) {
+            _fingerprints[entry.key as String] = entry.value as int;
+          }
+        }
+      }
+      final snapshot = await collect().timeout(const Duration(seconds: 5));
+      if (!current()) return;
+      final evidence = snapshot.native.evidence;
+      final availability = evidence['availability'];
+      const kinds = ['appErrors', 'voiceStages', 'processExits'];
+      if (kinds.any((key) => evidence[key] is! List) ||
+          availability is Map && kinds.any((key) => availability[key] == 'unavailable')) {
+        throw StateError('diagnostics_recovery_evidence_unavailable');
+      }
+      final now = _clock().millisecondsSinceEpoch;
+      _fingerprints.removeWhere((_, at) => at < now - const Duration(hours: 24).inMilliseconds);
+      for (final signature in diagnosticFailureFingerprints(snapshot, const {})) {
+        _fingerprints.putIfAbsent(signature, () => now);
+      }
+      for (final entry in diagnosticFailureWatermarks(snapshot.native.evidence).entries) {
+        if (entry.value > (_through[entry.key] ?? 0)) _through[entry.key] = entry.value;
+      }
+      while (_fingerprints.length > 32) {
+        _fingerprints.remove(_fingerprints.keys.first);
+      }
+      await store({..._checkpoint(), 'phase': 'waiting', 'failureCode': null});
+      if (!current()) return;
+      _storageFailed = false;
+      failureCode = null;
+      phase = AutomaticDiagnosticsPhase.waiting;
+    } catch (_) {
+      _storageFailed = true;
+    } finally {
+      _busy = false;
+      if (_storageFailed) {
+        failureCode = 'store_failed';
+        phase = AutomaticDiagnosticsPhase.failed;
+      }
+      if (!_disposed) notifyListeners();
+    }
   }
 
   Future<void> check() async {

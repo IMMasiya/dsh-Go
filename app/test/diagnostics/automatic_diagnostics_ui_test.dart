@@ -108,12 +108,50 @@ void main() {
     automatic.dispose();
   });
 
+  testWidgets('explicit recovery entry rebuilds local records without model submission', (tester) async {
+    var sends = 0;
+    final automatic =
+        AutomaticDiagnostics(
+          collect: () async => sample(),
+          load: () async => throw const FormatException('synthetic corrupt checkpoint'),
+          store: (_) async {},
+        )..configure(Object(), (_, _, _) async {
+          sends++;
+        });
+    await automatic.ready;
+    await pump(tester, automatic);
+    expect(find.text(appL10n.automaticDiagnosticsRecoverHint), findsOneWidget);
+    await tester.tap(find.text(appL10n.automaticDiagnosticsRecover));
+    await tester.pumpAndSettle();
+    expect(sends, 0);
+    expect(automatic.failureCode, isNull);
+    expect(find.text(appL10n.automaticDiagnosticsRecover), findsNothing);
+    await tester.pumpWidget(const SizedBox());
+    automatic.dispose();
+  });
+
+  testWidgets('remote host cannot recover local records', (tester) async {
+    final automatic = AutomaticDiagnostics(
+      collect: () async => throw StateError('remote recovery must not collect'),
+      load: () async => throw const FormatException('synthetic corrupt checkpoint'),
+      store: (_) async => fail('remote recovery must not write'),
+    );
+    await automatic.ready;
+    await pump(tester, automatic, host: const HostRef.ssh('remote'));
+    await tester.tap(find.text(appL10n.automaticDiagnosticsRecover));
+    await tester.pump();
+    expect(automatic.failureCode, 'store_failed');
+    await tester.pumpWidget(const SizedBox());
+    automatic.dispose();
+  });
+
   testWidgets('analysis and stop failures remain visible', (tester) async {
     final automatic = coordinator()
       ..phase = AutomaticDiagnosticsPhase.failed
       ..failureCode = 'cancel_failed';
     await pump(tester, automatic);
     expect(find.text(appL10n.automaticDiagnosticsCancelFailed), findsOneWidget);
+    expect(find.text(appL10n.automaticDiagnosticsRecover), findsNothing);
     await tester.pumpWidget(const SizedBox());
     automatic.dispose();
   });

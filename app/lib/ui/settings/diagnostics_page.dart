@@ -168,8 +168,51 @@ class AutomaticDiagnosticsSection extends ConsumerStatefulWidget {
   ConsumerState<AutomaticDiagnosticsSection> createState() => _AutomaticDiagnosticsSectionState();
 }
 
-class _AutomaticDiagnosticsSectionState extends ConsumerState<AutomaticDiagnosticsSection> {
+class _AutomaticDiagnosticsSectionState extends ConsumerState<AutomaticDiagnosticsSection> with WidgetsBindingObserver {
   bool _changing = false;
+  int _recoveryEpoch = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (ModalRoute.isCurrentOf(context) == false) _recoveryEpoch++;
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state != AppLifecycleState.resumed) _recoveryEpoch++;
+  }
+
+  @override
+  void dispose() {
+    _recoveryEpoch++;
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  Future<void> _recover() async {
+    final automatic = ref.read(automaticDiagnosticsProvider);
+    if (_changing || automatic.busy || !ref.read(activeHostProvider).isLocal) return;
+    final epoch = _recoveryEpoch;
+    setState(() => _changing = true);
+    try {
+      await automatic.recoverStorage(
+        isCurrent: () =>
+            mounted &&
+            epoch == _recoveryEpoch &&
+            ModalRoute.of(context)?.isCurrent != false &&
+            ref.read(activeHostProvider).isLocal,
+      );
+    } finally {
+      if (mounted) setState(() => _changing = false);
+    }
+  }
 
   Future<void> _change(bool enabled) async {
     if (_changing) return;
@@ -203,6 +246,12 @@ class _AutomaticDiagnosticsSectionState extends ConsumerState<AutomaticDiagnosti
     final settings = ref.watch(settingsProvider);
     final local = ref.watch(activeHostProvider).isLocal;
     final automatic = ref.watch(automaticDiagnosticsProvider);
+    ref.listen(activeHostProvider, (previous, next) {
+      if (previous != next) _recoveryEpoch++;
+    });
+    ref.listen(settingsProvider.select((s) => s.automaticDiagnostics), (previous, next) {
+      if (previous != next) _recoveryEpoch++;
+    });
     return ListenableBuilder(
       listenable: automatic,
       builder: (context, _) {
@@ -231,6 +280,12 @@ class _AutomaticDiagnosticsSectionState extends ConsumerState<AutomaticDiagnosti
               onChanged: _changing || !settings.loaded || (!local && !settings.automaticDiagnostics) ? null : _change,
             ),
             InfoRow(label: l10n.commonStatus, value: status),
+            if (automatic.failureCode == 'store_failed')
+              SettingsTile(
+                title: l10n.automaticDiagnosticsRecover,
+                subtitle: l10n.automaticDiagnosticsRecoverHint,
+                onTap: local && !_changing && !automatic.busy ? _recover : null,
+              ),
             if (automatic.reportSessionId case final id?)
               SettingsTile(
                 title: l10n.automaticDiagnosticsViewReport,

@@ -10724,6 +10724,18 @@ abstract class L10n {
   /// **'网络不通'**
   String get companionAdaptNetwork;
 
+  /// No description provided for @automaticDiagnosticsRecover.
+  ///
+  /// In zh, this message translates to:
+  /// **'恢复本地记录'**
+  String get automaticDiagnosticsRecover;
+
+  /// No description provided for @automaticDiagnosticsRecoverHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'仅在本机恢复分析记录，跳过已留存故障，不重新发送旧请求。'**
+  String get automaticDiagnosticsRecoverHint;
+
   /// No description provided for @automaticDiagnosticsTitle.
   ///
   /// In zh, this message translates to:

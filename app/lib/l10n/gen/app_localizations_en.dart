@@ -6124,6 +6124,13 @@ class L10nEn extends L10n {
   String get companionAdaptNetwork => 'no connection';
 
   @override
+  String get automaticDiagnosticsRecover => 'Recover local records';
+
+  @override
+  String get automaticDiagnosticsRecoverHint =>
+      'Only recovers analysis records on this phone, skips retained failures, and never resends old requests.';
+
+  @override
   String get automaticDiagnosticsTitle => 'Automatic failure analysis';
 
   @override

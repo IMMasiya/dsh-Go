@@ -27,6 +27,8 @@ In an ordinary local chat, ask the AI to check the recent crash. Supported versi
 
 Analysis uses a separate tool-free conversation, without switching your current chat, performing repairs or publishing to GitHub. Matching failures are grouped; failed or ambiguous attempts are not retried automatically. Check its status here and tap the report entry to read the analysis. Disabling it, switching to a remote host or backgrounding the app prevents new requests and attempts to stop ongoing analysis; sent data and generated conversations cannot be retracted.
 
+If local analysis records cannot be read or saved, automatic analysis pauses and a recovery entry appears. Recovery is local only: it baselines already retained failures without resending old requests, then resumes handling future failures after a successful save. Failed recovery remains paused and is not retried in a loop.
+
 ### Input-method or keyboard problems
 
 After reproducing the problem, use **Capture recent events** under **System input-method diagnostics**, read the native prompt and confirm it yourself. It only reuses an already selected and connected Shizuku, Sui, wireless-debugging or Root channel; it does not request permissions, open a background screen or operate an editor. With no channel available, **Phone-control permissions (optional)** lets you choose whether to configure one.

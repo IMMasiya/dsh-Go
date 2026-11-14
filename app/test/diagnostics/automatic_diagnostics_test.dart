@@ -228,6 +228,211 @@ void main() {
     automatic.dispose();
   });
 
+  test('persisted storage failure stays gated across restart until explicit recovery', () async {
+    Map<String, Object?> saved = {
+      'through': {'appErrors': 100},
+      'fingerprints': <String, int>{},
+      'phase': 'failed',
+      'failureCode': 'store_failed',
+    };
+    var current = sample(at: 200);
+    var collects = 0;
+    var sends = 0;
+    AutomaticDiagnostics make() =>
+        AutomaticDiagnostics(
+          collect: () async {
+            collects++;
+            return current;
+          },
+          load: () async => saved,
+          store: (value) async {
+            saved = jsonDecode(jsonEncode(value)) as Map<String, Object?>;
+          },
+        )..configure(Object(), (_, _, _) async {
+          sends++;
+        });
+    final first = make();
+    await first.ready;
+    await first.check();
+    expect(first.failureCode, 'store_failed');
+    expect(collects, 0);
+    expect(sends, 0);
+    first.dispose();
+    final restarted = make();
+    await restarted.ready;
+    await restarted.check();
+    expect(collects, 0, reason: 'a readable checkpoint is not storage recovery consent');
+    await restarted.recoverStorage(isCurrent: () => true);
+    expect(restarted.failureCode, isNull);
+    expect(sends, 0, reason: 'recovery baselines the retained failure without sending');
+    await restarted.check();
+    expect(sends, 0);
+    current = sample(at: 201, errorType: 'TypeError');
+    await restarted.check();
+    expect(sends, 1);
+    restarted.dispose();
+  });
+
+  test('explicit storage recovery skips retained failures and sends only a future new failure', () async {
+    var fail = true;
+    var current = sample();
+    Map<String, Object?> saved = {};
+    var sends = 0;
+    final automatic =
+        AutomaticDiagnostics(
+          collect: () async => current,
+          load: () async => saved,
+          store: (value) async {
+            if (fail) throw StateError('storage unavailable');
+            saved = jsonDecode(jsonEncode(value)) as Map<String, Object?>;
+          },
+        )..configure(Object(), (_, _, _) async {
+          sends++;
+        });
+    await automatic.check();
+    expect(automatic.failureCode, 'store_failed');
+    fail = false;
+    saved = {
+      'through': {'appErrors': 50},
+      'fingerprints': <String, int>{},
+    };
+    current = sample(at: 80);
+    await automatic.recoverStorage(isCurrent: () => true);
+    expect((saved['through'] as Map)['appErrors'], 100, reason: 'recovery must not lower consumed memory watermarks');
+    expect(automatic.failureCode, isNull);
+    expect(sends, 0, reason: 'recovery is strictly local');
+    await automatic.check();
+    current = sample(at: 101);
+    await automatic.check();
+    expect(sends, 0, reason: 'retained signature is baselined, including a later repeat');
+    current = sample(at: 102, errorType: 'TypeError');
+    await automatic.check();
+    expect(sends, 1);
+    automatic.dispose();
+  });
+
+  test('corrupt checkpoint can be explicitly rebuilt without replaying retained failures', () async {
+    var corrupt = true;
+    var current = sample();
+    Map<String, Object?> saved = {};
+    var sends = 0;
+    final automatic =
+        AutomaticDiagnostics(
+          collect: () async => current,
+          load: () async {
+            if (corrupt) throw const FormatException('synthetic invalid JSON');
+            return saved;
+          },
+          store: (value) async {
+            saved = value;
+            corrupt = false;
+          },
+        )..configure(Object(), (_, _, _) async {
+          sends++;
+        });
+    await automatic.ready;
+    expect(automatic.failureCode, 'store_failed');
+    await automatic.recoverStorage(isCurrent: () => true);
+    expect((saved['through'] as Map)['appErrors'], 100);
+    expect((saved['fingerprints'] as Map).length, 1);
+    expect(sends, 0);
+    await automatic.check();
+    expect(sends, 0);
+    current = sample(at: 101, errorType: 'TypeError');
+    await automatic.check();
+    expect(sends, 1);
+    automatic.dispose();
+  });
+
+  test('revocation during recovery collection or persistence cannot unlock analysis', () async {
+    for (final boundary in ['collect', 'store']) {
+      final entered = Completer<void>();
+      final resume = Completer<void>();
+      var recovering = false;
+      var allowed = true;
+      var sends = 0;
+      final automatic =
+          AutomaticDiagnostics(
+            load: () async => throw const FormatException('unreadable checkpoint'),
+            collect: () async {
+              if (recovering && boundary == 'collect') {
+                entered.complete();
+                await resume.future;
+              }
+              return sample();
+            },
+            store: (_) async {
+              if (recovering && boundary == 'store') {
+                entered.complete();
+                await resume.future;
+              }
+            },
+          )..configure(Object(), (_, _, _) async {
+            sends++;
+          });
+      await automatic.ready;
+      recovering = true;
+      final work = automatic.recoverStorage(isCurrent: () => allowed);
+      await entered.future;
+      allowed = false;
+      automatic.configure(null, null);
+      resume.complete();
+      await work;
+      expect(automatic.failureCode, 'store_failed', reason: boundary);
+      automatic.configure(Object(), (_, _, _) async {
+        sends++;
+      });
+      await automatic.check();
+      expect(sends, 0, reason: 'revoked recovery never clears the storage gate');
+      automatic.dispose();
+    }
+  });
+
+  test('recovery cannot unlock without a current evidence baseline', () async {
+    var writes = 0;
+    final automatic = AutomaticDiagnostics(
+      load: () async => throw const FormatException('unreadable checkpoint'),
+      collect: () async => DiagnosticsSnapshot(
+        at: DateTime.now(),
+        status: const RuntimeStatus(phase: RuntimePhase.running),
+        settings: const AppSettings(),
+      ),
+      store: (_) async {
+        writes++;
+      },
+    );
+    await automatic.ready;
+    await automatic.recoverStorage(isCurrent: () => true);
+    expect(automatic.failureCode, 'store_failed');
+    expect(writes, 0);
+    automatic.dispose();
+  });
+
+  test('a failed explicit recovery write stays failed and never retries in polling', () async {
+    var writes = 0;
+    var sends = 0;
+    final automatic =
+        AutomaticDiagnostics(
+          load: () async => throw const FormatException('unreadable checkpoint'),
+          collect: () async => sample(),
+          store: (_) async {
+            writes++;
+            throw StateError('still unavailable');
+          },
+        )..configure(Object(), (_, _, _) async {
+          sends++;
+        });
+    await automatic.ready;
+    await automatic.recoverStorage(isCurrent: () => true);
+    expect(automatic.failureCode, 'store_failed');
+    expect(writes, 1);
+    await automatic.check();
+    await automatic.check();
+    expect(writes, 1);
+    expect(sends, 0);
+    automatic.dispose();
+  });
+
   test('failed persistence blocks model submission', () async {
     var sends = 0;
     final automatic =

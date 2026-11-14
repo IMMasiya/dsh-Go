@@ -1,4 +1,6 @@
 {
+  "automaticDiagnosticsRecover": "恢复本地记录",
+  "automaticDiagnosticsRecoverHint": "仅在本机恢复分析记录，跳过已留存故障，不重新发送旧请求。",
   "automaticDiagnosticsTitle": "自动故障分析",
   "automaticDiagnosticsHint": "默认关闭 · 仅本机、前台且引擎可用时发送；同版本同类故障 24 小时内合并。关闭后停止新请求，已发送信息无法撤回。",
   "automaticDiagnosticsConsentTitle": "开启自动故障分析？",
