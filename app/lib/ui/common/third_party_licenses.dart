@@ -18,6 +18,8 @@ void registerThirdPartyLicenses() {
       LicenseEntryWithLineBreaks(<String>['DS Bot'], _dsBotNotice + _apache2),
       LicenseEntryWithLineBreaks(<String>['ds-harness-remote'], _dshRemoteMit),
       LicenseEntryWithLineBreaks(<String>['DSHA'], _dshaMit),
+      LicenseEntryWithLineBreaks(<String>['Libraries.dev'], _librariesDevMit),
+      LicenseEntryWithLineBreaks(<String>['Paper Shaders'], _paperShadersNotice + _apache2),
       // Libraries bundled by Gradle.
       LicenseEntryWithLineBreaks(<String>['Google ML Kit Text Recognition (Chinese)'], _mlkitNotice),
       LicenseEntryWithLineBreaks(<String>['Shizuku-API'], _shizukuMit),
@@ -132,6 +134,29 @@ MIT License
 Copyright (c) 2026 qiannianhuanxiang
 
 $_mitTerms''';
+
+/// Libraries.dev (UI effects in lib/ui/fx), commit 387b049.
+const _librariesDevMit = '''
+MIT License
+
+Copyright (c) 2026 Jakub Antalik
+
+$_mitTerms''';
+
+/// Paper Shaders' liquidMetal stage, by way of Libraries.dev metal-fx (its NOTICE, verbatim but for the path).
+const _paperShadersNotice = '''
+This product includes software developed by Paper Design, Inc.
+
+  Paper Shaders (https://github.com/paper-design/shaders)
+  Copyright (c) Paper Design, Inc.
+  Licensed under the Apache License, Version 2.0
+  http://www.apache.org/licenses/LICENSE-2.0
+
+The liquid-metal material in app/shaders/fx/metal_liquid.frag is the
+`liquidMetal` fragment stage of @paper-design/shaders 0.0.80, as used by
+Libraries.dev metal-fx, translated to Flutter GLSL.
+
+''';
 
 /// Shizuku-API (`dev.rikka.shizuku:api`, `provider`).
 /// tawc's tawcroot launcher (libtawcroot.so), commit a49a4075; everything outside tawc's deps/ is MIT.

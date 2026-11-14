@@ -19,6 +19,8 @@ const _expected = <String, String>{
   'DS Bot': 'Copyright 2026 Fei2411 and the DS Bot contributors',
   'ds-harness-remote': 'Copyright (c) 2026 DSH Remote contributors',
   'DSHA': 'Copyright (c) 2026 qiannianhuanxiang',
+  'Libraries.dev': 'Copyright (c) 2026 Jakub Antalik',
+  'Paper Shaders': 'Copyright (c) Paper Design, Inc.',
   'Shizuku-API': 'Copyright (c) 2021 RikkaW',
   'tawcroot (tawc)': 'Copyright (c) 2026 Sophie Winter',
   'libadb-android': 'Copyright 2021 Muntashir Al-Islam',

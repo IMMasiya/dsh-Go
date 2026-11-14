@@ -194,7 +194,7 @@ class _BackdropChooserState extends ConsumerState<_BackdropChooser> {
     });
     try {
       final path = await ref.read(callBackdropPickerProvider)();
-      if (path != null) await _set(now.copyWith(backdrop: CallBackdrop.image, image: path));
+      if (path != null) await _set(ref.read(callSettingsProvider).copyWith(backdrop: CallBackdrop.image, image: path));
     } on Object {
       if (mounted) setState(() => _error = context.l10n.speechBackdropPickFailed);
     } finally {

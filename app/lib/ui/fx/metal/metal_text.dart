@@ -133,6 +133,10 @@ class _MetalTextState extends MetalState<MetalText> {
   /// Rasterises the glyphs once per layout and keeps the covered points of a
   /// 2-px grid (the SwiftUI port's `rasterizeGlyphs`).
   Future<void> _rasterize(Object key, Size size, TextPainter glyphs) async {
+    if (size.width < 1 || size.height < 1) {
+      _points = const [];
+      return;
+    }
     final recorder = ui.PictureRecorder();
     glyphs.paint(Canvas(recorder), Offset.zero);
     final picture = recorder.endRecording();
