@@ -3,6 +3,7 @@
 
     python3 -I runtime/tests/test_patch_dsh.py
 """
+import errno
 import hashlib
 import importlib.util
 import json
@@ -118,6 +119,48 @@ class PatchDsh(unittest.TestCase):
         self.assertNotEqual(r.returncode, 0)
         self.assertIn("no pin for DSH 1.0.1", r.stdout)
         self.assertEqual(read(self.target), ORIGINAL)
+
+    def test_interrupted_record_preserves_pins_for_a_fresh_prefix_retry(self):
+        _, final = self.chain_fixture()
+        pins_path = Path(self.patches, "pins.json")
+        previous = pins_path.read_bytes()
+        previous_pins = load(pins_path)
+        args = SimpleNamespace(prefix=self.prefix, patches=self.patches,
+                               dsh_version="2.0.0", record=True, out=None)
+
+        def interrupted_dump(value, output, **options):
+            # Fault injection after a real partial write; this does not fill the disk.
+            output.write(json.dumps(value, **options)[:100])
+            raise OSError(errno.ENOSPC, "injected pin recording write failure")
+
+        with mock.patch.object(rtbuild.json, "dump", side_effect=interrupted_dump):
+            with self.assertRaises(OSError) as failure:
+                rtbuild.cmd_patch_dsh(args)
+        self.assertEqual(failure.exception.errno, errno.ENOSPC)
+        self.assertEqual(read(self.target), final)
+        after_failure = pins_path.read_bytes()
+
+        def fresh_prefix(name):
+            self.prefix = os.path.join(self.tmp.name, name)
+            target = Path(self.prefix, REL)
+            target.parent.mkdir(parents=True)
+            target.write_text(ORIGINAL)
+            return target
+
+        # Recording requires original input: never retry --record on the patched tree.
+        retry_target = fresh_prefix("fresh-record")
+        retry = self.run_cli("--dsh-version", "2.0.0", "--record")
+        self.assertEqual(retry.returncode, 0, retry.stdout)
+        self.assertEqual(after_failure, previous)
+        self.assertEqual(read(retry_target), final)
+        recorded = load(pins_path)
+        for name, versions in previous_pins["patches"].items():
+            self.assertEqual(recorded["patches"][name]["1.0.0"], versions["1.0.0"])
+
+        checked_target = fresh_prefix("fresh-normal")
+        checked = self.run_cli("--dsh-version", "2.0.0")
+        self.assertEqual(checked.returncode, 0, checked.stdout)
+        self.assertEqual(read(checked_target), final)
 
     def test_drifted_original_fails(self):
         self.run_cli("--dsh-version", "1.0.0", "--record")
