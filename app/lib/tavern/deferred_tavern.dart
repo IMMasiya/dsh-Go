@@ -133,6 +133,11 @@ class DeferredTavern implements Tavern {
   @override
   Future<TavernAuthoringDraft?> readAuthoringDraft(String draftId) async => (await _ready).readAuthoringDraft(draftId);
 
+  /// Returned at once with its id; the preview itself runs once the engine is open.
+  @override
+  TavernAuthoringTask<TavernAuthoringPromptPreview> previewAuthoringPrompt(TavernAuthoringPromptRequest request) =>
+      _DeferredTask(request.requestId, _ready.then((t) => t.previewAuthoringPrompt(request)));
+
   /// Returned at once with its id; the run itself starts once the engine is open.
   @override
   TavernAuthoringRun startAuthoringRun(TavernAuthoringRunRequest request) =>
@@ -1046,4 +1051,20 @@ class _DeferredAuthoringRun implements TavernAuthoringRun {
 
   @override
   Future<void> cancel() async => (await _run).cancel();
+}
+
+/// An authoring task asked for before the engine opened: its id now, its
+/// result and cancellation from the engine's own task once there is one.
+class _DeferredTask<T> implements TavernAuthoringTask<T> {
+  _DeferredTask(this.requestId, this._task);
+
+  @override
+  final String requestId;
+  final Future<TavernAuthoringTask<T>> _task;
+
+  @override
+  Future<T> get result => _task.then((task) => task.result);
+
+  @override
+  Future<void> cancel() async => (await _task).cancel();
 }
