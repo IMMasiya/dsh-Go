@@ -426,4 +426,28 @@ void main() {
     expect(rig.call.phase, CallPhase.listening);
     expect(rig.conversation.interrupts, 0);
   });
+
+  test('skip while what was said is still being made out: it is sent, its reply not read', () async {
+    final rig = _Rig();
+    await rig.call.start();
+    final gate = Completer<void>();
+    rig.cloud.wait = gate.future;
+    await rig.say();
+    expect(rig.call.phase, CallPhase.thinking);
+    rig.call.skip();
+    gate.complete();
+    await pumpEventQueue();
+    expect(rig.conversation.sent.single, endsWith('今天天气怎么样'));
+    expect(rig.call.phase, CallPhase.listening);
+    rig.conversation.reply('晴。', done: true);
+    expect(rig.outs, isEmpty);
+    expect(rig.call.phase, CallPhase.listening);
+
+    // The next one is read again.
+    rig.cloud.wait = null;
+    await rig.say();
+    rig.conversation.reply('好的。');
+    expect(rig.outs, hasLength(1));
+    rig.call.hangUp();
+  });
 }

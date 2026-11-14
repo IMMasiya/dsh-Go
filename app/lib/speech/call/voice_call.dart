@@ -177,6 +177,9 @@ class VoiceCallController extends ChangeNotifier {
   bool _replyDone = true;
   int _turn = 0;
   int _recognizing = 0;
+
+  /// The recognition under way when she was skipped before speaking.
+  int _hushed = 0;
   bool _disposed = false;
 
   final _turns = <CallTurn>[];
@@ -376,7 +379,9 @@ class VoiceCallController extends ChangeNotifier {
     _voiced = false;
     _spoken = 0;
     _turn++;
-    _replyDone = false;
+    // Skipped while this was being made out: it still goes, its reply is not read.
+    final hushed = mine == _hushed;
+    _replyDone = hushed;
     final hint = _spokenHint;
     final cut = _cutAt;
     _cutAt = null;
@@ -385,8 +390,12 @@ class VoiceCallController extends ChangeNotifier {
     _hinted = true;
     _cued = false;
     _cueTimer?.cancel();
-    _cueTimer = Timer(cueAfter, _cue);
-    _set(CallPhase.thinking);
+    if (hushed) {
+      if (!_disposed) notifyListeners();
+    } else {
+      _cueTimer = Timer(cueAfter, _cue);
+      _set(CallPhase.thinking);
+    }
     final sent = await conversation.send(message);
     if (_phase == CallPhase.ended) return;
     if (!sent) {
@@ -526,6 +535,8 @@ class VoiceCallController extends ChangeNotifier {
   /// speaker), she won't read this reply at all.
   void skip() {
     if (_phase != CallPhase.speaking && _phase != CallPhase.thinking) return;
+    // Thinking may still be making out what was said: that reply stays quiet too.
+    if (_phase == CallPhase.thinking) _hushed = _recognizing;
     _cueTimer?.cancel();
     _stopVoice();
     // The rest is there to read.
