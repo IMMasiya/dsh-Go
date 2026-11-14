@@ -122,8 +122,8 @@ final cloudAsrProvider = NotifierProvider<CloudAsrController, CloudAsrSettings>(
 /// or her (伙伴小屋's character, speaking with the call's voice).
 enum CallBackdrop { sea, image, companion }
 
-/// The light in the middle of a call: Libraries.dev's voice ring (a glassy
-/// ribbon in the theme's colours), its single grey line, or the glass orb.
+/// The light in the middle of a call: the glass orb (the default), or
+/// Libraries.dev's voice ring (a glassy ribbon in the theme's colours) or its single grey line.
 enum CallVisual { ring, mono, glass }
 
 class CallSettings {
@@ -134,7 +134,7 @@ class CallSettings {
     this.backdrop = CallBackdrop.sea,
     this.image = '',
     this.cue = true,
-    this.visual = CallVisual.ring,
+    this.visual = CallVisual.glass,
   });
 
   /// Speaking over her stops her (else what is said while she talks is ignored).
@@ -197,7 +197,7 @@ class CallSettingsController extends Notifier<CallSettings> {
         backdrop: CallBackdrop.values.asNameMap()[json['backdrop']] ?? CallBackdrop.sea,
         image: json['image'] is String ? json['image'] as String : '',
         cue: json['cue'] != false,
-        visual: CallVisual.values.asNameMap()[json['visual']] ?? CallVisual.ring,
+        visual: CallVisual.values.asNameMap()[json['visual']] ?? CallVisual.glass,
       );
     } on Object {
       // Defaults for this run.

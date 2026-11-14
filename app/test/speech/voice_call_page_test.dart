@@ -82,6 +82,7 @@ void main() {
   testWidgets('a turn on the page: heard, sent, the reply arriving; hang up closes it', (tester) async {
     final (audio, conversation) = await pumpCall(tester);
     expect(find.text('周末去哪儿玩'), findsOneWidget);
+    expect(find.byType(CallLight), findsOneWidget, reason: 'the glass orb by default');
     expect(audio.calls, contains('callStart:bargeIn=true'));
     expect(find.text('在听'), findsOneWidget);
 
