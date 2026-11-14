@@ -32228,6 +32228,30 @@ abstract class L10n {
   /// **'这张图用不了，换一张试试'**
   String get speechBackdropPickFailed;
 
+  /// No description provided for @speechCallVisual.
+  ///
+  /// In zh, this message translates to:
+  /// **'光效'**
+  String get speechCallVisual;
+
+  /// No description provided for @speechCallVisualRing.
+  ///
+  /// In zh, this message translates to:
+  /// **'光环'**
+  String get speechCallVisualRing;
+
+  /// No description provided for @speechCallVisualMono.
+  ///
+  /// In zh, this message translates to:
+  /// **'细线'**
+  String get speechCallVisualMono;
+
+  /// No description provided for @speechCallVisualGlass.
+  ///
+  /// In zh, this message translates to:
+  /// **'光球'**
+  String get speechCallVisualGlass;
+
   /// No description provided for @speechInsecure.
   ///
   /// In zh, this message translates to:

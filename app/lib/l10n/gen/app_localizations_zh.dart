@@ -17602,6 +17602,18 @@ class L10nZh extends L10n {
   String get speechBackdropPickFailed => '这张图用不了，换一张试试';
 
   @override
+  String get speechCallVisual => '光效';
+
+  @override
+  String get speechCallVisualRing => '光环';
+
+  @override
+  String get speechCallVisualMono => '细线';
+
+  @override
+  String get speechCallVisualGlass => '光球';
+
+  @override
   String get speechInsecure => '这个云端服务的地址不是 https，Key 不能这样发出去';
 
   @override

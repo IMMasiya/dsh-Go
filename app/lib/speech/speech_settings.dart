@@ -122,6 +122,10 @@ final cloudAsrProvider = NotifierProvider<CloudAsrController, CloudAsrSettings>(
 /// or her (伙伴小屋's character, speaking with the call's voice).
 enum CallBackdrop { sea, image, companion }
 
+/// The light in the middle of a call: Libraries.dev's voice ring (a glassy
+/// ribbon in the theme's colours), its single grey line, or the glass orb.
+enum CallVisual { ring, mono, glass }
+
 class CallSettings {
   const CallSettings({
     this.bargeIn = true,
@@ -129,6 +133,7 @@ class CallSettings {
     this.speaker = true,
     this.backdrop = CallBackdrop.sea,
     this.image = '',
+    this.visual = CallVisual.ring,
   });
 
   /// Speaking over her stops her (else what is said while she talks is ignored).
@@ -144,14 +149,24 @@ class CallSettings {
   /// The picture for [CallBackdrop.image]: a copy this app keeps ('' for none).
   final String image;
 
-  CallSettings copyWith({bool? bargeIn, bool? spoken, bool? speaker, CallBackdrop? backdrop, String? image}) =>
-      CallSettings(
-        bargeIn: bargeIn ?? this.bargeIn,
-        spoken: spoken ?? this.spoken,
-        speaker: speaker ?? this.speaker,
-        backdrop: backdrop ?? this.backdrop,
-        image: image ?? this.image,
-      );
+  /// The light in the middle.
+  final CallVisual visual;
+
+  CallSettings copyWith({
+    bool? bargeIn,
+    bool? spoken,
+    bool? speaker,
+    CallBackdrop? backdrop,
+    String? image,
+    CallVisual? visual,
+  }) => CallSettings(
+    bargeIn: bargeIn ?? this.bargeIn,
+    spoken: spoken ?? this.spoken,
+    speaker: speaker ?? this.speaker,
+    backdrop: backdrop ?? this.backdrop,
+    image: image ?? this.image,
+    visual: visual ?? this.visual,
+  );
 }
 
 class CallSettingsController extends Notifier<CallSettings> {
@@ -176,6 +191,7 @@ class CallSettingsController extends Notifier<CallSettings> {
         speaker: json['speaker'] != false,
         backdrop: CallBackdrop.values.asNameMap()[json['backdrop']] ?? CallBackdrop.sea,
         image: json['image'] is String ? json['image'] as String : '',
+        visual: CallVisual.values.asNameMap()[json['visual']] ?? CallVisual.ring,
       );
     } on Object {
       // Defaults for this run.
@@ -202,6 +218,7 @@ class CallSettingsController extends Notifier<CallSettings> {
         'speaker': next.speaker,
         'backdrop': next.backdrop.name,
         'image': next.image,
+        'visual': next.visual.name,
       }),
     );
   }

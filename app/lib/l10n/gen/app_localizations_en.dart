@@ -18578,6 +18578,18 @@ class L10nEn extends L10n {
   String get speechBackdropPickFailed => 'That picture can\'t be used. Try another';
 
   @override
+  String get speechCallVisual => 'Light';
+
+  @override
+  String get speechCallVisualRing => 'Ring';
+
+  @override
+  String get speechCallVisualMono => 'Line';
+
+  @override
+  String get speechCallVisualGlass => 'Orb';
+
+  @override
   String get speechInsecure => 'That service\'s address isn\'t https; the key can\'t be sent that way';
 
   @override
