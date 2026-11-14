@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'authoring.dart';
+import 'authoring_preview.dart';
 
 enum TavernAuthoringModelRole { main, auxiliary }
 
@@ -20,12 +21,14 @@ final class TavernAuthoringRunRequest {
     required this.instruction,
     this.materials = const {},
     this.modelRole = TavernAuthoringModelRole.main,
+    this.previewContext,
   });
 
   final String runId, draftId, instruction;
   final int draftRevision;
   final Map<String, Object?> materials;
   final TavernAuthoringModelRole modelRole;
+  final TavernAuthoringPromptContext? previewContext;
 
   Map<String, Object?> toJson() => {
     'runId': runId,
@@ -34,6 +37,7 @@ final class TavernAuthoringRunRequest {
     'instruction': instruction,
     'materials': materials,
     'modelRole': modelRole.name,
+    if (previewContext != null) 'previewContext': previewContext!.toJson(),
   };
 
   factory TavernAuthoringRunRequest.fromJson(Map<String, Object?> value) => TavernAuthoringRunRequest(
@@ -43,6 +47,9 @@ final class TavernAuthoringRunRequest {
     instruction: value['instruction']! as String,
     materials: value['materials']! as Map<String, Object?>,
     modelRole: TavernAuthoringModelRole.values.byName(value['modelRole']! as String),
+    previewContext: value['previewContext'] == null
+        ? null
+        : TavernAuthoringPromptContext.fromJson(value['previewContext']! as Map<String, Object?>),
   );
 }
 

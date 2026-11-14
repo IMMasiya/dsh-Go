@@ -29,6 +29,7 @@ final class _AuthoringRunRecord implements TavernAuthoringRun {
   String get runId => input['runId']! as String;
   String get draftId => input['draftId']! as String;
   int get revision => currentRevision;
+  bool get canPreview => input['previewContext'] != null && engine._counter is EstimatedTokenCounter;
   TavernAuthoringRunSnapshot get publicView => _detachAuthoringRun(view);
   @override
   Future<TavernAuthoringRunSnapshot> get result => _result.future;
@@ -313,7 +314,7 @@ extension _AuthoringRuns on TavernEngine {
       record.cancellation.check();
       final draft = _authoringRunDraft(record);
       var messages = <Map<String, Object?>>[
-        {'role': 'system', 'content': _authoringRunPrompt},
+        {'role': 'system', 'content': _authoringRunPrompt(record.canPreview)},
         {
           'role': 'user',
           'content': jsonEncode({
@@ -331,6 +332,7 @@ extension _AuthoringRuns on TavernEngine {
                 },
             ],
             'changeIds': [for (final change in draft.changes) change.id],
+            if (record.canPreview) 'previewContext': record.input['previewContext'],
           }),
         },
       ];
@@ -342,7 +344,7 @@ extension _AuthoringRuns on TavernEngine {
           'stream': true,
           'thinking': {'type': 'disabled'},
           'messages': messages,
-          'tools': _authoringRunTools(),
+          'tools': _authoringRunTools(promptPreview: record.canPreview),
           'tool_choice': 'auto',
         };
         final response = await _consumeAuthoringRequest(record, index, body);
@@ -691,16 +693,21 @@ extension _AuthoringRuns on TavernEngine {
     var status = TavernAuthoringToolStatus.succeeded;
     Map<String, Object?>? next;
     var changes = <String>[];
-    Map<String, Object?> result;
+    late Map<String, Object?> result;
+    TavernAuthoringPromptRequest? promptRequest;
     try {
       final parameters = call.parameters;
       if (!call.valid || call.unsupportedEnvelope || call.type != 'function' || parameters == null) {
         _authoringInvalid('The call does not contain valid JSON parameters for a supported function.');
       }
-      final prepared = await _prepareAuthoringTool(record, stored, draft, call.name!, parameters);
-      result = prepared.result;
-      next = prepared.draftData;
-      changes = prepared.changeIds;
+      if (call.name == 'prompt_preview') {
+        promptRequest = _authoringPromptToolRequest(record, receiptId, parameters);
+      } else {
+        final prepared = await _prepareAuthoringTool(record, stored, draft, call.name!, parameters);
+        result = prepared.result;
+        next = prepared.draftData;
+        changes = prepared.changeIds;
+      }
       record.cancellation.check();
     } on TavernAuthoringException catch (error) {
       if (error.code == 'revision_conflict' || error.code == 'not_found') {
@@ -722,6 +729,16 @@ extension _AuthoringRuns on TavernEngine {
     } on TypeError {
       status = TavernAuthoringToolStatus.rejected;
       result = {'code': 'invalid_change', 'message': 'A tool parameter has an invalid type.'};
+    }
+    if (promptRequest != null) {
+      // Only argument construction belongs to the rejection catches above.
+      // A real capture/assembler error keeps its original exception and stack.
+      final preview = await _startAuthoringPrompt(promptRequest, cancellation: record.cancellation).result;
+      record.cancellation.check();
+      result = preview.toJson();
+      status = preview.status == TavernAuthoringPreviewStatus.complete
+          ? TavernAuthoringToolStatus.succeeded
+          : TavernAuthoringToolStatus.rejected;
     }
     record.cancellation.check();
     TavernAuthoringToolReceipt? adopted;
@@ -956,7 +973,37 @@ Map<String, Object?> _authoringRunDiff(TavernAuthoringDiff diff) => {
   'after': diff.after,
 };
 
-List<Map<String, Object?>> _authoringRunTools() {
+TavernAuthoringPromptRequest _authoringPromptToolRequest(
+  _AuthoringRunRecord record,
+  String receiptId,
+  Map<String, Object?> parameters,
+) {
+  if (!record.canPreview) {
+    throw const TavernAuthoringException('unsupported_tool', 'This run has no supported prompt preview context.');
+  }
+  _authoringToolKeys(parameters, const {'changeIds', 'text', 'at', 'seed'});
+  final selection = parameters['changeIds'];
+  if (selection is! List<Object?> ||
+      selection.any((id) => id is! String || id.isEmpty) ||
+      selection.toSet().length != selection.length ||
+      parameters['text'] is! String ||
+      parameters['at'] is! String ||
+      parameters['seed'] is! int) {
+    _authoringInvalid('Supply distinct changeIds, text, a fixed ISO-8601 at value and an integer seed.');
+  }
+  return TavernAuthoringPromptRequest(
+    requestId: '${record.runId}:preview:$receiptId',
+    draftId: record.draftId,
+    draftRevision: record.revision,
+    changeIds: selection.cast<String>().toList(),
+    context: TavernAuthoringPromptContext.fromJson(record.input['previewContext']! as Map<String, Object?>),
+    text: parameters['text']! as String,
+    at: DateTime.parse(parameters['at']! as String),
+    seed: parameters['seed']! as int,
+  );
+}
+
+List<Map<String, Object?>> _authoringRunTools({bool promptPreview = false}) {
   Map<String, Object?> definition(
     String name,
     String description,
@@ -1020,10 +1067,30 @@ List<Map<String, Object?>> _authoringRunTools() {
       },
       ['physicalResourceId', 'scriptPath', 'text'],
     ),
+    if (promptPreview)
+      definition(
+        'prompt_preview',
+        'Prepare the actual prompt locally for the user-selected previewContext. Select changes explicitly; supply fixed time and seed. No roleplay HTTP or live write is performed.',
+        {
+          'changeIds': selection,
+          'text': {'type': 'string'},
+          'at': {'type': 'string', 'description': 'Fixed ISO-8601 timestamp, including Z for UTC.'},
+          'seed': {'type': 'integer'},
+        },
+        ['changeIds', 'text', 'at', 'seed'],
+      ),
   ];
 }
 
-const _authoringRunPrompt =
+String _authoringRunPrompt(bool promptPreview) =>
+    _authoringRunPromptBase +
+    (promptPreview
+        ? 'prompt_preview uses only the user-selected previewContext. Supply explicit changeIds, text, fixed ISO-8601 at and integer seed. '
+              'Only a complete result contains a prepared prompt; unsupported, conflict, failed or rejected results do not prove success. '
+              'No render, network lookup, or simulation is available in this run.'
+        : 'No prompt preview, render, network lookup, or simulation is available in this run.');
+
+const _authoringRunPromptBase =
     'You are an authoring assistant working on an independent persistent draft. '
     'Use draft_read to inspect complete sources. Only append edits to resources already in the draft. '
     'card_write edits character JSON; lore_write edits a standalone book or /data/character_book; '
@@ -1031,5 +1098,4 @@ const _authoringRunPrompt =
     'Changes use JSON Pointer set/remove and explicit dependencies on earlier overlapping changes. '
     'Preserve unknown fields and raw source meaning. Tools do not adopt, restore, save as, send a roleplay turn, or write live resources. '
     'There are at most four model requests including the first; any tool batch on the fourth response is not executed. '
-    'Use the returned persisted receipts; never claim an edit or test that was rejected or skipped. '
-    'No prompt preview, render, network lookup, or simulation is available in this run.';
+    'Use the returned persisted receipts; never claim an edit or test that was rejected or skipped. ';

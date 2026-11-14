@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:dsh_tavern/dsh_tavern.dart';
 import 'package:dsh_tavern/src/store/chat_store.dart' show AuthoringRunStore, AuthoringStore;
@@ -175,6 +176,277 @@ void main() {
       ),
       throwsA(_error('run_id_conflict')),
     );
+  });
+
+  test(
+    'author prompt tool uses the captured context and explicit selection, persists the real preview and replays',
+    () async {
+      final h = await _fixture();
+      final target = TavernAuthoringTarget(
+        kind: TavernAuthoringTargetKind.character,
+        id: await h.card('Preview', description: 'LIVE_DESCRIPTION'),
+      );
+      final draft = await h.engine.createAuthoringDraft([target]);
+      final cardFile = File('${h.root.path}/characters/${target.id}/card.json');
+      final beforeCard = await cardFile.readAsBytes();
+      final beforeBusiness = _previewBusinessRows(h);
+      final variables = <String, Object?>{'selected': 'CAPTURED_VALUE'};
+      final history = <TavernAuthoringSampleMessage>[
+        const TavernAuthoringSampleMessage(role: TavernRole.user, text: 'CAPTURED_HISTORY'),
+      ];
+      final first = h.stream(), second = h.stream();
+      final run = h.engine.startAuthoringRun(
+        TavernAuthoringRunRequest(
+          runId: 'author-preview',
+          draftId: draft.id,
+          draftRevision: draft.draftRevision,
+          instruction: 'Edit then preview the selected changes.',
+          previewContext: TavernAuthoringSampleContext(
+            characterResourceId: target.physicalResourceId,
+            variables: variables,
+            history: history,
+          ),
+        ),
+      );
+      variables['selected'] = 'CALLER_MUTATION';
+      history[0] = const TavernAuthoringSampleMessage(role: TavernRole.user, text: 'CALLER_HISTORY');
+      const at = '2026-11-12T05:00:00.123456Z';
+      const parameters = <String, Object?>{
+        'changeIds': ['selected'],
+        'text': 'PREVIEW_USER',
+        'at': at,
+        'seed': 17,
+      };
+      await _reply(
+        first,
+        run,
+        calls: [
+          _call('write', 'card_write', {
+            'physicalResourceId': target.physicalResourceId,
+            'changes': [
+              {
+                'id': 'selected',
+                'path': '/data/description',
+                'operation': 'set',
+                'value': 'SELECTED={{getvar::selected}}',
+              },
+              {'id': 'omitted', 'path': '/data/personality', 'operation': 'set', 'value': 'UNSELECTED_CHANGE'},
+            ],
+          }),
+          _call('wrong-context', 'prompt_preview', {
+            ...parameters,
+            'context': {'kind': 'chat', 'chatId': 'model-choice'},
+          }),
+          _call('preview', 'prompt_preview', parameters),
+        ],
+      );
+      await _listening(second, run);
+      final during = (await h.engine.readAuthoringRun(run.runId))!;
+      expect(during.currentRevision, draft.draftRevision + 1);
+      expect(during.receipts, hasLength(3));
+      expect(during.receipts[1].status, TavernAuthoringToolStatus.rejected);
+      final receipt = during.receipts.last;
+      expect(receipt.status, TavernAuthoringToolStatus.succeeded);
+      expect(receipt.result['status'], 'complete');
+      expect(receipt.result['changeIds'], ['selected']);
+      expect(receipt.result['draftRevision'], during.currentRevision);
+      expect(scriptMap(receipt.result['origin'])['at'], at);
+      final body = scriptMap(scriptMap(receipt.result['assembly'])['body']);
+      final text = jsonEncode(body);
+      for (final included in ['SELECTED=CAPTURED_VALUE', 'CAPTURED_HISTORY', 'PREVIEW_USER']) {
+        expect(text, contains(included));
+      }
+      for (final excluded in ['LIVE_DESCRIPTION', 'UNSELECTED_CHANGE', 'CALLER_MUTATION', 'CALLER_HISTORY']) {
+        expect(text, isNot(contains(excluded)));
+      }
+      final direct = await h.engine
+          .previewAuthoringPrompt(
+            TavernAuthoringPromptRequest(
+              requestId: receipt.result['requestId']! as String,
+              draftId: draft.id,
+              draftRevision: during.currentRevision,
+              changeIds: const ['selected'],
+              context: during.request.previewContext!,
+              at: DateTime.parse(at),
+              seed: 17,
+              text: 'PREVIEW_USER',
+            ),
+          )
+          .result;
+      expect(receipt.result, direct.toJson());
+      final tools = (h.requests.first.body['tools']! as List<Object?>).map(
+        (tool) => scriptMap(scriptMap(tool)['function'])['name'],
+      );
+      expect(
+        tools,
+        unorderedEquals([
+          'draft_read',
+          'card_write',
+          'lore_write',
+          'regex_write',
+          'preset_write',
+          'lint',
+          'regex_test',
+          'prompt_preview',
+        ]),
+      );
+      final sent = scriptMap(
+        jsonDecode(scriptMap((h.requests.first.body['messages']! as List<Object?>)[1])['content']! as String),
+      );
+      expect(scriptMap(scriptMap(sent['previewContext'])['variables']), {'selected': 'CAPTURED_VALUE'});
+      final returned = (h.requests.last.body['messages']! as List<Object?>).map(scriptMap).last;
+      expect(jsonDecode(returned['content']! as String), receipt.toJson());
+      await _reply(second, run, text: 'Prepared the selected prompt.');
+      final result = await run.result.timeout(_deadline);
+      expect(result.status, TavernAuthoringRunStatus.completed);
+      expect((h.requests.length, h.keyReads), (2, 2));
+      expect(_previewBusinessRows(h), beforeBusiness);
+      expect(await cardFile.readAsBytes(), beforeCard);
+      final replayInput = result.request;
+      await h.engine.deleteAuthoringDraft(draft.id, draftRevision: result.currentRevision);
+      await h.reopen();
+      final replay = await h.engine.startAuthoringRun(replayInput).result;
+      expect(replay.receipts.last.toJson(), receipt.toJson());
+      expect((await h.engine.readAuthoringToolReceipt(run.runId, receipt.receiptId))!.toJson(), receipt.toJson());
+      expect((h.requests.length, h.keyReads), (2, 2));
+    },
+  );
+
+  test(
+    'an admitted author preview starts during backup and cancellation waits for its original resource read',
+    () async {
+      final h = await _fixture();
+      final target = TavernAuthoringTarget(kind: TavernAuthoringTargetKind.character, id: await h.card('Held preview'));
+      final chat = await h.emptyChat(target.id);
+      await h.engine.putLorebook('preview-gate', {'name': 'Gate', 'entries': <String, Object?>{}});
+      await h.engine.bindLorebooks(['preview-gate']);
+      final draft = await h.engine.createAuthoringDraft([target]);
+      final work = await Directory.systemTemp.createTemp('dsh-author-preview-backup-');
+      addTearDown(() async {
+        if (await work.exists()) {
+          await work.delete(recursive: true);
+        }
+      });
+      final gate = _AuthoringReadGate();
+      final plan = h.stream();
+      final engine = h.engine;
+      final archive = File('${work.path}/author-preview.zip');
+      await _withAuthoringReadGate(File('${h.root.path}/lorebooks/preview-gate.json'), gate, () async {
+        final run = engine.startAuthoringRun(
+          TavernAuthoringRunRequest(
+            runId: 'preview-drain',
+            draftId: draft.id,
+            draftRevision: draft.draftRevision,
+            instruction: 'Preview this draft.',
+            previewContext: TavernAuthoringChatContext(chatId: chat),
+          ),
+        );
+        var backupDone = false, runDone = false, cancelDone = false, closeDone = false;
+        Future<void>? backup, cancelling, closing;
+        unawaited(
+          run.result.then<void>(
+            (_) {
+              runDone = true;
+            },
+            onError: (Object _, StackTrace _) {
+              runDone = true;
+            },
+          ),
+        );
+        try {
+          await _listening(plan, run);
+          backup = engine.backup(archive.path).then<void>((_) {
+            backupDone = true;
+          });
+          await Future<void>.delayed(Duration.zero);
+          expect(backupDone, isFalse);
+          await _reply(
+            plan,
+            run,
+            calls: [
+              _call('held-preview', 'prompt_preview', {
+                'changeIds': <String>[],
+                'text': '',
+                'at': '2026-11-12T05:00:00Z',
+                'seed': 1,
+              }),
+            ],
+          );
+          await Future.any([
+            gate.entered.future,
+            run.result.then<void>(
+              (value) => throw TestFailure('Run ended before its actual preview read: ${value.status.name}'),
+            ),
+          ]).timeout(_deadline);
+          cancelling = engine.cancelAuthoringRun(run.runId).then<void>((_) {
+            cancelDone = true;
+          });
+          closing = h.close().then<void>((_) {
+            closeDone = true;
+          });
+          await Future<void>.delayed(Duration.zero);
+          expect((backupDone, runDone, cancelDone, closeDone), (false, false, false, false));
+          gate.release();
+          await cancelling.timeout(_deadline);
+          await backup.timeout(_deadline);
+          await closing.timeout(_deadline);
+          final result = await run.result.timeout(_deadline);
+          expect(result.status, TavernAuthoringRunStatus.cancelled);
+          expect(result.receipts, isEmpty);
+          expect(result.currentRevision, draft.draftRevision);
+          expect((h.requests.length, h.keyReads), (1, 1));
+          expect(await archive.exists(), isTrue);
+        } finally {
+          // Release test-owned I/O before waiting for the original owners, even
+          // when an assertion fails before the explicit cancel/close above.
+          gate.release();
+          await plan.dispose();
+          final closeDrain = closing ?? h.close();
+          await Future.wait<void>([?cancelling, ?backup, closeDrain]);
+        }
+      });
+    },
+  );
+
+  test('a real preview resource decode error remains the run failure instead of an invalid tool argument', () async {
+    final h = await _fixture();
+    final target = TavernAuthoringTarget(kind: TavernAuthoringTargetKind.character, id: await h.card('Decode failure'));
+    final chat = await h.emptyChat(target.id);
+    await h.engine.putLorebook('broken-preview', {'name': 'Before', 'entries': <String, Object?>{}});
+    await h.engine.bindLorebooks(['broken-preview']);
+    final draft = await h.engine.createAuthoringDraft([target]);
+    // This is an actual externally malformed dependency, not malformed model
+    // arguments or a replacement of the capture implementation.
+    await File('${h.root.path}/lorebooks/broken-preview.json').writeAsString('{');
+    final plan = h.stream();
+    final run = h.engine.startAuthoringRun(
+      TavernAuthoringRunRequest(
+        runId: 'preview-decode-error',
+        draftId: draft.id,
+        draftRevision: draft.draftRevision,
+        instruction: 'Preview.',
+        previewContext: TavernAuthoringChatContext(chatId: chat),
+      ),
+    );
+    final failed = expectLater(run.result, throwsFormatException);
+    await _reply(
+      plan,
+      run,
+      calls: [
+        _call('decode', 'prompt_preview', {
+          'changeIds': <String>[],
+          'text': '',
+          'at': '2026-11-12T05:00:00Z',
+          'seed': 1,
+        }),
+      ],
+    );
+    await failed.timeout(_deadline);
+    final result = (await h.engine.readAuthoringRun(run.runId))!;
+    expect(result.status, TavernAuthoringRunStatus.failed);
+    expect(result.receipts, isEmpty);
+    expect(result.currentRevision, draft.draftRevision);
+    expect((h.requests.length, h.keyReads), (1, 1));
   });
 
   test('the fourth tool response executes nothing and preserves the first three draft commits', () async {
@@ -572,6 +844,84 @@ Map<String, int> _businessRows(ScriptFixture h) => h.inspect(
       table: db.select('SELECT count(*) AS n FROM $table').single['n'] as int,
   },
 );
+
+Map<String, Object?> _previewBusinessRows(ScriptFixture h) => h.inspect(
+  (db) => {
+    for (final table in ['chats', 'nodes', 'tool_turns', 'agent_runs'])
+      table: [for (final row in db.select('SELECT * FROM $table')) Map<String, Object?>.from(row)],
+  },
+);
+
+Future<void> _withAuthoringReadGate(File file, _AuthoringReadGate gate, Future<void> Function() body) async {
+  final parent = Zone.current;
+  final aliases = {file.absolute.uri, File(await file.resolveSymbolicLinks()).absolute.uri};
+  try {
+    await IOOverrides.runZoned(
+      body,
+      createFile: (path) {
+        final real = parent.run(() => File(path));
+        return aliases.contains(parent.run(() => real.absolute.uri)) ? _AuthoringGatedFile(real, gate) : real;
+      },
+    );
+  } finally {
+    gate.release();
+    if (gate.entered.isCompleted) {
+      await gate.finished.future;
+    }
+  }
+}
+
+class _AuthoringReadGate {
+  final entered = Completer<void>();
+  final finished = Completer<void>();
+  final _released = Completer<void>();
+  void release() {
+    if (!_released.isCompleted) {
+      _released.complete();
+    }
+  }
+
+  Future<T> read<T>(Future<T> Function() action) async {
+    if (entered.isCompleted) {
+      return action();
+    }
+    entered.complete();
+    try {
+      await _released.future;
+      return await action();
+    } finally {
+      finished.complete();
+    }
+  }
+}
+
+class _AuthoringGatedFile implements File {
+  _AuthoringGatedFile(this.real, this.gate);
+  final File real;
+  final _AuthoringReadGate gate;
+  @override
+  String get path => real.path;
+  @override
+  Uri get uri => real.uri;
+  @override
+  bool get isAbsolute => real.isAbsolute;
+  @override
+  File get absolute => real.absolute;
+  @override
+  Directory get parent => real.parent;
+  @override
+  Future<bool> exists() => real.exists();
+  @override
+  bool existsSync() => real.existsSync();
+  @override
+  Future<File> copy(String newPath) => real.copy(newPath);
+  @override
+  Future<Uint8List> readAsBytes() => gate.read(real.readAsBytes);
+  @override
+  Future<String> readAsString({Encoding encoding = utf8}) => gate.read(() => real.readAsString(encoding: encoding));
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
 
 Map<String, Object?> _write(
   TavernAuthoringTarget target,

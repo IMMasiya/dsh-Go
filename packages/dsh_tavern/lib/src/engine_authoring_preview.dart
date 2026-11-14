@@ -5,12 +5,13 @@ part of 'engine.dart';
 Future<String?> _noAuthoringTransportKey() async => null;
 
 final class _AuthoringPromptTask implements TavernAuthoringTask<TavernAuthoringPromptPreview> {
-  _AuthoringPromptTask(this.request, this.captureId) {
+  _AuthoringPromptTask(this.request, this.captureId, {ModelCancellation? cancellation})
+    : cancellation = cancellation ?? ModelCancellation() {
     unawaited(_result.future.then<void>((_) {}, onError: (Object _, StackTrace _) {}));
   }
   final TavernAuthoringPromptRequest request;
   final String captureId;
-  final cancellation = ModelCancellation();
+  final ModelCancellation cancellation;
   final drained = Completer<void>();
   final _result = Completer<TavernAuthoringPromptPreview>();
   @override
@@ -57,6 +58,17 @@ final class _AuthoringPromptTask implements TavernAuthoringTask<TavernAuthoringP
 extension _AuthoringPromptPreviews on TavernEngine {
   TavernAuthoringTask<TavernAuthoringPromptPreview> _previewAuthoringPrompt(TavernAuthoringPromptRequest input) {
     _ensureAdmission();
+    return _startAuthoringPrompt(input);
+  }
+
+  // An already-admitted author run may continue while backup waits for its
+  // owner. Share the real task/driver without opening external admission.
+  TavernAuthoringTask<TavernAuthoringPromptPreview> _startAuthoringPrompt(
+    TavernAuthoringPromptRequest input, {
+    ModelCancellation? cancellation,
+  }) {
+    cancellation?.check();
+    _ensureOpen();
     final TavernAuthoringPromptRequest request;
     try {
       request = TavernAuthoringPromptRequest.fromJson(_captureScriptObject(input.toJson()));
@@ -70,7 +82,11 @@ extension _AuthoringPromptPreviews on TavernEngine {
         request.changeIds.toSet().length != request.changeIds.length) {
       _authoringInvalid('Use valid request, draft, revision and distinct change identifiers.');
     }
-    final task = _AuthoringPromptTask(request, 'authoring:${_directorHash(request.toJson())}');
+    final task = _AuthoringPromptTask(
+      request,
+      'authoring:${_directorHash(request.toJson())}',
+      cancellation: cancellation,
+    );
     _operations.add(task.drained.future);
     _authoringPreviewCancellations.add(task.cancellation);
     // Capture starts in this admission's synchronous slice. Delaying it to a
