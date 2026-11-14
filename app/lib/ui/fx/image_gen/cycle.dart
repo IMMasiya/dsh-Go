@@ -64,12 +64,12 @@ class FxCycle {
           img.dispose();
           return;
         }
-        _emit(ImageGenerationPhase.reveal);
         reveal.startReveal(img, () {
           if (!_running) return;
           _emit(ImageGenerationPhase.visible);
           _clearTimer();
         });
+        _emit(ImageGenerationPhase.reveal);
       },
       onError: (Object error, StackTrace stack) {
         if (_disposed || currentSrc != src) return;
