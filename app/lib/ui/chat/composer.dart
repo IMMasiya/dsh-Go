@@ -602,7 +602,7 @@ class _ComposerState extends State<Composer> with SingleTickerProviderStateMixin
             );
             // Dictating: the pet steps away from the voice controls, and a soft light
             // (Libraries.dev Voice) rises from the glass's bottom edge with the voice,
-            // under the text and keys; while the words are made out it sweeps side to side.
+            // under the text and keys.
             return PetCover(
               active: dictating,
               child: voice == null
@@ -613,7 +613,6 @@ class _ComposerState extends State<Composer> with SingleTickerProviderStateMixin
                           child: IgnorePointer(
                             child: VoiceBeam(
                               active: dictating,
-                              processing: phase == VoicePhase.transcribing,
                               level: voice.level,
                               levelScale: voice.engine == VoiceEngine.system
                                   ? VoiceLevelScale.linear
