@@ -95,8 +95,16 @@ void main() {
     for (var i = 0; i < 30; i++) {
       await tester.pump(const Duration(milliseconds: 60));
     }
-    final reply = tester.widget<RevealText>(find.byType(RevealText));
-    expect(reply.text, '北京晴，最高二十度。');
+    // The caption follows her voice: nothing before it plays, all of it once played.
+    expect(tester.widget<RevealText>(find.byType(RevealText)).text, isEmpty);
+    final id = RegExp(r'^open:(\S+):call=true$').firstMatch(audio.calls.lastWhere((c) => c.startsWith('open:')))![1]!;
+    audio
+      ..emit(PlayEvent(id, PlayPhase.start))
+      ..emit(PlayEvent(id, PlayPhase.done));
+    for (var i = 0; i < 30; i++) {
+      await tester.pump(const Duration(milliseconds: 60));
+    }
+    expect(tester.widget<RevealText>(find.byType(RevealText)).text, '北京晴，最高二十度。');
 
     await tester.tap(find.byKey(const ValueKey('call-hang-up')));
     for (var i = 0; i < 20; i++) {

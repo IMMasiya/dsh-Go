@@ -18469,7 +18469,8 @@ class L10nEn extends L10n {
   String get speechCallBargeIn => 'Interrupt by speaking';
 
   @override
-  String get speechCallBargeInHint => 'Start talking while the AI speaks and it stops to listen';
+  String get speechCallBargeInHint =>
+      'When you speak over the AI it goes quiet; a “yeah” lets it go on, anything else stops it';
 
   @override
   String get speechCallSpoken => 'Spoken answers';
@@ -18486,6 +18487,46 @@ class L10nEn extends L10n {
   @override
   String get speechCallHint =>
       '(This is a voice call; what I say comes through speech recognition. Please answer briefly and conversationally, without Markdown, lists, tables or code blocks.)';
+
+  @override
+  String speechCallCutNote(String heard) {
+    return '(I cut you off at “$heard”; I didn\'t hear the rest.)';
+  }
+
+  @override
+  String get speechCallCutEarly => '(I cut you off before you said anything; I didn\'t hear that answer.)';
+
+  @override
+  String get speechCallCue => 'Thinking sound';
+
+  @override
+  String get speechCallCueHint => 'A soft chime when an answer is slow to start';
+
+  @override
+  String get speechLiveSection => 'Live captions';
+
+  @override
+  String get speechLiveName => 'Streaming recognizer';
+
+  @override
+  String speechLiveAbsentNote(String mb) {
+    return 'Download it and calls show your words as you speak, and stop sooner when you cut in. About $mb; it runs on the phone';
+  }
+
+  @override
+  String speechLiveReadyNote(String mb) {
+    return 'Using $mb. Calls use it automatically';
+  }
+
+  @override
+  String get speechLiveFooter =>
+      'Captions and cut-ins run on the phone; the text sent to the AI still comes from the recognition chosen above, and cloud recognition uploads the recording.';
+
+  @override
+  String get speechLiveDeleteTitle => 'Delete the streaming recognizer?';
+
+  @override
+  String get speechLiveDeleteBody => 'Calls will stop showing live captions. You can download it again any time.';
 
   @override
   String get speechCallStarting => 'Connecting';

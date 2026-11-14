@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:typed_data';
 
 import 'package:dsh_app/speech/deepseek_speech.dart';
 import 'package:dsh_app/speech/speech_audio.dart';
@@ -109,6 +110,26 @@ print('不读');
       expect(out.ended, isTrue);
     });
 
+    test('what was heard follows playback: whole pieces, then the share of the one playing', () async {
+      final audio = FakeAudio();
+      final out = DeepSeekOut(() async => _Seconds(), audio, call: true, levels: true);
+      out
+        ..add('第一句话说完了。')
+        ..add('第二句也很长很长。')
+        ..finish();
+      await pumpEventQueue();
+      expect(out.heard, '');
+      // Each piece is 80 ms of audio here; each level tick is 40 ms heard.
+      audio.emit(PlayLevel(out.id, 0.5));
+      expect(out.heard, '第一句话');
+      audio.emit(PlayLevel(out.id, 0.5));
+      expect(out.heard, '第一句话说完了。');
+      audio.emit(PlayLevel(out.id, 0.5));
+      expect(out.heard, '第一句话说完了。第二句也');
+      audio.emit(PlayEvent(out.id, PlayPhase.done));
+      expect(out.heard, '第一句话说完了。第二句也很长很长。');
+    });
+
     test('nobody to pay: fails before any sound', () async {
       final audio = FakeAudio();
       final out = DeepSeekOut(() async => null, audio);
@@ -144,4 +165,21 @@ print('不读');
       expect(speech.asked, ['第一句已经够长了。']);
     });
   });
+}
+
+/// Every piece is 80 ms of 24 kHz PCM.
+class _Seconds implements DeepSeekSpeech {
+  @override
+  DeepSeekSpeechRoute get route => DeepSeekSpeechRoute.apiKey;
+
+  @override
+  Stream<Uint8List> synthesize(String text, {String voice = 'stella'}) async* {
+    yield Uint8List(deepSeekTtsRate * 2 * 80 ~/ 1000);
+  }
+
+  @override
+  Future<String> transcribe(Uint8List wav) async => '';
+
+  @override
+  void close() {}
 }

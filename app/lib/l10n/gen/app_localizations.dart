@@ -32021,7 +32021,7 @@ abstract class L10n {
   /// No description provided for @speechCallBargeInHint.
   ///
   /// In zh, this message translates to:
-  /// **'AI 说话时你一开口，它就停下来听你说'**
+  /// **'AI 说话时你一开口，它先轻下来；「嗯」「对」它接着说，说别的它就停下听你'**
   String get speechCallBargeInHint;
 
   /// No description provided for @speechCallSpoken.
@@ -32053,6 +32053,72 @@ abstract class L10n {
   /// In zh, this message translates to:
   /// **'（这是语音通话，我说的话由语音识别转成文字。请用简短、口语化的中文回答，不要用 Markdown、列表、表格和代码块。）'**
   String get speechCallHint;
+
+  /// No description provided for @speechCallCutNote.
+  ///
+  /// In zh, this message translates to:
+  /// **'（你说到「{heard}」时我打断了你，后面的我没听到。）'**
+  String speechCallCutNote(String heard);
+
+  /// No description provided for @speechCallCutEarly.
+  ///
+  /// In zh, this message translates to:
+  /// **'（你刚开口我就打断了你，这条回答我没听到。）'**
+  String get speechCallCutEarly;
+
+  /// No description provided for @speechCallCue.
+  ///
+  /// In zh, this message translates to:
+  /// **'思考提示音'**
+  String get speechCallCue;
+
+  /// No description provided for @speechCallCueHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'回答一时没出声时，轻响一声表示还在想'**
+  String get speechCallCueHint;
+
+  /// No description provided for @speechLiveSection.
+  ///
+  /// In zh, this message translates to:
+  /// **'实时字幕'**
+  String get speechLiveSection;
+
+  /// No description provided for @speechLiveName.
+  ///
+  /// In zh, this message translates to:
+  /// **'流式识别模型'**
+  String get speechLiveName;
+
+  /// No description provided for @speechLiveAbsentNote.
+  ///
+  /// In zh, this message translates to:
+  /// **'下载后，通话时一边说一边出字，插话也停得更快。约 {mb}，在手机上运行'**
+  String speechLiveAbsentNote(String mb);
+
+  /// No description provided for @speechLiveReadyNote.
+  ///
+  /// In zh, this message translates to:
+  /// **'已占用 {mb}，通话时自动使用'**
+  String speechLiveReadyNote(String mb);
+
+  /// No description provided for @speechLiveFooter.
+  ///
+  /// In zh, this message translates to:
+  /// **'字幕和插话判断在手机上完成；发给 AI 的文字仍由上面选的识别方式给出，选了云端识别录音就会上传。'**
+  String get speechLiveFooter;
+
+  /// No description provided for @speechLiveDeleteTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'删除流式识别模型？'**
+  String get speechLiveDeleteTitle;
+
+  /// No description provided for @speechLiveDeleteBody.
+  ///
+  /// In zh, this message translates to:
+  /// **'删除后通话不再显示实时字幕，随时可以重新下载。'**
+  String get speechLiveDeleteBody;
 
   /// No description provided for @speechCallStarting.
   ///

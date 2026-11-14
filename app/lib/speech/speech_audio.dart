@@ -114,6 +114,9 @@ class SpeechAudio {
 
   Future<void> stop() => _invoke<void>('stop');
 
+  /// Stream [id] quieter while the person may be speaking over it, or back to full.
+  Future<void> duck(String id, bool on) => _invoke<void>('duck', {'id': id, 'on': on});
+
   Future<CallStart> startCall({required bool bargeIn}) async =>
       switch (await _invoke<String>('callStart', {'bargeIn': bargeIn})) {
         'ok' => CallStart.ok,

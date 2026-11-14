@@ -56,7 +56,33 @@ abstract class SpeechOut {
 
   /// Ended: done, stopped or failed.
   bool get ended;
+
+  /// What has been heard of the text so far (the person may cut in midway).
+  String get heard;
+
+  /// Quieter while the person may be speaking over it ([on]), or back to full.
+  void duck(bool on);
+
+  /// [duck] turns it down (else it cannot, and stops instead).
+  bool get canDuck;
 }
+
+/// [pieces] joined as they were said: a space only between two Latin ends.
+String _joined(Iterable<String> pieces) {
+  final out = StringBuffer();
+  for (final piece in pieces) {
+    if (piece.isEmpty) continue;
+    if (out.isNotEmpty &&
+        _latin.hasMatch(String.fromCharCode(out.toString().codeUnitAt(out.length - 1))) &&
+        _latin.hasMatch(piece[0])) {
+      out.write(' ');
+    }
+    out.write(piece);
+  }
+  return out.toString();
+}
+
+final _latin = RegExp(r'[A-Za-z0-9.,!?;:]');
 
 // ── Text ───────────────────────────────────────────────────────────────────
 
@@ -141,6 +167,36 @@ class SpeechChunker {
 
 // ── DeepSeek, streamed ─────────────────────────────────────────────────────
 
+/// Where one piece's audio lies in the stream (bytes), so what was heard can be told.
+class _Span {
+  _Span(this.text, this.start) : end = start;
+  final String text;
+  final int start;
+  int end;
+
+  /// All its audio is written: [end] is final.
+  bool closed = false;
+
+  /// Characters heard once [played] bytes have played. Until its audio is all
+  /// there it is measured against a slow reading of the text, so playback that
+  /// has caught up with the synthesis does not count it all heard.
+  int heardBy(int played) {
+    final last = closed ? end : max(end, start + _slowBytes(text));
+    if (played <= start || last <= start) return 0;
+    if (closed && played >= last) return text.length;
+    return min(text.length, text.length * (played - start) ~/ (last - start));
+  }
+
+  /// About 0.3 s a CJK character and 0.09 s any other, at the voice's rate.
+  static int _slowBytes(String text) {
+    var seconds = 0.0;
+    for (final rune in text.runes) {
+      seconds += rune >= 0x2E80 ? 0.3 : 0.09;
+    }
+    return (seconds * deepSeekTtsRate * 2).round();
+  }
+}
+
 class _Piece {
   _Piece(this.text);
   final String text;
@@ -186,6 +242,12 @@ class DeepSeekOut implements SpeechOut {
   bool _opened = false;
   bool _writing = false;
   bool _endSent = false;
+  final _spans = <_Span>[];
+  int _written = 0;
+  int _played = 0;
+
+  /// Each level tick is 40 ms heard ([PcmStream] posts it when that audio plays).
+  static const _tickBytes = deepSeekTtsRate * 2 * 40 ~/ 1000;
 
   @override
   Stream<SpeechOutEvent> get events => _events.stream;
@@ -272,9 +334,13 @@ class DeepSeekOut implements SpeechOut {
     try {
       while (_pieces.isNotEmpty && !_stopped) {
         final piece = _pieces.first;
+        final span = _Span(piece.text, _written);
+        _spans.add(span);
         while (!_stopped) {
           while (piece.chunks.isNotEmpty && !_stopped) {
             final chunk = piece.chunks.removeAt(0);
+            _written += chunk.length;
+            span.end = _written;
             if (!_opened) {
               _opened = true;
               if (!await _audio.open(id, call: call, levels: levels)) {
@@ -291,6 +357,7 @@ class DeepSeekOut implements SpeechOut {
           if (piece.done) break;
           await piece.more;
         }
+        span.closed = piece.done && piece.chunks.isEmpty;
         if (_stopped) return;
         if (piece.error case final error?) {
           _fail(error);
@@ -332,6 +399,29 @@ class DeepSeekOut implements SpeechOut {
     _close(const SpeechOutDone());
   }
 
+  @override
+  String get heard {
+    final out = <String>[];
+    for (final span in _spans) {
+      final n = span.heardBy(_played);
+      if (n == span.text.length) {
+        out.add(span.text);
+        continue;
+      }
+      if (n > 0) out.add(span.text.substring(0, n));
+      break;
+    }
+    return _joined(out);
+  }
+
+  @override
+  void duck(bool on) {
+    if (_opened && !_stopped) unawaited(_audio.duck(id, on));
+  }
+
+  @override
+  bool get canDuck => true;
+
   void _cancelFetches() {
     for (final piece in _pieces) {
       unawaited(piece.fetch?.cancel());
@@ -347,12 +437,16 @@ class DeepSeekOut implements SpeechOut {
         switch (phase) {
           case PlayPhase.start:
             if (!_events.isClosed) _events.add(const SpeechOutStarted());
-          case PlayPhase.done || PlayPhase.stopped:
+          case PlayPhase.done:
+            _played = _written;
+            _close(const SpeechOutDone());
+          case PlayPhase.stopped:
             _close(const SpeechOutDone());
           case PlayPhase.error:
             _close(const SpeechOutFailed('playback'));
         }
       case PlayLevel(id: final which, :final value) when which == id:
+        _played += _tickBytes;
         if (!_events.isClosed) _events.add(SpeechOutLevel(value));
       default:
         break;
@@ -392,6 +486,8 @@ class SpeakerOut implements SpeechOut {
   final _events = StreamController<SpeechOutEvent>.broadcast();
   late final StreamSubscription<CompanionVoiceEvent> _sub;
   final _open = <String>{};
+  final _lineText = <String, String>{};
+  final _saidLines = <String>[];
 
   /// Pieces not handed to the speaker yet: it fetches each line as soon as it
   /// is queued, so only a few go ahead of the one playing.
@@ -435,9 +531,11 @@ class SpeakerOut implements SpeechOut {
   void _release() {
     while (_held.isNotEmpty && _open.length < _ahead && !_ended) {
       final id = 'r${++_lines}';
+      final text = _held.removeFirst();
       _open.add(id);
+      _lineText[id] = text;
       _said++;
-      _speaker.speak(id, _held.removeFirst());
+      _speaker.speak(id, text);
     }
   }
 
@@ -453,6 +551,7 @@ class SpeakerOut implements SpeechOut {
         _animate(event.loudness);
       case CompanionVoiceEventType.done || CompanionVoiceEventType.stopped || CompanionVoiceEventType.error:
         if (event.type == CompanionVoiceEventType.error) _failed++;
+        if (event.type == CompanionVoiceEventType.done) _saidLines.add(_lineText[event.id] ?? '');
         _open.remove(event.id);
         _release();
         if (_open.isEmpty) {
@@ -482,6 +581,17 @@ class SpeakerOut implements SpeechOut {
       _events.add(SpeechOutLevel(levels[i++]));
     });
   }
+
+  /// Whole lines, as each finishes (the phone's voice tells no finer progress).
+  @override
+  String get heard => _joined(_saidLines);
+
+  /// The phone's voice keeps its volume; the call's echo canceller copes.
+  @override
+  void duck(bool on) {}
+
+  @override
+  bool get canDuck => false;
 
   @override
   void stop() {

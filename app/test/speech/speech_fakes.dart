@@ -45,6 +45,9 @@ class FakeAudio extends SpeechAudio {
   Future<void> stop() async => calls.add('stop');
 
   @override
+  Future<void> duck(String id, bool on) async => calls.add('duck:$id:$on');
+
+  @override
   Future<CallStart> startCall({required bool bargeIn}) async {
     calls.add('callStart:bargeIn=$bargeIn');
     return start;
@@ -101,9 +104,19 @@ class FakeDeepSeek implements DeepSeekSpeech {
 }
 
 class FakeOut implements SpeechOut {
+  @override
+  bool canDuck = true;
+
   final added = <String>[];
   bool finished = false;
   bool stopped = false;
+  final ducks = <bool>[];
+
+  @override
+  String heard = '';
+
+  @override
+  void duck(bool on) => ducks.add(on);
   final _events = StreamController<SpeechOutEvent>.broadcast(sync: true);
 
   void emit(SpeechOutEvent event) => _events.add(event);

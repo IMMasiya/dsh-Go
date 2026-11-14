@@ -133,6 +133,7 @@ class CallSettings {
     this.speaker = true,
     this.backdrop = CallBackdrop.sea,
     this.image = '',
+    this.cue = true,
     this.visual = CallVisual.ring,
   });
 
@@ -149,6 +150,8 @@ class CallSettings {
   /// The picture for [CallBackdrop.image]: a copy this app keeps ('' for none).
   final String image;
 
+  /// A soft chime when an answer is slow to start.
+  final bool cue;
   /// The light in the middle.
   final CallVisual visual;
 
@@ -158,6 +161,7 @@ class CallSettings {
     bool? speaker,
     CallBackdrop? backdrop,
     String? image,
+    bool? cue,
     CallVisual? visual,
   }) => CallSettings(
     bargeIn: bargeIn ?? this.bargeIn,
@@ -165,6 +169,7 @@ class CallSettings {
     speaker: speaker ?? this.speaker,
     backdrop: backdrop ?? this.backdrop,
     image: image ?? this.image,
+    cue: cue ?? this.cue,
     visual: visual ?? this.visual,
   );
 }
@@ -191,6 +196,7 @@ class CallSettingsController extends Notifier<CallSettings> {
         speaker: json['speaker'] != false,
         backdrop: CallBackdrop.values.asNameMap()[json['backdrop']] ?? CallBackdrop.sea,
         image: json['image'] is String ? json['image'] as String : '',
+        cue: json['cue'] != false,
         visual: CallVisual.values.asNameMap()[json['visual']] ?? CallVisual.ring,
       );
     } on Object {
@@ -218,6 +224,7 @@ class CallSettingsController extends Notifier<CallSettings> {
         'speaker': next.speaker,
         'backdrop': next.backdrop.name,
         'image': next.image,
+        'cue': next.cue,
         'visual': next.visual.name,
       }),
     );
