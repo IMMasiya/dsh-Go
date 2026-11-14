@@ -142,8 +142,10 @@ class DeferredTavern implements Tavern {
 
   /// Returned at once with its id; the preview itself runs once the engine is open.
   @override
-  TavernAuthoringTask<TavernAuthoringPromptPreview> previewAuthoringPrompt(TavernAuthoringPromptRequest request) =>
-      _DeferredTask(request.requestId, _ready.then((t) => t.previewAuthoringPrompt(request)));
+  TavernAuthoringTask<TavernAuthoringPromptPreview> previewAuthoringPrompt(
+    TavernAuthoringPromptRequest request, {
+    TavernAuthoringPromptHost? host,
+  }) => _DeferredTask(request.requestId, _ready.then((t) => t.previewAuthoringPrompt(request, host: host)));
 
   /// Returned at once with its id; the run itself starts once the engine is open.
   @override
