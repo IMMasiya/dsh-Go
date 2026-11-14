@@ -85,7 +85,7 @@ DecodedGameplayPack decodeGameplayPack(Uint8List bytes) {
     throw const FormatException('A gameplay pack requires root pack.json.');
   }
   final decoded = decodeGameplayPackManifest(manifestBytes);
-  _validateManifest(decoded.manifest, files);
+  validateGameplayPackParts(decoded.manifest, files);
   return DecodedGameplayPack(
     manifestRaw: decoded.rawText,
     manifest: decoded.manifest,
@@ -95,7 +95,9 @@ DecodedGameplayPack decodeGameplayPack(Uint8List bytes) {
   );
 }
 
-void _validateManifest(Map<String, Object?> manifest, Map<String, Uint8List> files) {
+/// The existing manifest boundary shared by intake and a new export plan.
+/// [files] contains the actual files available to resource declarations.
+void validateGameplayPackParts(Map<String, Object?> manifest, Map<String, Uint8List> files) {
   if (manifest['formatVersion'] is! int || manifest['formatVersion'] != 1) {
     throw const FormatException('A gameplay pack requires formatVersion 1.');
   }
@@ -147,6 +149,26 @@ void _validateManifest(Map<String, Object?> manifest, Map<String, Uint8List> fil
       }
     }
   }
+}
+
+/// Encodes a new pack from already-owned manifest and selected file bytes.
+/// Import/export never reads a path or fetches a URI while encoding.
+Uint8List encodeGameplayPack(Map<String, Object?> manifest, Map<String, Uint8List> files, {required DateTime at}) {
+  for (final path in files.keys) {
+    if (!isSafeCardAssetPath(path) || path == 'pack.json' || path.startsWith('\uFEFF')) {
+      throw const FormatException(
+        'A new gameplay pack file requires an exact roundtrippable path other than pack.json.',
+      );
+    }
+  }
+  validateGameplayPackParts(manifest, files);
+  final archive = Archive()..addFile(ArchiveFile.string('pack.json', jsonEncode(manifest)));
+  final paths = files.keys.toList()..sort();
+  for (final path in paths) {
+    final bytes = files[path]!;
+    archive.addFile(ArchiveFile(path, bytes.length, bytes));
+  }
+  return Uint8List.fromList(ZipEncoder().encode(archive, modified: at));
 }
 
 String _contentDigest(Uint8List manifest, Map<String, Uint8List> files) {

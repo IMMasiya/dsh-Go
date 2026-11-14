@@ -47,6 +47,10 @@ ALTER TABLE gameplay_source_ids ADD COLUMN wi_policy_epoch INTEGER;
 ALTER TABLE gameplay_source_ids ADD COLUMN wi_policy_json TEXT;
 ''';
 
+const _gameplayCastImportsSchema = """
+ALTER TABLE gameplay_bindings ADD COLUMN cast_imports_json TEXT NOT NULL DEFAULT '{}';
+""";
+
 /// Mutable only while one synchronous scope operation constructs its result.
 final class _GameplayBindingDraft {
   _GameplayBindingDraft(TavernPackBinding value)
@@ -59,6 +63,7 @@ final class _GameplayBindingDraft {
       order = value.order,
       onceEpoch = value.onceEpoch,
       aliases = value.aliases,
+      castImports = value.castImports,
       sourceMap = [for (final source in value.sourceMap) Map<String, Object?>.of(source)];
 
   final String bindingId;
@@ -70,6 +75,7 @@ final class _GameplayBindingDraft {
   int order;
   int onceEpoch;
   Map<String, String> aliases;
+  Map<String, TavernCastImportRef> castImports;
   final List<Map<String, Object?>> sourceMap;
   final addedSources = <Map<String, Object?>>[];
   final updatedPolicies = <Map<String, Object?>>[];
@@ -83,6 +89,7 @@ final class _GameplayBindingDraft {
     order: order,
     onceEpoch: onceEpoch,
     aliases: aliases,
+    castImports: castImports,
     sourceMap: sourceMap,
   );
 }
@@ -131,7 +138,7 @@ extension GameplayBindingStore on ChatStore {
     final bindingRows = _db.select('''
       SELECT b.binding_id, b.revision, b.installed_pack_id,
         char(1) || b.pack_version AS pack_version,
-        b.enabled, b.removed, b.sort_order, b.once_epoch, b.aliases_json,
+        b.enabled, b.removed, b.sort_order, b.once_epoch, b.aliases_json, b.cast_imports_json,
         v.removed AS version_removed
       FROM gameplay_bindings b
       LEFT JOIN gameplay_pack_versions v
@@ -154,9 +161,11 @@ extension GameplayBindingStore on ChatStore {
         order: row['sort_order'] as int,
         onceEpoch: row['once_epoch'] as int,
         aliases: (jsonDecode(row['aliases_json'] as String) as Map<String, Object?>).cast<String, String>(),
+        castImports: _gameplayCastImportRefs(jsonDecode(row['cast_imports_json'] as String) as Map<String, Object?>),
         sourceMap: _readGameplaySourceMap(bindingId),
       );
       bindings.add(binding);
+      issues.addAll(_gameplayCastImportIssues(binding));
       if (row['version_removed'] != 0) {
         issues.add(_gameplayVersionIssue(binding, missing: row['version_removed'] == null));
       }
@@ -230,6 +239,7 @@ extension GameplayBindingStore on ChatStore {
         final selectedVersions = <String>{};
         final enableRequested = <String>{};
         final resets = <String>{};
+        final castImportsRequested = <String>{};
 
         _GameplayBindingDraft requireBinding(String id) {
           final value = working[id];
@@ -264,10 +274,12 @@ extension GameplayBindingStore on ChatStore {
                   order: order.length - 1,
                   onceEpoch: 1,
                   aliases: edit.aliases,
+                  castImports: edit.castImports,
                   sourceMap: const [],
                 ),
               );
               selectedVersions.add(id);
+              castImportsRequested.add(id);
             case TavernPackBindingSelectVersion():
               final value = requireBinding(edit.bindingId);
               value.packVersion = edit.packVersion;
@@ -305,6 +317,9 @@ extension GameplayBindingStore on ChatStore {
               value.onceEpoch++;
             case TavernPackBindingSetAliases():
               requireBinding(edit.bindingId).aliases = edit.aliases;
+            case TavernPackBindingSetCastImports():
+              requireBinding(edit.bindingId).castImports = edit.imports;
+              castImportsRequested.add(edit.bindingId);
           }
         }
 
@@ -340,6 +355,16 @@ extension GameplayBindingStore on ChatStore {
                 message: 'An alias target binding does not exist.',
               );
             }
+          }
+          for (final issue in _gameplayCastImportIssues(value.value)) {
+            if (castImportsRequested.contains(value.bindingId) && issue['code'] != 'cast_source_version_mismatch') {
+              throw TavernGameplayException(
+                code: issue['code']! as String,
+                message: 'The cast import does not identify an adopted character from this pack and local cast.',
+                details: issue,
+              );
+            }
+            issues.add(issue);
           }
           final sources = <(String, String, String), Map<String, Object?>>{
             for (final source in value.sourceMap) _gameplaySourceKey(source): source,
@@ -493,13 +518,13 @@ extension GameplayBindingStore on ChatStore {
               '''
             INSERT INTO gameplay_bindings
               (binding_id, scope, target, revision, installed_pack_id, pack_version,
-               enabled, removed, sort_order, once_epoch, aliases_json)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+               enabled, removed, sort_order, once_epoch, aliases_json, cast_imports_json)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT (binding_id) DO UPDATE SET
               revision = excluded.revision, pack_version = excluded.pack_version,
               enabled = excluded.enabled, removed = excluded.removed,
               sort_order = excluded.sort_order, once_epoch = excluded.once_epoch,
-              aliases_json = excluded.aliases_json''',
+              aliases_json = excluded.aliases_json, cast_imports_json = excluded.cast_imports_json''',
               [
                 id,
                 ...key,
@@ -511,6 +536,7 @@ extension GameplayBindingStore on ChatStore {
                 value.order,
                 value.onceEpoch,
                 jsonEncode(value.aliases),
+                jsonEncode({for (final entry in value.castImports.entries) entry.key: entry.value.toJson()}),
               ],
             );
             for (final source in value.addedSources) {
@@ -680,6 +706,57 @@ extension GameplayBindingStore on ChatStore {
     return entries;
   }
 
+  List<Map<String, Object?>> _gameplayCastImportIssues(TavernPackBinding binding) {
+    final issues = <Map<String, Object?>>[];
+    for (final entry in binding.castImports.entries) {
+      final ref = entry.value;
+      Map<String, Object?> issue(String code) => {
+        'code': code,
+        'bindingId': binding.bindingId,
+        'localCastId': entry.key,
+        'castImport': ref.toJson(),
+      };
+      if (entry.key.isEmpty || ref.domainId.isEmpty || ref.operationId.isEmpty) {
+        issues.add(issue('invalid_cast_import'));
+        continue;
+      }
+      final saved = readAuthoringOperationData(ref.domainId, ref.operationId);
+      if (saved == null) {
+        issues.add(issue('cast_import_not_found'));
+        continue;
+      }
+      if (saved.committed != true) {
+        issues.add({...issue('cast_import_not_adopted'), 'state': saved.state.name});
+        continue;
+      }
+      final source = saved.request['source'];
+      final pack = source is Map<String, Object?> ? source['packRef'] : null;
+      if (saved.request['method'] != 'importDshgoCastMember' ||
+          saved.request['localCastId'] != entry.key ||
+          source is! Map<String, Object?> ||
+          (source['kind'] != 'packManifest' && source['kind'] != 'packResource') ||
+          pack is! Map<String, Object?> ||
+          pack['installedPackId'] != binding.packRef.installedPackId ||
+          pack['packVersion'] is! String ||
+          (pack['packVersion']! as String).isEmpty ||
+          !saved.physicalResourceId.startsWith('character:') ||
+          saved.physicalResourceId.length == 'character:'.length ||
+          saved.after['present'] != true) {
+        issues.add(issue('cast_import_mismatch'));
+        continue;
+      }
+      if (pack['packVersion'] != binding.packRef.packVersion) {
+        issues.add({
+          ...issue('cast_source_version_mismatch'),
+          'sourcePackRef': {'installedPackId': pack['installedPackId'], 'packVersion': pack['packVersion']},
+          'selectedPackRef': binding.packRef.toJson(),
+          'characterId': saved.physicalResourceId.substring('character:'.length),
+        });
+      }
+    }
+    return issues;
+  }
+
   List<Map<String, Object?>> _gameplayScopeTargetIssues(TavernPackScopeTarget scope) => [
     if (scope.kind == TavernGameplayScope.chat &&
         _db.select('SELECT 1 FROM chats WHERE id = ?', [scope.targetId]).isEmpty)
@@ -718,6 +795,14 @@ Map<String, Object?> _gameplayVersionIssue(TavernPackBinding binding, {required 
   'code': missing ? 'version_not_found' : 'version_unavailable',
   'bindingId': binding.bindingId,
   'packRef': binding.packRef.toJson(),
+};
+
+Map<String, TavernCastImportRef> _gameplayCastImportRefs(Map<String, Object?> value) => {
+  for (final entry in value.entries)
+    entry.key: TavernCastImportRef(
+      domainId: (entry.value! as Map<String, Object?>)['domainId']! as String,
+      operationId: (entry.value! as Map<String, Object?>)['operationId']! as String,
+    ),
 };
 
 TavernPackBindingReceipt _gameplayBindingReceipt(Map<String, Object?> value) {
@@ -759,6 +844,7 @@ TavernPackBinding _gameplayBindingFromJson(Map<String, Object?> value) {
     order: value['order']! as int,
     onceEpoch: value['onceEpoch']! as int,
     aliases: (value['aliases']! as Map<String, Object?>).cast<String, String>(),
+    castImports: _gameplayCastImportRefs(value['castImports'] as Map<String, Object?>? ?? const {}),
     sourceMap: [for (final raw in value['sourceMap']! as List<Object?>) raw! as Map<String, Object?>],
   );
 }
@@ -771,6 +857,7 @@ final class StoredGameplaySimulationData {
     required this.scopes,
     required this.packs,
     required this.configs,
+    this.castImports = const {},
   });
   final String domainId;
   final List<TavernPackScopeSnapshot> scopes;
@@ -780,6 +867,10 @@ final class StoredGameplaySimulationData {
   >
   packs;
   final Map<String, ({String sourceVectorJson, String effectiveDefinitionsJson, String sourceMapJson})?> configs;
+
+  /// Only the referenced adopted/published cast rows, in their original domain.
+  /// Null records an unresolved reference and is also checked by the final seal.
+  final Map<(String, String), Map<String, Object?>?> castImports;
 }
 
 extension GameplaySimulationStore on ChatStore {
@@ -857,11 +948,16 @@ extension GameplaySimulationStore on ChatStore {
         );
       }
       final configs = readGameplayConfigurationRows(configIds);
+      final castImports = readGameplayCastImportRows([
+        for (final scope in snapshot.scopeSnapshots)
+          for (final binding in scope.bindings) ...binding.castImports.values,
+      ]);
       final result = StoredGameplaySimulationData(
         domainId: snapshot.domainId,
         scopes: snapshot.scopeSnapshots,
         packs: packs,
         configs: configs,
+        castImports: castImports,
       );
       if (owns) {
         _db.execute('COMMIT');
@@ -880,6 +976,57 @@ extension GameplaySimulationStore on ChatStore {
       }
       rethrow;
     }
+  }
+
+  /// Fixed journal evidence used both by capture and its final seal. Reads never
+  /// publish an adopted row; pending/non-cast rows remain unresolved here.
+  Map<(String, String), Map<String, Object?>?> readGameplayCastImportRows(Iterable<TavernCastImportRef> refs) {
+    _ensureOpen();
+    final result = <(String, String), Map<String, Object?>?>{
+      for (final ref in refs) (ref.domainId, ref.operationId): null,
+    };
+    for (final key in result.keys) {
+      final rows = _db.select(
+        '''
+        SELECT char(1) || domain_id AS domain_id,
+          char(1) || operation_id AS operation_id,
+          char(1) || physical_resource_id AS physical_resource_id,
+          char(1) || request_json AS request_json, base_revision,
+          char(1) || before_json AS before_json,
+          char(1) || after_json AS after_json,
+          char(1) || artifacts_json AS artifacts_json,
+          char(1) || state AS state, adopted_revision,
+          char(1) || issue_json AS issue_json, created_at, updated_at
+        FROM authoring_operations
+        WHERE domain_id = ? AND operation_id = ? AND state IN ('adopted', 'published')''',
+        [key.$1, key.$2],
+      );
+      if (rows.isEmpty) {
+        continue;
+      }
+      final row = rows.single;
+      final requestJson = ChatStore._unguardText(row['request_json'])!;
+      final request = jsonDecode(requestJson) as Map<String, Object?>;
+      if (request['method'] != 'importDshgoCastMember') {
+        continue;
+      }
+      result[key] = {
+        'domain_id': ChatStore._unguardText(row['domain_id'])!,
+        'operation_id': ChatStore._unguardText(row['operation_id'])!,
+        'physical_resource_id': ChatStore._unguardText(row['physical_resource_id'])!,
+        'request_json': requestJson,
+        'base_revision': row['base_revision'] as int,
+        'before_json': ChatStore._unguardText(row['before_json'])!,
+        'after_json': ChatStore._unguardText(row['after_json'])!,
+        'artifacts_json': ChatStore._unguardText(row['artifacts_json'])!,
+        'state': ChatStore._unguardText(row['state'])!,
+        'adopted_revision': row['adopted_revision'] as int?,
+        'issue_json': ChatStore._unguardText(row['issue_json']),
+        'created_at': row['created_at'] as int,
+        'updated_at': row['updated_at'] as int,
+      };
+    }
+    return result;
   }
 
   /// A final seal check preserves an observed missing or malformed historical
@@ -910,8 +1057,9 @@ extension GameplaySimulationStore on ChatStore {
     return result;
   }
 
-  /// Called only inside the simulator's real bootstrap transaction. No live
-  /// operation receipts or authoring domain are copied into the temporary root.
+  /// Called only inside the simulator's real bootstrap transaction. The temporary
+  /// domain stays new. Only referenced, already-adopted cast journal rows cross
+  /// as historical evidence; their artifacts are never followed or executed.
   void bootstrapGameplaySimulationData(StoredGameplaySimulationData captured) {
     _ensureOpen();
     if (_db.autocommit) {
@@ -967,8 +1115,8 @@ extension GameplaySimulationStore on ChatStore {
           '''
           INSERT INTO gameplay_bindings
             (binding_id, scope, target, revision, installed_pack_id, pack_version,
-             enabled, removed, sort_order, once_epoch, aliases_json)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''',
+             enabled, removed, sort_order, once_epoch, aliases_json, cast_imports_json)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''',
           [
             binding.bindingId,
             ...key,
@@ -980,6 +1128,7 @@ extension GameplaySimulationStore on ChatStore {
             binding.order,
             binding.onceEpoch,
             jsonEncode(binding.aliases),
+            jsonEncode({for (final entry in binding.castImports.entries) entry.key: entry.value.toJson()}),
           ],
         );
         for (final source in binding.sourceMap) {
@@ -1001,6 +1150,34 @@ extension GameplaySimulationStore on ChatStore {
           );
         }
       }
+    }
+    for (final row in captured.castImports.values) {
+      if (row == null) {
+        continue;
+      }
+      _db.execute(
+        '''
+        INSERT INTO authoring_operations
+          (domain_id, operation_id, physical_resource_id, request_json, base_revision,
+           before_json, after_json, artifacts_json, state, adopted_revision,
+           issue_json, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''',
+        [
+          row['domain_id'],
+          row['operation_id'],
+          row['physical_resource_id'],
+          row['request_json'],
+          row['base_revision'],
+          row['before_json'],
+          row['after_json'],
+          row['artifacts_json'],
+          row['state'],
+          row['adopted_revision'],
+          row['issue_json'],
+          row['created_at'],
+          row['updated_at'],
+        ],
+      );
     }
     for (final entry in captured.configs.entries) {
       final config = entry.value;

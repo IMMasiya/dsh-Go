@@ -38,7 +38,7 @@ extension _GameplayBindingOperations on TavernEngine {
   });
 }
 
-/// Only the three collection-bearing variants need a detached collection.
+/// Only the four collection-bearing variants need a detached collection.
 /// Scalars and version refs already have immutable typed fields.
 List<TavernPackBindingEdit> _captureGameplayBindingEdits(List<TavernPackBindingEdit> edits) => [
   for (final edit in edits)
@@ -48,11 +48,16 @@ List<TavernPackBindingEdit> _captureGameplayBindingEdits(List<TavernPackBindingE
         packRef: edit.packRef,
         enabled: edit.enabled,
         aliases: Map<String, String>.of(edit.aliases),
+        castImports: Map<String, TavernCastImportRef>.of(edit.castImports),
       ),
       TavernPackBindingReorder() => TavernPackBindingReorder(bindingIds: List<String>.of(edit.bindingIds)),
       TavernPackBindingSetAliases() => TavernPackBindingSetAliases(
         bindingId: edit.bindingId,
         aliases: Map<String, String>.of(edit.aliases),
+      ),
+      TavernPackBindingSetCastImports() => TavernPackBindingSetCastImports(
+        bindingId: edit.bindingId,
+        imports: Map<String, TavernCastImportRef>.of(edit.imports),
       ),
       _ => edit,
     },

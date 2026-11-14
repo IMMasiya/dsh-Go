@@ -1270,6 +1270,17 @@ extension _AuthoringPromptContexts on TavernEngine {
             !_stateJsonEqual(simulationPresets, _store.readAuthoringSimulationPresetRows(simulationPresets.keys))) {
           _authoringContextConflict();
         }
+        if (simulationGameplay != null) {
+          final currentCastRows = _store.readGameplayCastImportRows([
+            for (final scope in simulationGameplay.scopes)
+              for (final binding in scope.bindings) ...binding.castImports.values,
+          ]);
+          for (final entry in simulationGameplay.castImports.entries) {
+            if (!_stateJsonEqual(entry.value, currentCastRows[entry.key])) {
+              _authoringContextConflict();
+            }
+          }
+        }
         if (real) {
           if (_authoringAuditText(_directors.latestSuccess(chat.id)) != _authoringAuditText(director)) {
             _authoringContextConflict();

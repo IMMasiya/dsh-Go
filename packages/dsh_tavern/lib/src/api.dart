@@ -19,6 +19,8 @@ import 'backup.dart';
 import 'director.dart';
 import 'gameplay.dart';
 import 'gameplay_bindings.dart';
+import 'gameplay_cast.dart';
+import 'gameplay_export.dart';
 import 'gameplay_packs.dart';
 import 'import_report.dart';
 import 'inspection.dart';
@@ -648,6 +650,31 @@ abstract interface class Tavern {
     TavernGameplayContext context, {
     List<TavernPackScopePreview> proposedScopes = const [],
     bool validateCurrentState = false,
+  });
+
+  /// Imports one explicit cast source through the existing prepared writer.
+  /// Retain the complete source/domain/operation intent for a replay.
+  Future<TavernCastImportResult> importDshgoCastMember(
+    TavernCastSource source,
+    String localCastId, {
+    required String operationId,
+    String? domainId,
+  });
+
+  /// Reads the original stored outcome without publishing or importing again.
+  Future<TavernCastImportResult?> readDshgoCastImport(String domainId, String operationId);
+
+  /// Captures a complete prospective export without saving any source or pack.
+  Future<TavernGameplayExportPreview> previewGameplayExport(TavernGameplayExportRequest request);
+
+  /// Recaptures and compares the full preview before encoding a new card.
+  Future<Uint8List> exportCharacterWithPacks(TavernGameplayExportRequest request, {required String expectedPreviewId});
+
+  /// Exports selected materialized draft candidates into a new pack's bytes.
+  /// This does not install, bind, publish or overwrite an installed version.
+  Future<Uint8List> exportGameplayPackFromDraft(
+    TavernGameplayExportRequest request, {
+    required String expectedPreviewId,
   });
 
   // Library ------------------------------------------------------------------

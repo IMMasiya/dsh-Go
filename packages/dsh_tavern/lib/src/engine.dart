@@ -28,12 +28,15 @@ import 'director/direct_tool.dart' as director_core;
 import 'dshgo_inspection.dart';
 import 'gameplay.dart';
 import 'gameplay_bindings.dart';
+import 'gameplay_cast.dart';
+import 'gameplay_export.dart';
 import 'gameplay_packs.dart';
 import 'import_report.dart';
 import 'inspection.dart';
 import 'io/authoring_text.dart';
 import 'io/authoring_image.dart';
-import 'io/card_codec.dart' show CardCodec, DecodedCardSeed, TavernCard;
+import 'io/card_codec.dart'
+    show CardCodec, DecodedCardSeed, TavernCard, embeddedCardAssetPath, isSafeCardAssetPath, cardAssetDataUri;
 import 'io/chat_jsonl.dart';
 import 'io/gameplay_pack_codec.dart';
 import 'io/import_intake.dart';
@@ -95,6 +98,11 @@ part 'engine_tools.dart';
 part 'engine_gameplay_packs.dart';
 part 'engine_gameplay.dart';
 part 'engine_gameplay_bindings.dart';
+part 'engine_gameplay_cast.dart';
+part 'engine_gameplay_export.dart';
+part 'engine_gameplay_export_character.dart';
+part 'gameplay_export_projection.dart';
+part 'engine_gameplay_export_draft.dart';
 part 'engine_gameplay_runtime.dart';
 part 'engine_gameplay_resources.dart';
 part 'engine_gameplay_events.dart';
@@ -659,6 +667,34 @@ class TavernEngine implements Tavern {
     List<TavernPackScopePreview> proposedScopes = const [],
     bool validateCurrentState = false,
   }) => _resolveGameplayConfig(context, proposedScopes: proposedScopes, validateCurrentState: validateCurrentState);
+
+  @override
+  Future<TavernCastImportResult> importDshgoCastMember(
+    TavernCastSource source,
+    String localCastId, {
+    required String operationId,
+    String? domainId,
+  }) => _importDshgoCastMember(source, localCastId, operationId: operationId, domainId: domainId);
+
+  @override
+  Future<TavernCastImportResult?> readDshgoCastImport(String domainId, String operationId) =>
+      _readDshgoCastImport(domainId, operationId);
+
+  @override
+  Future<TavernGameplayExportPreview> previewGameplayExport(TavernGameplayExportRequest request) =>
+      _previewGameplayExport(request);
+
+  @override
+  Future<Uint8List> exportCharacterWithPacks(
+    TavernGameplayExportRequest request, {
+    required String expectedPreviewId,
+  }) => _exportCharacterWithPacks(request, expectedPreviewId);
+
+  @override
+  Future<Uint8List> exportGameplayPackFromDraft(
+    TavernGameplayExportRequest request, {
+    required String expectedPreviewId,
+  }) => _exportGameplayPackFromDraft(request, expectedPreviewId);
 
   // Acquire this queue before chat barriers for bind/delete. Taking them in
   // the reverse order could leave a binder waiting behind a deletion that is

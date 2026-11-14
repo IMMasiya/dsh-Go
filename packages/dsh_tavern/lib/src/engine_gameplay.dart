@@ -5,7 +5,20 @@ extension _GameplayResolutionOperations on TavernEngine {
     TavernGameplayContext context, {
     List<TavernPackScopePreview> proposedScopes = const [],
     bool validateCurrentState = false,
-  }) => _authoringOperation(() async {
+  }) => _authoringOperation(
+    () async => (await _captureGameplayResolution(
+      context,
+      proposedScopes: proposedScopes,
+      validateCurrentState: validateCurrentState,
+    )).resolution,
+  );
+
+  Future<_GameplayResolutionCapture> _captureGameplayResolution(
+    TavernGameplayContext context, {
+    List<TavernPackScopePreview> proposedScopes = const [],
+    bool validateCurrentState = false,
+    Set<(String, String)> extraResources = const {},
+  }) async {
     // Capture all caller-owned collections before the first asynchronous read.
     final proposed = _captureGameplayScopes(proposedScopes);
     final snapshot = _store.readGameplaySnapshot(
@@ -14,6 +27,7 @@ extension _GameplayResolutionOperations on TavernEngine {
       readBindings: true,
       proposedScopes: proposed,
       readInitialState: validateCurrentState,
+      extraResources: extraResources,
     );
     final scopes = snapshot.resolvedScopes;
     final bindingIds = <String>{};
@@ -118,29 +132,28 @@ extension _GameplayResolutionOperations on TavernEngine {
         issues: input.issues,
       );
     }
-    await _recheckCapturedAuthoringResources(
-      resources.values,
-      check: () {
-        if (_authoringAuthority.domainId != snapshot.domainId ||
-            !identical(_document['settings'], settingsIdentity) ||
-            jsonEncode(_map(_document['settings'])) != settingsText ||
-            !identical(_personas.authoringVersion, personaVersion) ||
-            chat != null && !identical(_store.displayVersion(chat.id), chatVersion) ||
-            _store.defaultPresetId != snapshot.defaultPresetId) {
-          _gameplayCaptureConflict();
-        }
-        final current = _store.readGameplaySnapshot(
-          chatId: context.chatId,
-          characterId: context.characterId,
-          readBindings: true,
-          proposedScopes: proposed,
-          readResources: false,
-        );
-        if (!_stateJsonEqual(_gameplayBindingIdentity(current), _gameplayBindingIdentity(snapshot))) {
-          _gameplayCaptureConflict();
-        }
-      },
-    );
+    void check() {
+      if (_authoringAuthority.domainId != snapshot.domainId ||
+          !identical(_document['settings'], settingsIdentity) ||
+          jsonEncode(_map(_document['settings'])) != settingsText ||
+          !identical(_personas.authoringVersion, personaVersion) ||
+          chat != null && !identical(_store.displayVersion(chat.id), chatVersion) ||
+          _store.defaultPresetId != snapshot.defaultPresetId) {
+        _gameplayCaptureConflict();
+      }
+      final current = _store.readGameplaySnapshot(
+        chatId: context.chatId,
+        characterId: context.characterId,
+        readBindings: true,
+        proposedScopes: proposed,
+        readResources: false,
+      );
+      if (!_stateJsonEqual(_gameplayBindingIdentity(current), _gameplayBindingIdentity(snapshot))) {
+        _gameplayCaptureConflict();
+      }
+    }
+
+    await _recheckCapturedAuthoringResources(resources.values, check: check);
     final byScope = {for (final scope in scopes) (scope.scope, scope.targetId): scope};
     final ordered = <TavernPackScopePreview>[];
     void addScope(TavernGameplayScope kind, String? target) {
@@ -159,7 +172,7 @@ extension _GameplayResolutionOperations on TavernEngine {
     if (chat != null) {
       addScope(TavernGameplayScope.chat, chat.id);
     }
-    return _composeGameplay(
+    final resolution = _composeGameplay(
       [
         for (final scope in ordered)
           for (final binding in scope.bindings)
@@ -188,7 +201,29 @@ extension _GameplayResolutionOperations on TavernEngine {
       ),
       bindingIdentity: _gameplayBindingIdentity(snapshot),
     );
+    return _GameplayResolutionCapture(
+      resolution: resolution,
+      snapshot: snapshot,
+      resources: resources,
+      cards: cards,
+      check: check,
+    );
+  }
+}
+
+final class _GameplayResolutionCapture {
+  const _GameplayResolutionCapture({
+    required this.resolution,
+    required this.snapshot,
+    required this.resources,
+    required this.cards,
+    required this.check,
   });
+  final TavernGameplayResolution resolution;
+  final StoredGameplaySnapshot snapshot;
+  final Map<String, _AuthoringCapturedResource> resources;
+  final Map<String, _AuthoringCapturedResource> cards;
+  final void Function() check;
 }
 
 List<TavernPackScopePreview> _captureGameplayScopes(List<TavernPackScopePreview> proposed) {

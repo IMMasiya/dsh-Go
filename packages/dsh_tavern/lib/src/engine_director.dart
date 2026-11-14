@@ -1132,7 +1132,7 @@ class _DirectorCoordinator {
     Map<String, Object?>? readSaved() {
       try {
         return engine._stateAt(chatId, chat.currentLeafId);
-      } catch (_) {
+      } on StateError {
         // An unreadable ancestry is unknown history, never an empty carrier.
         return null;
       }

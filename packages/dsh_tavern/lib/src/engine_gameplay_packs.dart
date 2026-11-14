@@ -58,13 +58,20 @@ extension _GameplayPackOperations on TavernEngine {
     );
   });
 
-  Future<Map<String, Object?>> _inspectGameplayPack(DecodedGameplayPack pack, DateTime checkedAt) async {
+  Future<Map<String, Object?>> _inspectGameplayPack(DecodedGameplayPack pack, DateTime checkedAt) =>
+      _inspectGameplayPackParts(pack.manifest, pack.files, checkedAt);
+
+  Future<Map<String, Object?>> _inspectGameplayPackParts(
+    Map<String, Object?> manifest,
+    Map<String, Uint8List> files,
+    DateTime checkedAt,
+  ) async {
     final resources = <Map<String, Object?>>[];
-    for (final resource in gameplayPackResources(pack.manifest)) {
+    for (final resource in gameplayPackResources(manifest)) {
       final localId = resource['localId']! as String;
       final kind = resource['kind']! as String;
       final path = resource['path']! as String;
-      final bytes = pack.files[path]!;
+      final bytes = files[path]!;
       final reports = <Map<String, Object?>>[];
       var diagnostics = <TavernRegexDiagnostic>[];
       var opaque = false;
@@ -146,7 +153,7 @@ extension _GameplayPackOperations on TavernEngine {
       });
     }
     return {
-      'dshgo': inspectDshgoExtension(pack.manifest['dshgo'], present: pack.manifest.containsKey('dshgo')).toJson(),
+      'dshgo': inspectDshgoExtension(manifest['dshgo'], present: manifest.containsKey('dshgo')).toJson(),
       'resources': resources,
     };
   }

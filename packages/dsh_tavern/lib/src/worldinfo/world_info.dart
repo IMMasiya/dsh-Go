@@ -193,6 +193,191 @@ WorldInfoBook remapWorldInfoBook(
   required Map<String, String> entryUidsByPointer,
 }) => WorldInfoBook._remapped(book, id, stWorldName, entryUidsByPointer);
 
+/// Exports one selected effective pack entry through the existing loader.
+/// Same-form exports change only the execution id. Cross-form exports retain
+/// unknown fields where they stay inert; callers retain the complete original
+/// entry in export provenance. Runtime identities and saved ledgers do not move.
+Map<String, Object?> exportGameplayWorldInfoEntry(
+  WorldInfoEntry entry, {
+  required String id,
+  required bool characterBook,
+}) {
+  final wasCharacterBook = entry.book.raw['entries'] is List<Object?>;
+  final result = _copyTimedValue(entry.raw)! as Map<String, Object?>;
+  if (wasCharacterBook == characterBook) {
+    result[characterBook ? 'id' : 'uid'] = id;
+    return result;
+  }
+  final fields = entry._fields;
+  if (characterBook) {
+    void copyField(String from, String to) {
+      result.remove(to);
+      if (fields.containsKey(from)) {
+        result[to] = _copyTimedValue(fields[from]);
+      }
+    }
+
+    copyField('key', 'keys');
+    copyField('keysecondary', 'secondary_keys');
+    copyField('order', 'insertion_order');
+    for (final field in const ['comment', 'content', 'constant', 'selective']) {
+      copyField(field, field);
+    }
+    result['id'] = id;
+    result['enabled'] = !entry.disabled;
+    // Native position values belong in the existing V3 extension, not in the
+    // before_char/after_char top-level slot. A missing/nonrepresentable native
+    // position is rejected by the real-loader comparison below.
+    result.remove('position');
+    final extensions = _object(_copyTimedValue(result['extensions']));
+    for (final pair in _gameplayCharacterExtensionFields.entries) {
+      extensions.remove(pair.value);
+      if (fields.containsKey(pair.key)) {
+        extensions[pair.value] = _copyTimedValue(fields[pair.key]);
+      }
+    }
+    // ST's missing/null useProbability is false; V3's nullish default is true.
+    // Preserve that actual gate explicitly instead of enabling a new RNG path.
+    extensions['useProbability'] = entry.useProbability;
+    result['extensions'] = extensions;
+  } else {
+    // A raw V3 row may contain ignored ST-shaped keys. Do not activate those
+    // shadows after changing form (notably characterFilter and disable).
+    for (final field in {
+      'uid',
+      'world',
+      'key',
+      'keysecondary',
+      'comment',
+      'content',
+      'constant',
+      'selective',
+      'order',
+      'position',
+      'disable',
+      'characterFilter',
+      ..._gameplayCharacterExtensionFields.keys,
+    }) {
+      result.remove(field);
+    }
+    result.addAll(_copyTimedValue(fields)! as Map<String, Object?>);
+    result['uid'] = id;
+  }
+  final roundTrip = WorldInfoBook.fromJson(
+    id: entry.book.id,
+    source: entry.book.source,
+    stWorldName: entry.book.stWorldName,
+    json: {
+      'entries': characterBook ? <Object?>[result] : <String, Object?>{id: result},
+    },
+  ).entries.single;
+  final before = _gameplayWorldInfoExecution(entry);
+  final after = _gameplayWorldInfoExecution(roundTrip);
+  for (final field in before.keys) {
+    if (jsonEncode(before[field]) != jsonEncode(after[field])) {
+      throw FormatException('World-info conversion cannot preserve $field at ${entry.sourcePointer}.');
+    }
+  }
+  return result;
+}
+
+/// Names accepted by the existing _convertCharacterEntry loader. Values still
+/// pass through that loader; this table neither parses nor normalizes them.
+const _gameplayCharacterExtensionFields = <String, String>{
+  'position': 'position',
+  'excludeRecursion': 'exclude_recursion',
+  'preventRecursion': 'prevent_recursion',
+  'delayUntilRecursion': 'delay_until_recursion',
+  'displayIndex': 'display_index',
+  'probability': 'probability',
+  'useProbability': 'useProbability',
+  'depth': 'depth',
+  'selectiveLogic': 'selectiveLogic',
+  'outletName': 'outlet_name',
+  'group': 'group',
+  'groupOverride': 'group_override',
+  'groupWeight': 'group_weight',
+  'scanDepth': 'scan_depth',
+  'caseSensitive': 'case_sensitive',
+  'matchWholeWords': 'match_whole_words',
+  'useGroupScoring': 'use_group_scoring',
+  'automationId': 'automation_id',
+  'role': 'role',
+  'vectorized': 'vectorized',
+  'sticky': 'sticky',
+  'cooldown': 'cooldown',
+  'delay': 'delay',
+  'matchPersonaDescription': 'match_persona_description',
+  'matchCharacterDescription': 'match_character_description',
+  'matchCharacterPersonality': 'match_character_personality',
+  'matchCharacterDepthPrompt': 'match_character_depth_prompt',
+  'matchScenario': 'match_scenario',
+  'matchCreatorNotes': 'match_creator_notes',
+  'triggers': 'triggers',
+  'ignoreBudget': 'ignore_budget',
+};
+
+/// Every per-entry value used by selection, scoring, output, decorators and
+/// timer gates. Hash/display order and book/source identity are intentionally
+/// excluded: export creates new identities and does not migrate runtime state.
+Map<String, Object?> _gameplayWorldInfoExecution(WorldInfoEntry entry) {
+  final fields = entry._fields;
+  final filter = fields['characterFilter'];
+  return {
+    'keys': entry.keys,
+    'secondaryKeys': entry.secondaryKeys,
+    'content': entry.content,
+    'comment': entry.comment,
+    'constant': entry.constant,
+    'disabled': entry.disabled,
+    'selective': entry.selective,
+    'selectiveLogic': entry.selectiveLogic,
+    // Activation defaults nullish logic; inclusion-group scoring does not.
+    'secondaryScoringHasLogic':
+        entry.keys.isNotEmpty && entry.secondaryKeys.isNotEmpty && fields['selectiveLogic'] != null,
+    'order': entry.order,
+    'position': entry.position,
+    'depth': entry.depth,
+    'role': entry.role,
+    'outlet': entry.outlet,
+    'ignoreBudget': entry.ignoreBudget,
+    'excludeRecursion': entry.excludeRecursion,
+    'preventRecursion': entry.preventRecursion,
+    'delayUntilRecursion': entry.delayUntilRecursion,
+    'useProbability': entry.useProbability,
+    'probability': entry.probability,
+    'group': entry.group,
+    'groupOverride': entry.groupOverride,
+    'groupWeight': entry.groupWeight,
+    'scanDepth': entry.scanDepth,
+    'caseSensitive': entry.caseSensitive,
+    'useRegex': entry.useRegex,
+    'matchWholeWords': entry.matchWholeWords,
+    'useGroupScoring': entry.useGroupScoring,
+    'triggers': entry.triggers,
+    for (final field in const [
+      'matchPersonaDescription',
+      'matchCharacterDescription',
+      'matchCharacterPersonality',
+      'matchCharacterDepthPrompt',
+      'matchScenario',
+      'matchCreatorNotes',
+    ])
+      field: fields[field] == true,
+    'characterFilter':
+        filter is Map<String, Object?> && (_strings(filter['names']).isNotEmpty || _strings(filter['tags']).isNotEmpty)
+        ? {
+            'isExclude': filter['isExclude'] == true,
+            'names': _strings(filter['names']),
+            'tags': _strings(filter['tags']),
+          }
+        : null,
+    // Timers use JavaScript truthiness/Number on these original JSON values,
+    // including strings, arrays and objects. Do not rebuild integer defaults.
+    for (final field in const ['sticky', 'cooldown', 'delay']) field: fields[field],
+  };
+}
+
 String _worldInfoPointerToken(String value) => value.replaceAll('~', '~0').replaceAll('/', '~1');
 
 /// Typed consumption identity; content version is provenance, never the key.

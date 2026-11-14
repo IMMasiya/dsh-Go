@@ -46,6 +46,7 @@ extension GameplaySnapshotStore on ChatStore {
     bool readResources = true,
     Set<String> resourceKinds = const {'lorebook', 'regex', 'castCard'},
     bool deferResourceErrors = false,
+    Set<(String, String)> extraResources = const {},
     bool readContext = true,
     List<String> additionalCharacterIds = const [],
   }) {
@@ -156,7 +157,16 @@ extension GameplaySnapshotStore on ChatStore {
         final files = <String, Uint8List>{};
         if (readResources && version != null && !version.removed && resources.contains(key)) {
           for (final resource in gameplayPackResources(version.manifest)) {
-            if (!resourceKinds.contains(resource['kind'])) {
+            final extra = resolvedScopes.any(
+              (scope) => scope.bindings.any(
+                (binding) =>
+                    binding.enabled &&
+                    binding.packRef.installedPackId == ref.installedPackId &&
+                    binding.packRef.packVersion == ref.packVersion &&
+                    extraResources.contains((binding.bindingId, resource['localId']! as String)),
+              ),
+            );
+            if (!resourceKinds.contains(resource['kind']) && !extra) {
               continue;
             }
             final path = resource['path']! as String;

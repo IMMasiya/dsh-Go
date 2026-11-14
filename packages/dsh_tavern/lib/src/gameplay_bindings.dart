@@ -12,6 +12,17 @@ final class TavernPackScopeTarget {
   Map<String, Object?> toJson() => {'kind': kind.name, 'targetId': targetId};
 }
 
+/// A reference to the original durable cast-import journal. The domain remains
+/// the operation's historical domain after a whole-root restore.
+final class TavernCastImportRef {
+  const TavernCastImportRef({required this.domainId, required this.operationId});
+
+  final String domainId;
+  final String operationId;
+
+  Map<String, Object?> toJson() => {'domainId': domainId, 'operationId': operationId};
+}
+
 /// One binding instance. Selecting a version does not change binding identity
 /// or onceEpoch. sourceMap is allocated by storage, never supplied by an edit.
 final class TavernPackBinding {
@@ -25,6 +36,7 @@ final class TavernPackBinding {
     required this.onceEpoch,
     required this.aliases,
     required this.sourceMap,
+    this.castImports = const {},
   });
 
   final String bindingId;
@@ -35,6 +47,10 @@ final class TavernPackBinding {
   final int order;
   final int onceEpoch;
   final Map<String, String> aliases;
+
+  /// Local cast IDs point to actual adopted imports; selecting a version never
+  /// replaces their characters or implicitly imports another character.
+  final Map<String, TavernCastImportRef> castImports;
 
   /// WI entry rows may carry wiPolicyEpoch and wiPolicy. Missing keys mean
   /// no policy has been established; an empty wiPolicy is a real baseline.
@@ -50,6 +66,7 @@ final class TavernPackBinding {
     'order': order,
     'onceEpoch': onceEpoch,
     'aliases': aliases,
+    'castImports': {for (final entry in castImports.entries) entry.key: entry.value.toJson()},
     'sourceMap': sourceMap,
   };
 }
@@ -113,7 +130,8 @@ final class TavernPackBindingReceipt {
 }
 
 /// Edits are applied in order to one scope; the final result is committed by
-/// one domain/revision CAS. Alias maps replace the complete previous map.
+/// one domain/revision CAS. Alias and cast-import maps replace their complete
+/// previous maps.
 sealed class TavernPackBindingEdit {
   const TavernPackBindingEdit();
 
@@ -122,7 +140,14 @@ sealed class TavernPackBindingEdit {
     required TavernPackVersionRef packRef,
     bool enabled = true,
     Map<String, String> aliases = const {},
-  }) => TavernPackBindingCreate(clientKey: clientKey, packRef: packRef, enabled: enabled, aliases: aliases);
+    Map<String, TavernCastImportRef> castImports = const {},
+  }) => TavernPackBindingCreate(
+    clientKey: clientKey,
+    packRef: packRef,
+    enabled: enabled,
+    aliases: aliases,
+    castImports: castImports,
+  );
 
   factory TavernPackBindingEdit.selectVersion({required String bindingId, required String packVersion}) =>
       TavernPackBindingSelectVersion(bindingId: bindingId, packVersion: packVersion);
@@ -141,6 +166,11 @@ sealed class TavernPackBindingEdit {
   factory TavernPackBindingEdit.setAliases({required String bindingId, required Map<String, String> aliases}) =>
       TavernPackBindingSetAliases(bindingId: bindingId, aliases: aliases);
 
+  factory TavernPackBindingEdit.setCastImports({
+    required String bindingId,
+    required Map<String, TavernCastImportRef> imports,
+  }) => TavernPackBindingSetCastImports(bindingId: bindingId, imports: imports);
+
   Map<String, Object?> toJson();
 }
 
@@ -150,20 +180,22 @@ final class TavernPackBindingCreate extends TavernPackBindingEdit {
     required this.packRef,
     this.enabled = true,
     this.aliases = const {},
+    this.castImports = const {},
   });
 
   final String clientKey;
   final TavernPackVersionRef packRef;
   final bool enabled;
   final Map<String, String> aliases;
+  final Map<String, TavernCastImportRef> castImports;
 
   @override
   Map<String, Object?> toJson() => {
-    'kind': 'create',
-    'clientKey': clientKey,
-    'packRef': packRef.toJson(),
-    'enabled': enabled,
-    'aliases': aliases,
+    'kind': 'create', 'clientKey': clientKey, 'packRef': packRef.toJson(),
+    'enabled': enabled, 'aliases': aliases,
+    // Preserve the exact pre-cast request shape for historical create replays.
+    if (castImports.isNotEmpty)
+      'castImports': {for (final entry in castImports.entries) entry.key: entry.value.toJson()},
   };
 }
 
@@ -222,4 +254,18 @@ final class TavernPackBindingSetAliases extends TavernPackBindingEdit {
 
   @override
   Map<String, Object?> toJson() => {'kind': 'setAliases', 'bindingId': bindingId, 'aliases': aliases};
+}
+
+final class TavernPackBindingSetCastImports extends TavernPackBindingEdit {
+  const TavernPackBindingSetCastImports({required this.bindingId, required this.imports});
+
+  final String bindingId;
+  final Map<String, TavernCastImportRef> imports;
+
+  @override
+  Map<String, Object?> toJson() => {
+    'kind': 'setCastImports',
+    'bindingId': bindingId,
+    'imports': {for (final entry in imports.entries) entry.key: entry.value.toJson()},
+  };
 }

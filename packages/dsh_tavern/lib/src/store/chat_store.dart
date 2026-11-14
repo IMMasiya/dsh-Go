@@ -241,7 +241,7 @@ class ChatStore {
     return ChatStore._(database, clock: clock, createId: createId);
   }
 
-  static const schemaVersion = 15;
+  static const schemaVersion = 16;
 
   // Keys are destination versions. Future upgrades register every successor
   // here and increase schemaVersion; no existing schema is dropped or replayed.
@@ -262,6 +262,7 @@ class ChatStore {
     13: _gameplayPackSchema,
     14: _gameplayBindingSchema,
     15: _gameplayWorldInfoPolicySchema,
+    16: _gameplayCastImportsSchema,
   };
   static const _schemaV12 = '$_authoringRunSchema\n$_authoringSeedSchema';
   final Database _db;
