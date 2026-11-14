@@ -476,38 +476,31 @@ void main() {
     await client.close();
   });
 
-  testWidgets('late prompt acceptance after timeout and revocation is cancelled once', (tester) async {
+  test('late prompt acceptance after timeout and revocation is cancelled once', () async {
     final client = AnalysisClient()..promptGate = Completer<void>();
+    addTearDown(() async {
+      if (!client.promptGate!.isCompleted) client.promptGate!.complete();
+      await client.close();
+    });
     final prompted = Completer<void>();
     client.onPrompt = () => prompted.complete();
     var allowed = true;
     late Future<void> Function() cancel;
+    // This exercises RPC timing, not a widget. Use a short real deadline so
+    // preparation, cancellation cleanup and late acceptance share one clock.
     final work = sendDiagnosticAnalysis(client, 'facts', () => allowed, (_, stop) async {
       cancel = stop;
-    });
-    var workFinished = false;
-    var stopFinished = false;
-    final failed = expectLater(work, throwsA(isA<TimeoutException>())).then((_) => workFinished = true);
-    await tester.pump();
-    expect(prompted.isCompleted, true, reason: 'submission must be pending before advancing the clock');
+    }, rpcWait: const Duration(milliseconds: 25));
+    final failed = expectLater(work, throwsA(isA<TimeoutException>()));
+    await prompted.future.timeout(const Duration(seconds: 5));
     allowed = false;
-    final stopping = expectLater(cancel(), throwsA(isA<TimeoutException>())).then((_) => stopFinished = true);
-    // Flush cancellation's stream cleanup before arming its raw-RPC wait.
-    await tester.pump();
-    await tester.pump(const Duration(seconds: 11));
-    // The sender handles its own timeout before awaiting stop(); advance that
-    // second bounded wait as well, instead of awaiting a frozen virtual timer.
-    await tester.pump(const Duration(seconds: 11));
-    expect(workFinished, true);
-    expect(stopFinished, true);
-    await failed;
-    await stopping;
+    final stopping = expectLater(cancel(), throwsA(isA<TimeoutException>()));
+    await Future.wait([failed, stopping]).timeout(const Duration(seconds: 5));
     expect(client.cancels, 0, reason: 'do not cancel an idle session before the prompt is queued');
     client.promptGate!.complete();
-    await tester.pump();
+    await pumpEventQueue();
     expect(client.cancels, 1, reason: 'the original RPC is retained beyond its timeout');
     expect(client.calls.where((call) => call.startsWith('prompt:')).length, 1);
-    await client.close();
   });
 
   test('cancel waits for an in-flight prompt acknowledgement, then stops once', () async {

@@ -472,50 +472,85 @@ final automaticDiagnosticsProvider = Provider<AutomaticDiagnostics>((ref) {
     },
   );
   Timer? poll;
-  Object? owner;
+  DshClient? owner;
+  ProviderSubscription<AsyncValue<HostConnection?>>? activeSubscription;
+  ProviderSubscription<AsyncValue<HostConnection?>>? localSubscription;
+  bool updating = false;
+  bool updateAgain = false;
+  void useClient(DshClient? next) {
+    if (identical(next, owner)) return;
+    owner = next;
+    coordinator.configure(
+      next,
+      next == null ? null : (prompt, current, created) => sendDiagnosticAnalysis(next, prompt, current, created),
+    );
+    poll?.cancel();
+    poll = next == null ? null : Timer.periodic(const Duration(minutes: 1), (_) => unawaited(coordinator.check()));
+    if (next != null) scheduleMicrotask(() => unawaited(coordinator.check()));
+  }
+
   void update() {
-    final enabled = ref.read(settingsProvider);
-    final active = ref.read(activeConnectionProvider);
-    final local = ref.read(localConnectionProvider);
-    final client = local.value?.client;
-    final eligible =
-        enabled.loaded &&
-        enabled.automaticDiagnostics &&
-        ref.read(appForegroundProvider) &&
-        WidgetsBinding.instance.lifecycleState == AppLifecycleState.resumed &&
-        ref.read(activeHostProvider).isLocal &&
-        ref.read(localRuntimeProvider).status.phase == RuntimePhase.running &&
-        !active.isLoading &&
-        !active.hasError &&
-        !local.isLoading &&
-        !local.hasError &&
-        client != null &&
-        active.value?.isLocal == true &&
-        identical(active.value?.client, client);
-    final next = eligible ? client : null;
-    if (!identical(next, owner)) {
-      owner = next;
-      coordinator.configure(
-        next,
-        next == null ? null : (prompt, current, created) => sendDiagnosticAnalysis(next, prompt, current, created),
-      );
-      poll?.cancel();
-      poll = next == null ? null : Timer.periodic(const Duration(minutes: 1), (_) => unawaited(coordinator.check()));
-      if (next != null) scheduleMicrotask(() => unawaited(coordinator.check()));
+    if (!ref.mounted) return;
+    if (updating) {
+      updateAgain = true;
+      return;
+    }
+    updating = true;
+    try {
+      do {
+        updateAgain = false;
+        final settings = ref.read(settingsProvider);
+        final baseReady =
+            settings.loaded &&
+            settings.automaticDiagnostics &&
+            ref.read(appForegroundProvider) &&
+            WidgetsBinding.instance.lifecycleState == AppLifecycleState.resumed &&
+            ref.read(activeHostProvider).isLocal &&
+            ref.read(localRuntimeProvider).loaded &&
+            ref.read(localRuntimeProvider).status.phase == RuntimePhase.running;
+        if (!baseReady) {
+          // Revoke before removing listeners. Closed/default-off diagnostics
+          // must not construct either connection (including remote host links).
+          useClient(null);
+          activeSubscription?.close();
+          activeSubscription = null;
+          localSubscription?.close();
+          localSubscription = null;
+          continue;
+        }
+        // Ref.listen returns a closable subscription. Keep the coordinator
+        // stable while lazily attaching connections only after the base gates.
+        localSubscription ??= ref.listen(localConnectionProvider, (_, _) => update());
+        activeSubscription ??= ref.listen(activeConnectionProvider, (_, _) => update());
+        final active = activeSubscription!.read();
+        final local = localSubscription!.read();
+        final client = local.value?.client;
+        final eligible =
+            !active.isLoading &&
+            !active.hasError &&
+            !local.isLoading &&
+            !local.hasError &&
+            client != null &&
+            active.value?.isLocal == true &&
+            identical(active.value?.client, client);
+        useClient(eligible ? client : null);
+      } while (updateAgain && ref.mounted);
+    } finally {
+      updating = false;
     }
   }
 
   final lifecycle = AppLifecycleListener(onStateChange: (_) => update());
   ref.listen(settingsProvider, (_, _) => update());
   ref.listen(activeHostProvider, (_, _) => update());
-  ref.listen(activeConnectionProvider, (_, _) => update());
-  ref.listen(localConnectionProvider, (_, _) => update());
-  ref.listen(localRuntimeProvider.select((s) => s.status.phase), (_, _) => update());
+  ref.listen(localRuntimeProvider.select((s) => (s.loaded, s.status.phase)), (_, _) => update());
   ref.listen(appForegroundProvider, (_, _) => update());
   void changed() => unawaited(coordinator.check());
   appErrorLog.revision.addListener(changed);
   ref.onDispose(() {
     poll?.cancel();
+    activeSubscription?.close();
+    localSubscription?.close();
     lifecycle.dispose();
     appErrorLog.revision.removeListener(changed);
     coordinator.dispose();
