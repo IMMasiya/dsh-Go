@@ -265,6 +265,31 @@ class PreviewTavern implements Tavern, TavernPreview {
   @override
   Future<TavernAuthoringDraft> createAuthoringDraft(List<TavernAuthoringTarget> targets) => _noDraft();
 
+  // The preview keeps no gameplay packs: none listed or read, none taken in.
+  static Future<T> _noPack<T>() => Future<T>.error(UnsupportedError('The preview keeps no gameplay packs.'));
+
+  @override
+  Future<TavernPackImportResult> importGameplayPack(Uint8List bytes) => _noPack();
+
+  @override
+  Future<List<TavernPackVersion>> listGameplayPacks({bool includeRemoved = false}) async => const [];
+
+  @override
+  Future<TavernPackVersion?> readGameplayPack(TavernPackVersionRef ref) async => null;
+
+  @override
+  Future<TavernPackResource?> readGameplayPackResource(TavernPackVersionRef ref, String localId) async => null;
+
+  @override
+  Future<Uint8List> exportInstalledGameplayPack(TavernPackVersionRef ref) => _noPack();
+
+  @override
+  Future<TavernPackRemovalReceipt> removeGameplayPackVersion(
+    TavernPackVersionRef ref, {
+    required TavernGameplayRevision expected,
+    required String operationId,
+  }) => _noPack();
+
   @override
   Future<TavernAuthoringDraft> editAuthoringDraft(
     String draftId, {

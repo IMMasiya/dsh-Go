@@ -127,6 +127,31 @@ class DeferredTavern implements Tavern {
   Future<List<TavernPathUsage>> pathUsage(String chatId) async => (await _ready).pathUsage(chatId);
 
   @override
+  Future<TavernPackImportResult> importGameplayPack(Uint8List bytes) async => (await _ready).importGameplayPack(bytes);
+
+  @override
+  Future<List<TavernPackVersion>> listGameplayPacks({bool includeRemoved = false}) async =>
+      (await _ready).listGameplayPacks(includeRemoved: includeRemoved);
+
+  @override
+  Future<TavernPackVersion?> readGameplayPack(TavernPackVersionRef ref) async => (await _ready).readGameplayPack(ref);
+
+  @override
+  Future<TavernPackResource?> readGameplayPackResource(TavernPackVersionRef ref, String localId) async =>
+      (await _ready).readGameplayPackResource(ref, localId);
+
+  @override
+  Future<Uint8List> exportInstalledGameplayPack(TavernPackVersionRef ref) async =>
+      (await _ready).exportInstalledGameplayPack(ref);
+
+  @override
+  Future<TavernPackRemovalReceipt> removeGameplayPackVersion(
+    TavernPackVersionRef ref, {
+    required TavernGameplayRevision expected,
+    required String operationId,
+  }) async => (await _ready).removeGameplayPackVersion(ref, expected: expected, operationId: operationId);
+
+  @override
   Future<TavernAuthoringDraft> createAuthoringDraft(List<TavernAuthoringTarget> targets) async =>
       (await _ready).createAuthoringDraft(targets);
 
