@@ -160,6 +160,14 @@
         }
       }
     },
+    "piai-overflow-output-limit.diff": {
+      "0.2.2-rc.1": {
+        "node_modules/@earendil-works/pi-ai/dist/utils/overflow.js": {
+          "after": "9607498e3da8815d4f52ae1193d4f1d70cb2708930233903f2b4db3c7088e0e4",
+          "before": "bc0b743fdbf33fe3dd2bb69b1838166ac0b6957f74051213fcaf336c11d041a3"
+        }
+      }
+    },
     "plugin-manager-active-run-guard.diff": {
       "0.2.1-rc.4": {
         "node_modules/@deepseek-ai/dsh-plugin-manager/lib/index.js": {
