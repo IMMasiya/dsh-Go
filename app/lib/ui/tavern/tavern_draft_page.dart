@@ -13,6 +13,7 @@ import '../../l10n/l10n.dart';
 import '../../tavern/tavern_authoring.dart';
 import '../../tavern/tavern_provider.dart';
 import '../../tavern/tavern_tool_turns.dart' show tavernNewId;
+import '../../tavern/tavern_usage_summary.dart';
 import '../bots/bot_format.dart' show shortTime;
 import '../bots/bot_sheets.dart' show confirmDelete;
 import '../common/app_sheet.dart';
@@ -76,6 +77,9 @@ class _TavernDraftPageState extends ConsumerState<TavernDraftPage> {
   String _answer = '';
   TavernAuthoringRunStatus? _status;
   String? _runError;
+
+  /// What the last run's requests reported using.
+  TavernUsageSummary? _usage;
   List<TavernAuthoringRunSummary> _runs = const [];
 
   @override
@@ -160,14 +164,21 @@ class _TavernDraftPageState extends ConsumerState<TavernDraftPage> {
     final draft = _draft;
     final text = _input.text.trim();
     if (draft == null || text.isEmpty || _run != null) return;
-    final run = _tavern.startAuthoringRun(
-      TavernAuthoringRunRequest(
-        runId: tavernNewId(),
-        draftId: draft.id,
-        draftRevision: draft.draftRevision,
-        instruction: text,
-      ),
-    );
+    final TavernAuthoringRun run;
+    try {
+      run = _tavern.startAuthoringRun(
+        TavernAuthoringRunRequest(
+          runId: tavernNewId(),
+          draftId: draft.id,
+          draftRevision: draft.draftRevision,
+          instruction: text,
+        ),
+      );
+    } on TavernAuthoringException catch (e) {
+      // Refused before it began (the draft moved on, say): the text stays.
+      showBriefNotice(context, e.message);
+      return;
+    }
     _input.clear();
     _follow(run, text);
   }
@@ -179,6 +190,7 @@ class _TavernDraftPageState extends ConsumerState<TavernDraftPage> {
       _answer = '';
       _status = TavernAuthoringRunStatus.running;
       _runError = null;
+      _usage = null;
     });
     _events = run.events.listen((event) {
       if (!mounted) return;
@@ -202,6 +214,7 @@ class _TavernDraftPageState extends ConsumerState<TavernDraftPage> {
         if (mounted) {
           setState(() {
             _status = done.status;
+            _usage = TavernUsageSummary.fromJson(done.usage);
             _answer = done.answer;
           });
         }
@@ -246,7 +259,11 @@ class _TavernDraftPageState extends ConsumerState<TavernDraftPage> {
       _outcomes[id] = _receiptText(l10n, receipt, name);
       // Its base is the old one now: more changes to it go in after 按现在的继续.
       if (receipt.committed ?? true) _behind.add(id);
-      if (receipt.committed == true) _applied.addAll(picked);
+      if (receipt.committed == true) {
+        _applied.addAll(picked);
+        // The character page behind this one shows the card as it is now.
+        ref.invalidate(tavernCharacterDetailProvider);
+      }
     } on TavernAuthoringException catch (e) {
       _operations.remove(id);
       _failed(l10n, e, source, name);
@@ -281,7 +298,6 @@ class _TavernDraftPageState extends ConsumerState<TavernDraftPage> {
           ? l10n.tavernDraftSavedNew
           : _receiptText(l10n, receipt.outcome, tavernDraftSourceName(l10n, source));
       if (receipt.committed == true && target != null && mounted) {
-        ref.invalidate(tavernCharactersProvider);
         if (target.kind == TavernAuthoringTargetKind.character) {
           unawaited(Navigator.of(context).push(TavernCharacterPage.route(target.id)));
         } else {
@@ -573,7 +589,13 @@ class _TavernDraftPageState extends ConsumerState<TavernDraftPage> {
     return SettingsSection(
       key: const ValueKey('tavern-draft-ai'),
       title: l10n.tavernDraftAiTitle,
-      footer: Text(_runError ?? _statusText(l10n, _status!), key: const ValueKey('tavern-draft-ai-status')),
+      footer: Text(
+        [
+          _runError ?? _statusText(l10n, _status!),
+          if (_usage case final usage?) tavernDraftUsageText(l10n, usage),
+        ].join(' · '),
+        key: const ValueKey('tavern-draft-ai-status'),
+      ),
       children: [
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: SettingsMetrics.inset, vertical: 14),
@@ -840,10 +862,14 @@ class _RunTile extends ConsumerWidget {
                         SelectableText(run.answer, style: theme.textTheme.bodyMedium?.copyWith(height: 1.55)),
                         const SizedBox(height: 12),
                         Text(
-                          l10n.tavernDraftRunReceipts(
-                            run.receipts.where((r) => r.status == TavernAuthoringToolStatus.succeeded).length,
-                            run.requests.length,
-                          ),
+                          [
+                            l10n.tavernDraftRunReceipts(
+                              run.receipts.where((r) => r.status == TavernAuthoringToolStatus.succeeded).length,
+                              run.requests.length,
+                            ),
+                            if (TavernUsageSummary.fromJson(run.usage) case final usage?)
+                              tavernDraftUsageText(l10n, usage),
+                          ].join(' · '),
                           style: theme.textTheme.bodySmall?.copyWith(color: dsh.textTertiary),
                         ),
                         for (final issue in run.issues)

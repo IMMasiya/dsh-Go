@@ -40628,6 +40628,12 @@ abstract class L10n {
   /// **'卡里的脚本在预览里不运行。'**
   String get tavernDraftPromptNote;
 
+  /// No description provided for @tavernDraftUsagePartial.
+  ///
+  /// In zh, this message translates to:
+  /// **'已报告：输入 {prompt} · 输出 {completion}（有请求没报告用量）'**
+  String tavernDraftUsagePartial(String prompt, String completion);
+
   /// No description provided for @updateCheck.
   ///
   /// In zh, this message translates to:

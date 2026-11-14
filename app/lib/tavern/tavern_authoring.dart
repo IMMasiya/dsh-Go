@@ -9,6 +9,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../l10n/l10n.dart';
 import 'tavern_provider.dart';
+import 'tavern_usage_summary.dart';
 
 /// Every draft, newest first (the engine's order).
 final tavernDraftsProvider = FutureProvider.autoDispose<List<TavernAuthoringDraftSummary>>(
@@ -105,6 +106,12 @@ String tavernDraftPlace(L10n l10n, String path) {
   }
   return (true, at);
 }
+
+/// What an AI run's requests reported using; short of a request, only what
+/// is known, and said to be so.
+String tavernDraftUsageText(L10n l10n, TavernUsageSummary usage) => usage.complete
+    ? l10n.tavernInspectUsageTotals(usage.prompt.known, usage.cacheHit.known, usage.completion.known)
+    : l10n.tavernDraftUsagePartial(usage.prompt.known, usage.completion.known);
 
 /// A value as text for reading: a string as it is, anything else as JSON.
 String tavernDraftValueText(Object? value) => switch (value) {

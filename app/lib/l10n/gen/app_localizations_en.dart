@@ -23432,6 +23432,11 @@ class L10nEn extends L10n {
   String get tavernDraftPromptNote => 'The card\'s scripts don\'t run in a preview.';
 
   @override
+  String tavernDraftUsagePartial(String prompt, String completion) {
+    return 'Reported: in $prompt · out $completion (some requests reported nothing)';
+  }
+
+  @override
   String get updateCheck => 'Check for updates';
 
   @override

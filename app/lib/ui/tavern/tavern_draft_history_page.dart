@@ -75,7 +75,7 @@ class _TavernDraftHistoryPageState extends ConsumerState<TavernDraftHistoryPage>
         false => l10n.tavernDraftNotApplied(receipt.issue?.message ?? ''),
         null => l10n.tavernDraftUnconfirmed,
       };
-      ref.invalidate(tavernCharactersProvider);
+      ref.invalidate(tavernCharacterDetailProvider);
     } on TavernAuthoringException catch (e) {
       _operation = null;
       notice = e.code == 'authority_conflict' ? l10n.tavernDraftRestoreMoved : e.message;

@@ -22237,6 +22237,11 @@ class L10nZh extends L10n {
   String get tavernDraftPromptNote => '卡里的脚本在预览里不运行。';
 
   @override
+  String tavernDraftUsagePartial(String prompt, String completion) {
+    return '已报告：输入 $prompt · 输出 $completion（有请求没报告用量）';
+  }
+
+  @override
   String get updateCheck => '检查更新';
 
   @override

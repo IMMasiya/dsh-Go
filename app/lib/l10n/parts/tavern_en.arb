@@ -1378,5 +1378,7 @@
   "tavernDraftPromptShow": "Show the prompt",
   "tavernDraftPromptComplete": "Prompt",
   "tavernDraftPromptUnsupported": "Part of this card can't be put together faithfully in a preview",
-  "tavernDraftPromptNote": "The card's scripts don't run in a preview."
+  "tavernDraftPromptNote": "The card's scripts don't run in a preview.",
+  "tavernDraftUsagePartial": "Reported: in {prompt} · out {completion} (some requests reported nothing)",
+  "@tavernDraftUsagePartial": {"placeholders": {"prompt": {"type": "String"}, "completion": {"type": "String"}}}
 }
