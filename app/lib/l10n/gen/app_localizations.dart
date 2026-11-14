@@ -16406,6 +16406,12 @@ abstract class L10n {
   /// **'居中'**
   String get launchFitCenter;
 
+  /// No description provided for @launchFrame.
+  ///
+  /// In zh, this message translates to:
+  /// **'调整位置'**
+  String get launchFrame;
+
   /// No description provided for @launchBackground.
   ///
   /// In zh, this message translates to:

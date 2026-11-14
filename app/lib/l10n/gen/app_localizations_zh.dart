@@ -8894,6 +8894,9 @@ class L10nZh extends L10n {
   String get launchFitCenter => '居中';
 
   @override
+  String get launchFrame => '调整位置';
+
+  @override
   String get launchBackground => '背景色';
 
   @override

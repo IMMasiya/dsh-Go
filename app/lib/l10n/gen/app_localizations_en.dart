@@ -9386,6 +9386,9 @@ class L10nEn extends L10n {
   String get launchFitCenter => 'Center';
 
   @override
+  String get launchFrame => 'Reposition';
+
+  @override
   String get launchBackground => 'Background';
 
   @override
