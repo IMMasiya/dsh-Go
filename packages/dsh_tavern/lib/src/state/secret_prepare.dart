@@ -342,8 +342,8 @@ StateResult _secretTerminal(StateSession session, StateSecretPrepared prepared) 
         !_equal(prepared._value, finished._value) ||
         prepared.runtimeExists != finished.runtimeExists ||
         !_equal(prepared._runtime, finished._runtime) ||
-        prepared.packRuntimeExists != finished.packRuntimeExists ||
-        !_eventEqual(prepared._packRuntime, finished._packRuntime),
+        session._pack._packOriginalExists != finished.packRuntimeExists ||
+        !_eventEqual(session._pack._packOriginal, finished._packRuntime),
     changes: _secretPrepareChanges(
       prepared._value,
       finished._value,

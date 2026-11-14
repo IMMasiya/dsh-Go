@@ -245,16 +245,6 @@ void main() {
     );
 
     final book = _install(store, packId: 'book', book: true);
-    expect(
-      () => store.updateGameplayBindingsData(
-        scope,
-        expected: saved.snapshot.token,
-        operationId: 'unsupported',
-        edits: [TavernPackBindingCreate(clientKey: 'book', packRef: book.ref)],
-      ),
-      throwsA(_error('unsupported_capability')),
-    );
-    expect(store.readGameplayScopeData(scope).toJson(), saved.snapshot.toJson());
     final disabled = store.updateGameplayBindingsData(
       scope,
       expected: saved.snapshot.token,
@@ -278,15 +268,6 @@ void main() {
       () => store.updateGameplayBindingsData(
         scope,
         expected: unchanged.snapshot.token,
-        operationId: 'enable',
-        edits: [TavernPackBindingSetEnabled(bindingId: bookBinding, enabled: true)],
-      ),
-      throwsA(_error('unsupported_capability')),
-    );
-    expect(
-      () => store.updateGameplayBindingsData(
-        scope,
-        expected: unchanged.snapshot.token,
         operationId: 'twice',
         edits: [
           TavernPackBindingResetOnce(bindingId: bookBinding),
@@ -296,10 +277,7 @@ void main() {
       throwsA(_error('invalid_binding_edit')),
     );
     expect(store.readGameplayScopeData(scope).toJson(), unchanged.snapshot.toJson());
-    expect(
-      db.select("SELECT 1 FROM gameplay_operations WHERE operation_id IN ('unsupported', 'enable', 'twice')"),
-      isEmpty,
-    );
+    expect(db.select("SELECT 1 FROM gameplay_operations WHERE operation_id = 'twice'"), isEmpty);
     store.removeGameplayPackVersionData(book.ref, expected: book.version.availability, operationId: 'withdraw-book');
     final withdrawn = store.readGameplayScopeData(scope);
     expect(withdrawn.issues.single['code'], 'version_unavailable');
@@ -412,6 +390,301 @@ void main() {
     expect(db.select('SELECT * FROM gameplay_effective_configs'), hasLength(1));
     expect(db.autocommit, isTrue);
   });
+  test('WI policy adoption preserves missing entries, final epochs, durable diffs and finite simulation seeds', () {
+    final db = sqlite3.openInMemory();
+    final store = ChatStore.fromDatabase(db);
+    addTearDown(store.close);
+    store.initializeAuthoringAuthority();
+    const scope = TavernPackScopeTarget(kind: TavernGameplayScope.global);
+    const mainEntry = <String, Object?>{
+      'uid': 7,
+      'key': ['key'],
+      'content': 'original',
+      'sticky': 2,
+      'cooldown': 4,
+      'delay': 1,
+    };
+    const emptyEntry = <String, Object?>{'uid': 8, 'key': [], 'content': 'no timer'};
+    const mappings = <Map<String, Object?>>[
+      {'localId': 'main', 'pointer': '/entries/a~1b~0'},
+      {'localId': 'empty', 'pointer': '/entries/empty'},
+    ];
+    final one = _installPolicyBook(store, 'one', {'a/b~': mainEntry, 'empty': emptyEntry}, mappings);
+    final content = _installPolicyBook(store, 'content', {
+      'a/b~': {...mainEntry, 'content': 'new content', 'delay': 2},
+      'empty': emptyEntry,
+    }, mappings);
+    final changed = _installPolicyBook(
+      store,
+      'changed',
+      {
+        'a/b~': {...mainEntry, 'sticky': 3},
+        'empty': emptyEntry,
+        'later': {'uid': 9, 'key': [], 'content': 'later', 'cooldown': null},
+      },
+      [
+        ...mappings,
+        {'localId': 'later', 'pointer': '/entries/later'},
+      ],
+    );
+    final missing = _installPolicyBook(store, 'missing', {'empty': emptyEntry}, [mappings.last]);
+
+    // A schema-14 disabled binding has only these original source columns.
+    // The new nullable policy columns are deliberately not populated here.
+    const bindingId = 'pre-policy-binding';
+    store.transaction(() {
+      db.execute("INSERT INTO gameplay_scopes (scope, target, revision) VALUES ('global', '', 1)");
+      db.execute(
+        """
+        INSERT INTO gameplay_bindings
+          (binding_id, scope, target, revision, installed_pack_id, pack_version,
+           enabled, removed, sort_order, once_epoch, aliases_json)
+        VALUES (?, 'global', '', 1, ?, ?, 0, 0, 0, 1, '{}')
+      """,
+        [bindingId, one.ref.installedPackId, one.ref.packVersion],
+      );
+      for (final entryId in const ['', 'main', 'empty']) {
+        db.execute(
+          """
+          INSERT INTO gameplay_source_ids
+            (binding_id, kind, resource_local_id, entry_local_id, stable_id)
+          VALUES (?, 'lorebook', 'book', ?, ?)
+        """,
+          [bindingId, entryId, 'stored-book-$entryId'],
+        );
+      }
+    });
+    final totalBeforeRead = _totalChanges(db);
+    final original = store.readGameplayScopeData(scope);
+    expect(_totalChanges(db), totalBeforeRead);
+    expect(original.bindings.single.sourceMap.every((row) => !row.containsKey('wiPolicy')), isTrue);
+    final empty = store.updateGameplayBindingsData(
+      scope,
+      expected: original.token,
+      operationId: 'no-policy-backfill',
+      edits: const [],
+    );
+    expect(empty.changed, isFalse);
+    expect(empty.resourceChanges, isEmpty);
+    expect(empty.snapshot.toJson(), original.toJson());
+    expect(
+      db
+          .select('SELECT wi_policy_epoch, wi_policy_json FROM gameplay_source_ids')
+          .every((row) => row['wi_policy_epoch'] == null && row['wi_policy_json'] == null),
+      isTrue,
+    );
+
+    final establishEdits = [TavernPackBindingSelectVersion(bindingId: bindingId, packVersion: one.ref.packVersion)];
+    db.execute("""
+      CREATE TEMP TRIGGER reject_policy_receipt BEFORE INSERT ON gameplay_operations
+      WHEN NEW.operation_id = 'establish-policy'
+      BEGIN SELECT RAISE(ABORT, 'policy receipt failure'); END;
+    """);
+    expect(
+      () => store.updateGameplayBindingsData(
+        scope,
+        expected: original.token,
+        operationId: 'establish-policy',
+        edits: establishEdits,
+      ),
+      throwsA(isA<SqliteException>()),
+    );
+    expect(store.readGameplayScopeData(scope).toJson(), original.toJson());
+    db.execute('DROP TRIGGER reject_policy_receipt');
+    final established = store.updateGameplayBindingsData(
+      scope,
+      expected: original.token,
+      operationId: 'establish-policy',
+      edits: establishEdits,
+    );
+    expect(established.changed, isTrue);
+    expect(established.snapshot.token.revision, original.token.revision + 1);
+    expect(established.snapshot.bindings.single.bindingRevision, 2);
+    expect(established.snapshot.bindings.single.enabled, isFalse);
+    expect(established.resourceChanges, isEmpty);
+    Map<String, Object?> source(TavernPackScopeSnapshot snapshot, String id) =>
+        snapshot.bindings.single.sourceMap.singleWhere((row) => row['entryLocalId'] == id);
+    final mainStableId = source(established.snapshot, 'main')['stableId'];
+    expect(source(established.snapshot, 'main')['wiPolicyEpoch'], 1);
+    expect(source(established.snapshot, 'main')['wiPolicy'], {'sticky': 2, 'cooldown': 4});
+    expect(source(established.snapshot, 'empty')['wiPolicy'], <String, Object?>{});
+    expect(
+      source(store.readGameplayScopeData(scope), 'main'),
+      source(established.snapshot, 'main'),
+      reason: 'Policy UPDATE must reach the existing SQL source row, not only the receipt.',
+    );
+    final enabled = store.updateGameplayBindingsData(
+      scope,
+      expected: established.snapshot.token,
+      operationId: 'enable-policy-book',
+      edits: [const TavernPackBindingSetEnabled(bindingId: bindingId, enabled: true)],
+    );
+    expect(enabled.snapshot.bindings.single.enabled, isTrue);
+
+    final contentEdits = [TavernPackBindingSelectVersion(bindingId: bindingId, packVersion: content.ref.packVersion)];
+    final upgraded = store.updateGameplayBindingsData(
+      scope,
+      expected: enabled.snapshot.token,
+      operationId: 'content-and-delay',
+      edits: contentEdits,
+    );
+    expect(upgraded.snapshot.bindings.single.onceEpoch, 1);
+    expect(source(upgraded.snapshot, 'main')['stableId'], mainStableId);
+    expect(source(upgraded.snapshot, 'main')['wiPolicy'], {'sticky': 2, 'cooldown': 4});
+    expect(upgraded.resourceChanges, [
+      <String, Object?>{
+        'bindingId': bindingId,
+        'kind': 'lorebook',
+        'resourceLocalId': 'book',
+        'entryLocalId': 'main',
+        'stableId': mainStableId,
+        'change': 'delay_changed',
+        'beforeEpoch': 1,
+        'afterEpoch': 1,
+        'before': {'delay': 1},
+        'after': {'delay': 2},
+      },
+    ]);
+    final incompatible = [TavernPackBindingSelectVersion(bindingId: bindingId, packVersion: changed.ref.packVersion)];
+    expect(
+      () => store.updateGameplayBindingsData(
+        scope,
+        expected: upgraded.snapshot.token,
+        operationId: 'reject-policy',
+        edits: incompatible,
+      ),
+      throwsA(
+        _error('timer_policy_conflict').having((error) => error.details, 'details', {
+          'bindingId': bindingId,
+          'resourceLocalId': 'book',
+          'entryLocalId': 'main',
+          'onceEpoch': 1,
+          'before': {'sticky': 2, 'cooldown': 4},
+          'after': {'sticky': 3, 'cooldown': 4},
+        }),
+      ),
+    );
+    expect(store.readGameplayScopeData(scope).toJson(), upgraded.snapshot.toJson());
+    expect(db.select("SELECT 1 FROM gameplay_operations WHERE operation_id = 'reject-policy'"), isEmpty);
+
+    final absent = store.updateGameplayBindingsData(
+      scope,
+      expected: upgraded.snapshot.token,
+      operationId: 'entry-absent',
+      edits: [TavernPackBindingSelectVersion(bindingId: bindingId, packVersion: missing.ref.packVersion)],
+    );
+    expect(source(absent.snapshot, 'main'), source(upgraded.snapshot, 'main'));
+    expect(absent.resourceChanges.single['change'], 'removed');
+    expect(absent.resourceChanges.single['stableId'], mainStableId);
+    expect(
+      () => store.updateGameplayBindingsData(
+        scope,
+        expected: absent.snapshot.token,
+        operationId: 'reject-returning-policy',
+        edits: incompatible,
+      ),
+      throwsA(_error('timer_policy_conflict')),
+    );
+    expect(store.readGameplayScopeData(scope).toJson(), absent.snapshot.toJson());
+    final resetAbsent = store.updateGameplayBindingsData(
+      scope,
+      expected: absent.snapshot.token,
+      operationId: 'reset-while-absent',
+      edits: [const TavernPackBindingResetOnce(bindingId: bindingId)],
+    );
+    expect(resetAbsent.snapshot.bindings.single.onceEpoch, 2);
+    expect(source(resetAbsent.snapshot, 'main')['wiPolicyEpoch'], 1);
+    expect(source(resetAbsent.snapshot, 'empty')['wiPolicyEpoch'], 2);
+    expect(
+      resetAbsent.resourceChanges.map((row) => row['stableId']).toSet(),
+      absent.snapshot.bindings.single.sourceMap.map((row) => row['stableId']).toSet(),
+    );
+    expect(
+      resetAbsent.resourceChanges.every(
+        (row) => row['change'] == 'identity_changed' && row['beforeEpoch'] == 1 && row['afterEpoch'] == 2,
+      ),
+      isTrue,
+    );
+    final returned = store.updateGameplayBindingsData(
+      scope,
+      expected: resetAbsent.snapshot.token,
+      operationId: 'return-under-new-epoch',
+      edits: incompatible,
+    );
+    expect(source(returned.snapshot, 'main')['stableId'], mainStableId);
+    expect(source(returned.snapshot, 'main')['wiPolicyEpoch'], 2);
+    expect(source(returned.snapshot, 'main')['wiPolicy'], {'sticky': 3, 'cooldown': 4});
+    expect(returned.resourceChanges.singleWhere((row) => row['entryLocalId'] == 'main')['newIdentity'], isFalse);
+    expect(returned.resourceChanges.singleWhere((row) => row['entryLocalId'] == 'later')['newIdentity'], isTrue);
+    final finalBatch = store.updateGameplayBindingsData(
+      scope,
+      expected: returned.snapshot.token,
+      operationId: 'select-before-reset',
+      edits: [
+        TavernPackBindingSelectVersion(bindingId: bindingId, packVersion: content.ref.packVersion),
+        const TavernPackBindingResetOnce(bindingId: bindingId),
+      ],
+    );
+    expect(finalBatch.snapshot.bindings.single.onceEpoch, 3);
+    expect(source(finalBatch.snapshot, 'main')['wiPolicyEpoch'], 3);
+    expect(source(finalBatch.snapshot, 'main')['wiPolicy'], {'sticky': 2, 'cooldown': 4});
+    expect(source(finalBatch.snapshot, 'later')['wiPolicyEpoch'], 2);
+    expect(
+      finalBatch.resourceChanges.any((row) => row['change'] == 'identity_changed' && row['entryLocalId'] == 'later'),
+      isTrue,
+    );
+    expect(
+      store
+          .updateGameplayBindingsData(
+            scope,
+            expected: enabled.snapshot.token,
+            operationId: 'content-and-delay',
+            edits: contentEdits,
+          )
+          .toJson(),
+      upgraded.toJson(),
+      reason: 'Replay returns the original diff, not a diff against the now-selected version.',
+    );
+    expect(
+      store
+          .updateGameplayBindingsData(
+            scope,
+            expected: original.token,
+            operationId: 'establish-policy',
+            edits: establishEdits,
+          )
+          .toJson(),
+      established.toJson(),
+    );
+
+    final captured = store.readGameplaySimulationData(
+      store.readGameplaySnapshot(
+        characterId: 'sample-character',
+        readBindings: true,
+        readContext: false,
+        readResources: false,
+      ),
+      configIds: const [],
+    );
+    final temporaryDb = sqlite3.openInMemory();
+    final temporary = ChatStore.fromDatabase(temporaryDb);
+    addTearDown(temporary.close);
+    temporary.initializeAuthoringAuthority();
+    temporary.transaction(() {
+      temporary.bootstrapGameplaySimulationData(captured);
+    });
+    final seeded = temporary.readGameplayScopeData(scope);
+    expect(seeded.token.domainId, isNot(finalBatch.snapshot.token.domainId));
+    expect(seeded.token.revision, finalBatch.snapshot.token.revision);
+    expect(seeded.bindings.single.toJson(), finalBatch.snapshot.bindings.single.toJson());
+    expect(temporaryDb.select('SELECT * FROM gameplay_pack_versions'), hasLength(1));
+    expect(temporaryDb.select('SELECT * FROM gameplay_operations'), isEmpty);
+    expect(
+      temporaryDb.select('SELECT wi_policy_epoch, wi_policy_json FROM gameplay_source_ids ORDER BY rowid'),
+      db.select('SELECT wi_policy_epoch, wi_policy_json FROM gameplay_source_ids ORDER BY rowid'),
+    );
+    expect(store.readGameplayScopeData(scope).toJson(), finalBatch.snapshot.toJson());
+  });
 }
 
 TavernPackBinding _binding(TavernPackScopeSnapshot snapshot, String id) =>
@@ -461,6 +734,39 @@ TavernPackImportResult _install(
           }),
         ),
       ),
+  };
+  final archive = Archive();
+  for (final file in files.entries) {
+    archive.addFile(ArchiveFile(file.key, file.value.length, file.value));
+  }
+  final decoded = decodeGameplayPack(Uint8List.fromList(ZipEncoder().encode(archive)));
+  return store.importGameplayPackData(
+    decoded,
+    inspection: const {
+      'dshgo': {'present': false},
+      'resources': <Object?>[],
+    },
+  );
+}
+
+TavernPackImportResult _installPolicyBook(
+  ChatStore store,
+  String version,
+  Map<String, Object?> entries,
+  List<Map<String, Object?>> mappings,
+) {
+  final manifest = <String, Object?>{
+    'formatVersion': 1,
+    'packId': 'policy-book',
+    'packVersion': version,
+    'resources': [
+      {'localId': 'book', 'kind': 'lorebook', 'path': 'book.json', 'entries': mappings},
+    ],
+  };
+  final files = <String, Uint8List>{
+    'pack.json': Uint8List.fromList(utf8.encode(jsonEncode(manifest))),
+    'book.json': Uint8List.fromList(utf8.encode('\uFEFF\uFEFF${jsonEncode({'entries': entries})}')),
+    'unlisted.bin': Uint8List.fromList([0, 127, 255]),
   };
   final archive = Archive();
   for (final file in files.entries) {

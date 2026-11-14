@@ -247,6 +247,7 @@ final class _AuthoringPromptContextCapture {
     groupNames: view.names,
     groupNotMuted: view.enabledNames,
     preset: preset,
+    packRegex: turn.gameplayResources.regex,
   );
   final text = _preparePromptUser(environment, input, regexTrace: regexTrace);
   saveGlobals?.call();
@@ -823,6 +824,11 @@ extension _AuthoringPromptContexts on TavernEngine {
       gameplay: gameplay,
     );
     turn.gameplayPreviousConfig = historicalGameplay.config;
+    turn.gameplayResources = _resolveGameplayResources(
+      _GameplayResourceCapture.fromAdmission(gameplayAdmission),
+      settings,
+      actorId: actorId,
+    );
     turn.originalTarget = target;
     turn.directorCaptured = director;
     turn.secretCaptured = secret;
@@ -1179,7 +1185,7 @@ extension _AuthoringPromptContexts on TavernEngine {
       }
     }
 
-    final loaded = <WorldInfoBook>[];
+    final linked = <WorldInfoBook>[];
     final missing = <Map<String, Object?>>[];
     final bindings = _map(settings['lorebooks']);
     final activeWorldName = metadata['world_info'];
@@ -1202,7 +1208,7 @@ extension _AuthoringPromptContexts on TavernEngine {
         }
         final raw = _authoringBook(document);
         final envelope = !document.containsKey('entries') && document['format'] == 'dshgo-lorebook';
-        loaded.add(
+        linked.add(
           WorldInfoBook.fromJson(
             id: id,
             source: source,
@@ -1216,6 +1222,7 @@ extension _AuthoringPromptContexts on TavernEngine {
         );
       }
     }
+    final embeddedBooks = <WorldInfoBook>[];
     final embedded = group == null
         ? <String, Map<String, Object?>>{actorId: data}
         : {
@@ -1224,9 +1231,12 @@ extension _AuthoringPromptContexts on TavernEngine {
           };
     for (final entry in embedded.entries) {
       if (entry.value['character_book'] case final Map<String, Object?> book) {
-        loaded.add(WorldInfoBook.fromJson(id: '${entry.key}:card', source: WorldInfoSource.character, json: book));
+        embeddedBooks.add(
+          WorldInfoBook.fromJson(id: '${entry.key}:card', source: WorldInfoSource.character, json: book),
+        );
       }
     }
+    final loaded = _mergeGameplayBooks(linked, embeddedBooks, turn.gameplayResources);
     checkAdmission();
     var legacy = const _AuthoringCapturedLegacy([]);
     if (real && captureDirectorDependencies) {

@@ -107,7 +107,40 @@ final class CardEventHandlerRef {
   int get hashCode => Object.hash(source, localId);
 }
 
-enum _PackDomain { rules, events }
+/// A detached view of the selected branch. Only a requested source is checked.
+final class StatePackWorldInfoSnapshot {
+  StatePackWorldInfoSnapshot({required bool exists, Object? raw}) : _runtime = _PackRuntime(exists: exists, raw: raw);
+  final _PackRuntime _runtime;
+
+  ({bool exists, Object? raw, List<Map<String, Object?>> issues}) read(StateExecutionSource source) {
+    final read = _runtime._read(source, _PackDomain.worldInfo);
+    return (
+      exists: read.row?.containsKey('worldInfo') ?? false,
+      raw: _eventCopy(read.row?['worldInfo']),
+      issues: _maps(read.issues),
+    );
+  }
+}
+
+/// Actual changes to the WI child of each source, never an entire pack carrier.
+final class StatePackWorldInfoDelta {
+  StatePackWorldInfoDelta(Map<StateExecutionSource, Map<String, Object?>> replacements)
+    : _replacements = Map.unmodifiable({
+        for (final entry in replacements.entries) entry.key: _eventCopy(entry.value)! as _Json,
+      });
+  final Map<StateExecutionSource, _Json> _replacements;
+  bool get isEmpty => _replacements.isEmpty;
+}
+
+/// Called at the actual adoption boundary after the caller's source/CAS check.
+/// Same-epoch rule/event ledgers and all other bindings remain in the candidate.
+({bool exists, Object? raw, List<Map<String, Object?>> issues}) mergeStatePackWorldInfo({
+  required bool exists,
+  Object? raw,
+  required StatePackWorldInfoDelta delta,
+}) => _PackRuntime(exists: exists, raw: raw)._mergeWorldInfo(delta);
+
+enum _PackDomain { rules, events, worldInfo }
 
 /// A single detached candidate shared by the state and event settlement.
 /// Validation is deferred until a pack domain is actually read or consumed.
@@ -115,15 +148,15 @@ class _PackRuntime {
   _PackRuntime({required bool exists, Object? raw})
     : exists = exists,
       _packRaw = _eventCopy(raw),
-      _originalExists = exists,
-      _original = _eventCopy(raw);
+      _packOriginalExists = exists,
+      _packOriginal = _eventCopy(raw);
 
   bool exists;
   Object? _packRaw;
-  final bool _originalExists;
-  final Object? _original;
+  bool _packOriginalExists;
+  Object? _packOriginal;
   Object? get raw => _eventCopy(_packRaw);
-  bool get changed => exists != _originalExists || !_eventEqual(_packRaw, _original);
+  bool get changed => exists != _packOriginalExists || !_eventEqual(_packRaw, _packOriginal);
 
   _Json _issueFor(StateExecutionSource source, String code, String suffix, String message) => {
     ..._issue(code, '/dshgoPackRuntime$suffix', message),
@@ -184,7 +217,7 @@ class _PackRuntime {
       valid = value is List<Object?> && value.every((id) => id is String) && value.toSet().length == value.length;
     } else if (value is! _Json) {
       valid = false;
-    } else {
+    } else if (domain == _PackDomain.events) {
       final consumed = value['consumed'];
       final once = value['once'];
       if (value.containsKey('consumed')) {
@@ -293,6 +326,32 @@ class _PackRuntime {
     }
     bindings[source.bindingId!] = row;
     return row;
+  }
+
+  ({bool exists, Object? raw, List<Map<String, Object?>> issues}) _mergeWorldInfo(StatePackWorldInfoDelta delta) {
+    final problems = <_Json>[
+      for (final source in delta._replacements.keys) ..._read(source, _PackDomain.worldInfo).issues,
+    ];
+    if (problems.isEmpty) {
+      for (final entry in delta._replacements.entries) {
+        final row = _writeRow(entry.key, _PackDomain.worldInfo);
+        row['worldInfo'] = _eventCopy(entry.value);
+      }
+    }
+    return (exists: exists, raw: raw, issues: _maps(problems));
+  }
+
+  ({bool exists, Object? raw, List<Map<String, Object?>> issues}) _adoptWorldInfo(StatePackWorldInfoDelta delta) {
+    final baseline = _PackRuntime(exists: _packOriginalExists, raw: _packOriginal)._mergeWorldInfo(delta);
+    if (baseline.issues.isNotEmpty) {
+      return (exists: exists, raw: raw, issues: baseline.issues);
+    }
+    final candidate = _mergeWorldInfo(delta);
+    if (candidate.issues.isEmpty) {
+      _packOriginalExists = baseline.exists;
+      _packOriginal = _eventCopy(baseline.raw);
+    }
+    return candidate;
   }
 
   void consumeRule(StateExecutionSource source, String localId) {

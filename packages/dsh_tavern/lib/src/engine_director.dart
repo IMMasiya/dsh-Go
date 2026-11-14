@@ -276,14 +276,23 @@ ModelCancellation _gameplayRequestCancellation(
   TavernEngine engine,
   _GameplayAdmission? admission,
   ModelCancellation original,
-) => admission == null ? original : _GameplayRequestCancellation(engine, admission, original);
+) => admission == null
+    ? original
+    : _GameplayRequestCancellation(() => _gameplayAdmissionCurrent(engine, admission), original);
+
+ModelCancellation _gameplayResourceRequestCancellation(
+  TavernEngine engine,
+  _GameplayResourceCapture? capture,
+  ModelCancellation original,
+) => capture == null
+    ? original
+    : _GameplayRequestCancellation(() => _gameplayResourcesCurrent(engine, capture), original);
 
 /// Native transport checks after its key await and before each send. Source
 /// changes also revoke the rest of an admitted request through its real token.
 final class _GameplayRequestCancellation extends ModelCancellation {
-  _GameplayRequestCancellation(this.engine, this.admission, this.original);
-  final TavernEngine engine;
-  final _GameplayAdmission admission;
+  _GameplayRequestCancellation(this.current, this.original);
+  final bool Function() current;
   final ModelCancellation original;
 
   @override
@@ -301,7 +310,7 @@ final class _GameplayRequestCancellation extends ModelCancellation {
   @override
   void check() {
     original.check();
-    if (!_gameplayAdmissionCurrent(engine, admission)) {
+    if (!current()) {
       original.cancel();
       original.check();
     }
@@ -629,6 +638,13 @@ class _DirectorCoordinator {
         job.persona,
         effectiveConfigId: job.gameplay?.effectiveConfigId,
       );
+      final resources = _resolveGameplayResources(
+        _GameplayResourceCapture.fromAdmission(admission),
+        job.settings,
+        actorId: job.characterId,
+        worldInfoCharacterIds: [job.characterId],
+        kinds: const {'lorebook'},
+      );
       final loaded = await job.cancellation.wait(
         _prepareIO(
           job,
@@ -636,6 +652,7 @@ class _DirectorCoordinator {
             job.characterId,
             job.card!,
             job.settings,
+            gameplayResources: resources,
             personaId: job.persona['id'] as String?,
             checkCancelled: job.cancellation.check,
           ),

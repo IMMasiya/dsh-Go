@@ -42,6 +42,11 @@ CREATE TABLE gameplay_effective_configs (
 );
 ''';
 
+const _gameplayWorldInfoPolicySchema = '''
+ALTER TABLE gameplay_source_ids ADD COLUMN wi_policy_epoch INTEGER;
+ALTER TABLE gameplay_source_ids ADD COLUMN wi_policy_json TEXT;
+''';
+
 /// Mutable only while one synchronous scope operation constructs its result.
 final class _GameplayBindingDraft {
   _GameplayBindingDraft(TavernPackBinding value)
@@ -54,7 +59,7 @@ final class _GameplayBindingDraft {
       order = value.order,
       onceEpoch = value.onceEpoch,
       aliases = value.aliases,
-      sourceMap = List.of(value.sourceMap);
+      sourceMap = [for (final source in value.sourceMap) Map<String, Object?>.of(source)];
 
   final String bindingId;
   int bindingRevision;
@@ -67,6 +72,7 @@ final class _GameplayBindingDraft {
   Map<String, String> aliases;
   final List<Map<String, Object?>> sourceMap;
   final addedSources = <Map<String, Object?>>[];
+  final updatedPolicies = <Map<String, Object?>>[];
 
   TavernPackBinding get value => TavernPackBinding(
     bindingId: bindingId,
@@ -303,6 +309,7 @@ extension GameplayBindingStore on ChatStore {
         }
 
         final issues = _gameplayScopeTargetIssues(scope);
+        final resourceChanges = <Map<String, Object?>>[];
         for (var index = 0; index < order.length; index++) {
           final value = working[order[index]]!;
           value.order = index;
@@ -319,16 +326,6 @@ extension GameplayBindingStore on ChatStore {
           if (version == null || version.removed) {
             issues.add(_gameplayVersionIssue(value.value, missing: version == null));
           }
-          if (value.enabled && !value.removed && version != null) {
-            for (final resource in gameplayPackResources(version.manifest)) {
-              if (resource['kind'] == 'lorebook' || resource['kind'] == 'regex') {
-                throw const TavernGameplayException(
-                  code: 'unsupported_capability',
-                  message: 'Enabled lorebook and regex bindings require their gameplay runtime adapter.',
-                );
-              }
-            }
-          }
           for (final alias in value.aliases.entries) {
             if (alias.key.isEmpty || alias.key == 'self' || alias.key == 'card' || alias.value.isEmpty) {
               throw const TavernGameplayException(
@@ -344,37 +341,115 @@ extension GameplayBindingStore on ChatStore {
               );
             }
           }
-          if (version != null) {
-            final known = <(String, String, String)>{
-              for (final source in value.sourceMap)
-                (
-                  source['kind']! as String,
-                  source['resourceLocalId']! as String,
-                  source['entryLocalId'] as String? ?? '',
-                ),
-            };
-            void addSource(String kind, String resourceId, String entryId) {
-              if (!known.add((kind, resourceId, entryId))) {
-                return;
-              }
-              final source = <String, Object?>{
-                'kind': kind,
-                'resourceLocalId': resourceId,
-                if (entryId.isNotEmpty) 'entryLocalId': entryId,
-                'stableId': ChatStore._newId(),
-              };
-              value.sourceMap.add(source);
-              value.addedSources.add(source);
+          final sources = <(String, String, String), Map<String, Object?>>{
+            for (final source in value.sourceMap) _gameplaySourceKey(source): source,
+          };
+          final currentKeys = version == null
+              ? <(String, String, String)>{}
+              : _gameplayVersionSourceKeys(version).toSet();
+          for (final sourceKey in currentKeys) {
+            if (sources.containsKey(sourceKey)) {
+              continue;
             }
+            final source = <String, Object?>{
+              'kind': sourceKey.$1,
+              'resourceLocalId': sourceKey.$2,
+              if (sourceKey.$3.isNotEmpty) 'entryLocalId': sourceKey.$3,
+              'stableId': ChatStore._newId(),
+            };
+            sources[sourceKey] = source;
+            value.sourceMap.add(source);
+            value.addedSources.add(source);
+          }
 
-            for (final resource in gameplayPackResources(version.manifest)) {
-              final kind = resource['kind']! as String;
-              final resourceId = resource['localId']! as String;
-              addSource(kind, resourceId, '');
-              for (final raw in resource['entries'] as List<Object?>? ?? const <Object?>[]) {
-                final entry = raw! as Map<String, Object?>;
-                addSource(kind, resourceId, entry['localId']! as String);
+          final previous = old[value.bindingId];
+          final versionChanged = previous == null || previous.packRef.packVersion != value.packVersion;
+          final adoptPolicy =
+              selectedVersions.contains(value.bindingId) ||
+              enableRequested.contains(value.bindingId) && value.enabled && !value.removed ||
+              resets.contains(value.bindingId);
+          final currentEntries = version != null && (adoptPolicy || versionChanged)
+              ? _readGameplayWorldInfoEntries(version, scope.kind)
+              : <(String, String, String), WorldInfoEntry>{};
+          if (adoptPolicy) {
+            for (final entry in currentEntries.entries) {
+              final source = sources[entry.key]!;
+              final declaration = entry.value.timerDeclarations;
+              if (source['wiPolicyEpoch'] == value.onceEpoch) {
+                if (!_toolEqual(source['wiPolicy'], declaration)) {
+                  throw TavernGameplayException(
+                    code: 'timer_policy_conflict',
+                    message:
+                        'The sticky/cooldown declarations for binding "${value.bindingId}", '
+                        'resource "${entry.key.$2}", entry "${entry.key.$3}" changed within the same epoch. '
+                        'Use resetOnce or a new binding to adopt them.',
+                    details: {
+                      'bindingId': value.bindingId,
+                      'resourceLocalId': entry.key.$2,
+                      'entryLocalId': entry.key.$3,
+                      'onceEpoch': value.onceEpoch,
+                      'before': source['wiPolicy'],
+                      'after': declaration,
+                    },
+                  );
+                }
+              } else {
+                // A retained declaration from an older epoch is evidence only.
+                // A returning entry establishes the current epoch's own baseline.
+                source['wiPolicyEpoch'] = value.onceEpoch;
+                source['wiPolicy'] = declaration;
+                if (!value.addedSources.contains(source)) {
+                  value.updatedPolicies.add(source);
+                }
               }
+            }
+          }
+
+          Map<String, Object?> change(Map<String, Object?> source, String kind) => {
+            'bindingId': value.bindingId,
+            'kind': source['kind'],
+            'resourceLocalId': source['resourceLocalId'],
+            if (source.containsKey('entryLocalId')) 'entryLocalId': source['entryLocalId'],
+            'stableId': source['stableId'],
+            'change': kind,
+            'beforeEpoch': previous?.onceEpoch,
+            'afterEpoch': value.onceEpoch,
+          };
+          if (versionChanged) {
+            final previousVersion = previous == null ? null : _readGameplayVersion(previous.packRef);
+            final previousKeys = previousVersion == null
+                ? <(String, String, String)>{}
+                : _gameplayVersionSourceKeys(previousVersion).toSet();
+            for (final sourceKey in currentKeys.difference(previousKeys)) {
+              final source = sources[sourceKey]!;
+              resourceChanges.add({...change(source, 'added'), 'newIdentity': value.addedSources.contains(source)});
+            }
+            for (final sourceKey in previousKeys.difference(currentKeys)) {
+              resourceChanges.add(change(sources[sourceKey]!, 'removed'));
+            }
+            if (previousVersion != null && currentEntries.isNotEmpty) {
+              final previousEntries = _readGameplayWorldInfoEntries(previousVersion, scope.kind);
+              for (final entry in currentEntries.entries) {
+                final prior = previousEntries[entry.key];
+                if (prior != null) {
+                  final beforeDelay = prior.delayDeclaration;
+                  final afterDelay = entry.value.delayDeclaration;
+                  if (!_toolEqual(beforeDelay, afterDelay)) {
+                    resourceChanges.add({
+                      ...change(sources[entry.key]!, 'delay_changed'),
+                      'before': beforeDelay,
+                      'after': afterDelay,
+                    });
+                  }
+                }
+              }
+            }
+          }
+          if (previous != null && previous.onceEpoch != value.onceEpoch) {
+            // Reset changes every known mapping's next consumption identity,
+            // including entries absent from the selected version.
+            for (final source in previous.sourceMap) {
+              resourceChanges.add(change(source, 'identity_changed'));
             }
           }
         }
@@ -402,6 +477,7 @@ extension GameplayBindingStore on ChatStore {
           ),
           createdBindings: created,
           changed: changed,
+          resourceChanges: resourceChanges,
         );
         final resultJson = jsonEncode(result.toJson());
         if (changed) {
@@ -441,9 +517,33 @@ extension GameplayBindingStore on ChatStore {
               _db.execute(
                 '''
               INSERT INTO gameplay_source_ids
-                (binding_id, kind, resource_local_id, entry_local_id, stable_id)
-              VALUES (?, ?, ?, ?, ?)''',
-                [id, source['kind'], source['resourceLocalId'], source['entryLocalId'] ?? '', source['stableId']],
+                (binding_id, kind, resource_local_id, entry_local_id, stable_id,
+                 wi_policy_epoch, wi_policy_json)
+              VALUES (?, ?, ?, ?, ?, ?, ?)''',
+                [
+                  id,
+                  source['kind'],
+                  source['resourceLocalId'],
+                  source['entryLocalId'] ?? '',
+                  source['stableId'],
+                  source['wiPolicyEpoch'],
+                  source.containsKey('wiPolicy') ? jsonEncode(source['wiPolicy']) : null,
+                ],
+              );
+            }
+            for (final source in value.updatedPolicies) {
+              _db.execute(
+                '''
+              UPDATE gameplay_source_ids SET wi_policy_epoch = ?, wi_policy_json = ?
+              WHERE binding_id = ? AND kind = ? AND resource_local_id = ? AND entry_local_id = ?''',
+                [
+                  source['wiPolicyEpoch'],
+                  jsonEncode(source['wiPolicy']),
+                  id,
+                  source['kind'],
+                  source['resourceLocalId'],
+                  source['entryLocalId'] ?? '',
+                ],
               );
             }
           }
@@ -520,7 +620,8 @@ extension GameplayBindingStore on ChatStore {
     for (final row in _db.select(
       '''
       SELECT kind, char(1) || resource_local_id AS resource_local_id,
-        char(1) || entry_local_id AS entry_local_id, stable_id
+        char(1) || entry_local_id AS entry_local_id, stable_id,
+        wi_policy_epoch, wi_policy_json
       FROM gameplay_source_ids WHERE binding_id = ? ORDER BY rowid''',
       [bindingId],
     ))
@@ -530,14 +631,75 @@ extension GameplayBindingStore on ChatStore {
         if (ChatStore._unguardText(row['entry_local_id'])!.isNotEmpty)
           'entryLocalId': ChatStore._unguardText(row['entry_local_id'])!,
         'stableId': row['stable_id'] as String,
+        if (row['wi_policy_epoch'] != null) 'wiPolicyEpoch': row['wi_policy_epoch'] as int,
+        if (row['wi_policy_json'] != null)
+          'wiPolicy': jsonDecode(row['wi_policy_json'] as String) as Map<String, Object?>,
       },
   ];
+
+  Map<(String, String, String), WorldInfoEntry> _readGameplayWorldInfoEntries(
+    TavernPackVersion version,
+    TavernGameplayScope scope,
+  ) {
+    final entries = <(String, String, String), WorldInfoEntry>{};
+    for (final resource in gameplayPackResources(version.manifest)) {
+      if (resource['kind'] != 'lorebook') {
+        continue;
+      }
+      final resourceId = resource['localId']! as String;
+      final rows = _db.select(
+        '''
+        SELECT bytes FROM gameplay_pack_files
+        WHERE installed_pack_id = ? AND pack_version = ? AND path = ?''',
+        [version.ref.installedPackId, version.ref.packVersion, resource['path']],
+      );
+      if (rows.isEmpty) {
+        throw StateError('A stored gameplay resource file is missing.');
+      }
+      final text = decodeAuthoringText(rows.single['bytes'] as Uint8List).text;
+      // Match the existing lorebook intake's UTF-8 and object JSON boundary.
+      final json = jsonDecode(text.startsWith('\uFEFF') ? text.substring(1) : text);
+      if (json is! Map<String, Object?>) {
+        throw const FormatException('Gameplay lorebook must be a JSON object.');
+      }
+      final book = WorldInfoBook.fromJson(
+        id: resourceId,
+        source: WorldInfoSource.values.byName(scope.name),
+        json: json,
+      );
+      final mappings = <String, String>{};
+      for (final raw in resource['entries'] as List<Object?>? ?? const <Object?>[]) {
+        final mapping = raw! as Map<String, Object?>;
+        mappings[mapping['pointer']! as String] = mapping['localId']! as String;
+      }
+      for (final entry in book.entries) {
+        final entryId = mappings[entry.sourcePointer]!;
+        entries[('lorebook', resourceId, entryId)] = entry;
+      }
+    }
+    return entries;
+  }
 
   List<Map<String, Object?>> _gameplayScopeTargetIssues(TavernPackScopeTarget scope) => [
     if (scope.kind == TavernGameplayScope.chat &&
         _db.select('SELECT 1 FROM chats WHERE id = ?', [scope.targetId]).isEmpty)
       {'code': 'target_not_found', 'scope': scope.toJson()},
   ];
+}
+
+(String, String, String) _gameplaySourceKey(Map<String, Object?> source) =>
+    (source['kind']! as String, source['resourceLocalId']! as String, source['entryLocalId'] as String? ?? '');
+
+Iterable<(String, String, String)> _gameplayVersionSourceKeys(TavernPackVersion version) sync* {
+  for (final resource in gameplayPackResources(version.manifest)) {
+    final kind = resource['kind']! as String;
+    final resourceId = resource['localId']! as String;
+    yield (kind, resourceId, '');
+    for (final raw in resource['entries'] as List<Object?>? ?? const <Object?>[]) {
+      final entry = raw! as Map<String, Object?>;
+      yield (kind, resourceId, entry['localId']! as String);
+    }
+  }
 }
 
 List<Object?> _gameplayScopeKey(TavernPackScopeTarget scope) {
@@ -577,6 +739,9 @@ TavernPackBindingReceipt _gameplayBindingReceipt(Map<String, Object?> value) {
     ),
     createdBindings: (value['createdBindings']! as Map<String, Object?>).cast<String, String>(),
     changed: value['changed']! as bool,
+    resourceChanges: [
+      for (final raw in value['resourceChanges'] as List<Object?>? ?? const <Object?>[]) raw! as Map<String, Object?>,
+    ],
   );
 }
 
@@ -821,14 +986,17 @@ extension GameplaySimulationStore on ChatStore {
           _db.execute(
             '''
             INSERT INTO gameplay_source_ids
-              (binding_id, kind, resource_local_id, entry_local_id, stable_id)
-            VALUES (?, ?, ?, ?, ?)''',
+              (binding_id, kind, resource_local_id, entry_local_id, stable_id,
+               wi_policy_epoch, wi_policy_json)
+            VALUES (?, ?, ?, ?, ?, ?, ?)''',
             [
               binding.bindingId,
               source['kind'],
               source['resourceLocalId'],
               source['entryLocalId'] ?? '',
               source['stableId'],
+              source['wiPolicyEpoch'],
+              source.containsKey('wiPolicy') ? jsonEncode(source['wiPolicy']) : null,
             ],
           );
         }

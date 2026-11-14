@@ -35,6 +35,10 @@ final class TavernPackBinding {
   final int order;
   final int onceEpoch;
   final Map<String, String> aliases;
+
+  /// WI entry rows may carry wiPolicyEpoch and wiPolicy. Missing keys mean
+  /// no policy has been established; an empty wiPolicy is a real baseline.
+  /// A retained policy for an older epoch is not the current epoch's baseline.
   final List<Map<String, Object?>> sourceMap;
 
   Map<String, Object?> toJson() => {
@@ -81,6 +85,7 @@ final class TavernPackBindingReceipt {
     required this.snapshot,
     required this.createdBindings,
     required this.changed,
+    this.resourceChanges = const [],
   });
 
   final String operationId;
@@ -88,11 +93,22 @@ final class TavernPackBindingReceipt {
   final Map<String, String> createdBindings;
   final bool changed;
 
+  /// Adopted manifest resource/entry mapping changes, not an execution list.
+  /// Rows identify bindingId, kind, resourceLocalId, optional entryLocalId and
+  /// stableId, with change = added/removed/identity_changed/delay_changed and
+  /// beforeEpoch/afterEpoch. A new binding has no beforeEpoch.
+  /// Added rows use newIdentity to distinguish new and returning mappings.
+  /// delay_changed uses the real loader's before/after declaration maps,
+  /// preserving absence and explicit null. Reset also lists absent known IDs.
+  /// This original operation result is never recalculated during replay.
+  final List<Map<String, Object?>> resourceChanges;
+
   Map<String, Object?> toJson() => {
     'operationId': operationId,
     'snapshot': snapshot.toJson(),
     'createdBindings': createdBindings,
     'changed': changed,
+    'resourceChanges': resourceChanges,
   };
 }
 

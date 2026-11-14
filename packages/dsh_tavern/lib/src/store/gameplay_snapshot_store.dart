@@ -17,6 +17,7 @@ final class StoredGameplaySnapshot {
     required this.packs,
     required this.scopeSnapshots,
     required this.resolvedScopes,
+    this.resourceErrors = const {},
   });
 
   final String domainId;
@@ -30,6 +31,7 @@ final class StoredGameplaySnapshot {
   final Map<(String, String), StoredGameplayPack> packs;
   final List<TavernPackScopeSnapshot> scopeSnapshots;
   final List<TavernPackScopePreview> resolvedScopes;
+  final Map<(String, String, String), ({Object error, StackTrace stack})> resourceErrors;
 }
 
 extension GameplaySnapshotStore on ChatStore {
@@ -42,6 +44,8 @@ extension GameplaySnapshotStore on ChatStore {
     Set<(String, String)> resourcesFor = const {},
     bool readInitialState = false,
     bool readResources = true,
+    Set<String> resourceKinds = const {'lorebook', 'regex', 'castCard'},
+    bool deferResourceErrors = false,
     bool readContext = true,
     List<String> additionalCharacterIds = const [],
   }) {
@@ -95,14 +99,11 @@ extension GameplaySnapshotStore on ChatStore {
       final scopeSnapshots = <TavernPackScopeSnapshot>[];
       if (readBindings) {
         final host = currentChat?.characterId ?? characterId;
-        if (host == null) {
-          throw ArgumentError('Binding capture requires an actual character or chat context.');
-        }
         scopeSnapshots.add(_readGameplayScopeData(const TavernPackScopeTarget(kind: TavernGameplayScope.global)));
         for (final id in <String>{
           ...?group?.members.map((member) => member.characterId),
           ...additionalCharacterIds,
-          host,
+          ?host,
           ?characterId,
         }) {
           scopeSnapshots.add(
@@ -145,6 +146,7 @@ extension GameplaySnapshotStore on ChatStore {
             if (binding.enabled) (binding.packRef.installedPackId, binding.packRef.packVersion),
       };
       final packs = <(String, String), StoredGameplayPack>{};
+      final resourceErrors = <(String, String, String), ({Object error, StackTrace stack})>{};
       for (final ref in refs) {
         final key = (ref.installedPackId, ref.packVersion);
         if (packs.containsKey(key)) {
@@ -154,23 +156,30 @@ extension GameplaySnapshotStore on ChatStore {
         final files = <String, Uint8List>{};
         if (readResources && version != null && !version.removed && resources.contains(key)) {
           for (final resource in gameplayPackResources(version.manifest)) {
-            if (!const {'lorebook', 'regex', 'castCard'}.contains(resource['kind'])) {
+            if (!resourceKinds.contains(resource['kind'])) {
               continue;
             }
             final path = resource['path']! as String;
             if (files.containsKey(path)) {
               continue;
             }
-            final rows = _db.select(
-              '''
-              SELECT bytes FROM gameplay_pack_files
-              WHERE installed_pack_id = ? AND pack_version = ? AND path = ?''',
-              [ref.installedPackId, ref.packVersion, path],
-            );
-            if (rows.isEmpty) {
-              throw StateError('A stored gameplay resource file is missing.');
+            try {
+              final rows = _db.select(
+                '''
+                SELECT bytes FROM gameplay_pack_files
+                WHERE installed_pack_id = ? AND pack_version = ? AND path = ?''',
+                [ref.installedPackId, ref.packVersion, path],
+              );
+              if (rows.isEmpty) {
+                throw StateError('A stored gameplay resource file is missing.');
+              }
+              files[path] = Uint8List.fromList(rows.single['bytes'] as Uint8List);
+            } catch (error, stack) {
+              if (!deferResourceErrors) {
+                rethrow;
+              }
+              resourceErrors[(ref.installedPackId, ref.packVersion, path)] = (error: error, stack: stack);
             }
-            files[path] = Uint8List.fromList(rows.single['bytes'] as Uint8List);
           }
         }
         packs[key] = (version: version, files: files);
@@ -187,6 +196,7 @@ extension GameplaySnapshotStore on ChatStore {
         packs: packs,
         scopeSnapshots: scopeSnapshots,
         resolvedScopes: resolvedScopes,
+        resourceErrors: resourceErrors,
       );
       if (owns) {
         _db.execute('COMMIT');

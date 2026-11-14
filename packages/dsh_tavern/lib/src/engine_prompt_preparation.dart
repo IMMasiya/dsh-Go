@@ -106,6 +106,8 @@ Future<WorldInfoResult> _evaluatePreparedWorld({
   return worldEngine.evaluate(
     WorldInfoInput(
       books: books,
+      packSources: turn.gameplayResources.packSources,
+      packWorldInfo: _gameplayWorldInfoSnapshot(turn.state, turn.gameplayResources),
       externalActivations: turn.directorPrepared?.external ?? const {},
       messages: [
         for (final node in eligibleHistory) WorldInfoMessage(node.message.text, speaker: node.message.speaker),

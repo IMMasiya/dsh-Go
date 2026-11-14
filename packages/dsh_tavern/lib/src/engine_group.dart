@@ -255,6 +255,12 @@ class _GroupCoordinator {
             }
             greeting = trimJsWhitespace(greeting);
             if (greeting.isEmpty) continue;
+            final gameplayResources = _resolveGameplayResources(
+              _GameplayResourceCapture.fromAdmission(gameplayAdmission),
+              settings,
+              actorId: member.characterId,
+              kinds: const {'regex'},
+            );
             final environment = _MacroEnvironment(
               data,
               settings,
@@ -270,6 +276,7 @@ class _GroupCoordinator {
               characterId: member.characterId,
               groupNames: view.names,
               groupNotMuted: view.enabledNames,
+              packRegex: gameplayResources.regex,
             );
             final text = environment
                 .expand(

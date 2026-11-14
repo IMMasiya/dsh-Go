@@ -702,8 +702,8 @@ class _CardEventSettlement {
     }
     if (session != null &&
         definition._compositionIdentity != null &&
-        (invocation.packRuntimeExists != session!._pack._originalExists ||
-            !_eventEqual(invocation._packRuntime, session!._pack._original))) {
+        (invocation.packRuntimeExists != session!._pack._packOriginalExists ||
+            !_eventEqual(invocation._packRuntime, session!._pack._packOriginal))) {
       invalid.add(
         _issue(
           'card_event_pack_baseline',

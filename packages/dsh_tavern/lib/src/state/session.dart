@@ -500,6 +500,16 @@ class StateSession {
   final List<_Write> _writes = [];
   final Set<String> _structural = {};
 
+  /// Incorporates finalized WI before model operations or event settlement.
+  /// The secret B receipt remains immutable; only this session's external
+  /// pack baseline advances, with the original rule/event candidate retained.
+  ({bool exists, Object? raw, List<Map<String, Object?>> issues}) adoptPackWorldInfo(StatePackWorldInfoDelta delta) {
+    if (_publicApplyStarted || _eventBatch != null || _finishing || _finished != null) {
+      throw StateError('World info must be adopted before state/event settlement.');
+    }
+    return _pack._adoptWorldInfo(delta);
+  }
+
   StateApplyResult apply(Object? ops, {required StateActor actor, String? source}) {
     if (_finished != null || _finishing) {
       throw StateError('The state session is already finished.');

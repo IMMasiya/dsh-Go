@@ -330,6 +330,7 @@ TavernGameplayResolution _composeGameplayData(
   Map<String, Map<String, Object?>?> cards,
   _GameplayCompositionContext context, {
   Map<String, Object?>? bindingIdentity,
+  bool includeResources = true,
 }) {
   final sources = _gameplayDeclarations(snapshot, cards, context);
   final host = sources.firstWhere((source) => source.pack == null && source.roles.contains('host'));
@@ -721,7 +722,14 @@ TavernGameplayResolution _composeGameplayData(
     );
   }
   _gameplayAppItems(declarationSources, effective, definitions, provenance);
-  final resources = _gameplayResourcePlan(sources, context);
+  final resources = includeResources
+      ? _gameplayResourcePlan(
+          sources,
+          regexEnabled: context.regexEnabled,
+          characterRegexEnabled: context.characterRegexEnabled,
+          legacyResources: context.legacyResources,
+        )
+      : <Map<String, Object?>>[];
   _gameplayReferences(declarationSources, sources, host, eventFacts.names, definitions, conflicts);
 
   final current = context.currentState;
@@ -900,9 +908,13 @@ _gameplayEventDefinitions(
 }
 
 List<Map<String, Object?>> _gameplayResourcePlan(
-  List<_GameplayDeclaration> sources,
-  _GameplayCompositionContext context,
-) {
+  List<_GameplayDeclaration> sources, {
+  required bool regexEnabled,
+  required bool characterRegexEnabled,
+  List<_GameplayLegacyResource> legacyResources = const [],
+  Set<String>? kinds,
+  Map<(String, String, String), ({Object error, StackTrace stack})> resourceErrors = const {},
+}) {
   final books = <Map<String, Object?>>[];
   final regex = <Map<String, Object?>>[];
   final app = <Map<String, Object?>>[];
@@ -919,9 +931,21 @@ List<Map<String, Object?>> _gameplayResourcePlan(
     }
     for (final resource in gameplayPackResources(version.manifest)) {
       final kind = resource['kind']! as String;
+      if (kinds != null && !kinds.contains(kind)) {
+        continue;
+      }
       if (kind == 'lorebook' && !source.roles.contains('worldInfo') ||
           kind == 'regex' && !source.roles.contains('regex')) {
         continue;
+      }
+      final failure =
+          resourceErrors[(
+            input.binding.packRef.installedPackId,
+            input.binding.packRef.packVersion,
+            resource['path']! as String,
+          )];
+      if (failure != null) {
+        Error.throwWithStackTrace(failure.error, failure.stack);
       }
       final localId = resource['localId']! as String;
       final saved = inspections[localId]!;
@@ -951,7 +975,7 @@ List<Map<String, Object?>> _gameplayResourcePlan(
           entries.add({...entry, 'localId': mappings[entry['pointer']]!});
         }
       } else if (kind == 'regex') {
-        enabled = input.scope == TavernGameplayScope.character ? context.characterRegexEnabled : context.regexEnabled;
+        enabled = input.scope == TavernGameplayScope.character ? characterRegexEnabled : regexEnabled;
         final diagnostics = (saved['regexDiagnostics']! as List<Object?>).cast<Map<String, Object?>>();
         void addRule(Map<String, Object?> item, String pointer, int index, List<Map<String, Object?>> issues) {
           final incompatible = issues.any((issue) => issue['status'] == 'incompatible');
@@ -1011,25 +1035,23 @@ List<Map<String, Object?>> _gameplayResourcePlan(
     'issues': row.issues,
   };
   final result = <Map<String, Object?>>[];
-  // Native loading first visits every linked source bucket. Embedded cards
-  // remain after those buckets, even when no old row exists in a bucket.
-  for (final bucket in WorldInfoSource.values) {
-    result.addAll([
-      for (final row in context.legacyResources)
-        if (row.kind == 'lorebook' && row.resource['phase'] == 'linked' && row.bucket == bucket.name) legacy(row),
-    ]);
-    if (bucket == WorldInfoSource.global || bucket == WorldInfoSource.chat) {
-      result.addAll(books.where((row) => row['bucket'] == bucket.name));
-    }
-  }
-  result.addAll([
-    for (final row in context.legacyResources)
-      if (row.kind == 'lorebook' && row.resource['phase'] == 'embedded') legacy(row),
-  ]);
-  result.addAll(books.where((row) => row['bucket'] == 'character'));
+  result.addAll(
+    _gameplayWorldInfoOrder(
+      [
+        for (final row in legacyResources)
+          if (row.kind == 'lorebook' && row.resource['phase'] == 'linked') legacy(row),
+      ],
+      [
+        for (final row in legacyResources)
+          if (row.kind == 'lorebook' && row.resource['phase'] == 'embedded') legacy(row),
+      ],
+      books,
+      (row) => row['bucket']! as String,
+    ),
+  );
   for (final bucket in const ['global', 'managed', 'preset', 'character']) {
     result.addAll([
-      for (final row in context.legacyResources)
+      for (final row in legacyResources)
         if (row.kind == 'regex' && row.bucket == bucket) legacy(row),
     ]);
     if (bucket == 'managed') {

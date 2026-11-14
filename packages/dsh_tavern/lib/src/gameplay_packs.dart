@@ -94,10 +94,11 @@ final class TavernPackRemovalReceipt {
 }
 
 final class TavernGameplayException implements Exception {
-  const TavernGameplayException({required this.code, required this.message});
+  const TavernGameplayException({required this.code, required this.message, this.details = const {}});
 
   final String code;
   final String message;
+  final Map<String, Object?> details;
 
   @override
   String toString() => '$code: $message';

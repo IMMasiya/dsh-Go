@@ -84,4 +84,4 @@ export 'src/store/chat_store.dart'
         StoredRememberMemory,
         StoredDisplayHistory,
         StoredHistoryLink;
-export 'src/worldinfo/world_info.dart';
+export 'src/worldinfo/world_info.dart' hide remapWorldInfoBook, WorldInfoPackSource;

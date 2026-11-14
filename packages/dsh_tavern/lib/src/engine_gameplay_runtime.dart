@@ -30,6 +30,7 @@ _GameplayAdmission _captureGameplayAdmission(
     readBindings: true,
     readContext: false,
     additionalCharacterIds: roster ?? const [],
+    deferResourceErrors: true,
   );
   final options =
       settings ?? (snapshot.chat == null ? engine._effectiveSettings() : engine._effectiveSettings(snapshot.chat));
@@ -90,26 +91,41 @@ Map<String, Object?> _gameplayBindingIdentityRow(
   };
 }
 
-bool _gameplayAdmissionCurrent(TavernEngine engine, _GameplayAdmission admission) {
-  if (engine._authoringAuthority.domainId != admission.snapshot.domainId) {
+bool _gameplayAdmissionCurrent(TavernEngine engine, _GameplayAdmission admission) => _gameplaySnapshotCurrent(
+  engine,
+  admission.snapshot,
+  characterId: admission.request.characterId,
+  chatId: admission.request.chatId,
+  newGroupCharacterIds: admission.newGroupCharacterIds,
+);
+
+bool _gameplaySnapshotCurrent(
+  TavernEngine engine,
+  StoredGameplaySnapshot snapshot, {
+  String? characterId,
+  String? chatId,
+  List<String>? newGroupCharacterIds,
+}) {
+  if (engine._authoringAuthority.domainId != snapshot.domainId) {
     return false;
   }
   final current = engine._store.readGameplaySnapshot(
-    characterId: admission.request.characterId,
-    chatId: admission.request.chatId,
+    characterId: characterId,
+    chatId: chatId,
     readBindings: true,
     readResources: false,
     readContext: false,
-    additionalCharacterIds: admission.newGroupCharacterIds ?? const [],
+    additionalCharacterIds: newGroupCharacterIds ?? const [],
   );
-  return _stateJsonEqual(_gameplayBindingIdentity(current), _gameplayBindingIdentity(admission.snapshot)) &&
-      current.chat?.characterId == admission.snapshot.chat?.characterId &&
+  return _stateJsonEqual(_gameplayBindingIdentity(current), _gameplayBindingIdentity(snapshot)) &&
+      current.chat?.characterId == snapshot.chat?.characterId &&
       _stateJsonEqual(
-        admission.newGroupCharacterIds ??
+        newGroupCharacterIds ??
             [for (final member in current.group?.members ?? const <TavernGroupMember>[]) member.characterId],
-        admission.rosterCharacterIds,
+        newGroupCharacterIds ??
+            [for (final member in snapshot.group?.members ?? const <TavernGroupMember>[]) member.characterId],
       ) &&
-      (current.group != null) == (admission.snapshot.group != null);
+      (current.group != null) == (snapshot.group != null);
 }
 
 List<_GameplayPackInput> _gameplayPackInputs(StoredGameplaySnapshot snapshot) => [
@@ -192,6 +208,7 @@ Future<_GameplayRuntime?> _prepareGameplayRuntime(
     cards,
     context,
     bindingIdentity: bindingIdentity,
+    includeResources: false,
   );
   final identity = _gameplayConfigurationIdentity(
     cards,

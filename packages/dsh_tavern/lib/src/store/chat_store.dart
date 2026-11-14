@@ -13,9 +13,11 @@ import '../gameplay.dart';
 import '../gameplay_bindings.dart';
 import '../gameplay_packs.dart';
 import '../import_report.dart';
+import '../io/authoring_text.dart';
 import '../io/gameplay_pack_codec.dart';
 import '../llm/tool_usage.dart';
 import '../tools.dart';
+import '../worldinfo/world_info.dart';
 
 part 'tool_store.dart';
 part 'authoring_store.dart';
@@ -239,7 +241,7 @@ class ChatStore {
     return ChatStore._(database, clock: clock, createId: createId);
   }
 
-  static const schemaVersion = 14;
+  static const schemaVersion = 15;
 
   // Keys are destination versions. Future upgrades register every successor
   // here and increase schemaVersion; no existing schema is dropped or replayed.
@@ -259,6 +261,7 @@ class ChatStore {
     12: _schemaV12,
     13: _gameplayPackSchema,
     14: _gameplayBindingSchema,
+    15: _gameplayWorldInfoPolicySchema,
   };
   static const _schemaV12 = '$_authoringRunSchema\n$_authoringSeedSchema';
   final Database _db;
