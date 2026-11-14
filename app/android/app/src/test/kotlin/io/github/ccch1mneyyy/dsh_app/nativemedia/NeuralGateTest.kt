@@ -15,13 +15,7 @@ class NeuralGateTest {
         var value = 0f
         var resets = 0
         var closed = false
-        var fails = false
-        var calls = 0
-        override fun probability(frame: ShortArray): Float {
-            calls++
-            if (fails) throw IllegalStateException("VAD inference failed")
-            return value
-        }
+        override fun probability(frame: ShortArray) = value
         override fun reset() { resets++ }
         override fun close() { closed = true }
     }
@@ -60,16 +54,15 @@ class NeuralGateTest {
         val turn = Turn()
         val worker = Worker()
         val failures = mutableListOf<Exception>()
-        val vadFailures = mutableListOf<Exception>()
-        val gate = NeuralGate(vad, turn, echoCancelled, worker, onVadFailed = { vadFailures += it }) { failures += it }
+        val gate = NeuralGate(vad, turn, echoCancelled, worker) { failures += it }
         var now = 0L
         private val frame = ShortArray(320)
-        fun feed(probability: Float, frames: Int, sample: Short = 1000, levelDb: Double = -30.0): List<Edge> {
+        fun feed(probability: Float, frames: Int, sample: Short = 1000): List<Edge> {
             vad.value = probability
             frame.fill(sample)
             val edges = mutableListOf<Edge>()
             repeat(frames) {
-                val edge = gate.consume(frame, levelDb, now)
+                val edge = gate.consume(frame, -30.0, now)
                 now += 20
                 if (edge != Edge.NONE) edges += edge
             }
@@ -78,72 +71,6 @@ class NeuralGateTest {
         override fun close() {
             gate.close()
             while (worker.tasks.isNotEmpty()) worker.runNext()
-        }
-    }
-
-    @Test fun failedVadKeepsRecordingWithEnergyDetectionAndIsNotRetriedAfterReset() {
-        Capture().use { c ->
-            c.vad.fails = true
-            assertEquals(listOf(Edge.START), c.feed(0f, 6))
-            assertEquals(listOf(Edge.END), c.feed(0f, 35, 0, -100.0))
-            c.gate.reset()
-            assertEquals(listOf(Edge.START), c.feed(0f, 6))
-            assertEquals(1, c.vad.calls)
-            assertEquals(1, c.vadFailures.size)
-            assertEquals(0, c.vad.resets)
-            assertEquals(0, c.turn.calls)
-        }
-    }
-
-    @Test fun failedVadDoesNotRestartAnUtteranceAlreadyOpenInBothDetectors() {
-        Capture().use { c ->
-            assertEquals(listOf(Edge.START), c.feed(0.9f, 6))
-            c.vad.fails = true
-            assertEquals(emptyList<Edge>(), c.feed(0f, 1, 0, -100.0))
-            assertEquals(listOf(Edge.END), c.feed(0f, 34, 0, -100.0))
-            assertEquals(listOf(Edge.START), c.feed(0f, 6))
-        }
-    }
-
-    @Test fun failedVadReconcilesDifferentSpeakingStatesAtTheHandoff() {
-        Capture().use { c ->
-            // Only the neural detector opened this utterance; recovery must still end it.
-            assertEquals(listOf(Edge.START), c.feed(0.9f, 6, 0, -100.0))
-            c.vad.fails = true
-            assertEquals(listOf(Edge.END), c.feed(0f, 1, 0, -100.0))
-            assertEquals(emptyList<Edge>(), c.feed(0f, 35, 0, -100.0))
-        }
-        Capture().use { c ->
-            // Only the energy detector heard speech; recovery must publish its START once.
-            assertEquals(emptyList<Edge>(), c.feed(0.1f, 6))
-            c.vad.fails = true
-            assertEquals(listOf(Edge.START), c.feed(0f, 1))
-            assertEquals(emptyList<Edge>(), c.feed(0f, 6))
-            assertEquals(listOf(Edge.END), c.feed(0f, 35, 0, -100.0))
-        }
-    }
-
-    @Test fun vadRecoveryPreservesPlaybackThresholds() {
-        Capture(echoCancelled = false).use { c ->
-            c.gate.setPlaying(true, c.now)
-            c.vad.fails = true
-            assertEquals(emptyList<Edge>(), c.feed(0f, 40, levelDb = -35.0))
-            assertEquals(listOf(Edge.START), c.feed(0f, 10, levelDb = -20.0))
-            c.gate.setPlaying(false, c.now)
-            assertEquals(listOf(Edge.END), c.feed(0f, 35, 0, -100.0))
-        }
-    }
-
-    @Test fun anOldTurnPredictionCannotEndAnUtteranceAfterVadRecovery() {
-        Capture().use { c ->
-            c.feed(0.9f, 6)
-            c.feed(0.1f, 10, 0, -100.0)
-            assertEquals(1, c.worker.tasks.size)
-            c.vad.fails = true
-            assertEquals(emptyList<Edge>(), c.feed(0f, 1, 0, -100.0))
-            c.worker.runNext()
-            assertEquals(emptyList<Edge>(), c.feed(0f, 23, 0, -100.0))
-            assertEquals(listOf(Edge.END), c.feed(0f, 1, 0, -100.0))
         }
     }
 

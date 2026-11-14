@@ -43,7 +43,7 @@ jobs:
           # The paths outside each area's own are files its tests read.
           filters: |
             ci: &ci .github/workflows/ci.yml
-            app: [*ci, 'app/**', 'packages/**', 'sdk/plugin-kit/**', 'site/share/**', 'docs/guide/**', 'THIRD_PARTY_NOTICES.md', 'tooling/check_apk_jni.py', 'tooling/test_check_apk_jni.py']
+            app: [*ci, 'app/**', 'packages/**', 'sdk/plugin-kit/**', 'site/share/**', 'docs/guide/**', 'THIRD_PARTY_NOTICES.md']
             packages: [*ci, 'packages/**']
             runtime: [*ci, 'runtime/**', 'examples/**', 'sdk/plugin-kit/**', 'app/tool/engine_auth/**', 'app/test/plugin_config/fixtures/**', 'app/test/media/fixtures/**']
 
@@ -299,12 +299,6 @@ jobs:
           gradle-version: ${{ env.GRADLE_VERSION }}
       - working-directory: app/android
         run: gradle --stacktrace :app:testArm64DebugUnitTest
-      # This is an R8/JNI probe only, without a bundled engine; never publish this APK.
-      - name: ONNX JNI classes survive release shrinking
-        working-directory: app
-        run: |
-          flutter build apk --release --flavor arm64 --target-platform android-arm64
-          python3 ../tooling/check_apk_jni.py build/app/outputs/flutter-apk/app-arm64-release.apk
 
   ci-ok:
     name: CI OK

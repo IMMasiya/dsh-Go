@@ -14,9 +14,7 @@ object SpeechGates {
             // Initialize the streaming VAD; smart-turn runs only on its worker.
             vad.probability(ShortArray(512))
             vad.reset()
-            return NeuralGate(vad, turn, echoCancelled, onVadFailed = {
-                Log.w("SpeechGates", "VAD failed; using energy gate for the rest of this call", it)
-            }, onTurnFailed = {
+            return NeuralGate(vad, turn, echoCancelled, onTurnFailed = {
                 Log.w("SpeechGates", "Turn model failed; pauses end after the energy gate's hangover", it)
             })
         } catch (e: Exception) {
