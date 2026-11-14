@@ -165,6 +165,9 @@ internal class ControlOverlay(private val service: AccessibilityService) : UserG
 
     /** What is on screen: the capsule (or card), or the ball (lags [fold] while a fold or unfold plays). */
     private var ballShown = false
+
+    /** The ball is gliding back to the capsule's end; its glide's end swaps the windows. A finger stops it. */
+    private var unfolding = false
     private val foldTick = Runnable { onFoldTick() }
 
     /** A narrower line may shrink the capsule now. */
@@ -490,7 +493,7 @@ internal class ControlOverlay(private val service: AccessibilityService) : UserG
                 pill?.let { p ->
                     imeTop = imeWindowTop()
                     placeCapsule(p)
-                    ball?.let { b -> if (ballShown) b.move(b.dockPos()) }
+                    ball?.let { b -> if (ballResting()) b.move(b.dockPos()) }
                 }
                 beam.relayout()
                 confirmCard?.let { place(it.root, it.params, top = false) }
@@ -679,6 +682,7 @@ internal class ControlOverlay(private val service: AccessibilityService) : UserG
         pill = null
         ball = null
         ballShown = false
+        unfolding = false
         steerNote = null
         p.cancelMorph()
         val roots = listOfNotNull(p.root.takeIf { it.isShown }, b?.root?.takeIf { it.isShown })
@@ -744,8 +748,13 @@ internal class ControlOverlay(private val service: AccessibilityService) : UserG
     private fun capsuleCentre(a: SafeArea = safeArea(), obstacle: Int? = null) =
         CapsulePlacement.centreY(a, dp(CapsuleMetrics.HEIGHT_DP), dp(CapsulePlacement.GAP_DP), obstacle)
 
-    private fun capsuleY(p: OverlayCapsule, a: SafeArea) =
-        CapsulePlacement.windowY(a.screenH, capsuleCentre(a, obstacleTop()), dp(CapsuleMetrics.HEIGHT_DP), p.padBottom)
+    /** The capsule window's offset clear of what is in the way; the card's room above it follows. */
+    private fun capsuleY(p: OverlayCapsule, a: SafeArea): Int {
+        val headerH = dp(CapsuleMetrics.HEIGHT_DP)
+        val centre = capsuleCentre(a, obstacleTop())
+        p.maxCardHeight = CapsulePlacement.cardRoom(a, centre, headerH, dp(CapsulePlacement.GAP_DP))
+        return CapsulePlacement.windowY(a.screenH, centre, headerH, p.padBottom)
+    }
 
     /** The higher of a keyboard's top and the confirm card's, on screen; null when neither shows. */
     private fun obstacleTop(): Int? = listOfNotNull(imeTop, confirmTop()).minOrNull()
@@ -792,8 +801,14 @@ internal class ControlOverlay(private val service: AccessibilityService) : UserG
                 }
             }
         }
-        ball?.let { b -> if (ballShown) b.glideTo(b.dockPos(), animationsOn()) }
+        ball?.let { b -> if (ballResting()) b.glideTo(b.dockPos(), animationsOn()) }
     }
+
+    /**
+     * The ball is the form on screen and not on its way back into the capsule: an unfold's glide
+     * ends in the window swap, so nothing may move it (moving cancels the glide, and the swap with it).
+     */
+    private fun ballResting() = ballShown && !unfolding
 
     /** The 「已解除限制」 row: 设置 › 手机操控 › 解除限制, through the app's own page link. */
     private fun openUnlocks() {
@@ -1229,6 +1244,7 @@ internal class ControlOverlay(private val service: AccessibilityService) : UserG
 
     private fun onBallTouched() {
         // A finger stops an unfold's glide: the capsule it had brought up (transparent) goes again.
+        unfolding = false
         syncWindows()
         fold.touch(now())
         applyIdle(animated = true)
@@ -1384,7 +1400,9 @@ internal class ControlOverlay(private val service: AccessibilityService) : UserG
         p.root.visibility = if (captureHidden) View.INVISIBLE else View.VISIBLE
         // The ball goes back to the capsule's end first, its mark fading.
         b.fadeMark(0f, animated = true, durationMs = UNFOLD_GLIDE_MS)
+        unfolding = true
         b.glideTo(ballOver(p, b, p.capsuleEndCircle(side)), animated = true, durationMs = UNFOLD_GLIDE_MS) {
+            unfolding = false
             if (pill !== p || !ballShown) return@glideTo
             ballShown = false
             showWindow(p.root)

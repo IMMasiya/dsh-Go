@@ -31,6 +31,7 @@ import android.widget.EditText
 import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.ImageView
+import android.widget.ScrollView
 import android.widget.TextView
 import io.github.ccch1mneyyy.dsh_app.pet.Side
 import kotlin.math.roundToInt
@@ -361,7 +362,6 @@ internal class OverlayCapsule(
         orientation = LinearLayout.VERTICAL
         setWillNotDraw(false)
         setPadding(0, ctx.dp(8), 0, 0)
-        visibility = View.GONE
         val m = ctx.dp(BODY_INSET_DP)
         addView(footer, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { bottomMargin = ctx.dp(4) })
         addView(steer, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { setMargins(m, 0, m, ctx.dp(10)) })
@@ -394,9 +394,30 @@ internal class OverlayCapsule(
         }
     }
 
+    /**
+     * The second layer as the surface holds it: the body, scrolling when the room above the header
+     * ([maxCardHeight]) is less than it needs — a short screen with the keyboard up — so 插话 stays
+     * reachable and the header stays put. A focused field scrolls itself into view.
+     */
+    private val layer = ScrollView(ctx).apply {
+        isVerticalScrollBarEnabled = false
+        overScrollMode = View.OVER_SCROLL_NEVER
+        visibility = View.GONE
+        addView(body)
+    }
+
     // ---- window ---------------------------------------------------------------------------------------
 
-    val surface = OverlaySurface(ctx, c, header, body)
+    val surface = OverlaySurface(ctx, c, header, layer)
+
+    /** The tallest the card may be (header included): from the header's bottom up to under the status bar. */
+    var maxCardHeight: Int = Int.MAX_VALUE
+        set(value) {
+            if (field == value) return
+            field = value
+            surface.maxCardH = value
+            if (shape == Shape.CARD && morph == null) refitCard(OverlayMotion.on())
+        }
 
     /**
      * The whole capsule's opacity: the 闲置时不透明度 when idle, full otherwise. On [surface], so the
@@ -554,17 +575,17 @@ internal class OverlayCapsule(
         val capW = width.width.takeIf { it > 0 } ?: cardW
         when (to) {
             Shape.CAPSULE -> {
-                body.visibility = View.GONE
-                body.alpha = 0f
-                body.translationY = 0f
+                layer.visibility = View.GONE
+                layer.alpha = 0f
+                layer.translationY = 0f
                 chevron.turn = CAPSULE_TURN
                 surface.setExtent(capW, headerH)
                 surface.setRect(0f, 0f, capW.toFloat(), headerH.toFloat())
             }
             Shape.CARD -> {
-                body.visibility = View.VISIBLE
-                body.alpha = 1f
-                body.translationY = 0f
+                layer.visibility = View.VISIBLE
+                layer.alpha = 1f
+                layer.translationY = 0f
                 chevron.turn = CARD_TURN
                 val h = surface.cardHeight()
                 surface.setExtent(cardW, h)
@@ -589,13 +610,13 @@ internal class OverlayCapsule(
     fun expand(animated: Boolean, then: () -> Unit = {}) {
         morph?.let { it.cancel(); morph = null }
         // From a collapse cut short, carry on from where the body and the chevron are.
-        val wasOpen = body.visibility == View.VISIBLE
-        val startAlpha = if (wasOpen) body.alpha else 0f
+        val wasOpen = layer.visibility == View.VISIBLE
+        val startAlpha = if (wasOpen) layer.alpha else 0f
         val startTurn = if (wasOpen) chevron.turn else CAPSULE_TURN
         val carryOn = wasOpen && surface.extentW == cardW
         shape = Shape.CARD
-        body.alpha = startAlpha
-        body.visibility = View.VISIBLE
+        layer.alpha = startAlpha
+        layer.visibility = View.VISIBLE
         val h = surface.cardHeight()
         // The extent keeps the rect's bottom where it is when it grows (OverlaySurface.setExtent).
         surface.setExtent(cardW, h)
@@ -604,8 +625,8 @@ internal class OverlayCapsule(
         val shift = ctx.dpf(6f)
         animate(RectF(0f, 0f, cardW.toFloat(), h.toFloat()), OverlayMotion.MORPH_MS, OverlayMotion.emphasized, animated, frame = { t ->
             val k = ((t - 0.3f) / 0.7f).coerceIn(0f, 1f)
-            body.alpha = startAlpha + (1f - startAlpha) * k
-            body.translationY = shift * (1f - k) * (1f - startAlpha)
+            layer.alpha = startAlpha + (1f - startAlpha) * k
+            layer.translationY = shift * (1f - k) * (1f - startAlpha)
             chevron.turn = startTurn + (CARD_TURN - startTurn) * t
         }) { settle(Shape.CARD); then() }
     }
@@ -617,10 +638,10 @@ internal class OverlayCapsule(
         val capW = width.width.takeIf { it > 0 } ?: cardW
         val left = (surface.extentW - capW) / 2f
         val bottom = surface.extentH.toFloat()
-        val startAlpha = body.alpha
+        val startAlpha = layer.alpha
         val startTurn = chevron.turn
         animate(RectF(left, bottom - headerH, left + capW, bottom), OverlayMotion.MORPH_MS, OverlayMotion.emphasized, animated, frame = { t ->
-            body.alpha = startAlpha * (1f - t / 0.4f).coerceIn(0f, 1f)
+            layer.alpha = startAlpha * (1f - t / 0.4f).coerceIn(0f, 1f)
             chevron.turn = startTurn + (CAPSULE_TURN - startTurn) * t
         }) { settle(Shape.CAPSULE); then() }
     }
@@ -674,10 +695,10 @@ internal class OverlayCapsule(
         val top = r.bottom - headerH
         surface.pin(RectF(r.left, top, r.right, r.bottom))
         val left = BallGeometry.circleLeft(r.left.roundToInt(), r.right.roundToInt(), ball, side).toFloat()
-        val bodyAlpha = body.alpha
+        val bodyAlpha = layer.alpha
         animate(RectF(left, top, left + ball, r.bottom), OverlayMotion.MORPH_MS, OverlayMotion.emphasized, animated, frame = { t ->
             header.alpha = (1f - t / 0.4f).coerceIn(0f, 1f)
-            body.alpha = bodyAlpha * (1f - t / 0.3f).coerceIn(0f, 1f)
+            layer.alpha = bodyAlpha * (1f - t / 0.3f).coerceIn(0f, 1f)
         }) { then() }
     }
 
@@ -857,10 +878,16 @@ internal class OverlaySurface(context: Context, private val c: OverlayPalette, p
         layoutHeader()
     }
 
-    /** The card's height for the body as it is now. */
-    fun cardHeight(): Int {
+    /** The tallest the card may be (header included); the body scrolls in what is left. */
+    var maxCardH = Int.MAX_VALUE
+
+    /** The card's height for the body as it is now, within [maxCardH]. */
+    fun cardHeight(): Int = headerH - overlap + bodyHeight()
+
+    /** The body's natural height, capped to the room [maxCardH] leaves above the header. */
+    private fun bodyHeight(): Int {
         body.measure(MeasureSpec.makeMeasureSpec(cardW, MeasureSpec.EXACTLY), MeasureSpec.makeMeasureSpec(0, MeasureSpec.UNSPECIFIED))
-        return headerH - overlap + body.measuredHeight
+        return CapsulePlacement.bodyHeight(body.measuredHeight, maxCardH, headerH - overlap)
     }
 
     private fun headerRect(): RectF = pinned ?: rect
@@ -880,7 +907,8 @@ internal class OverlaySurface(context: Context, private val c: OverlayPalette, p
     override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
         measureHeader()
         if (body.visibility != View.GONE) {
-            body.measure(MeasureSpec.makeMeasureSpec(cardW, MeasureSpec.EXACTLY), MeasureSpec.makeMeasureSpec(0, MeasureSpec.UNSPECIFIED))
+            val h = bodyHeight()
+            body.measure(MeasureSpec.makeMeasureSpec(cardW, MeasureSpec.EXACTLY), MeasureSpec.makeMeasureSpec(h, MeasureSpec.EXACTLY))
         }
         setMeasuredDimension(extentW, extentH)
     }
