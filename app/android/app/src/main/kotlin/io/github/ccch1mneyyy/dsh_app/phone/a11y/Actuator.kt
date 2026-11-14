@@ -1,4 +1,5 @@
-// SPDX-FileCopyrightText: 2026 CikeSeven (used with the author's permission)
+// SPDX-FileCopyrightText: 2026 CikeSeven
+// SPDX-License-Identifier: MIT
 // See THIRD_PARTY_NOTICES.md.
 // Local changes: blocking calls with timeouts; clickable-ancestor lookup before the gesture
 // fallback; directional scrolls; IME enter; injected gestures pass through the overlay and are

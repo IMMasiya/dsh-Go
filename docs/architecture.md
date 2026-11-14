@@ -6,7 +6,7 @@
 
 ## 0. 一页全貌
 
-`text
+```text
 ┌──────────────────── Android App 进程（Flutter + Kotlin）────────────────────┐
 │ Dart: ui/ ──Riverpod──> state/ ──DshClient(packages/dsh_client)──┐          │
 │        │                                                         │ HTTP+WS  │
@@ -22,7 +22,7 @@
 │     ├─ 官方 DSH 引擎（runtime/patches 打了补丁）                              │
 │     └─ dsh-go-bridge（Cordis 插件：/dsh-go/v1/*，原生插件协议/伙伴/删除/配置） │
 └─────────────────────────────────────────────────────────────────────────────┘
-`
+```
 
 技术栈（2026-10 定稿）：
 
@@ -72,12 +72,12 @@
 
 ### 2.1 启动与外壳
 
-`text
+```text
 main.dart → app.dart(DshApp/MaterialApp) → RootGate ─┬─ 引导未完成 OnboardingFlow
                                                      └─ ModeHome ─┬─ HomeShell(原生界面)
                                                                   └─ WebHome(官方 Web)
 HomeShell = [ChatScreen] + [SessionsDrawer 左] + [QuickPanel 右] + [SystemEntryHost/LinkHost（只分发，不绘制）]
-`
+```
 
 1. `lib/main.dart`：帧探针 → 载入语言与启动画面 → 注册许可与深链 → `runApp(ProviderScope(DshApp))`。唯一的 `ProviderScope` 在这里（全仓不锁定屏幕方向，平板由自适应布局处理）。
 2. `lib/app.dart`：唯一 MaterialApp；主题/语言/动效/启动层；主题按 accent/语言/blur/instant/fluid 缓存重建（`_themesFor` 的缓存键要同步扩）。
@@ -226,14 +226,14 @@ HomeShell = [ChatScreen] + [SessionsDrawer 左] + [QuickPanel 右] + [SystemEntr
 
 ### 4.1 dsh_client（连接层，40 个导出文件）
 
-`text
+```text
 DshConnection      单个 Host 的物理连接：launch-token → cookie、Host 头、HTTP/WS upgrade
   └─ DshCarrier    传输抽象；默认 DshHttpCarrier（POST /api/<endpoint> + WS）
        ├─ DshRpc     unary Typert 调用（{type:client-request,rpcId,method,payload}）
        └─ DshMux     /api/remote.mux 逻辑流 + $events ready 世代 + 重连退避
             └─ DshClient  会话/提示/审批/模型/工作区/插件/终端…（27 个 *_api.dart extension）
                  └─ ChatTranscript  $events → 聊天条目 reducer
-`
+```
 
 - 业务/网关错误：**HTTP 200 + `result.ok:false`**；只有传输拒绝用 4xx。
 - 错误类型 `DshRemoteException`（Host 决定）vs `DshCarrierRefusedException`（管道故障）要分清。
@@ -254,12 +254,12 @@ DshConnection      单个 Host 的物理连接：launch-token → cookie、Host 
 
 ### 5.1 一次对话
 
-`text
+```text
 UI 输入 ─> ChatController.send() ─> DshClient.prompt(sessionId, text)
                                     │ POST /api/session/prompt（RPC 信封）
 引擎 ─> $events 流 ─> DshMux ─> DshClient.watch(sessionId) ─> ChatTranscript.apply() ─> ChatState ─> UI
          （快照 + 连续 seq 事件 + assistant-stream 增量；断线重连后重开 follow 并重新快照）
-`
+```
 
 - 审批/提问：引擎发 `approval/request`/`user-questions/request`，客户端经 `$events/result` 应答；
   断线重连后按同一 `eventId` 重投，已结算的不重放。
@@ -293,13 +293,13 @@ UI 输入 ─> ChatController.send() ─> DshClient.prompt(sessionId, text)
 
 ### 5.4 运行时构建与分层升级
 
-`text
+```text
 DSH npm 前缀（runtime/locks）→ rtbuild 按 series 应用 139 个补丁（pins 双哈希校验）
   → 加 bridge/boot/direct/patch.yml → assemble → runtime/out/<abi>/assets/runtime/
        ├─ manifest.json（版本/baseId/分层或单包）
        └─ rootfs-<abi>.tar.xz（schema 1）或 base+engine 两层（RUNTIME_LAYERS=1，schema 2）
 → Gradle flavor 打为 APK 资产
-`
+```
 
 升级：`manifest.upgrade` → `RuntimeInstaller` 解 staging → `EngineUpgrade` 事务
 （`engine.prepare` → `engine.upgrade` → 换入 → `rootfs.version`）→ 只替换固定引擎路径，

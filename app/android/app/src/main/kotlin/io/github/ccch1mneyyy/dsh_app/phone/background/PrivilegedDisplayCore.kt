@@ -1,4 +1,5 @@
-// SPDX-FileCopyrightText: 2026 CikeSeven (used with the author's permission)
+// SPDX-FileCopyrightText: 2026 CikeSeven
+// SPDX-License-Identifier: MIT
 // See THIRD_PARTY_NOTICES.md.
 // Local changes: blocking, one owner per task (the bridge serialises calls on one worker
 // thread); a UiAutomation control-tree read rendered to the screen text format, so text-only

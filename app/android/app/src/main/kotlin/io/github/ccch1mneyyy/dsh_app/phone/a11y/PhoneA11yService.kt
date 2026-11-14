@@ -1,4 +1,5 @@
-// SPDX-FileCopyrightText: 2026 CikeSeven (used with the author's permission)
+// SPDX-FileCopyrightText: 2026 CikeSeven
+// SPDX-License-Identifier: MIT
 // See THIRD_PARTY_NOTICES.md.
 // Local changes: registers into PhoneRegistry; stops the task on screen off, interrupt and
 // unbind through ControlListener; debug-only probe.

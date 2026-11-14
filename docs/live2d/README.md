@@ -169,7 +169,8 @@ App 只在「需要判断」时提议适配，任一条件成立即可：缺 4 �
 
 ### 4.3 AI 适配**不会**做的事（手写时也请避开）
 
-- 不写 `moc` 指纹（App 自己算）、不写 `framing`、`pose`、`toggles`、代码、URL 或任何未知顶层字段——未知字段会记进 `dropped` 并丢弃。
+- AI 适配不写 `moc` 指纹（App 自己算）；手写的 `adapter.json` 仍须按 §2.4 写入 `moc`。
+- 不写 `framing`、`pose`、`toggles`、代码、URL 或任何未知顶层字段——未知字段会记进 `dropped` 并丢弃。
 - 不写任意 native 参数名或虚拟 eyelids；`face` 只认 18 个标准参数；`gaze`/`eyelid` 不属于 AI 契约（它们只出现在 `character.json` 的 `emotions` 里，由舞台执行）。
 - 不从名字猜效果：加载成功、名字叫「开心」都不算证据；没有 `verifiedEffects` 就不开新的表情/动作资源。
 - 不控制服装、水印、署名、透明度、声音、事件；名称含「水印/署名/换装/透明/隐藏/开关」等字样的参数会被排除。

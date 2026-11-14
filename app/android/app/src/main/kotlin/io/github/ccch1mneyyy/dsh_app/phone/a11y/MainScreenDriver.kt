@@ -1,4 +1,5 @@
-// SPDX-FileCopyrightText: 2026 CikeSeven (used with the author's permission)
+// SPDX-FileCopyrightText: 2026 CikeSeven
+// SPDX-License-Identifier: MIT
 // See THIRD_PARTY_NOTICES.md.
 // Local changes: the screen text format instead of JSON; fingerprints re-checked against a fresh
 // capture; password fields marked rather than failing the screen; collect, open, numbered

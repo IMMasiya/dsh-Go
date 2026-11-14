@@ -169,7 +169,8 @@ Semantics: `set(v) = clamp(v*scale + offset, nativeMin, nativeMax)`; `add(d) = c
 
 ### 4.3 What the AI fitting will **not** do (avoid these when authoring by hand)
 
-- No `moc` fingerprint (the app computes it), no `framing`, `pose`, `toggles`, code, URLs or unknown top-level fields — unknown fields are recorded as `dropped` and discarded.
+- AI fitting does not write the `moc` fingerprint (the app computes it). A hand-written `adapter.json` must still include `moc` as described in §2.4.
+- No `framing`, `pose`, `toggles`, code, URLs or unknown top-level fields — unknown fields are recorded as `dropped` and discarded.
 - No arbitrary native parameter names or virtual eyelids; `face` takes only the 18 standard names; `gaze`/`eyelid` are not part of the AI contract (they exist only in `character.json`'s `emotions`, executed by the stage).
 - No guessing effects from names: a successful load or a name like "happy" proves nothing; without `verifiedEffects` no new expression/motion resource is bound.
 - No control over clothing, watermarks, signatures, opacity, sound or events; parameters whose names contain watermark/signature/outfit/opacity/hide/switch are excluded.

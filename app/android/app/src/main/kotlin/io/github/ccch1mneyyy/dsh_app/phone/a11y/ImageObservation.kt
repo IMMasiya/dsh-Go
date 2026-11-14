@@ -1,5 +1,6 @@
 // ImageGeometry extracted from ScreenShooter.kt; its existing Phase attribution is retained.
-// SPDX-FileCopyrightText: 2026 CikeSeven (used with the author's permission)
+// SPDX-FileCopyrightText: 2026 CikeSeven
+// SPDX-License-Identifier: MIT
 // See THIRD_PARTY_NOTICES.md.
 // Local changes: value equality for viewport checks, local change summary and monotonic expiry.
 

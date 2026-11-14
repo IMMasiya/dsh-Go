@@ -10,7 +10,7 @@ The package is the base. Build and publish steps are in [From zero to market](fr
 - Set `engines.dsh` and peers to a version range you actually tested.
 - `repository` points at the real public repo; add `dsh-plugin` and `dsh-bundle` to `keywords`.
 - Choose an OSI-approved licence and ship a LICENSE; keep metadata truthful.
-- Publish with `npm publish --access public --ignore-scripts`, then check with `npm view <name> name version repository dist.integrity --json`.
+- Publish with `npm publish --access public --ignore-scripts` only if the plugin has no build scripts such as `prepare` or `prepublishOnly`; if it depends on them, finish the build and tests first as in [From zero to market](from-zero.md) §6. Then check with `npm view <name> name version repository dist.integrity --json`.
 
 ## 2. Enter the discovery index (dshfind)
 
@@ -43,7 +43,8 @@ A web page, an npm release, a market index entry and an installable app are four
 | State | How to confirm |
 |---|---|
 | Published on npm | `npm view … --json` |
-| In the index | query the format-1 index by exact name (see the from-zero example) |
+| In the dshfind index | query dshfind's format-1 index `https://api.dshfind.com/market/dsh-index.json` by exact name (see the from-zero example); it feeds the **all** section |
+| In the official market index | query the official market's format-1 index `https://go.dshtui.com/market/index.json` by exact name; it feeds the **official** and **adapted for DSH Go** sections |
 | Visible in the app | search the app, check version, source and section filter |
 | Installs and runs | install on the target host and make one real tool call |
 
@@ -53,5 +54,5 @@ A web page, an npm release, a market index entry and an installable app are four
 |---|---|
 | On the site but not in the app | index result, current section filter, exact version, npm back-link |
 | Missing from official, only under all | whether the submission merged, and whether its version matches npm |
-| A risk confirmation appears | the flag comes from declared capabilities; install can continue after confirming |
+| A risk confirmation appears | the flag comes from an automatic scan of the package contents (install scripts, native binaries, subprocesses, file writes, network use), not only declared capabilities; look up the exact file paths for your package in `audit.json` of [dsh-go-market](https://github.com/ccch1mneyyy/dsh-go-market); install can continue after confirming |
 | An installed version was delisted | the details page warns; publish a fixed version and update the entry |

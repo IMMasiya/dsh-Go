@@ -9,13 +9,13 @@
 
 ## 一、复制或改写进源码的代码
 
-### Phase（经作者许可使用）
+### Phase（MIT，作者授权）
 
 | 项 | 内容 |
 |---|---|
 | 项目 | Phase，https://github.com/CikeSeven/phase （基于提交 `c209f6f`） |
 | 版权人 | Copyright (c) 2026 CikeSeven |
-| 许可 | 经作者许可使用 |
+| 许可 | MIT：作者授权本项目按 MIT 许可使用 |
 | 用途 | 手机操控：无障碍读屏与操作、控制浮层，以及「不打扰模式」的特权虚拟屏 |
 
 上游路径前缀为 `android/app/src/main/kotlin/app/xiangyue/phase/`；本仓库路径前缀为 `app/android/app/src/main/kotlin/io/github/ccch1mneyyy/dsh_app/phone/`。
@@ -40,7 +40,7 @@
 ```text
 Portions of the phone control feature are derived from Phase
 (https://github.com/CikeSeven/phase), Copyright (c) 2026 CikeSeven,
-used with the author's permission.
+used under the MIT License with the author's permission.
 ```
 
 ### go.dshtui.com 首页（作者交付使用）
@@ -210,7 +210,7 @@ Libraries.dev metal-fx, translated to Flutter GLSL.
 | 项目 | SillyTavern，https://github.com/SillyTavern/SillyTavern |
 | 版本 | 1.19.0，提交 `7e8663cd9c184a550b37238218bdd32c6efc68e9` |
 | 许可 | AGPL-3.0（与本项目相同） |
-| 版权 | SillyTavern 项目及其贡献者（版权声明见上游仓库 LICENSE） |
+| 版权 | SillyTavern 项目及其贡献者（上游 LICENSE 只有 AGPL-3.0 正文，没有单独的版权行；贡献者见上游仓库的提交记录） |
 | 用途 | 酒馆引擎照 SillyTavern 的行为移植或改写：提示词组装、世界书、宏、斜杠命令、正则、角色卡与聊天文件的读写、人设 |
 | 来源文件 | `public/script.js`；`public/scripts/` 下的 `PromptManager.js`、`openai.js`、`personas.js`、`world-info.js`、`macros.js`、`slash-commands.js`、`bookmarks.js`；`src/character-card-parser.js`、`src/prompt-converters.js`、`src/endpoints/characters.js`、`src/endpoints/chats.js`、`src/endpoints/backends/chat-completions.js` |
 | 文件 | `packages/dsh_tavern/lib/src/` 下文件头写明 SillyTavern 来源和提交的文件 |
@@ -436,6 +436,7 @@ C710 新增的 `image` 4.12.0 是 MIT 许可 pub 依赖；其原许可由 Flutte
 
 ```text
 Copyright (c) 2026 CikeSeven                                   (PiPilot)
+Copyright (c) 2026 CikeSeven                                   (Phase)
 Copyright (c) 2026 DeepSeek                                    (DeepSeek Harness)
 Copyright (c) 2026 DSH Remote contributors                     (ds-harness-remote)
 Copyright (c) 2026 qiannianhuanxiang                           (DSHA)

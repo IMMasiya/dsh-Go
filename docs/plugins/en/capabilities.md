@@ -24,7 +24,7 @@ One page for "what a plugin can and cannot do". Details live in the other pages;
 | Send system notifications | there is no notification API |
 | Show approval cards or change permissions | approvals belong to the engine; plugins cannot answer or skip them |
 | Install/uninstall plugins, switch hosts, change conversation semantics | no such API |
-| Run in the background or trigger itself | it is called only on user taps and host events |
+| Run in the background or trigger itself | it is called on user taps and host events; a timer or stream your code starts during a call can keep running after the call returns (the readaloud example ticks while it reads), but there is no background service and no API to wake the plugin on its own |
 | Change the app theme, icons or overall UI | only constrained styles and plugin seat declarations |
 | Execute plugin code in the app process | the app draws declarations and JSON views only; code runs in the engine |
 
