@@ -156,6 +156,55 @@ void main() {
     expect(find.byType(VoiceCallPage), findsNothing);
   });
 
+  testWidgets('字幕 follows new words at the bottom; scrolled up, the reader stays put', (tester) async {
+    final (audio, conversation) = await pumpCall(tester);
+    const reply = '这周末北京以晴为主，周六最高二十度，周日傍晚可能有小雨。带孩子的话，朝阳区可以去科技馆新馆，室内展区很大。';
+    Future<void> turn() async {
+      audio.emit(const SpeechStart(over: false));
+      audio.emit(Utterance(Uint8List(32044), const Duration(seconds: 2)));
+      for (var i = 0; i < 5; i++) {
+        await tester.pump(const Duration(milliseconds: 60));
+      }
+      conversation.reply(reply, done: true);
+      for (var i = 0; i < 10; i++) {
+        await tester.pump(const Duration(milliseconds: 60));
+      }
+    }
+
+    for (var i = 0; i < 5; i++) {
+      await turn();
+    }
+    await tester.tap(find.byKey(const ValueKey('call-transcript')));
+    for (var i = 0; i < 20; i++) {
+      await tester.pump(const Duration(milliseconds: 60));
+    }
+    final list = find.byKey(const ValueKey('call-transcript-list'));
+    ScrollPosition position() =>
+        tester.state<ScrollableState>(find.descendant(of: list, matching: find.byType(Scrollable))).position;
+    expect(position().maxScrollExtent, greaterThan(0));
+    expect(position().pixels, position().maxScrollExtent, reason: 'opens at the newest');
+
+    // At the bottom: new words are followed.
+    await turn();
+    for (var i = 0; i < 10; i++) {
+      await tester.pump(const Duration(milliseconds: 60));
+    }
+    expect(position().pixels, closeTo(position().maxScrollExtent, 1));
+
+    // Scrolled up by the reader: more words do not pull them back.
+    await tester.drag(list, const Offset(0, 300));
+    for (var i = 0; i < 10; i++) {
+      await tester.pump(const Duration(milliseconds: 60));
+    }
+    final kept = position().pixels;
+    expect(kept, lessThan(position().maxScrollExtent - 100));
+    await turn();
+    for (var i = 0; i < 10; i++) {
+      await tester.pump(const Duration(milliseconds: 60));
+    }
+    expect(position().pixels, closeTo(kept, 1));
+  });
+
   testWidgets('字幕 before anything is said: the page says so', (tester) async {
     await pumpCall(tester);
     await tester.tap(find.byKey(const ValueKey('call-transcript')));
