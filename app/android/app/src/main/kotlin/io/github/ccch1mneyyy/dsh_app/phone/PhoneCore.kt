@@ -531,7 +531,7 @@ class PhoneCore(
             val target = (plan.target as? SystemTarget.Known)?.app
             target?.let { handler ->
                 safety.checkOpen(handler.packageName, handler.label)?.let { refusal ->
-                    return Out(refusal.message, error = true, app = handler.label, decision = "refused:${refusal.rule}")
+                    return Out(refusal.message, error = true, app = handler.label, summary = summary, decision = "refused:${refusal.rule}")
                 }
             }
             if (!current(owner)) return stoppedOut("open")
