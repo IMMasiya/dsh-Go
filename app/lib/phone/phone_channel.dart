@@ -281,7 +281,6 @@ class PhoneBackgroundStatus {
     this.viewport,
     this.previewVersion,
     this.previewEnabled = false,
-    this.selfCheckWarning,
     this.parallelism,
   });
 
@@ -297,7 +296,6 @@ class PhoneBackgroundStatus {
     viewport: PhoneBackgroundViewport.fromMap(_map(m['viewport'])),
     previewVersion: _int(_map(m['preview'])['v']),
     previewEnabled: _flag(_map(m['preview'])['enabled']),
-    selfCheckWarning: _text(m['selfCheckWarning']),
     parallelism: BackgroundParallelism.parse(m['parallelism']),
   );
 
@@ -318,8 +316,6 @@ class PhoneBackgroundStatus {
   final PhoneBackgroundViewport? viewport;
   final int? previewVersion;
   final bool previewEnabled;
-  /// The settings self-check did not pass. Only a note: the channel stays ready and usable.
-  final String? selfCheckWarning;
   final BackgroundParallelism? parallelism;
 
   PhonePrivilegedMode get effectiveMode =>
