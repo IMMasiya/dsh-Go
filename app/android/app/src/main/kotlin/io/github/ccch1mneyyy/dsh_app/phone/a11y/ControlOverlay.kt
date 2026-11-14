@@ -1,4 +1,6 @@
-// Portions derived from Phase (https://github.com/CikeSeven/phase), used with the author's permission. See THIRD_PARTY_NOTICES.md.
+// SPDX-FileCopyrightText: 2026 CikeSeven
+// SPDX-License-Identifier: MIT
+// See THIRD_PARTY_NOTICES.md.
 // Local changes: a status control in the lower middle in three forms (ball, capsule, card) on one
 // morphing surface; a beam round the screen's edge while it shows; separate confirm and handoff
 // cards; buttons that refuse injected or obscured touches; pass-through and hide hooks for the

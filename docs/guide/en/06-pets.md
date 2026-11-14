@@ -57,7 +57,7 @@ The microphone uses the phone's installed offline speech model and does not fall
 
 The companion room is a separate full page with an animated Live2D character. It isn't the status pet above: the pet watches the agent for you, and the room is a place to spend a little time.
 
-Open the **Switch host** panel and tap **Companion room**. The first time, import an asset pack (zip). Character assets aren't part of the app and stay on this phone; you can remove them from the menu at the top right of the room.
+Tap the **Switch mode** button at the top of the chat list, then **Companion room**; if you've set a startup mode, the app opens straight into it. The first time, import an asset pack (zip). Character assets aren't part of the app and stay on this phone; you can remove them from the menu at the top right of the room.
 
 What you can do:
 
