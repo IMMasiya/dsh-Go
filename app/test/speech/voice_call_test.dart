@@ -22,7 +22,7 @@ class _Rig {
     call = VoiceCallController(
       audio: audio,
       conversation: conversation,
-      recognizer: () async => noRecognizer ? null : (next ?? this.cloud),
+      recognizer: () async => noRecognizer ? null : (pick != null ? await pick!() : (next ?? this.cloud)),
       voice: () {
         final out = FakeOut();
         outs.add(out);
@@ -41,6 +41,9 @@ class _Rig {
 
   /// What the recognition setting names now, when changed during the call.
   FakeCloud? next;
+
+  /// Or, answered later: the recognizer as the provider would find it.
+  Future<FakeCloud> Function()? pick;
   final conversation = FakeConversation();
   final outs = <FakeOut>[];
   int cues = 0;
@@ -194,6 +197,31 @@ void main() {
     expect(other.heard, hasLength(1));
     expect(rig.cloud.heard, isEmpty);
     expect(rig.conversation.sent.last, endsWith('换了识别方式'));
+    rig.call.hangUp();
+  });
+
+  test('two quick recognition changes: the later one stays, however the answers come back', () async {
+    final rig = _Rig();
+    await rig.call.start();
+    final slow = Completer<void>();
+    final first = FakeCloud('先选的');
+    final second = FakeCloud('后选的');
+    var calls = 0;
+    rig.pick = () async {
+      calls++;
+      if (calls == 1) {
+        await slow.future;
+        return first;
+      }
+      return second;
+    };
+    final earlier = rig.call.refreshRecognizer();
+    await rig.call.refreshRecognizer();
+    slow.complete();
+    await earlier;
+    await rig.say();
+    expect(second.heard, hasLength(1));
+    expect(first.heard, isEmpty);
     rig.call.hangUp();
   });
 

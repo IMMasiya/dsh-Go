@@ -221,9 +221,13 @@ class VoiceCallController extends ChangeNotifier {
   /// now (if that can listen; else to the one already in use).
   Future<void> refreshRecognizer() async {
     if (_phase == CallPhase.ended || _cloud == null) return;
+    final mine = ++_refreshing;
     final next = await recognizer();
-    if (next != null && _phase != CallPhase.ended) _cloud = next;
+    // A later change has the last word, whichever answer comes back first.
+    if (next != null && mine == _refreshing && _phase != CallPhase.ended) _cloud = next;
   }
+
+  int _refreshing = 0;
 
   Future<void> start() async {
     unawaited(const DiagnosticsChannel().recordVoiceStage('call_started'));

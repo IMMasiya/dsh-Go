@@ -178,6 +178,7 @@ class _VoiceCallPageState extends ConsumerState<VoiceCallPage> with WidgetsBindi
   /// [_voice] from the settings: DeepSeek's with nobody to pay for it here
   /// becomes the phone's own; the phone's own warms up.
   Future<void> _settleVoice() async {
+    final mine = ++_settling;
     var next = await ref.read(speechVoiceSettingsProvider.notifier).ready();
     if (next.source == CompanionVoiceSource.deepseek) {
       final speech = await ref.read(deepSeekSpeechProvider)();
@@ -187,10 +188,13 @@ class _VoiceCallPageState extends ConsumerState<VoiceCallPage> with WidgetsBindi
         speech.close();
       }
     }
-    if (!mounted) return;
+    // A later choice has the last word, whichever answer comes back first.
+    if (!mounted || mine != _settling) return;
     if (next.source != CompanionVoiceSource.deepseek) unawaited(ref.read(speechSpeakerProvider).ready(next));
     _voice = next;
   }
+
+  int _settling = 0;
 
   Future<void> _start() async {
     final pcm = ref.read(streamingPcmCaptureProvider);

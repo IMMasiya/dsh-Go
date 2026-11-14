@@ -175,7 +175,11 @@ class _CompanionBackdropState extends ConsumerState<CompanionBackdrop> {
 Future<void> showCallBackdropSheet(BuildContext context, {bool inCall = false}) => showAppSheet<void>(
   context,
   isScrollControlled: true,
-  builder: (sheet) => SafeArea(top: false, child: _BackdropChooser(inCall: inCall)),
+  // Scrolls on a short screen (a phone on its side): the in-call rows are below the fold there.
+  builder: (sheet) => SafeArea(
+    top: false,
+    child: SingleChildScrollView(child: _BackdropChooser(inCall: inCall)),
+  ),
 );
 
 class _BackdropChooser extends ConsumerStatefulWidget {
