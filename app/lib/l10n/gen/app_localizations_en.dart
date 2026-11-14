@@ -23437,6 +23437,35 @@ class L10nEn extends L10n {
   }
 
   @override
+  String get tavernDraftTrial => 'Try it';
+
+  @override
+  String get tavernDraftTrialSubtitle => 'A few lines with the draft in a chat of its own; real chats aren\'t touched';
+
+  @override
+  String get tavernDraftTrialNote => 'The model is really asked and billed as used; four lines at most.';
+
+  @override
+  String tavernDraftTrialLine(int n) {
+    return 'Line $n';
+  }
+
+  @override
+  String get tavernDraftTrialMore => 'Add a line';
+
+  @override
+  String get tavernDraftTrialPlay => 'Start';
+
+  @override
+  String get tavernDraftTrialRunning => 'Playing…';
+
+  @override
+  String get tavernDraftTrialDone => 'Done';
+
+  @override
+  String get tavernDraftTrialUnsupported => 'This draft can\'t be tried yet';
+
+  @override
   String get updateCheck => 'Check for updates';
 
   @override

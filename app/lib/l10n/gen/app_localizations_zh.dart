@@ -22242,6 +22242,35 @@ class L10nZh extends L10n {
   }
 
   @override
+  String get tavernDraftTrial => '试玩';
+
+  @override
+  String get tavernDraftTrialSubtitle => '用草稿在一段临时对话里聊几句，真实对话不受影响';
+
+  @override
+  String get tavernDraftTrialNote => '会真的请求模型，按实际用量计费；最多四句。';
+
+  @override
+  String tavernDraftTrialLine(int n) {
+    return '第 $n 句';
+  }
+
+  @override
+  String get tavernDraftTrialMore => '再加一句';
+
+  @override
+  String get tavernDraftTrialPlay => '开始试玩';
+
+  @override
+  String get tavernDraftTrialRunning => '正在试…';
+
+  @override
+  String get tavernDraftTrialDone => '试完了';
+
+  @override
+  String get tavernDraftTrialUnsupported => '这份草稿暂时没法试玩';
+
+  @override
   String get updateCheck => '检查更新';
 
   @override

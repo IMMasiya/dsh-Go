@@ -23,8 +23,46 @@ class _Run implements TavernAuthoringRun {
   Future<void> cancel() async => cancelled = true;
 }
 
+/// A trial the engine started: what it shows so far, and whether it was stopped.
+class _Simulation implements TavernAuthoringSimulationTask {
+  var cancelled = false;
+
+  @override
+  String get requestId => 't1';
+
+  @override
+  TavernAuthoringSimulationResult get view => const TavernAuthoringSimulationResult(
+    requestId: 't1',
+    captureId: 'engine-capture',
+    draftId: 'd1',
+    draftRevision: 1,
+    changeIds: [],
+    status: TavernAuthoringSimulationStatus.running,
+    origin: {},
+    turns: [],
+    requests: [],
+    usage: {},
+    cleanup: {},
+    issues: [],
+  );
+
+  @override
+  Future<TavernAuthoringSimulationResult> get result => Completer<TavernAuthoringSimulationResult>().future;
+
+  @override
+  Future<void> cancel() async => cancelled = true;
+}
+
 class _Authoring extends PreviewTavern {
   _Authoring() : super(tick: Duration.zero);
+
+  TavernAuthoringSimulationRequest? tried;
+
+  @override
+  TavernAuthoringSimulationTask simulateAuthoringDraft(TavernAuthoringSimulationRequest request) {
+    tried = request;
+    return _Simulation();
+  }
 
   _Run? started;
 
@@ -50,6 +88,32 @@ void main() {
     await run.cancel();
     expect(engine.started?.runId, 'r1');
     expect(engine.started!.cancelled, isTrue);
+  });
+
+  test('a trial asked for before it opens shows nothing run yet, then the engine\'s own', () async {
+    final opening = Completer<Tavern>();
+    final deferred = DeferredTavern(opening.future);
+    final trial = deferred.simulateAuthoringDraft(
+      TavernAuthoringSimulationRequest(
+        requestId: 't1',
+        draftId: 'd1',
+        draftRevision: 1,
+        changeIds: const [],
+        context: const TavernAuthoringSampleContext(characterResourceId: 'character:lin'),
+        userInputs: const ['你好'],
+        at: DateTime.utc(2026, 11, 14),
+        seed: 1,
+      ),
+    );
+    expect(trial.requestId, 't1');
+    expect(trial.view.status, TavernAuthoringSimulationStatus.running);
+    expect(trial.view.turns, isEmpty);
+
+    final engine = _Authoring();
+    opening.complete(engine);
+    await trial.cancel();
+    expect(engine.tried!.userInputs, ['你好']);
+    expect(trial.view.captureId, 'engine-capture');
   });
 
   test('calls and streams wait for the tavern to open; configure reaches it then', () async {

@@ -5,6 +5,7 @@ import 'package:dsh_app/tavern/tavern_authoring.dart';
 import 'package:dsh_app/tavern/tavern_preview.dart';
 import 'package:dsh_app/tavern/tavern_provider.dart';
 import 'package:dsh_app/ui/tavern/tavern_draft_page.dart';
+import 'package:dsh_app/ui/tavern/tavern_draft_trial_page.dart';
 import 'package:dsh_app/ui/tavern/tavern_drafts_page.dart';
 import 'package:dsh_app/ui/theme/theme.dart';
 import 'package:dsh_tavern/dsh_tavern.dart';
@@ -47,6 +48,16 @@ class _Drafts extends PreviewTavern {
   TavernAuthoringException? applyError;
 
   TavernAuthoringRunRequest? asked;
+
+  TavernAuthoringSimulationRequest? tried;
+  final trial = _Trial();
+
+  @override
+  TavernAuthoringSimulationTask simulateAuthoringDraft(TavernAuthoringSimulationRequest request) {
+    tried = request;
+    return trial;
+  }
+
   final run = _Run();
 
   TavernAuthoringDraft get _draft => TavernAuthoringDraft(
@@ -156,6 +167,42 @@ class _Drafts extends PreviewTavern {
     asked = request;
     return run;
   }
+}
+
+TavernAuthoringSimulationResult _trialResult(
+  TavernAuthoringSimulationStatus status, {
+  List<TavernAuthoringSimulationTurn> turns = const [],
+  Map<String, Object?> usage = const {},
+}) => TavernAuthoringSimulationResult(
+  requestId: 'trial1',
+  captureId: 'c',
+  draftId: 'draft1',
+  draftRevision: 4,
+  changeIds: const ['c1'],
+  status: status,
+  origin: const {},
+  turns: turns,
+  requests: const [],
+  usage: usage,
+  cleanup: const {},
+  issues: const [],
+);
+
+class _Trial implements TavernAuthoringSimulationTask {
+  final done = Completer<TavernAuthoringSimulationResult>();
+  var cancelled = false;
+
+  @override
+  String get requestId => 'trial1';
+
+  @override
+  TavernAuthoringSimulationResult get view => _trialResult(TavernAuthoringSimulationStatus.running);
+
+  @override
+  Future<TavernAuthoringSimulationResult> get result => done.future;
+
+  @override
+  Future<void> cancel() async => cancelled = true;
 }
 
 class _Run implements TavernAuthoringRun {
@@ -333,5 +380,58 @@ void main() {
     expect(tavern.created!.single.physicalResourceId, _card.physicalResourceId);
     expect(find.byType(TavernDraftPage), findsOneWidget);
     expect(_change('c1'), findsOneWidget);
+  });
+
+  testWidgets('试玩 plays the ticked changes for the lines typed, then shows the reply and what it used', (tester) async {
+    final tavern = _Drafts();
+    await _open(
+      tester,
+      tavern,
+      home: TavernDraftTrialPage(draft: tavern._draft, changeIds: const ['c1']),
+    );
+    await tester.enterText(find.byKey(const ValueKey('tavern-draft-trial-line-0')), '你好');
+    await tester.tap(find.byKey(const ValueKey('tavern-draft-trial-play')));
+    await tester.pump();
+    final asked = tavern.tried!;
+    expect(asked.userInputs, ['你好']);
+    expect(asked.changeIds, ['c1']);
+    expect(asked.draftRevision, 4);
+    expect(asked.context.characterResourceId, _card.physicalResourceId);
+    expect(find.byKey(const ValueKey('tavern-draft-trial-stop')), findsOneWidget);
+
+    tavern.trial.done.complete(
+      _trialResult(
+        TavernAuthoringSimulationStatus.completed,
+        turns: [
+          TavernAuthoringSimulationTurn(
+            index: 1,
+            input: '你好',
+            status: TavernAuthoringSimulationStatus.completed,
+            helpers: const [],
+            hookIssues: const [],
+            message: TavernMessage(
+              nodeId: 'n2',
+              role: TavernRole.character,
+              speaker: '林晚',
+              text: '你又来了。',
+              at: DateTime.utc(2026, 11, 14),
+            ),
+          ),
+        ],
+        usage: {
+          'version': 1,
+          'requestCount': 1,
+          'fields': {
+            'prompt_tokens': {'exactKnownSubtotal': '120', 'complete': true},
+            'completion_tokens': {'exactKnownSubtotal': '8', 'complete': true},
+            'cache_hit_tokens': {'exactKnownSubtotal': '0', 'complete': true},
+          },
+        },
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('你又来了。'), findsOneWidget);
+    expect(find.textContaining('输入 120（缓存 0）· 输出 8'), findsOneWidget);
+    expect(find.byKey(const ValueKey('tavern-draft-trial-play')), findsOneWidget);
   });
 }

@@ -29,6 +29,7 @@ import '../theme/theme.dart';
 import 'tavern_character_page.dart';
 import 'tavern_draft_history_page.dart';
 import 'tavern_draft_prompt_page.dart';
+import 'tavern_draft_trial_page.dart';
 
 class TavernDraftPage extends ConsumerStatefulWidget {
   const TavernDraftPage({super.key, required this.draftId});
@@ -134,10 +135,7 @@ class _TavernDraftPageState extends ConsumerState<TavernDraftPage> {
       final check = await _tavern.previewAuthoringDraft(
         draft.id,
         draftRevision: draft.draftRevision,
-        changeIds: [
-          for (final c in draft.changes)
-            if (_selected.contains(c.id)) c.id,
-        ],
+        changeIds: _ticked,
       );
       if (mounted && _draft?.draftRevision == check.draftRevision) setState(() => _check = check);
     } on TavernAuthoringException {
@@ -230,6 +228,13 @@ class _TavernDraftPageState extends ConsumerState<TavernDraftPage> {
   }
 
   // Apply, save as, catch up ------------------------------------------------
+
+  /// Every ticked change, in the draft's order: what the prompt and the trial
+  /// put in.
+  List<String> get _ticked => [
+    for (final c in _draft!.changes)
+      if (_selected.contains(c.id)) c.id,
+  ];
 
   /// The ticked changes of [source] not applied yet, in the draft's order.
   List<String> _picked(TavernAuthoringSource source) => [
@@ -692,23 +697,22 @@ class _TavernDraftPageState extends ConsumerState<TavernDraftPage> {
             tooltip: l10n.tavernDraftHistory,
             onPressed: () => unawaited(Navigator.of(context).push(TavernDraftHistoryPage.route(applicable.single))),
           ),
-        if (draft.sources.any((s) => s.target.kind == TavernAuthoringTargetKind.character))
+        if (draft.sources.any((s) => s.target.kind == TavernAuthoringTargetKind.character)) ...[
           GlassIconButton(
             key: const ValueKey('tavern-draft-prompt'),
             icon: AppIcons.preview,
             tooltip: l10n.tavernDraftPrompt,
-            onPressed: () => unawaited(
-              Navigator.of(context).push(
-                TavernDraftPromptPage.route(
-                  draft: draft,
-                  changeIds: [
-                    for (final c in draft.changes)
-                      if (_selected.contains(c.id)) c.id,
-                  ],
-                ),
-              ),
-            ),
+            onPressed: () =>
+                unawaited(Navigator.of(context).push(TavernDraftPromptPage.route(draft: draft, changeIds: _ticked))),
           ),
+          GlassIconButton(
+            key: const ValueKey('tavern-draft-trial'),
+            icon: AppIcons.play,
+            tooltip: l10n.tavernDraftTrial,
+            onPressed: () =>
+                unawaited(Navigator.of(context).push(TavernDraftTrialPage.route(draft: draft, changeIds: _ticked))),
+          ),
+        ],
         GlassIconButton(
           key: const ValueKey('tavern-draft-delete'),
           icon: AppIcons.delete,

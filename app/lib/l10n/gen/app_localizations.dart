@@ -40634,6 +40634,60 @@ abstract class L10n {
   /// **'已报告：输入 {prompt} · 输出 {completion}（有请求没报告用量）'**
   String tavernDraftUsagePartial(String prompt, String completion);
 
+  /// No description provided for @tavernDraftTrial.
+  ///
+  /// In zh, this message translates to:
+  /// **'试玩'**
+  String get tavernDraftTrial;
+
+  /// No description provided for @tavernDraftTrialSubtitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'用草稿在一段临时对话里聊几句，真实对话不受影响'**
+  String get tavernDraftTrialSubtitle;
+
+  /// No description provided for @tavernDraftTrialNote.
+  ///
+  /// In zh, this message translates to:
+  /// **'会真的请求模型，按实际用量计费；最多四句。'**
+  String get tavernDraftTrialNote;
+
+  /// No description provided for @tavernDraftTrialLine.
+  ///
+  /// In zh, this message translates to:
+  /// **'第 {n} 句'**
+  String tavernDraftTrialLine(int n);
+
+  /// No description provided for @tavernDraftTrialMore.
+  ///
+  /// In zh, this message translates to:
+  /// **'再加一句'**
+  String get tavernDraftTrialMore;
+
+  /// No description provided for @tavernDraftTrialPlay.
+  ///
+  /// In zh, this message translates to:
+  /// **'开始试玩'**
+  String get tavernDraftTrialPlay;
+
+  /// No description provided for @tavernDraftTrialRunning.
+  ///
+  /// In zh, this message translates to:
+  /// **'正在试…'**
+  String get tavernDraftTrialRunning;
+
+  /// No description provided for @tavernDraftTrialDone.
+  ///
+  /// In zh, this message translates to:
+  /// **'试完了'**
+  String get tavernDraftTrialDone;
+
+  /// No description provided for @tavernDraftTrialUnsupported.
+  ///
+  /// In zh, this message translates to:
+  /// **'这份草稿暂时没法试玩'**
+  String get tavernDraftTrialUnsupported;
+
   /// No description provided for @updateCheck.
   ///
   /// In zh, this message translates to:

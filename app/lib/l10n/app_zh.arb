@@ -13683,6 +13683,22 @@
       }
     }
   },
+  "tavernDraftTrial": "试玩",
+  "tavernDraftTrialSubtitle": "用草稿在一段临时对话里聊几句，真实对话不受影响",
+  "tavernDraftTrialNote": "会真的请求模型，按实际用量计费；最多四句。",
+  "tavernDraftTrialLine": "第 {n} 句",
+  "@tavernDraftTrialLine": {
+    "placeholders": {
+      "n": {
+        "type": "int"
+      }
+    }
+  },
+  "tavernDraftTrialMore": "再加一句",
+  "tavernDraftTrialPlay": "开始试玩",
+  "tavernDraftTrialRunning": "正在试…",
+  "tavernDraftTrialDone": "试完了",
+  "tavernDraftTrialUnsupported": "这份草稿暂时没法试玩",
   "updateCheck": "检查更新",
   "updateAutoCheck": "自动检查更新",
   "updateAutoCheckDaily": "每天检查一次",

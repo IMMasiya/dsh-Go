@@ -147,6 +147,11 @@ class DeferredTavern implements Tavern {
     TavernAuthoringPromptHost? host,
   }) => _DeferredTask(request.requestId, _ready.then((t) => t.previewAuthoringPrompt(request, host: host)));
 
+  /// Returned at once with its id; the trial itself runs once the engine is open.
+  @override
+  TavernAuthoringSimulationTask simulateAuthoringDraft(TavernAuthoringSimulationRequest request) =>
+      _DeferredSimulation(request, _ready.then((t) => t.simulateAuthoringDraft(request)));
+
   /// Returned at once with its id; the run itself starts once the engine is open.
   @override
   TavernAuthoringRun startAuthoringRun(
@@ -1082,4 +1087,43 @@ class _DeferredTask<T> implements TavernAuthoringTask<T> {
 
   @override
   Future<void> cancel() async => (await _task).cancel();
+}
+
+/// A trial asked for before the engine opened: until its task is there, the
+/// view says that nothing has run yet.
+class _DeferredSimulation implements TavernAuthoringSimulationTask {
+  _DeferredSimulation(this._request, this._task) {
+    unawaited(_task.then((task) => _started = task, onError: (Object _) => null));
+  }
+
+  final TavernAuthoringSimulationRequest _request;
+  final Future<TavernAuthoringSimulationTask> _task;
+  TavernAuthoringSimulationTask? _started;
+
+  @override
+  String get requestId => _request.requestId;
+
+  @override
+  Future<TavernAuthoringSimulationResult> get result => _task.then((task) => task.result);
+
+  @override
+  Future<void> cancel() async => (await _task).cancel();
+
+  @override
+  TavernAuthoringSimulationResult get view =>
+      _started?.view ??
+      TavernAuthoringSimulationResult(
+        requestId: _request.requestId,
+        captureId: '',
+        draftId: _request.draftId,
+        draftRevision: _request.draftRevision,
+        changeIds: _request.changeIds,
+        status: TavernAuthoringSimulationStatus.running,
+        origin: const {},
+        turns: const [],
+        requests: const [],
+        usage: const {},
+        cleanup: const {},
+        issues: const [],
+      );
 }
