@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:dsh_app/speech/call/voice_call.dart';
 import 'package:dsh_app/speech/deepseek_speech.dart';
 import 'package:dsh_app/speech/speech_audio.dart';
@@ -57,12 +59,16 @@ void main() {
     const channel = MethodChannel('dsh/diagnostics');
     final messenger = TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
     final records = <Map<Object?, Object?>>[];
+    final writes = Completer<void>();
     messenger.setMockMethodCallHandler(channel, (call) async {
       expect(call.method, 'recordVoiceStage');
       records.add(call.arguments as Map<Object?, Object?>);
-      return null;
+      return writes.future;
     });
-    addTearDown(() => messenger.setMockMethodCallHandler(channel, null));
+    addTearDown(() {
+      if (!writes.isCompleted) writes.complete();
+      messenger.setMockMethodCallHandler(channel, null);
+    });
     final rig = _Rig();
     rig.cloud.text = 'PRIVATE_TRANSCRIPT';
     await rig.call.start();

@@ -308,8 +308,7 @@ class DeepSeekOut implements SpeechOut {
       return;
     }
     if (_pieces.isNotEmpty && identical(_pieces.first, piece) && _written == 0) {
-      await const DiagnosticsChannel().recordVoiceStage('synthesis_requested', backend: 'deepseek');
-      if (_stopped) return;
+      unawaited(const DiagnosticsChannel().recordVoiceStage('synthesis_requested', backend: 'deepseek'));
     }
     piece.fetch = speech
         .synthesize(piece.text, voice: voice)

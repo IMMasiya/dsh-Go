@@ -229,8 +229,7 @@ class VoiceCallController extends ChangeNotifier {
         return;
       }
     }
-    await const DiagnosticsChannel().recordVoiceStage('preparing');
-    if (_disposed || _phase == CallPhase.ended) return;
+    unawaited(const DiagnosticsChannel().recordVoiceStage('preparing'));
     final started = await audio.startCall(bargeIn: _bargeIn);
     if (_disposed || _phase == CallPhase.ended) {
       if (started == CallStart.ok) unawaited(audio.stopCall());
@@ -306,8 +305,7 @@ class VoiceCallController extends ChangeNotifier {
     if (!_over) _set(CallPhase.thinking);
     String text;
     try {
-      await const DiagnosticsChannel().recordVoiceStage('recognizing', backend: 'cloud');
-      if (_disposed || _phase == CallPhase.ended || mine != _recognizing) return;
+      unawaited(const DiagnosticsChannel().recordVoiceStage('recognizing', backend: 'cloud'));
       text = await cloud.transcribe(wav);
       unawaited(const DiagnosticsChannel().recordVoiceStage('recognized', backend: 'cloud'));
     } catch (error) {

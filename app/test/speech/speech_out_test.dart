@@ -4,6 +4,7 @@ import 'dart:typed_data';
 import 'package:dsh_app/speech/deepseek_speech.dart';
 import 'package:dsh_app/speech/speech_audio.dart';
 import 'package:dsh_app/speech/speech_out.dart';
+import 'package:flutter/services.dart' show MethodChannel;
 import 'package:flutter_test/flutter_test.dart';
 
 import 'speech_fakes.dart';
@@ -83,6 +84,28 @@ print('不读');
   });
 
   group('DeepSeekOut', () {
+    test('pending diagnostic persistence never reorders synthesis requests', () async {
+      const channel = MethodChannel('dsh/diagnostics');
+      final writes = Completer<void>();
+      final messenger = TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+      messenger.setMockMethodCallHandler(channel, (call) async {
+        if ((call.arguments as Map)['stage'] == 'synthesis_requested') return writes.future;
+        return null;
+      });
+      addTearDown(() {
+        if (!writes.isCompleted) writes.complete();
+        messenger.setMockMethodCallHandler(channel, null);
+      });
+      final audio = FakeAudio();
+      final speech = FakeDeepSeek();
+      final out = DeepSeekOut(() async => speech, audio, call: true);
+      out.add('今天北京是晴天。最高气温二十度，适合出门散步。');
+      out.finish();
+      await pumpEventQueue();
+      expect(speech.asked, ['今天北京是晴天。', '最高气温二十度，适合出门散步。']);
+      expect(writes.isCompleted, false);
+      out.stop();
+    });
     test('streams every piece, in order, into one native stream, then ends it', () async {
       final audio = FakeAudio();
       final speech = FakeDeepSeek();
