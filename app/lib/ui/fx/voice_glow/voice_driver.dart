@@ -3,8 +3,8 @@
 // The voice driver, ported from `voiceDriver.ts` (and its SwiftUI twin
 // `VoiceGlowEngine.swift`): it shapes the raw level (noise gate, soft
 // saturation), follows it with an attack / release envelope, slides the
-// lobes sideways with the flow, gathers them into one beam while processing
-// (`voice-processing.ts`), folds in the idle breathing and the hue drift.
+// lobes sideways with the flow, gathers them into one beam where a
+// [VoiceBeamMotion] asks for it, folds in the idle breathing and the hue drift.
 // Pure maths — the painter reads the result each frame.
 
 import 'dart:math' as math;
@@ -157,6 +157,8 @@ class VoiceLevelScale {
   double raw(double value, double sensitivity) {
     final floor = floorDb, ceil = ceilDb;
     if (floor == null || ceil == null) return _clamp01(value);
+    // 0 is the meter's floor — silence — not the floor's quiet hum: let the gate close.
+    if (value <= 0) return 0;
     final db = floor + _clamp01(value) * (ceil - floor);
     return math.pow(10, db / 20) * _baseGain * sensitivity;
   }
@@ -166,127 +168,34 @@ class VoiceLevelScale {
   static const _baseGain = 5.0;
 }
 
-/// The Pro processing sweep's tuning (`ProcessingTuning`).
+/// 光的大尺度姿态（作者的 `motion` 属性）：七团光收成一束的程度、这束光
+/// 在哪、移动时多宽、收拢时保持多亮、贴多少圆角。默认 [rest] 就是随声的光。
 @immutable
-class VoiceProcessingTuning {
-  const VoiceProcessingTuning({
-    required this.duration,
-    required this.level,
-    required this.travel,
-    required this.curve,
-    required this.cornerFollow,
-    required this.ease,
+class VoiceBeamMotion {
+  const VoiceBeamMotion({
+    required this.gather,
+    this.offset = 0,
+    this.stretch = 0,
+    this.heldLevel = 0,
+    this.cornerFollow = 0,
   });
 
-  /// The tuning per host type (`PROCESSING_DEFAULTS`).
-  factory VoiceProcessingTuning.of(VoiceBeamType type) => switch (type) {
-    VoiceBeamType.standard => const VoiceProcessingTuning(
-      duration: 1.1,
-      level: 0.55,
-      travel: 1.55,
-      curve: 2.1,
-      cornerFollow: 0.45,
-      ease: 0.6,
-    ),
-    VoiceBeamType.pill => const VoiceProcessingTuning(
-      duration: 1.1,
-      level: 0.55,
-      travel: 2,
-      curve: 2.1,
-      cornerFollow: 0,
-      ease: 0.6,
-    ),
-    VoiceBeamType.mobile => const VoiceProcessingTuning(
-      duration: 1.05,
-      level: 0.35,
-      travel: 1,
-      curve: 2.1,
-      cornerFollow: 0.4,
-      ease: 0.6,
-    ),
-  };
+  static const rest = VoiceBeamMotion(gather: 0);
 
-  /// Seconds per pass (left to right, or back).
-  final double duration;
+  /// 0 the voice glow at rest … 1 the lobes gathered into one beam.
+  final double gather;
 
-  /// How lit the glow is held while processing, 0–1.
-  final double level;
+  /// Where the beam sits, in half-widths of the lobe ring (0 = centre).
+  final double offset;
 
-  /// How far the beam travels to each side, × half the lobe ring.
-  final double travel;
+  /// Extra width while it moves, 0–1.
+  final double stretch;
 
-  /// How it eases into each turn: 1 constant speed, 2 smooth, higher dwells.
-  final double curve;
+  /// The level the glow is held at while gathered, 0–1.
+  final double heldLevel;
 
   /// How much the beam rides the host's corner arcs, 0–1.
   final double cornerFollow;
-
-  /// Seconds the morph in and out takes.
-  final double ease;
-}
-
-/// The processing sweep (`createVoiceProcessing`): once the voice is in and
-/// something works on it, the lobes gather into one compact beam that
-/// travels the range left to right and back, eased at each turn, morphing in
-/// and out on its own clock.
-class VoiceProcessing {
-  double _blend = 0;
-  double _clock = 0;
-
-  /// 0 the voice glow … 1 the lobes gathered into one beam.
-  double gather = 0;
-
-  /// Where the beam sits, in half-widths of the lobe ring (0 = centre).
-  double offset = 0;
-
-  /// Extra width while it moves, 0–1.
-  double stretch = 0;
-
-  /// The level the glow is held at while gathered.
-  double heldLevel = 0;
-
-  /// How much the beam rides the host's corner arcs.
-  double cornerFollow = 0;
-
-  void step(double dt, {required bool active, required VoiceProcessingTuning tuning, required bool reducedMotion}) {
-    final duration = math.max(0.05, tuning.duration);
-    // A fresh start begins the pass at the centre, heading right, so the beam
-    // grows out of the voice glow instead of jumping to one end.
-    if (active && _blend < 0.001 && _clock == 0) _clock = duration / 2;
-    final ease = math.max(0.05, tuning.ease);
-    _blend = voiceFollow(_blend, active ? 1 : 0, dt, ease * 0.9, ease * 0.8);
-    if (active) {
-      _clock += dt;
-    } else if (_blend < 0.001) {
-      _clock = 0;
-    }
-    _write(tuning, reducedMotion);
-  }
-
-  /// Jumps to where [active] leads, for a still frame.
-  void settle({required bool active, required VoiceProcessingTuning tuning}) {
-    _blend = active ? 1 : 0;
-    _clock = 0;
-    _write(tuning, true);
-  }
-
-  void _write(VoiceProcessingTuning tuning, bool reducedMotion) {
-    // The morph runs on an eased copy of the blend, so the gather, the
-    // narrowing and the travel read as one.
-    final morph = _smoothstep(_blend);
-    final passes = _clock / math.max(0.05, tuning.duration);
-    final index = passes.floor();
-    final u = passes - index;
-    final k = math.max(1.0, tuning.curve);
-    final eased = u < 0.5 ? 0.5 * math.pow(2 * u, k) : 1 - 0.5 * math.pow(2 - 2 * u, k);
-    final pass = reducedMotion ? 0.0 : (index.isEven ? 2 * eased - 1 : 1 - 2 * eased);
-    gather = morph;
-    offset = morph * tuning.travel * pass;
-    // A little wider mid-pass than at the turns.
-    stretch = 1 - pass * pass;
-    heldLevel = _clamp01(tuning.level);
-    cornerFollow = _clamp01(tuning.cornerFollow);
-  }
 }
 
 /// Everything the driver and the painter need, resolved from the type, the
@@ -319,7 +228,6 @@ class VoiceGlowConfig {
     required this.colors,
     required this.bandColors,
     required this.radius,
-    required this.processing,
     required this.reducedMotion,
   });
 
@@ -356,7 +264,6 @@ class VoiceGlowConfig {
     bool staticColors = false,
     double? hueRange,
     double? hueDuration,
-    VoiceProcessingTuning? processing,
     bool reducedMotion = false,
   }) {
     final theme = dark ? VoiceThemePreset.dark : VoiceThemePreset.light;
@@ -407,7 +314,6 @@ class VoiceGlowConfig {
               ? VoiceBandColors.theme(scheme, dark: dark)
               : (dark ? VoiceBandColors.dark : VoiceBandColors.light)),
       radius: radius,
-      processing: processing ?? VoiceProcessingTuning.of(type),
       reducedMotion: reducedMotion,
     );
   }
@@ -444,7 +350,6 @@ class VoiceGlowConfig {
   final List<Color> colors;
   final VoiceBandColors bandColors;
   final double radius;
-  final VoiceProcessingTuning processing;
   final bool reducedMotion;
 
   double get scale => geometry.scale;
@@ -462,7 +367,7 @@ class VoiceGlowEngine {
 
   /// The fade in / out, 0–1, linear (drawn through [shownPresence]).
   double presence = 0;
-  final processing = VoiceProcessing();
+  VoiceBeamMotion _motion = VoiceBeamMotion.rest;
 
   // ── Frame ──
   /// Layer opacity factor (`--vb-glow`).
@@ -499,13 +404,14 @@ class VoiceGlowEngine {
   bool get visible => presence > 0.002;
 
   /// Advances one frame of [dt] seconds. [input] is the 0–1 number from
-  /// outside, read through the config's [VoiceLevelScale]. [frozen] holds
-  /// everything but the fade (`paused`).
+  /// outside, read through the config's [VoiceLevelScale]; [motion] is the
+  /// glow's large-scale pose this frame. [frozen] holds everything but the
+  /// fade (`paused`).
   void step(
     VoiceGlowConfig c, {
     required double dt,
     required double input,
-    required bool processing,
+    VoiceBeamMotion motion = VoiceBeamMotion.rest,
     required bool active,
     bool frozen = false,
   }) {
@@ -526,36 +432,40 @@ class VoiceGlowEngine {
       };
       _bands[b] = voiceFollow(_bands[b], voiceShape(rawBand, c.threshold * 0.6), dt, c.attack, c.release * 1.15);
     }
-    this.processing.step(dt, active: processing, tuning: c.processing, reducedMotion: c.reducedMotion);
+    _motion = motion;
     _compose(c, dt);
   }
 
-  /// A still frame for reduced motion: the envelope and the processing morph
-  /// jump to where they lead, nothing drifts. The level still shows — the
-  /// glow is a meter.
-  void still(VoiceGlowConfig c, {required double input, required bool processing, required bool active}) {
+  /// A still frame for reduced motion: the envelope jumps to where it leads,
+  /// nothing drifts. The level still shows — the glow is a meter.
+  void still(
+    VoiceGlowConfig c, {
+    required double input,
+    VoiceBeamMotion motion = VoiceBeamMotion.rest,
+    required bool active,
+  }) {
     presence = active ? 1 : 0;
     final raw = c.levelScale.raw(input, c.sensitivity);
     level = voiceShape(raw, c.threshold);
     _bands[0] = voiceShape(raw, c.threshold * 0.6);
     _bands[1] = voiceShape(raw * 0.72, c.threshold * 0.6);
     _bands[2] = voiceShape(raw * (0.6 + 0.4 * math.sin(2)), c.threshold * 0.6);
-    this.processing.settle(active: processing, tuning: c.processing);
+    _motion = motion;
     _compose(c, 0);
   }
 
   void _compose(VoiceGlowConfig c, double dt) {
     final g = c.geometry;
     final span = voiceLobeSpan * math.max(0.1, g.lobeSpacing);
-    final m = processing;
-    morph = m.gather;
-    cornerFollow = m.cornerFollow;
+    final m = _motion;
+    morph = _clamp01(m.gather);
+    cornerFollow = _clamp01(m.cornerFollow);
     cx = c.reducedMotion ? 0 : m.offset * span / 2;
     // The cluster: lobes pulled to 40% of their resting spread, the visible
     // range narrowed to match, a little wider while it moves.
     final gather = 1 - morph * 0.6;
     maskWidth = 1 - morph * 0.45;
-    final passWidth = 1 + morph * 0.3 * m.stretch;
+    final passWidth = 1 + morph * 0.3 * _clamp01(m.stretch);
 
     // Idle breathing folded under the voice.
     final breathe = c.reducedMotion ? 0.5 : 0.5 + 0.5 * math.sin(2 * math.pi * _t / c.breatheDuration);
@@ -563,7 +473,7 @@ class VoiceGlowEngine {
     // The held level waits for the first quarter of the morph — the time the
     // tail hooks take to collapse — so they never light up with it.
     final held = _smoothstep(_clamp01((morph - 0.25) / 0.75));
-    final eff = math.max(voiced, m.heldLevel * held);
+    final eff = math.max(voiced, _clamp01(m.heldLevel) * held);
 
     glow = 0.15 + 0.85 * eff;
     h = 0.5 + math.max(0, g.reach) * eff;

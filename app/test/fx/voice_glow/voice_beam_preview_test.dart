@@ -24,7 +24,7 @@ double demoLevel(double t) {
   return math.min(1, math.pow(syllable, 1.6) * (0.5 + 0.5 * word) * rough * 1.05);
 }
 
-enum _Phase { voice, processing, speaking, idle }
+enum _Phase { voice, speaking, idle }
 
 class _Scene {
   const _Scene(
@@ -35,7 +35,7 @@ class _Scene {
     required this.radius,
     this.variant,
     this.seed = const Color(0xFF4A6CF7),
-    this.timeline = const [(_Phase.voice, 4.5), (_Phase.processing, 3.0), (_Phase.idle, 1.5)],
+    this.timeline = const [(_Phase.voice, 4.5), (_Phase.idle, 2.0)],
     this.pixelRatio = 2,
     this.everyFrames = 5,
     this.hold,
@@ -58,7 +58,7 @@ class _Scene {
 
 const _chat = Size(371, 104);
 const _phone = Size(402, 874);
-const _call = [(_Phase.voice, 4.5), (_Phase.processing, 3.0), (_Phase.speaking, 4.0), (_Phase.idle, 1.0)];
+const _call = [(_Phase.voice, 4.5), (_Phase.idle, 1.5), (_Phase.speaking, 4.0), (_Phase.idle, 1.0)];
 
 /// One frame after 2.5 s at a held level, for each state the web harness
 /// (headless Edge running the original stylesheet and driver) also shoots.
@@ -69,16 +69,16 @@ List<_Scene> _compare() => [
     (VoiceBeamType.pill, const Size(150, 44), 22.0, 3.0),
   ])
     for (final brightness in Brightness.values)
-      for (final (hold, processing) in [(0.0, false), (0.5, false), (0.9, false), (0.0, true)])
+      for (final hold in [0.0, 0.5, 0.9])
         _Scene(
-          'cmp_${type.name}_${brightness.name}_${processing ? 'processing' : 'l${(hold * 10).round()}'}',
+          'cmp_${type.name}_${brightness.name}_l${(hold * 10).round()}',
           type: type,
           brightness: brightness,
           size: size,
           radius: radius,
           variant: VoiceBeamColorVariant.colorful,
           hold: hold,
-          timeline: [(processing ? _Phase.processing : _Phase.voice, 2.5)],
+          timeline: const [(_Phase.voice, 2.5)],
           pixelRatio: ratio,
           everyFrames: 100000,
         ),
@@ -170,7 +170,6 @@ void main() {
     for (final scene in _scenes.where((s) => s.name.startsWith(_only))) {
       final dir = Directory('$_out/${scene.name}')..createSync(recursive: true);
       final level = ValueNotifier<double>(0);
-      var processing = false;
       var scale = VoiceLevelScale.linear;
       late StateSetter set;
       final boundary = GlobalKey();
@@ -192,7 +191,6 @@ void main() {
                       type: scene.type,
                       level: level,
                       levelScale: scale,
-                      processing: processing,
                       colorVariant: scene.variant,
                       borderRadius: scene.radius,
                       child: Container(
@@ -214,10 +212,7 @@ void main() {
       );
       var t = 0.0, frame = 0, shot = 0;
       for (final (index, (phase, seconds)) in scene.timeline.indexed) {
-        set(() {
-          processing = phase == _Phase.processing;
-          scale = phase == _Phase.speaking ? VoiceLevelScale.playback : VoiceLevelScale.linear;
-        });
+        set(() => scale = phase == _Phase.speaking ? VoiceLevelScale.playback : VoiceLevelScale.linear);
         final end = t + seconds;
         while (t < end - 1e-9) {
           level.value = switch (phase) {

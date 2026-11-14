@@ -9,25 +9,26 @@ import 'voice_driver.dart';
 import 'voice_painter.dart';
 import 'voice_style.dart';
 
-export 'voice_driver.dart' show VoiceLevelScale, VoiceProcessingTuning;
+export 'voice_driver.dart' show VoiceBeamMotion, VoiceLevelScale;
 export 'voice_style.dart' show VoiceBandColors, VoiceBeamColorVariant, VoiceBeamType;
 
 /// 随人声从底边升起的彩色光（Libraries.dev 的 Voice / `voice-glow`）。
 ///
-/// 光沿 [child] 的底边居中，随 [level] 升起、变宽、泛开；[processing] 时
-/// 七团光收成一束，在范围里左右来回扫（转写中、思考中）。
+/// 光沿 [child] 的底边居中，随 [level] 升起、变宽、泛开。
 ///
-/// - 输入框听写：`type: standard`，[level] 接听写音量，转写时 [processing]。
-/// - 通话页底部：`type: mobile`，听时接麦克风音量，思考时 [processing]，
-///   她说话时接朗读音量——换音源时把 [levelScale] 一起换掉。
+/// - 输入框听写：`type: standard`，[level] 接听写音量。
+/// - 通话页底部：`type: mobile`，听时接麦克风音量，她说话时接朗读音量——
+///   换音源时把 [levelScale] 一起换掉。
 ///
+/// 作者的 MIT 包里没有「处理中」那段左右扫（那是 Libraries Pro 的），只有
+/// 底层的 [motion]：把光收成一束、放到某处。
 /// 光画在 [child] 上面、[foreground] 下面：要保持清晰的文字和按钮放进
 /// [foreground]（作者的做法是给它们 `z-index: 5`）。光按 [borderRadius]
 /// 裁成圆角，[child] 本身不裁。
 ///
 /// 音量从外面给，组件不碰麦克风。每帧读一次 [level]，不会让外面重建。
-/// 系统要求减少动画时没有循环：不呼吸、不流动、不扫，只在 [level] 变化时
-/// 换一帧（光是音量表，音量照样显示）。
+/// 系统要求减少动画时没有循环：不呼吸、不流动，只在 [level] 或 [motion]
+/// 变化时换一帧（光是音量表，音量照样显示）。
 class VoiceBeam extends StatefulWidget {
   const VoiceBeam({
     super.key,
@@ -36,8 +37,7 @@ class VoiceBeam extends StatefulWidget {
     this.type = VoiceBeamType.standard,
     this.level,
     this.levelScale = VoiceLevelScale.linear,
-    this.processing = false,
-    this.processingTuning,
+    this.motion,
     this.active = true,
     this.paused = false,
     this.colorVariant,
@@ -85,11 +85,8 @@ class VoiceBeam extends StatefulWidget {
   /// [VoiceLevelScale.playback]。
   final VoiceLevelScale levelScale;
 
-  /// 处理中：光收成一束左右来回扫，开关时平滑过渡。
-  final bool processing;
-
-  /// 扫的节奏；不给就按 [type] 用作者的调校。
-  final VoiceProcessingTuning? processingTuning;
+  /// 光的大尺度姿态，每帧读一次（作者的 `motion`）；不给就是随声的光。
+  final ValueListenable<VoiceBeamMotion>? motion;
 
   /// 关掉时光淡出（0.5 s），打开时淡入（0.6 s）；淡完就停帧。
   final bool active;
@@ -188,7 +185,8 @@ class _VoiceBeamState extends State<VoiceBeam> with SingleTickerProviderStateMix
   late VoiceGlowConfig _config;
   Duration? _last;
   bool _reduced = false;
-  ValueListenable<double>? _listening;
+  ValueListenable<double>? _levelHeard;
+  ValueListenable<VoiceBeamMotion>? _motionHeard;
 
   @override
   void didChangeDependencies() {
@@ -238,19 +236,23 @@ class _VoiceBeamState extends State<VoiceBeam> with SingleTickerProviderStateMix
       staticColors: w.staticColors,
       hueRange: w.hueRange,
       hueDuration: w.hueDuration,
-      processing: w.processingTuning,
       reducedMotion: _reduced,
     );
   }
 
   /// Runs the ticker while something moves: active and not paused, or
   /// fading out. Reduced motion never runs it; it redraws a still frame
-  /// whenever the level changes instead.
+  /// whenever the level or the motion changes instead.
   void _sync() {
     final level = _reduced ? widget.level : null;
-    if (!identical(level, _listening)) {
-      _listening?.removeListener(_still);
-      _listening = level?..addListener(_still);
+    if (!identical(level, _levelHeard)) {
+      _levelHeard?.removeListener(_still);
+      _levelHeard = level?..addListener(_still);
+    }
+    final motion = _reduced ? widget.motion : null;
+    if (!identical(motion, _motionHeard)) {
+      _motionHeard?.removeListener(_still);
+      _motionHeard = motion?..addListener(_still);
     }
     if (_reduced) {
       if (_ticker.isActive) _ticker.stop();
@@ -267,7 +269,12 @@ class _VoiceBeamState extends State<VoiceBeam> with SingleTickerProviderStateMix
   }
 
   void _still() {
-    _engine.still(_config, input: widget.level?.value ?? 0, processing: widget.processing, active: widget.active);
+    _engine.still(
+      _config,
+      input: widget.level?.value ?? 0,
+      motion: widget.motion?.value ?? VoiceBeamMotion.rest,
+      active: widget.active,
+    );
     _repaint.notify();
   }
 
@@ -279,7 +286,7 @@ class _VoiceBeamState extends State<VoiceBeam> with SingleTickerProviderStateMix
       _config,
       dt: dt,
       input: widget.level?.value ?? 0,
-      processing: widget.processing,
+      motion: widget.motion?.value ?? VoiceBeamMotion.rest,
       active: widget.active,
       frozen: widget.paused,
     );
@@ -289,7 +296,8 @@ class _VoiceBeamState extends State<VoiceBeam> with SingleTickerProviderStateMix
 
   @override
   void dispose() {
-    _listening?.removeListener(_still);
+    _levelHeard?.removeListener(_still);
+    _motionHeard?.removeListener(_still);
     _ticker.dispose();
     _repaint.dispose();
     super.dispose();
