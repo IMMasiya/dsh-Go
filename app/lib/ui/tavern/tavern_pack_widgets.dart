@@ -103,6 +103,10 @@ class TavernPackIssueText extends StatelessWidget {
   }
 }
 
+/// Imports whose outcome is not known yet, by pack version and cast id: the
+/// next try is the same operation, never a second character.
+final _unresolvedCastImports = <String, ({String operationId, String? domainId})>{};
+
 /// Makes a new character from [cast] of the pack version [packRef], after
 /// asking. The mapping when it was adopted, else null (said why).
 Future<TavernCastMapping?> importTavernPackCast(
@@ -120,27 +124,50 @@ Future<TavernCastMapping?> importTavernPackCast(
   );
   if (!ok || !context.mounted) return null;
   final tavern = ref.read(tavernProvider);
-  final operationId = tavernNewId();
+  final key = '${packRef.installedPackId}\u0000${packRef.packVersion}\u0000${cast.resource}\u0000${cast.localId}';
+  final intent = _unresolvedCastImports[key] ??= (operationId: tavernNewId(), domainId: null);
   TavernCastImportResult result;
   try {
     result = await tavern.importDshgoCastMember(
       tavernPackCastSource(packRef, cast),
       cast.localId,
-      operationId: operationId,
+      operationId: intent.operationId,
+      domainId: intent.domainId,
     );
-    // Not known yet: the history of this very operation says.
+    // Not known yet: the history of this very operation says; a later try
+    // goes again in the same domain.
     if (result.receipt.committed == null) {
-      result = await tavern.readDshgoCastImport(result.receipt.outcome.domainId, operationId) ?? result;
+      final domainId = result.receipt.outcome.domainId;
+      _unresolvedCastImports[key] = (operationId: intent.operationId, domainId: domainId);
+      result = await tavern.readDshgoCastImport(domainId, intent.operationId) ?? result;
     }
+  } on TavernGameplayException catch (e) {
+    // Refused: nothing was made; a new try is a new intent.
+    _unresolvedCastImports.remove(key);
+    if (context.mounted) showBriefNotice(context, tavernPackErrorText(l10n, e));
+    return null;
   } on Object catch (e) {
     if (context.mounted) showBriefNotice(context, tavernPackErrorText(l10n, e));
     return null;
   }
+  if (result.receipt.committed != null) _unresolvedCastImports.remove(key);
   if (!context.mounted) return result.mapping;
   switch (result.receipt.committed) {
     case true:
       ref.invalidate(tavernCharactersProvider);
       showBriefNotice(context, l10n.tavernPackCastImported(cast.name));
+      // Made, with something to know (media that did not come along).
+      if (result.receipt.issues.isNotEmpty) {
+        unawaited(
+          showTavernPackIssues(
+            context,
+            title: l10n.tavernPackCastImported(cast.name),
+            issues: [
+              for (final issue in result.receipt.issues) {'type': issue.type, 'message': issue.message},
+            ],
+          ),
+        );
+      }
     case false:
       unawaited(
         showTavernPackIssues(

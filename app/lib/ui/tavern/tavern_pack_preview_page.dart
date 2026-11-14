@@ -150,7 +150,12 @@ class _TavernPackPreviewPageState extends ConsumerState<TavernPackPreviewPage> {
       if (e.value case final v? when v is! Map && v is! List)
         '${e.key}: $v'
       else if (e.value case {'installedPackId': _, 'packVersion': final version})
-        '${e.key}: $version',
+        '${e.key}: $version'
+      // A field's winner and the sources it shadowed say where it came from.
+      else if (e.value case final Map<String, Object?> source when e.key == 'winner')
+        '${e.key}: (${_plain(source)})'
+      else if (e.value case final List<Object?> sources when e.key == 'shadowed' && sources.isNotEmpty)
+        '${e.key}: ${[for (final s in sources.whereType<Map<String, Object?>>()) '(${_plain(s)})'].join(' ')}',
   ].join(' · ');
 }
 

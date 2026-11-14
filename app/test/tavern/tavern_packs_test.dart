@@ -52,7 +52,17 @@ TavernPackVersion _version(String id, String version, {bool removed = false}) =>
     'resources': [
       {
         'localId': 'rules',
-        'reports': const [],
+        'reports': [
+          {
+            'pointer': '/0',
+            'report': {
+              'kind': 'regex',
+              'findings': [
+                {'code': 'regex_flag', 'message': '不认识的标志', 'path': r'$.findRegex', 'kind': 'warning'},
+              ],
+            },
+          },
+        ],
         'regexDiagnostics': [
           {'status': 'incompatible', 'path': r'$.findRegex'},
         ],
@@ -218,9 +228,14 @@ void main() {
     expect(find.byKey(const ValueKey('tavern-pack-cast-m-guard')), findsOneWidget);
     expect(find.text('守卫'), findsOneWidget);
     expect(
-      find.descendant(of: find.byKey(const ValueKey('tavern-pack-resource-rules')), matching: find.text('1 条提示')),
+      find.descendant(of: find.byKey(const ValueKey('tavern-pack-resource-rules')), matching: find.text('2 条提示')),
       findsOneWidget,
     );
+    await tester.tap(find.byKey(const ValueKey('tavern-pack-resource-rules')));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('不认识的标志'), findsOneWidget);
+    await tester.tapAt(const Offset(20, 20));
+    await tester.pumpAndSettle();
 
     await tester.scrollUntilVisible(find.byKey(const ValueKey('tavern-pack-withdraw')), 200);
     await tester.tap(find.byKey(const ValueKey('tavern-pack-withdraw')));
@@ -249,17 +264,25 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('上移'));
     await tester.pumpAndSettle();
+    // A new one too: the reorder names the saved two, so it goes first.
+    await tester.tap(find.byKey(const ValueKey('tavern-pack-add')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('tavern-pack-add-i-alpha')));
+    await tester.pumpAndSettle();
 
     await tester.tap(save);
     await tester.pumpAndSettle();
     expect(tavern.saves.single.expected, _revision);
-    expect(tavern.saves.single.edits, [
-      {'kind': 'setEnabled', 'bindingId': 'a', 'enabled': false},
+    final edits = tavern.saves.single.edits;
+    expect(edits.take(2), [
       {
         'kind': 'reorder',
         'bindingIds': ['b', 'a'],
       },
+      {'kind': 'setEnabled', 'bindingId': 'a', 'enabled': false},
     ]);
+    expect(edits.last, containsPair('kind', 'create'));
+    expect(edits, hasLength(3));
     expect(find.text('已保存'), findsOneWidget);
   });
 

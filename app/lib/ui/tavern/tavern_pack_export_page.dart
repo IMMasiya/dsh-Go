@@ -30,22 +30,30 @@ mixin _TwoStep<W extends ConsumerStatefulWidget> on ConsumerState<W> {
   _Previewed? previewed;
   bool busy = false;
 
+  /// Counts changes, so a preview asked for before one is not shown after it.
+  int _edits = 0;
+
   TavernGameplayExportRequest request();
   Future<Uint8List> produce(TavernGameplayExportRequest request, String previewId);
-  Future<void> deliver(Uint8List bytes);
+
+  /// Hands on [bytes] made for [request] (its format and names, not the
+  /// form's as it is now).
+  Future<void> deliver(TavernGameplayExportRequest request, Uint8List bytes);
 
   void changed(VoidCallback change) => setState(() {
     change();
+    _edits++;
     previewed = null;
   });
 
   Future<void> preview() async {
     final l10n = context.l10n;
     final r = request();
+    final asked = _edits;
     setState(() => busy = true);
     try {
       final p = await ref.read(tavernProvider).previewGameplayExport(r);
-      if (mounted) setState(() => previewed = (request: r, preview: p));
+      if (mounted && asked == _edits) setState(() => previewed = (request: r, preview: p));
     } on Object catch (e) {
       if (mounted) showBriefNotice(context, tavernPackErrorText(l10n, e));
     }
@@ -57,7 +65,9 @@ mixin _TwoStep<W extends ConsumerStatefulWidget> on ConsumerState<W> {
     final p = previewed!;
     setState(() => busy = true);
     try {
-      await deliver(await produce(p.request, p.preview.previewId));
+      final bytes = await produce(p.request, p.preview.previewId);
+      if (!mounted) return;
+      await deliver(p.request, bytes);
     } on TavernGameplayException catch (e) {
       // The sources moved, or something now blocks: look again first.
       if (mounted) setState(() => previewed = null);
@@ -191,12 +201,14 @@ class _TavernPackCardExportPageState extends ConsumerState<TavernPackCardExportP
       ref.read(tavernProvider).exportCharacterWithPacks(request, expectedPreviewId: previewId);
 
   @override
-  Future<void> deliver(Uint8List bytes) =>
-      ref.read(tavernCardSinkProvider)(tavernCardFileName(widget.character.name, _format), bytes, switch (_format) {
-        TavernCardFormat.png => 'image/png',
-        TavernCardFormat.json => 'application/json',
-        TavernCardFormat.charx => 'application/zip',
-      });
+  Future<void> deliver(TavernGameplayExportRequest request, Uint8List bytes) {
+    final format = request.format!;
+    return ref.read(tavernCardSinkProvider)(tavernCardFileName(widget.character.name, format), bytes, switch (format) {
+      TavernCardFormat.png => 'image/png',
+      TavernCardFormat.json => 'application/json',
+      TavernCardFormat.charx => 'application/zip',
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -267,12 +279,16 @@ class _TavernPackCardExportPageState extends ConsumerState<TavernPackCardExportP
 /// A new .dshpack from a draft: its character's declarations and changes,
 /// the chosen lorebooks as resources. Installing it is a separate step.
 class TavernPackDraftExportPage extends ConsumerStatefulWidget {
-  const TavernPackDraftExportPage({super.key, required this.draft});
+  const TavernPackDraftExportPage({super.key, required this.draft, required this.cardResourceId});
 
   final TavernAuthoringDraft draft;
 
-  static Route<void> route(TavernAuthoringDraft draft) =>
-      MaterialPageRoute<void>(builder: (_) => TavernPackDraftExportPage(draft: draft));
+  /// The draft's character source the pack is made from.
+  final String cardResourceId;
+
+  static Route<void> route(TavernAuthoringDraft draft, String cardResourceId) => MaterialPageRoute<void>(
+    builder: (_) => TavernPackDraftExportPage(draft: draft, cardResourceId: cardResourceId),
+  );
 
   @override
   ConsumerState<TavernPackDraftExportPage> createState() => _TavernPackDraftExportPageState();
@@ -287,7 +303,7 @@ class _TavernPackDraftExportPageState extends ConsumerState<TavernPackDraftExpor
   Uint8List? _made;
 
   TavernAuthoringSource get _card =>
-      widget.draft.sources.firstWhere((s) => s.target.kind == TavernAuthoringTargetKind.character);
+      widget.draft.sources.firstWhere((s) => s.physicalResourceId == widget.cardResourceId);
 
   String get _defaultId => switch (_card.base['data']) {
     {'name': final String name} when name.trim().isNotEmpty => name.trim(),
@@ -352,10 +368,10 @@ class _TavernPackDraftExportPageState extends ConsumerState<TavernPackDraftExpor
       ref.read(tavernProvider).exportGameplayPackFromDraft(request, expectedPreviewId: previewId);
 
   @override
-  Future<void> deliver(Uint8List bytes) async {
+  Future<void> deliver(TavernGameplayExportRequest request, Uint8List bytes) async {
     setState(() => _made = bytes);
     await ref.read(tavernCardSinkProvider)(
-      tavernChatFileName('${_packId.text.trim()} ${_version.text.trim()}', extension: 'dshpack'),
+      tavernChatFileName('${request.packId} ${request.packVersion}', extension: 'dshpack'),
       bytes,
       'application/zip',
     );
@@ -365,8 +381,8 @@ class _TavernPackDraftExportPageState extends ConsumerState<TavernPackDraftExpor
     final l10n = context.l10n;
     try {
       final result = await ref.read(tavernProvider).importGameplayPack(_made!);
-      ref.invalidate(tavernPacksProvider);
       if (!mounted) return;
+      ref.invalidate(tavernPacksProvider);
       showBriefNotice(context, l10n.tavernPackInstalled(tavernPackTitle(result.version), result.ref.packVersion));
     } on Object catch (e) {
       if (mounted) showBriefNotice(context, tavernPackErrorText(l10n, e));
@@ -413,8 +429,10 @@ class _TavernPackDraftExportPageState extends ConsumerState<TavernPackDraftExpor
                     _ => l10n.tavernLorebook,
                   },
                   value: _books.contains(s.physicalResourceId),
-                  onChanged: (on) =>
-                      changed(() => on ? _books.add(s.physicalResourceId) : _books.remove(s.physicalResourceId)),
+                  onChanged: (on) => changed(() {
+                    on ? _books.add(s.physicalResourceId) : _books.remove(s.physicalResourceId);
+                    _made = null;
+                  }),
                 ),
             ],
           ),

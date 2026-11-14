@@ -575,7 +575,7 @@ class _TavernDraftPageState extends ConsumerState<TavernDraftPage> {
                   key: ValueKey('tavern-draft-pack-$id'),
                   onPressed: _busy
                       ? null
-                      : () => unawaited(Navigator.of(context).push(TavernPackDraftExportPage.route(_draft!))),
+                      : () => unawaited(Navigator.of(context).push(TavernPackDraftExportPage.route(_draft!, id))),
                   child: Text(l10n.tavernPackDraftExport),
                 ),
               if (findings.isEmpty && picked.isNotEmpty)

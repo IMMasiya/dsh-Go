@@ -40,9 +40,10 @@ class _TavernPacksPageState extends ConsumerState<TavernPacksPage> {
     if (picked.isEmpty || !mounted) return;
     setState(() => _busy = true);
     TavernPackVersionRef? opened;
+    final tavern = ref.read(tavernProvider);
     for (final file in picked) {
       try {
-        final result = await ref.read(tavernProvider).importGameplayPack(file.bytes);
+        final result = await tavern.importGameplayPack(file.bytes);
         final title = tavernPackTitle(result.version);
         if (mounted) {
           showBriefNotice(
@@ -57,8 +58,8 @@ class _TavernPacksPageState extends ConsumerState<TavernPacksPage> {
         if (mounted) showBriefNotice(context, l10n.tavernImportFileFailed(file.fileName, tavernPackErrorText(l10n, e)));
       }
     }
-    ref.invalidate(tavernPacksProvider);
     if (!mounted) return;
+    ref.invalidate(tavernPacksProvider);
     setState(() => _busy = false);
     // One file: straight to what it installed.
     if (picked.length == 1 && opened != null) await _open(opened);

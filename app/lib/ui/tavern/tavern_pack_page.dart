@@ -47,10 +47,11 @@ class _TavernPackPageState extends ConsumerState<TavernPackPage> {
 
   Future<void> _export(TavernPackVersion version) async {
     final l10n = context.l10n;
+    final sink = ref.read(tavernCardSinkProvider);
     try {
       final bytes = await ref.read(tavernProvider).exportInstalledGameplayPack(version.ref);
       final name = tavernChatFileName('${tavernPackTitle(version)} ${version.ref.packVersion}', extension: 'dshpack');
-      await ref.read(tavernCardSinkProvider)(name, bytes, 'application/zip');
+      await sink(name, bytes, 'application/zip');
     } on Object catch (e) {
       if (mounted) showBriefNotice(context, tavernPackErrorText(l10n, e));
     }
@@ -82,31 +83,36 @@ class _TavernPackPageState extends ConsumerState<TavernPackPage> {
     } on Object catch (e) {
       if (mounted) showBriefNotice(context, tavernPackErrorText(l10n, e));
     }
+    if (!mounted) return;
     ref.invalidate(tavernPacksProvider);
-    if (mounted) setState(() => _busy = false);
+    setState(() => _busy = false);
   }
 
   Future<void> _pickVersion(List<TavernPackVersion> versions) => showAppSheet<void>(
     context,
     builder: (sheet) => SafeArea(
       top: false,
-      child: SheetGroup(
-        margin: const EdgeInsets.fromLTRB(16, 16, 16, 12),
-        children: [
-          for (final v in versions.reversed)
-            SettingsTile(
-              key: ValueKey('tavern-pack-version-${v.ref.packVersion}'),
-              tinted: false,
-              title: v.ref.packVersion,
-              value: v.removed ? Text(context.l10n.tavernPackWithdrawnLabel) : null,
-              trailing: v.ref.packVersion == _version ? const Icon(AppIcons.selected, size: 20) : null,
-              chevron: false,
-              onTap: () {
-                Navigator.of(sheet).pop();
-                setState(() => _version = v.ref.packVersion);
-              },
-            ),
-        ],
+      child: SingleChildScrollView(
+        child: SheetGroup(
+          margin: const EdgeInsets.fromLTRB(16, 16, 16, 12),
+          children: [
+            for (final v in versions.reversed)
+              SettingsTile(
+                key: ValueKey('tavern-pack-version-${v.ref.packVersion}'),
+                tinted: false,
+                title: v.ref.packVersion,
+                value: v.removed ? Text(context.l10n.tavernPackWithdrawnLabel) : null,
+                trailing: v.ref.packVersion == _version ? const Icon(AppIcons.selected, size: 20) : null,
+                chevron: false,
+                onTap: () {
+                  Navigator.of(sheet).pop();
+                  // Another version is another withdrawal, with its own id.
+                  if (v.ref.packVersion != _version) _removal = null;
+                  setState(() => _version = v.ref.packVersion);
+                },
+              ),
+          ],
+        ),
       ),
     ),
   );

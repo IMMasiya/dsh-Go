@@ -64,14 +64,18 @@ List<TavernPackCast> tavernPackCast(TavernPackVersion version) {
 TavernCastSource tavernPackCastSource(TavernPackVersionRef ref, TavernPackCast cast) =>
     cast.resource ? TavernCastSource.packResource(packRef: ref) : TavernCastSource.pack(packRef: ref);
 
-/// The diagnostic rows of one installed resource (its reports and regex
-/// diagnostics), as the import saved them.
+/// The diagnostics of one installed resource as the import saved them: each
+/// report's findings (with the pointer of what it checked), then the regex
+/// diagnostics.
 List<Map<String, Object?>> tavernPackResourceIssues(TavernPackVersion version, String localId) {
   for (final row in version.inspection['resources'] as List<Object?>? ?? const []) {
     if (row is Map<String, Object?> && row['localId'] == localId) {
       return [
-        for (final r in [...?row['reports'] as List<Object?>?, ...?row['regexDiagnostics'] as List<Object?>?])
-          if (r is Map<String, Object?>) r,
+        for (final r in (row['reports'] as List<Object?>? ?? const []).cast<Map<String, Object?>>())
+          for (final f
+              in ((r['report']! as Map<String, Object?>)['findings']! as List<Object?>).cast<Map<String, Object?>>())
+            {'pointer': r['pointer'], ...f},
+        ...(row['regexDiagnostics'] as List<Object?>? ?? const []).cast<Map<String, Object?>>(),
       ];
     }
   }
@@ -81,13 +85,14 @@ List<Map<String, Object?>> tavernPackResourceIssues(TavernPackVersion version, S
 /// One diagnostic as a line. Their fields differ by checker, so this takes
 /// what is there: what it is, what it says, where.
 String tavernPackIssueLine(Map<String, Object?> issue) {
-  final report = issue['report'];
-  if (report is Map<String, Object?>) {
-    return [?issue['pointer'] as String?, tavernPackIssueLine(report)].join(' · ');
-  }
   final what = issue['code'] ?? issue['type'] ?? issue['status'] ?? issue['kind'];
-  final where = issue['sourcePath'] ?? issue['path'] ?? issue['pointer'];
-  return [?what?.toString(), ?issue['message']?.toString(), ?where?.toString()].join(' · ');
+  final where = issue['sourcePath'] ?? issue['path'];
+  return [
+    if (issue['pointer'] case final String pointer when pointer.isNotEmpty && pointer != where) pointer,
+    ?what?.toString(),
+    ?issue['message']?.toString(),
+    ?where?.toString(),
+  ].join(' · ');
 }
 
 /// Whether a diagnostic row stops something (export issues say so).

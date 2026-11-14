@@ -119,6 +119,16 @@ class _TavernPackBindingsPageState extends ConsumerState<TavernPackBindingsPage>
 
   List<TavernPackBindingEdit> _edits() {
     final edits = <TavernPackBindingEdit>[];
+    // The store's reorder lists every binding the batch has so far: before
+    // any create, those are exactly the saved ones.
+    final order = [
+      for (final r in _rows)
+        if (r.saved != null) r.id,
+    ];
+    final before = [
+      for (final b in [..._snapshot!.bindings]..sort((a, b) => a.order.compareTo(b.order))) b.bindingId,
+    ];
+    if (!listEquals(order, before)) edits.add(TavernPackBindingEdit.reorder(bindingIds: order));
     for (final r in _rows) {
       final s = r.saved;
       if (s == null) {
@@ -146,14 +156,6 @@ class _TavernPackBindingsPageState extends ConsumerState<TavernPackBindingsPage>
         edits.add(TavernPackBindingEdit.setCastImports(bindingId: r.id, imports: r.castImports));
       }
     }
-    final order = [
-      for (final r in _rows)
-        if (r.saved != null) r.id,
-    ];
-    final before = [
-      for (final b in [..._snapshot!.bindings]..sort((a, b) => a.order.compareTo(b.order))) b.bindingId,
-    ];
-    if (!listEquals(order, before)) edits.add(TavernPackBindingEdit.reorder(bindingIds: order));
     return edits;
   }
 
@@ -195,10 +197,11 @@ class _TavernPackBindingsPageState extends ConsumerState<TavernPackBindingsPage>
     } on Object catch (e) {
       if (mounted) showBriefNotice(context, l10n.tavernPackUnanswered(tavernPackErrorText(l10n, e)));
     }
+    if (!mounted) return;
     ref
       ..invalidate(tavernPackScopeProvider(widget.scope))
       ..invalidate(tavernPacksProvider);
-    if (mounted) setState(() => _busy = false);
+    setState(() => _busy = false);
   }
 
   Future<void> _add(List<TavernPackVersion> installed) {
@@ -216,23 +219,25 @@ class _TavernPackBindingsPageState extends ConsumerState<TavernPackBindingsPage>
                 padding: const EdgeInsets.all(24),
                 child: EmptyView(icon: AppIcons.zip, title: context.l10n.tavernPacksEmpty, compact: true),
               )
-            : SheetGroup(
-                margin: const EdgeInsets.fromLTRB(16, 16, 16, 12),
-                children: [
-                  for (final v in newest.values)
-                    SettingsTile(
-                      key: ValueKey('tavern-pack-add-${v.ref.installedPackId}'),
-                      icon: AppIcons.zip,
-                      tinted: false,
-                      title: tavernPackTitle(v),
-                      value: Text(v.ref.packVersion),
-                      chevron: false,
-                      onTap: () {
-                        Navigator.of(sheet).pop();
-                        _edit(() => _rows.add(_Row.added(v.ref)));
-                      },
-                    ),
-                ],
+            : SingleChildScrollView(
+                child: SheetGroup(
+                  margin: const EdgeInsets.fromLTRB(16, 16, 16, 12),
+                  children: [
+                    for (final v in newest.values)
+                      SettingsTile(
+                        key: ValueKey('tavern-pack-add-${v.ref.installedPackId}'),
+                        icon: AppIcons.zip,
+                        tinted: false,
+                        title: tavernPackTitle(v),
+                        value: Text(v.ref.packVersion),
+                        chevron: false,
+                        onTap: () {
+                          Navigator.of(sheet).pop();
+                          _edit(() => _rows.add(_Row.added(v.ref)));
+                        },
+                      ),
+                  ],
+                ),
               ),
       ),
     );
@@ -306,22 +311,24 @@ class _TavernPackBindingsPageState extends ConsumerState<TavernPackBindingsPage>
     context,
     builder: (sheet) => SafeArea(
       top: false,
-      child: SheetGroup(
-        margin: const EdgeInsets.fromLTRB(16, 16, 16, 12),
-        children: [
-          for (final v in versions.reversed)
-            SettingsTile(
-              key: ValueKey('tavern-pack-pick-${v.ref.packVersion}'),
-              tinted: false,
-              title: v.ref.packVersion,
-              trailing: v.ref.packVersion == row.packRef.packVersion ? const Icon(AppIcons.selected, size: 20) : null,
-              chevron: false,
-              onTap: () {
-                Navigator.of(sheet).pop();
-                _edit(() => row.packRef = v.ref);
-              },
-            ),
-        ],
+      child: SingleChildScrollView(
+        child: SheetGroup(
+          margin: const EdgeInsets.fromLTRB(16, 16, 16, 12),
+          children: [
+            for (final v in versions.reversed)
+              SettingsTile(
+                key: ValueKey('tavern-pack-pick-${v.ref.packVersion}'),
+                tinted: false,
+                title: v.ref.packVersion,
+                trailing: v.ref.packVersion == row.packRef.packVersion ? const Icon(AppIcons.selected, size: 20) : null,
+                chevron: false,
+                onTap: () {
+                  Navigator.of(sheet).pop();
+                  _edit(() => row.packRef = v.ref);
+                },
+              ),
+          ],
+        ),
       ),
     ),
   );
@@ -333,42 +340,44 @@ class _TavernPackBindingsPageState extends ConsumerState<TavernPackBindingsPage>
     builder: (sheet) => StatefulBuilder(
       builder: (sheet, setSheet) => SafeArea(
         top: false,
-        child: SheetGroup(
-          margin: const EdgeInsets.fromLTRB(16, 16, 16, 12),
-          title: context.l10n.tavernPackCastMapping,
-          children: [
-            for (final member in tavernPackCast(version))
-              SettingsTile(
-                key: ValueKey('tavern-pack-map-${member.localId}'),
-                icon: AppIcons.profile,
-                tinted: false,
-                title: member.name,
-                value: Text(
-                  row.castImports.containsKey(member.localId)
-                      ? context.l10n.tavernPackCastMapped
-                      : context.l10n.tavernPackCastImportAction,
+        child: SingleChildScrollView(
+          child: SheetGroup(
+            margin: const EdgeInsets.fromLTRB(16, 16, 16, 12),
+            title: context.l10n.tavernPackCastMapping,
+            children: [
+              for (final member in tavernPackCast(version))
+                SettingsTile(
+                  key: ValueKey('tavern-pack-map-${member.localId}'),
+                  icon: AppIcons.profile,
+                  tinted: false,
+                  title: member.name,
+                  value: Text(
+                    row.castImports.containsKey(member.localId)
+                        ? context.l10n.tavernPackCastMapped
+                        : context.l10n.tavernPackCastImportAction,
+                  ),
+                  chevron: false,
+                  onTap: () async {
+                    if (row.castImports.containsKey(member.localId)) {
+                      _edit(() => row.castImports = {...row.castImports}..remove(member.localId));
+                    } else {
+                      final mapping = await importTavernPackCast(context, ref, version.ref, member);
+                      if (mapping == null || !mounted) return;
+                      _edit(
+                        () => row.castImports = {
+                          ...row.castImports,
+                          member.localId: TavernCastImportRef(
+                            domainId: mapping.domainId,
+                            operationId: mapping.operationId,
+                          ),
+                        },
+                      );
+                    }
+                    if (sheet.mounted) setSheet(() {});
+                  },
                 ),
-                chevron: false,
-                onTap: () async {
-                  if (row.castImports.containsKey(member.localId)) {
-                    _edit(() => row.castImports = {...row.castImports}..remove(member.localId));
-                  } else {
-                    final mapping = await importTavernPackCast(context, ref, version.ref, member);
-                    if (mapping == null) return;
-                    _edit(
-                      () => row.castImports = {
-                        ...row.castImports,
-                        member.localId: TavernCastImportRef(
-                          domainId: mapping.domainId,
-                          operationId: mapping.operationId,
-                        ),
-                      },
-                    );
-                  }
-                  setSheet(() {});
-                },
-              ),
-          ],
+            ],
+          ),
         ),
       ),
     ),
