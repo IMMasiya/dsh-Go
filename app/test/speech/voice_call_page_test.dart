@@ -203,6 +203,25 @@ void main() {
       await tester.pump(const Duration(milliseconds: 60));
     }
     expect(position().pixels, closeTo(kept, 1));
+
+    // Back at the bottom; her words arrive (the follow is scheduled for the
+    // frame's end) and the reader scrolls up before that frame: they stay up.
+    await tester.drag(list, const Offset(0, -3000));
+    for (var i = 0; i < 10; i++) {
+      await tester.pump(const Duration(milliseconds: 60));
+    }
+    expect(position().pixels, closeTo(position().maxScrollExtent, 1));
+    audio.emit(const SpeechStart(over: false));
+    audio.emit(Utterance(Uint8List(32044), const Duration(seconds: 2)));
+    for (var i = 0; i < 5; i++) {
+      await tester.pump(const Duration(milliseconds: 60));
+    }
+    conversation.reply(reply, done: true);
+    await tester.drag(list, const Offset(0, 300));
+    for (var i = 0; i < 10; i++) {
+      await tester.pump(const Duration(milliseconds: 60));
+    }
+    expect(position().pixels, lessThan(position().maxScrollExtent - 100));
   });
 
   testWidgets('字幕 before anything is said: the page says so', (tester) async {
