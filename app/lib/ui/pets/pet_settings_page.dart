@@ -70,9 +70,9 @@ class PetSettingsPage extends ConsumerWidget {
           SettingsSection(
             children: [
               SettingsTile(
+                spot: Spots.workshop,
                 icon: AppIcons.workshop,
                 tinted: false,
-                title: l10n.workshopTitle,
                 subtitle: l10n.workshopEntrySubtitle,
                 onTap: () => unawaited(
                   Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => const WorkshopScreen())),

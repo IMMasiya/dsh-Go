@@ -16880,6 +16880,9 @@ class L10nEn extends L10n {
   String get searchNeedsAnimations => 'Available with animations on';
 
   @override
+  String get searchNeedsWorkshop => 'This build doesn\'t include the Workshop';
+
+  @override
   String get searchNeedsChat => 'Available with a chat open';
 
   @override
@@ -17056,6 +17059,9 @@ class L10nEn extends L10n {
 
   @override
   String get searchKwPetOverlayFraming => 'framing,full body,half body';
+
+  @override
+  String get searchKwWorkshop => 'workshop,download pets,download companions,share pets,submit';
 
   @override
   String get searchKwBlur => 'blur,glass,frosted';

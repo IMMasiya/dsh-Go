@@ -214,7 +214,7 @@ App 只在「需要判断」时提议适配，任一条件成立即可：缺 4 �
 - **工坊里的伙伴包只有 `character/`**：不含 runtime；安装方必须已有本机 runtime（缺了报错，不自动下载）。服务端限制：≤1000 个文件、单文件 ≤16 MiB、展开 ≤64 MiB；moc3 必须是 `MOC3` 头且枚举 1–6；`character.json` 的 `name`/`model` 必需，`author`/`license`/`source` 元数据要一致；所有 model3 引用的文件必须真的在角色目录里。
 - **工坊导出会重建数据**：只带模型引用到的文件、已知字段；未知配置、UserData、动作事件文本、声音和 Sound 引用不导出；明确命名的 `LICENSE`/`COPYING`/`NOTICE` 文本会保留。适配表保留 params/emotions/actions/zones/tail/pose/framing。
 - **直接分享 zip** 也可以：对方在 App 里手动导入。但模型的版权、授权和 Live2D 条款由分享者负责。
-- **现状提醒**：工坊目前没有部署、也没在真机上跑过；App 要在构建时用 `--dart-define=DSH_WORKSHOP_ORIGIN=<地址>` 接上工坊才显示入口（`tooling/build-apk.sh -- --dart-define=...`，仓库当前构建不给这个值）。看不到「创意工坊」就说明这个版本没接。
+- **现状提醒**：工坊已部署在 `go.dshtui.com`，App 默认就接它，但还没在真机上走过一遍投稿。看不到「创意工坊」说明这个版本早于默认接入，或构建时把 `DSH_WORKSHOP_ORIGIN` 设成了空串。
 - **Live2D 条款**：允许用户加载任意模型的应用属于 Live2D 的 Expandable Application，官方写明完全免费的应用原则上不批；随包鲸娘是单独取得作者授权分发的。第三方模型公开分发/上架前，需要先与 Live2D 确认条款（仓库设计文档里仍是待确认项）。
 
 ## 8. 明确不支持 / 会被拒

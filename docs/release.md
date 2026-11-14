@@ -475,6 +475,7 @@ App 这边（`app/lib/update/delta.dart`、`app/lib/state/update_state.dart`）�
 | `DSH_UPDATE_FEED=https://…/update.json` | 只换要问的清单，下载仍先试自有站；空串 = 不问清单 |
 | `DSH_UPDATE_MIRRORS=a,b` | 换掉公共加速镜像列表（前缀 + 完整 GitHub 地址）；空串 = 不用 |
 | `DSH_BETA_CHANNEL_ORIGIN` | 换内测通道的域名 |
+| `DSH_WORKSHOP_ORIGIN=https://…` | 换创意工坊的部署，默认 `https://go.dshtui.com`；空串 = 这个包不带工坊入口 |
 
 公共镜像要定期确认还活着，失效的直接从列表删。
 

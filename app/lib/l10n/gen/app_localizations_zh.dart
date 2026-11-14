@@ -16035,6 +16035,9 @@ class L10nZh extends L10n {
   String get searchNeedsAnimations => '开启动画时可用';
 
   @override
+  String get searchNeedsWorkshop => '这个版本没有带创意工坊';
+
+  @override
   String get searchNeedsChat => '打开对话时可用';
 
   @override
@@ -16210,6 +16213,9 @@ class L10nZh extends L10n {
 
   @override
   String get searchKwPetOverlayFraming => '取景,全身,半身';
+
+  @override
+  String get searchKwWorkshop => '工坊,下载宠物,下载伙伴,分享宠物,投稿';
 
   @override
   String get searchKwBlur => '模糊,毛玻璃,玻璃';

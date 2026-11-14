@@ -168,7 +168,7 @@ token 的本地格式门与 Worker 一致，为 1–255 个 `[A-Za-z0-9_]` 字�
 
 ## 页面
 
-页面在 `app/lib/ui/workshop/`，只画 `app/lib/state/workshop_*.dart` 给出的状态，不自己判断能不能装、能不能卸、能不能投。入口有两处：宠物设置页和伙伴小屋菜单各一行「创意工坊」。`workshopAvailableProvider` 为假（构建时没有给 `DSH_WORKSHOP_ORIGIN`）时两行都不出现。
+页面在 `app/lib/ui/workshop/`，只画 `app/lib/state/workshop_*.dart` 给出的状态，不自己判断能不能装、能不能卸、能不能投。入口有两处：宠物设置页和伙伴小屋菜单各一行「创意工坊」。工坊地址默认是 `https://go.dshtui.com`，构建时用 `--dart-define=DSH_WORKSHOP_ORIGIN=<地址>` 换成别的部署；设成空串时 `workshopAvailableProvider` 为假，两行都不出现。
 
 `WorkshopScreen` 是一个列表页，三个页签：
 
