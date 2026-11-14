@@ -13,6 +13,7 @@ export 'src/authoring_seed.dart';
 export 'src/authoring_simulation.dart';
 export 'src/backup.dart';
 export 'src/director.dart';
+export 'src/dshgo_inspection.dart';
 export 'src/engine.dart';
 export 'src/import_report.dart';
 export 'src/inspection.dart';

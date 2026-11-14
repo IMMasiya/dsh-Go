@@ -441,10 +441,8 @@ class _DirectorCoordinator {
       final count = (old?['count'] as int? ?? 0) + 1;
       final own = _map(settings['director']);
       final cardOptions = _map(_map(_map(turn.directorCard?['extensions'])['dshgo'])['director']);
-      final rawEvery = own.containsKey('every') ? own['every'] : cardOptions['every'];
-      final hasEvery = own.containsKey('every') || cardOptions.containsKey('every');
-      final validEvery = rawEvery is int && rawEvery >= 1 && rawEvery <= 1000;
-      final every = validEvery ? rawEvery : 1;
+      final cadence = director_core.directorEvery(settings: own, card: cardOptions);
+      final every = cadence.every;
       final tickId = 'director-tick-${_newStateId()}';
       engine._store.writeAgentRun(
         StoredAgentRun(
@@ -458,7 +456,7 @@ class _DirectorCoordinator {
             'count': count,
             'every': every,
             'scheduled': count % every == 0,
-            if (hasEvery && !validEvery) 'issue': 'invalid_director_every',
+            if (cadence.invalid) 'issue': 'invalid_director_every',
           },
         ),
       );
@@ -476,7 +474,7 @@ class _DirectorCoordinator {
         selection: selection,
         cardRevision: turn.secretCardRevision,
       );
-      if (hasEvery && !validEvery) {
+      if (cadence.invalid) {
         job.issues.add(_directorIssue('invalid_director_every'));
       }
       _admit(job);
