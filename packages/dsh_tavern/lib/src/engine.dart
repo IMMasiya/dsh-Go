@@ -15,6 +15,7 @@ import 'package:sqlite3/sqlite3.dart' show SqliteException;
 import 'api.dart';
 import 'authoring.dart';
 import 'authoring_authority.dart';
+import 'authoring_model_images.dart';
 import 'authoring_preview.dart';
 import 'authoring_render.dart';
 import 'authoring_run.dart';
@@ -70,6 +71,7 @@ part 'engine_prompt_history.dart';
 part 'engine_authoring.dart';
 part 'engine_authoring_apply.dart';
 part 'engine_authoring_run.dart';
+part 'engine_authoring_images.dart';
 part 'engine_authoring_seed.dart';
 part 'engine_authoring_capture.dart';
 part 'engine_authoring_binding.dart';
@@ -498,7 +500,11 @@ class TavernEngine implements Tavern {
   );
 
   @override
-  TavernAuthoringRun startAuthoringRun(TavernAuthoringRunRequest request) => _startAuthoringRun(request);
+  TavernAuthoringRun startAuthoringRun(
+    TavernAuthoringRunRequest request, {
+    TavernAuthoringPromptHost? promptHost,
+    TavernAuthoringPreviewHost? renderHost,
+  }) => _startAuthoringRun(request, promptHost: promptHost, renderHost: renderHost);
   @override
   Future<TavernAuthoringRunSnapshot?> readAuthoringRun(String runId) => _readAuthoringRun(runId);
   @override

@@ -1,16 +1,22 @@
 part of 'engine.dart';
 
 final class _AuthoringRunRecord implements TavernAuthoringRun {
-  _AuthoringRunRecord(this.engine, this.input, this.config, {this.snapshot}) {
+  _AuthoringRunRecord(this.engine, this.input, this.config, {this.snapshot, this.promptHost, this.renderHost}) {
     currentRevision = snapshot?.currentRevision ?? input['draftRevision']! as int;
     if (snapshot != null) {
       answer.write(snapshot!.answer);
     }
     unawaited(_result.future.then<void>((_) {}, onError: (Object _, StackTrace _) {}));
+    unawaited(drained.future.then<void>((_) {}, onError: (Object _, StackTrace _) {}));
   }
   final TavernEngine engine;
   final Map<String, Object?> input;
   final TavernModelConfig? config;
+  final TavernAuthoringPromptHost? promptHost;
+  final TavernAuthoringPreviewHost? renderHost;
+  _AuthoringImageBinding? imageBinding;
+  Object? cleanupFailure;
+  StackTrace? cleanupStack;
   final cancellation = ModelCancellation();
   final drained = Completer<void>();
   final _result = Completer<TavernAuthoringRunSnapshot>();
@@ -30,6 +36,7 @@ final class _AuthoringRunRecord implements TavernAuthoringRun {
   String get draftId => input['draftId']! as String;
   int get revision => currentRevision;
   bool get canPreview => input['previewContext'] != null && engine._counter is EstimatedTokenCounter;
+  bool get canRender => imageBinding != null;
   TavernAuthoringRunSnapshot get publicView => _detachAuthoringRun(view);
   @override
   Future<TavernAuthoringRunSnapshot> get result => _result.future;
@@ -37,6 +44,20 @@ final class _AuthoringRunRecord implements TavernAuthoringRun {
   Future<void> cancel() {
     cancellation.cancel();
     return drained.future;
+  }
+
+  Future<T> waitForChild<T>(Future<T> result, Future<void> childDrained) async {
+    try {
+      return await result;
+    } finally {
+      try {
+        await childDrained;
+      } catch (error, stack) {
+        cleanupFailure = error;
+        cleanupStack = stack;
+        Error.throwWithStackTrace(error, stack);
+      }
+    }
   }
 
   TavernAuthoringRunSnapshot get view {
@@ -185,7 +206,11 @@ final class _AuthoringRequestRecord {
 }
 
 extension _AuthoringRuns on TavernEngine {
-  TavernAuthoringRun _startAuthoringRun(TavernAuthoringRunRequest request) {
+  TavernAuthoringRun _startAuthoringRun(
+    TavernAuthoringRunRequest request, {
+    TavernAuthoringPromptHost? promptHost,
+    TavernAuthoringPreviewHost? renderHost,
+  }) {
     _ensureAdmission();
     final Map<String, Object?> input;
     try {
@@ -226,7 +251,7 @@ extension _AuthoringRuns on TavernEngine {
       );
     }
     _authoringView(_requireAuthoringDraft(request.draftId, request.draftRevision));
-    final record = _AuthoringRunRecord(this, input, config);
+    final record = _AuthoringRunRecord(this, input, config, promptHost: promptHost, renderHost: renderHost);
     _authoringRuns[record.runId] = record;
     _operations.add(record.drained.future);
     try {
@@ -312,9 +337,12 @@ extension _AuthoringRuns on TavernEngine {
       // The returned handle can be stopped before any model request is registered.
       await Future<void>.delayed(Duration.zero);
       record.cancellation.check();
+      if (record.input['renderContext'] != null && record.renderHost != null) {
+        record.imageBinding = _captureAuthoringImageBinding(_modelClient, record.config!, record.cancellation);
+      }
       final draft = _authoringRunDraft(record);
       var messages = <Map<String, Object?>>[
-        {'role': 'system', 'content': _authoringRunPrompt(record.canPreview)},
+        {'role': 'system', 'content': _authoringRunPrompt(record.canPreview, record.canRender)},
         {
           'role': 'user',
           'content': jsonEncode({
@@ -333,6 +361,7 @@ extension _AuthoringRuns on TavernEngine {
             ],
             'changeIds': [for (final change in draft.changes) change.id],
             if (record.canPreview) 'previewContext': record.input['previewContext'],
+            if (record.canRender) 'renderContext': record.input['renderContext'],
           }),
         },
       ];
@@ -344,7 +373,7 @@ extension _AuthoringRuns on TavernEngine {
           'stream': true,
           'thinking': {'type': 'disabled'},
           'messages': messages,
-          'tools': _authoringRunTools(promptPreview: record.canPreview),
+          'tools': _authoringRunTools(promptPreview: record.canPreview, renderPreview: record.canRender),
           'tool_choice': 'auto',
         };
         final response = await _consumeAuthoringRequest(record, index, body);
@@ -382,17 +411,33 @@ extension _AuthoringRuns on TavernEngine {
           );
         }
         final outputs = <Map<String, Object?>>[];
+        final images = <Map<String, Object?>>[];
         for (final call in batch.calls) {
           record.cancellation.check();
-          final receipt = await _executeAuthoringTool(record, index, call);
+          final executed = await _executeAuthoringTool(record, index, call);
+          final receipt = executed.receipt;
           outputs.add({'role': 'tool', 'tool_call_id': call.id, 'content': jsonEncode(receipt.toJson())});
+          if (executed.image case final image?) {
+            images.add({
+              'role': 'user',
+              'content': [
+                {
+                  'type': 'text',
+                  'text':
+                      'Rendered preview for tool receipt ${receipt.receiptId}, draft revision ${receipt.beforeRevision}.',
+                },
+                image,
+              ],
+            });
+          }
         }
-        messages = [...messages, assistant.wireMessage, ...outputs];
+        messages = [...messages, assistant.wireMessage, ...outputs, ...images];
       }
     } catch (error, stack) {
-      if (error is TavernModelException && error.kind == TavernFailure.cancelled) {
+      if (record.cleanupFailure == null && error is TavernModelException && error.kind == TavernFailure.cancelled) {
         status = TavernAuthoringRunStatus.cancelled;
-      } else if (error is TavernAuthoringException &&
+      } else if (record.cleanupFailure == null &&
+          error is TavernAuthoringException &&
           (error.code == 'revision_conflict' || error.code == 'not_found')) {
         status = TavernAuthoringRunStatus.conflict;
         record.issues.add(TavernAuthoringIssue(type: error.code, message: error.message));
@@ -456,12 +501,19 @@ extension _AuthoringRuns on TavernEngine {
   }
 
   void _finishAuthoringOwner(_AuthoringRunRecord record, {Object? error, StackTrace? stack}) {
-    // No task or model stream remains when the driver reaches this point.
-    if (record.snapshot?.status != TavernAuthoringRunStatus.running && record.activeRequest == null) {
+    // A failed child close stays in its own operation gate. Retain this handle
+    // too so a repeated cancellation cannot claim that cleanup succeeded.
+    if (record.cleanupFailure == null &&
+        record.snapshot?.status != TavernAuthoringRunStatus.running &&
+        record.activeRequest == null) {
       _authoringRuns.remove(record.runId);
     }
     _operations.remove(record.drained.future);
-    record.drained.complete();
+    if (record.cleanupFailure == null) {
+      record.drained.complete();
+    } else {
+      record.drained.completeError(record.cleanupFailure!, record.cleanupStack!);
+    }
     record.emit(TavernAuthoringRunEventKind.terminal);
     if (error == null) {
       record._result.complete(record.publicView);
@@ -672,7 +724,7 @@ extension _AuthoringRuns on TavernEngine {
     return request;
   }
 
-  Future<TavernAuthoringToolReceipt> _executeAuthoringTool(
+  Future<({TavernAuthoringToolReceipt receipt, Map<String, Object?>? image})> _executeAuthoringTool(
     _AuthoringRunRecord record,
     int index,
     ModelToolCall call,
@@ -686,7 +738,7 @@ extension _AuthoringRuns on TavernEngine {
           'The authoring call already has different parameters.',
         );
       }
-      return prior;
+      return (receipt: prior, image: null);
     }
     final stored = _requireAuthoringDraft(record.draftId, record.revision);
     final draft = _authoringView(stored);
@@ -695,6 +747,8 @@ extension _AuthoringRuns on TavernEngine {
     var changes = <String>[];
     late Map<String, Object?> result;
     TavernAuthoringPromptRequest? promptRequest;
+    TavernAuthoringRenderRequest? renderRequest;
+    Map<String, Object?>? imagePart;
     try {
       final parameters = call.parameters;
       if (!call.valid || call.unsupportedEnvelope || call.type != 'function' || parameters == null) {
@@ -702,6 +756,8 @@ extension _AuthoringRuns on TavernEngine {
       }
       if (call.name == 'prompt_preview') {
         promptRequest = _authoringPromptToolRequest(record, receiptId, parameters);
+      } else if (call.name == 'render_preview') {
+        renderRequest = _authoringRenderToolRequest(record, receiptId, parameters);
       } else {
         final prepared = await _prepareAuthoringTool(record, stored, draft, call.name!, parameters);
         result = prepared.result;
@@ -733,12 +789,32 @@ extension _AuthoringRuns on TavernEngine {
     if (promptRequest != null) {
       // Only argument construction belongs to the rejection catches above.
       // A real capture/assembler error keeps its original exception and stack.
-      final preview = await _startAuthoringPrompt(promptRequest, cancellation: record.cancellation).result;
+      final task = _startAuthoringPrompt(promptRequest, cancellation: record.cancellation, host: record.promptHost);
+      final preview = await record.waitForChild(task.result, task.drained.future);
       record.cancellation.check();
       result = preview.toJson();
       status = preview.status == TavernAuthoringPreviewStatus.complete
           ? TavernAuthoringToolStatus.succeeded
           : TavernAuthoringToolStatus.rejected;
+    }
+    if (renderRequest != null) {
+      final task = _startAuthoringRender(renderRequest, record.renderHost!, cancellation: record.cancellation);
+      final rendered = await record.waitForChild(task.result, task.drained.future);
+      record.cancellation.check();
+      result = _authoringRenderReceipt(rendered);
+      status = TavernAuthoringToolStatus.rejected;
+      if (rendered.status == TavernAuthoringRenderStatus.complete) {
+        final image = _AcceptedAuthoringImage(rendered);
+        final binding = record.imageBinding!;
+        result['imageInput'] = binding.descriptor;
+        if (binding.accepts(image)) {
+          imagePart = binding.encode(image, record.cancellation);
+          status = TavernAuthoringToolStatus.succeeded;
+        } else {
+          result['code'] = 'unsupported_image_input';
+          result['message'] = 'The actual rendered image exceeds this adapter\'s formats or dimensions/byte limits.';
+        }
+      }
     }
     record.cancellation.check();
     TavernAuthoringToolReceipt? adopted;
@@ -770,7 +846,7 @@ extension _AuthoringRuns on TavernEngine {
     record.snapshot = _store.readAuthoringRunData(record.runId)!;
     record.adoptedReceipt = null;
     record.emit(TavernAuthoringRunEventKind.receipt, receiptId: receiptId);
-    return adopted!;
+    return (receipt: adopted!, image: imagePart);
   }
 
   Future<({Map<String, Object?> result, Map<String, Object?>? draftData, List<String> changeIds})>
@@ -1003,7 +1079,7 @@ TavernAuthoringPromptRequest _authoringPromptToolRequest(
   );
 }
 
-List<Map<String, Object?>> _authoringRunTools({bool promptPreview = false}) {
+List<Map<String, Object?>> _authoringRunTools({bool promptPreview = false, bool renderPreview = false}) {
   Map<String, Object?> definition(
     String name,
     String description,
@@ -1079,16 +1155,32 @@ List<Map<String, Object?>> _authoringRunTools({bool promptPreview = false}) {
         },
         ['changeIds', 'text', 'at', 'seed'],
       ),
+    if (renderPreview)
+      definition(
+        'render_preview',
+        'Render the user-selected renderContext with explicit selected changes. An accepted image can be included in the next author request; no live resource is adopted.',
+        {'changeIds': selection},
+        ['changeIds'],
+      ),
   ];
 }
 
-String _authoringRunPrompt(bool promptPreview) =>
-    _authoringRunPromptBase +
-    (promptPreview
-        ? 'prompt_preview uses only the user-selected previewContext. Supply explicit changeIds, text, fixed ISO-8601 at and integer seed. '
-              'Only a complete result contains a prepared prompt; unsupported, conflict, failed or rejected results do not prove success. '
-              'No render, network lookup, or simulation is available in this run.'
-        : 'No prompt preview, render, network lookup, or simulation is available in this run.');
+String _authoringRunPrompt(bool promptPreview, bool renderPreview) {
+  const preview =
+      'prompt_preview uses only the user-selected previewContext. Supply explicit changeIds, text, fixed ISO-8601 at and integer seed. '
+      'Only a complete result contains a prepared prompt; unsupported, conflict, failed or rejected results do not prove success. ';
+  if (!renderPreview) {
+    final ending = promptPreview
+        ? '${preview}No render, network lookup, or simulation is available in this run.'
+        : 'No prompt preview, render, network lookup, or simulation is available in this run.';
+    return '$_authoringRunPromptBase$ending';
+  }
+  final preparation = promptPreview ? preview : 'No prompt preview is available in this run. ';
+  return '$_authoringRunPromptBase$preparation'
+      'render_preview uses only the user-selected renderContext. Supply explicit changeIds. '
+      'Only an accepted complete render can provide an image; its receipt alone does not mean an image was sent. '
+      'No network lookup or simulation is available in this run.';
+}
 
 const _authoringRunPromptBase =
     'You are an authoring assistant working on an independent persistent draft. '

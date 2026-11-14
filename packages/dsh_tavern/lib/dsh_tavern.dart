@@ -4,6 +4,7 @@ library;
 
 export 'src/api.dart';
 export 'src/authoring.dart';
+export 'src/authoring_model_images.dart';
 export 'src/authoring_preview.dart';
 export 'src/authoring_render.dart';
 export 'src/authoring_run.dart';

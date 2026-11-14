@@ -82,7 +82,7 @@ extension _AuthoringPromptPreviews on TavernEngine {
 
   // An already-admitted author run may continue while backup waits for its
   // owner. Share the real task/driver without opening external admission.
-  TavernAuthoringTask<TavernAuthoringPromptPreview> _startAuthoringPrompt(
+  _AuthoringPromptTask _startAuthoringPrompt(
     TavernAuthoringPromptRequest input, {
     ModelCancellation? cancellation,
     TavernAuthoringPromptHost? host,

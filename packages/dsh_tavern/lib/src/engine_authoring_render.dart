@@ -10,11 +10,13 @@ final class _AuthoringRenderToken implements TavernScriptCancellation {
 }
 
 final class _AuthoringRenderTask implements TavernAuthoringTask<TavernAuthoringRenderResult> {
-  _AuthoringRenderTask(this.request) : captureId = 'render-${_newStateId()}' {
+  _AuthoringRenderTask(this.request, {ModelCancellation? cancellation})
+    : captureId = 'render-${_newStateId()}',
+      cancellation = cancellation ?? ModelCancellation() {
     unawaited(result.then<void>((_) {}, onError: (Object _, StackTrace _) {}));
     unawaited(drained.future.then<void>((_) {}, onError: (Object _, StackTrace _) {}));
     unawaited(
-      cancellation.whenCancelled.then<void>((_) {
+      this.cancellation.whenCancelled.then<void>((_) {
         reader?.stop();
         startClose();
       }),
@@ -22,7 +24,7 @@ final class _AuthoringRenderTask implements TavernAuthoringTask<TavernAuthoringR
   }
   final TavernAuthoringRenderRequest request;
   final String captureId;
-  final cancellation = ModelCancellation();
+  final ModelCancellation cancellation;
   final drained = Completer<void>();
   final _result = Completer<TavernAuthoringRenderResult>();
   _AuthoringRenderReader? reader;
@@ -184,6 +186,16 @@ extension _AuthoringRenders on TavernEngine {
     TavernAuthoringPreviewHost host,
   ) {
     _ensureAdmission();
+    return _startAuthoringRender(request, host);
+  }
+
+  _AuthoringRenderTask _startAuthoringRender(
+    TavernAuthoringRenderRequest request,
+    TavernAuthoringPreviewHost host, {
+    ModelCancellation? cancellation,
+  }) {
+    cancellation?.check();
+    _ensureOpen();
     if (request.requestId.isEmpty ||
         request.draftId.isEmpty ||
         request.draftRevision < 1 ||
@@ -197,7 +209,7 @@ extension _AuthoringRenders on TavernEngine {
         request.devicePixelRatio <= 0) {
       _authoringInvalid('Use valid render identities, selection and positive finite viewport dimensions.');
     }
-    final task = _AuthoringRenderTask(request);
+    final task = _AuthoringRenderTask(request, cancellation: cancellation);
     // Register before calling any host method, including synchronously
     // re-entrant openPreview implementations.
     _operations.add(task.drained.future);

@@ -552,7 +552,11 @@ abstract interface class Tavern {
 
   /// Starts a separate authoring conversation whose tools only edit drafts.
   /// Reusing the same run identity never sends another model request.
-  TavernAuthoringRun startAuthoringRun(TavernAuthoringRunRequest request);
+  TavernAuthoringRun startAuthoringRun(
+    TavernAuthoringRunRequest request, {
+    TavernAuthoringPromptHost? promptHost,
+    TavernAuthoringPreviewHost? renderHost,
+  });
   Future<TavernAuthoringRunSnapshot?> readAuthoringRun(String runId);
   Future<List<TavernAuthoringRunSummary>> listAuthoringRuns({String? draftId, int limit = 30, String? beforeRunId});
   Future<TavernAuthoringToolReceipt?> readAuthoringToolReceipt(String runId, String receiptId);

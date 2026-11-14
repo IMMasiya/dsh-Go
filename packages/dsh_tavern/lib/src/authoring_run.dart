@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'authoring.dart';
 import 'authoring_preview.dart';
+import 'authoring_render.dart' show TavernAuthoringRenderMode;
 
 enum TavernAuthoringModelRole { main, auxiliary }
 
@@ -10,6 +11,49 @@ enum TavernAuthoringRunStatus { running, completed, cancelled, conflict, budget,
 enum TavernAuthoringRequestStatus { registered, running, completed, cancelled, failed, interrupted }
 
 enum TavernAuthoringToolStatus { succeeded, rejected, cancelled }
+
+/// The user's fixed rendering choices for an author conversation. The model
+/// selects changes only; it cannot replace the target, samples or viewport.
+final class TavernAuthoringRenderContext {
+  const TavernAuthoringRenderContext({
+    required this.physicalResourceId,
+    required this.viewportWidth,
+    required this.viewportHeight,
+    this.devicePixelRatio = 1,
+    this.theme = 'light',
+    this.mode = TavernAuthoringRenderMode.staticMarkup,
+    this.samples = const [],
+  });
+
+  final String physicalResourceId, theme;
+  final int viewportWidth, viewportHeight;
+  final double devicePixelRatio;
+  final TavernAuthoringRenderMode mode;
+  final List<TavernAuthoringSampleMessage> samples;
+
+  Map<String, Object?> toJson() => {
+    'physicalResourceId': physicalResourceId,
+    'viewportWidth': viewportWidth,
+    'viewportHeight': viewportHeight,
+    'devicePixelRatio': devicePixelRatio,
+    'theme': theme,
+    'mode': mode.name,
+    'samples': [for (final sample in samples) sample.toJson()],
+  };
+
+  factory TavernAuthoringRenderContext.fromJson(Map<String, Object?> value) => TavernAuthoringRenderContext(
+    physicalResourceId: value['physicalResourceId']! as String,
+    viewportWidth: value['viewportWidth']! as int,
+    viewportHeight: value['viewportHeight']! as int,
+    devicePixelRatio: (value['devicePixelRatio']! as num).toDouble(),
+    theme: value['theme']! as String,
+    mode: TavernAuthoringRenderMode.values.byName(value['mode']! as String),
+    samples: [
+      for (final sample in (value['samples']! as List<Object?>).cast<Map<String, Object?>>())
+        TavernAuthoringSampleMessage.fromJson(sample),
+    ],
+  );
+}
 
 /// A separate author conversation. Inputs are captured synchronously at start;
 /// materials contain only user-supplied named text or finite JSON values.
@@ -22,6 +66,7 @@ final class TavernAuthoringRunRequest {
     this.materials = const {},
     this.modelRole = TavernAuthoringModelRole.main,
     this.previewContext,
+    this.renderContext,
   });
 
   final String runId, draftId, instruction;
@@ -29,6 +74,7 @@ final class TavernAuthoringRunRequest {
   final Map<String, Object?> materials;
   final TavernAuthoringModelRole modelRole;
   final TavernAuthoringPromptContext? previewContext;
+  final TavernAuthoringRenderContext? renderContext;
 
   Map<String, Object?> toJson() => {
     'runId': runId,
@@ -38,6 +84,7 @@ final class TavernAuthoringRunRequest {
     'materials': materials,
     'modelRole': modelRole.name,
     if (previewContext != null) 'previewContext': previewContext!.toJson(),
+    if (renderContext != null) 'renderContext': renderContext!.toJson(),
   };
 
   factory TavernAuthoringRunRequest.fromJson(Map<String, Object?> value) => TavernAuthoringRunRequest(
@@ -50,6 +97,9 @@ final class TavernAuthoringRunRequest {
     previewContext: value['previewContext'] == null
         ? null
         : TavernAuthoringPromptContext.fromJson(value['previewContext']! as Map<String, Object?>),
+    renderContext: value['renderContext'] == null
+        ? null
+        : TavernAuthoringRenderContext.fromJson(value['renderContext']! as Map<String, Object?>),
   );
 }
 
