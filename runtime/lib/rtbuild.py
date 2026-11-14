@@ -1730,9 +1730,10 @@ def cmd_manifest(args):
         "launch": launch_template(),
         "build": v.get("build", {}),
     }
-    with open(args.out, "w") as f:
+    with open(args.out + ".tmp", "w") as f:
         json.dump(m, f, indent=2)
         f.write("\n")
+    os.replace(args.out + ".tmp", args.out)
     print("wrote " + args.out)
 
 
