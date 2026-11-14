@@ -127,6 +127,34 @@ class DeferredTavern implements Tavern {
   Future<List<TavernPathUsage>> pathUsage(String chatId) async => (await _ready).pathUsage(chatId);
 
   @override
+  Future<TavernCastImportResult> importDshgoCastMember(
+    TavernCastSource source,
+    String localCastId, {
+    required String operationId,
+    String? domainId,
+  }) async => (await _ready).importDshgoCastMember(source, localCastId, operationId: operationId, domainId: domainId);
+
+  @override
+  Future<TavernCastImportResult?> readDshgoCastImport(String domainId, String operationId) async =>
+      (await _ready).readDshgoCastImport(domainId, operationId);
+
+  @override
+  Future<TavernGameplayExportPreview> previewGameplayExport(TavernGameplayExportRequest request) async =>
+      (await _ready).previewGameplayExport(request);
+
+  @override
+  Future<Uint8List> exportCharacterWithPacks(
+    TavernGameplayExportRequest request, {
+    required String expectedPreviewId,
+  }) async => (await _ready).exportCharacterWithPacks(request, expectedPreviewId: expectedPreviewId);
+
+  @override
+  Future<Uint8List> exportGameplayPackFromDraft(
+    TavernGameplayExportRequest request, {
+    required String expectedPreviewId,
+  }) async => (await _ready).exportGameplayPackFromDraft(request, expectedPreviewId: expectedPreviewId);
+
+  @override
   Future<TavernPackScopeSnapshot> readGameplayBindings(TavernPackScopeTarget scope) async =>
       (await _ready).readGameplayBindings(scope);
 
