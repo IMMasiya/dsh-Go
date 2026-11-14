@@ -485,12 +485,21 @@ void main() {
     final work = sendDiagnosticAnalysis(client, 'facts', () => allowed, (_, stop) async {
       cancel = stop;
     });
-    final failed = expectLater(work, throwsA(isA<TimeoutException>()));
+    var workFinished = false;
+    var stopFinished = false;
+    final failed = expectLater(work, throwsA(isA<TimeoutException>())).then((_) => workFinished = true);
     await tester.pump();
-    await prompted.future;
+    expect(prompted.isCompleted, true, reason: 'submission must be pending before advancing the clock');
     allowed = false;
-    final stopping = expectLater(cancel(), throwsA(isA<TimeoutException>()));
+    final stopping = expectLater(cancel(), throwsA(isA<TimeoutException>())).then((_) => stopFinished = true);
+    // Flush cancellation's stream cleanup before arming its raw-RPC wait.
+    await tester.pump();
     await tester.pump(const Duration(seconds: 11));
+    // The sender handles its own timeout before awaiting stop(); advance that
+    // second bounded wait as well, instead of awaiting a frozen virtual timer.
+    await tester.pump(const Duration(seconds: 11));
+    expect(workFinished, true);
+    expect(stopFinished, true);
     await failed;
     await stopping;
     expect(client.cancels, 0, reason: 'do not cancel an idle session before the prompt is queued');
