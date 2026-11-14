@@ -78,6 +78,17 @@ abstract class CallConversation {
 /// loudspeaker or the earpiece; [spokenHint] goes before the first message.
 typedef CallChoices = ({bool bargeIn, bool speaker, String? spokenHint});
 
+/// One exchange of the call as it reads: what the person said, and her reply
+/// as far as it is known (all of it, or, [cut], as far as she got).
+@immutable
+class CallTurn {
+  const CallTurn(this.you, {this.her = '', this.cut = false});
+
+  final String you;
+  final String her;
+  final bool cut;
+}
+
 class VoiceCallController extends ChangeNotifier {
   VoiceCallController({
     required this.audio,
@@ -167,6 +178,11 @@ class VoiceCallController extends ChangeNotifier {
   int _turn = 0;
   int _recognizing = 0;
   bool _disposed = false;
+
+  final _turns = <CallTurn>[];
+
+  /// The call so far, oldest first.
+  List<CallTurn> get turns => List.unmodifiable(_turns);
 
   CallPhase get phase => _phase;
   CallEnd? get ended => _ended;
@@ -334,6 +350,7 @@ class VoiceCallController extends ChangeNotifier {
       return;
     }
     _heard = text.trim();
+    _turns.add(CallTurn(_heard));
     _reply = '';
     _said = '';
     _voiced = false;
@@ -368,6 +385,7 @@ class VoiceCallController extends ChangeNotifier {
       out.add(text.substring(_spoken));
       _spoken = text.length;
       _reply = text;
+      if (_turns.isNotEmpty) _turns.last = CallTurn(_turns.last.you, her: text);
       notifyListeners();
     }
     if (reply.done) {
@@ -392,6 +410,9 @@ class VoiceCallController extends ChangeNotifier {
     final out = _out;
     if (out != null) {
       _cutAt = out.heard;
+      if (_turns.isNotEmpty && _turns.last.her.isNotEmpty) {
+        _turns.last = CallTurn(_turns.last.you, her: out.heard, cut: true);
+      }
       _stopVoice();
     }
     if (!_replyDone) unawaited(conversation.interrupt());

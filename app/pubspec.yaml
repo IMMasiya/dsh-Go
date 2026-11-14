@@ -68,9 +68,14 @@ dependencies:
   image_picker: ^1.2.4
   file_picker: ^13.1.0
   crypto: ^3.0.7
-  # C API 1.23.2, identical ORT binaries to A's Android dependency. Keep both exact.
-  sherpa_onnx: 1.12.36
-  sherpa_onnx_android: 1.12.36
+  # Bundles ORT 1.27.0, the version of the Android ORT dependency (one
+  # libonnxruntime.so serves both). Keep every piece exact: a newer one brings
+  # another ORT, whose symbols the other side does not link.
+  sherpa_onnx: 1.13.4
+  sherpa_onnx_android_arm64: 1.13.4
+  sherpa_onnx_android_armeabi: 1.13.4
+  sherpa_onnx_android_x86: 1.13.4
+  sherpa_onnx_android_x86_64: 1.13.4
   # AES-256-GCM for hosted conversation links (lib/share_hosted), the pure-Dart
   # implementation packages/dsh_remote already uses. Apache-2.0.
   cryptography: ^2.9.0

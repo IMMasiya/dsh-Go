@@ -32042,6 +32042,12 @@ abstract class L10n {
   /// **'要先登录 DeepSeek 账号，或在设置里填 API Key'**
   String get speechNoCredential;
 
+  /// No description provided for @speechAccountUnusable.
+  ///
+  /// In zh, this message translates to:
+  /// **'已登录的账号在这里付不了 DeepSeek 语音：当前连接的 DSH 版本较旧（更新后就行），或正经 DSH Remote 中继连接。在设置里填 DeepSeek API Key 就能用'**
+  String get speechAccountUnusable;
+
   /// No description provided for @speechSignIn.
   ///
   /// In zh, this message translates to:
@@ -32228,6 +32234,18 @@ abstract class L10n {
   /// **'已占用 {mb}，通话时自动使用'**
   String speechLiveReadyNote(String mb);
 
+  /// No description provided for @speechLiveBlocked.
+  ///
+  /// In zh, this message translates to:
+  /// **'已停用'**
+  String get speechLiveBlocked;
+
+  /// No description provided for @speechLiveBlockedNote.
+  ///
+  /// In zh, this message translates to:
+  /// **'在这台手机上运行时出过问题，实时字幕已停用，通话照常。删除后重新下载可以再试。'**
+  String get speechLiveBlockedNote;
+
   /// No description provided for @speechLiveFooter.
   ///
   /// In zh, this message translates to:
@@ -32300,6 +32318,12 @@ abstract class L10n {
   /// **'麦克风被占用或打不开'**
   String get speechCallEndMicrophone;
 
+  /// No description provided for @speechCallEndNoRecognizerSignedIn.
+  ///
+  /// In zh, this message translates to:
+  /// **'通话要能识别录音。已登录的账号在这里付不了 DeepSeek 语音（当前连接的 DSH 版本较旧，或经 DSH Remote 中继）：在设置里填 DeepSeek API Key，或在设置 › 语音里下载语音模型'**
+  String get speechCallEndNoRecognizerSignedIn;
+
   /// No description provided for @speechCallEndNoRecognizer.
   ///
   /// In zh, this message translates to:
@@ -32329,6 +32353,30 @@ abstract class L10n {
   /// In zh, this message translates to:
   /// **'跳过这段回答'**
   String get speechCallSkipHint;
+
+  /// No description provided for @speechCallTranscript.
+  ///
+  /// In zh, this message translates to:
+  /// **'字幕'**
+  String get speechCallTranscript;
+
+  /// No description provided for @speechCallTranscriptHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'这次通话的全部字幕'**
+  String get speechCallTranscriptHint;
+
+  /// No description provided for @speechCallTranscriptEmpty.
+  ///
+  /// In zh, this message translates to:
+  /// **'还没开口。你们说的话会一句句记在这里。'**
+  String get speechCallTranscriptEmpty;
+
+  /// No description provided for @speechCallTranscriptCut.
+  ///
+  /// In zh, this message translates to:
+  /// **'你在这里插话'**
+  String get speechCallTranscriptCut;
 
   /// No description provided for @speechCallMute.
   ///

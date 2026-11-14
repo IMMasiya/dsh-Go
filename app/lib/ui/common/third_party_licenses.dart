@@ -148,7 +148,7 @@ Copyright (c) 2026 qiannianhuanxiang
 
 $_mitTerms''';
 
-/// ONNX Runtime for Android (`com.microsoft.onnxruntime:onnxruntime-android`), 1.23.2.
+/// ONNX Runtime for Android (`com.microsoft.onnxruntime:onnxruntime-android`), 1.27.0.
 const _onnxRuntimeMit = '''
 MIT License
 

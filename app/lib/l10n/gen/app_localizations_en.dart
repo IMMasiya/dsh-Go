@@ -18482,6 +18482,10 @@ class L10nEn extends L10n {
   String get speechNoCredential => 'Sign in to DeepSeek or add an API key in Settings first';
 
   @override
+  String get speechAccountUnusable =>
+      'Your signed-in account can\'t pay for DeepSeek speech here: the DSH you\'re connected to is older (updating fixes it), or you\'re going through DSH Remote. Add a DeepSeek API key in Settings to use it';
+
+  @override
   String get speechSignIn =>
       'Your DeepSeek account can\'t pay for speech (sign-in expired, or speech takes only an API key). Sign in again, or add an API key in Settings';
 
@@ -18586,6 +18590,13 @@ class L10nEn extends L10n {
   }
 
   @override
+  String get speechLiveBlocked => 'Off';
+
+  @override
+  String get speechLiveBlockedNote =>
+      'It crashed on this phone, so live captions are off; calls work as before. Delete it and download again to try once more.';
+
+  @override
   String get speechLiveFooter =>
       'Captions and cut-ins run on the phone; the text sent to the AI still comes from the recognition chosen above, and cloud recognition uploads the recording.';
 
@@ -18623,6 +18634,10 @@ class L10nEn extends L10n {
   String get speechCallEndMicrophone => 'The microphone is busy or can\'t be opened';
 
   @override
+  String get speechCallEndNoRecognizerSignedIn =>
+      'A call needs a way to recognize speech. Your signed-in account can\'t pay for DeepSeek speech here (the DSH you\'re connected to is older, or you\'re going through DSH Remote): add a DeepSeek API key in Settings, or download the voice model in Settings › Voice';
+
+  @override
   String get speechCallEndNoRecognizer =>
       'A call needs a recognizer that takes recordings: sign in to DeepSeek, add an API key, or download the voice model';
 
@@ -18637,6 +18652,18 @@ class L10nEn extends L10n {
 
   @override
   String get speechCallSkipHint => 'Skip this answer';
+
+  @override
+  String get speechCallTranscript => 'Captions';
+
+  @override
+  String get speechCallTranscriptHint => 'Everything said on this call';
+
+  @override
+  String get speechCallTranscriptEmpty => 'Nothing said yet. What you both say is written down here, line by line.';
+
+  @override
+  String get speechCallTranscriptCut => 'You cut in here';
 
   @override
   String get speechCallMute => 'Mute';

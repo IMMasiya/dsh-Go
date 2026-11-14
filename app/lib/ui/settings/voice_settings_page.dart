@@ -536,10 +536,12 @@ class StreamingAsrModelCard extends ConsumerWidget {
       StreamingAsrModelStatus.absent => (l10n.voiceModelAbsent, theme.colorScheme.onSurfaceVariant),
       StreamingAsrModelStatus.downloading => ('${(model.fraction * 100).floor()}%', theme.colorScheme.onSurfaceVariant),
       StreamingAsrModelStatus.verifying => (l10n.voiceModelPreparing, theme.colorScheme.onSurfaceVariant),
+      StreamingAsrModelStatus.ready when model.blocked => (l10n.speechLiveBlocked, colors.danger),
       StreamingAsrModelStatus.ready => (l10n.voiceModelReady, colors.success),
       StreamingAsrModelStatus.failed => (l10n.voiceModelFailed, colors.danger),
     };
     final note = switch (model.status) {
+      StreamingAsrModelStatus.ready when model.blocked => l10n.speechLiveBlockedNote,
       StreamingAsrModelStatus.ready => l10n.speechLiveReadyNote(total),
       StreamingAsrModelStatus.downloading ||
       StreamingAsrModelStatus.absent when partial => l10n.voiceModelBytes(voiceModelMegabytes(model.doneBytes), total),

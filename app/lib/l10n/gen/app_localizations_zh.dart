@@ -17510,6 +17510,10 @@ class L10nZh extends L10n {
   String get speechNoCredential => '要先登录 DeepSeek 账号，或在设置里填 API Key';
 
   @override
+  String get speechAccountUnusable =>
+      '已登录的账号在这里付不了 DeepSeek 语音：当前连接的 DSH 版本较旧（更新后就行），或正经 DSH Remote 中继连接。在设置里填 DeepSeek API Key 就能用';
+
+  @override
   String get speechSignIn => 'DeepSeek 账号用不了语音（可能登录过期，或语音只认 API Key）。重新登录，或在设置里填上 API Key';
 
   @override
@@ -17609,6 +17613,12 @@ class L10nZh extends L10n {
   }
 
   @override
+  String get speechLiveBlocked => '已停用';
+
+  @override
+  String get speechLiveBlockedNote => '在这台手机上运行时出过问题，实时字幕已停用，通话照常。删除后重新下载可以再试。';
+
+  @override
   String get speechLiveFooter => '字幕和插话判断在手机上完成；发给 AI 的文字仍由上面选的识别方式给出，选了云端识别录音就会上传。';
 
   @override
@@ -17645,6 +17655,10 @@ class L10nZh extends L10n {
   String get speechCallEndMicrophone => '麦克风被占用或打不开';
 
   @override
+  String get speechCallEndNoRecognizerSignedIn =>
+      '通话要能识别录音。已登录的账号在这里付不了 DeepSeek 语音（当前连接的 DSH 版本较旧，或经 DSH Remote 中继）：在设置里填 DeepSeek API Key，或在设置 › 语音里下载语音模型';
+
+  @override
   String get speechCallEndNoRecognizer => '通话需要能识别录音的方式：登录 DeepSeek 账号、填 API Key，或下载语音模型';
 
   @override
@@ -17658,6 +17672,18 @@ class L10nZh extends L10n {
 
   @override
   String get speechCallSkipHint => '跳过这段回答';
+
+  @override
+  String get speechCallTranscript => '字幕';
+
+  @override
+  String get speechCallTranscriptHint => '这次通话的全部字幕';
+
+  @override
+  String get speechCallTranscriptEmpty => '还没开口。你们说的话会一句句记在这里。';
+
+  @override
+  String get speechCallTranscriptCut => '你在这里插话';
 
   @override
   String get speechCallMute => '静音';

@@ -221,9 +221,21 @@ int _streams = 0;
 /// DeepSeek's voice, streamed into one native PCM stream. [call] plays it as
 /// the voice of a call; [levels] reports its loudness.
 class DeepSeekOut implements SpeechOut {
-  DeepSeekOut(this._resolve, this._audio, {this.voice = 'stella', this.call = false, this.levels = false}) {
+  DeepSeekOut(
+    this._resolve,
+    this._audio, {
+    this.voice = 'stella',
+    this.call = false,
+    this.levels = false,
+    DeepSeekSpeechFailure Function()? gap,
+  }) : _gap = gap ?? _noCredential {
     _sub = _audio.events.listen(_heard);
   }
+
+  /// What to say when nobody can pay ([deepSeekSpeechGapProvider]).
+  final DeepSeekSpeechFailure Function() _gap;
+
+  static DeepSeekSpeechFailure _noCredential() => DeepSeekSpeechFailure.noCredential;
 
   final DeepSeekSpeechResolver _resolve;
   final SpeechAudio _audio;
@@ -302,7 +314,7 @@ class DeepSeekOut implements SpeechOut {
     if (_stopped) return;
     if (speech == null) {
       piece
-        ..error = const DeepSeekSpeechError(DeepSeekSpeechFailure.noCredential)
+        ..error = DeepSeekSpeechError(_gap())
         ..done = true
         .._signal();
       return;
@@ -633,9 +645,10 @@ SpeechOut speechOutFor(
   required CompanionSpeaker speaker,
   bool call = false,
   bool levels = false,
+  DeepSeekSpeechFailure Function()? gap,
 }) {
   if (settings.source == CompanionVoiceSource.deepseek) {
-    return DeepSeekOut(deepseek, audio, voice: settings.deepseekVoice, call: call, levels: levels);
+    return DeepSeekOut(deepseek, audio, voice: settings.deepseekVoice, call: call, levels: levels, gap: gap);
   }
   speaker.settings = settings;
   return SpeakerOut(speaker, onPlaying: call ? (on) => unawaited(audio.playing(on)) : null);

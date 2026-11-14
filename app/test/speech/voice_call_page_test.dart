@@ -5,6 +5,7 @@ import 'package:dsh_app/speech/speech_audio.dart';
 import 'package:dsh_app/speech/speech_settings.dart';
 import 'package:dsh_app/speech/call/voice_call.dart';
 import 'package:dsh_app/speech/voice_cloud.dart';
+import 'package:dsh_app/state/app_notes.dart';
 import 'package:dsh_app/state/voice_state.dart';
 import 'package:dsh_app/ui/speech/call/call_backdrop.dart';
 import 'package:dsh_app/ui/speech/call/call_parts.dart';
@@ -29,6 +30,7 @@ void main() {
     List<Override> extra = const [],
     bool still = false,
     void Function()? opened,
+    String said = '这周末北京天气怎么样',
   }) async {
     tester.view.physicalSize = const Size(1170, 2532);
     tester.view.devicePixelRatio = 3;
@@ -58,7 +60,7 @@ void main() {
         ),
         overrides: [
           speechAudioProvider.overrideWithValue(audio),
-          callRecognizerProvider.overrideWithValue(() async => FakeCloud('这周末北京天气怎么样')),
+          callRecognizerProvider.overrideWithValue(() async => FakeCloud(said)),
           voiceBridgeProvider.overrideWithValue(FakeVoiceBridge()),
           deepSeekSpeechProvider.overrideWithValue(() async => FakeDeepSeek()),
           ...extra,
@@ -80,6 +82,7 @@ void main() {
   testWidgets('a turn on the page: heard, sent, the reply arriving; hang up closes it', (tester) async {
     final (audio, conversation) = await pumpCall(tester);
     expect(find.text('周末去哪儿玩'), findsOneWidget);
+    expect(find.byType(CallLight), findsOneWidget, reason: 'the glass orb by default');
     expect(audio.calls, contains('callStart:bargeIn=true'));
     expect(find.text('在听'), findsOneWidget);
 
@@ -90,6 +93,8 @@ void main() {
     }
     expect(find.text('这周末北京天气怎么样'), findsOneWidget);
     expect(conversation.sent.single, endsWith('这周末北京天气怎么样'));
+    // "This is a call" goes to the model as a note the chat does not show.
+    expect(withoutAppNotes(conversation.sent.single), '这周末北京天气怎么样');
 
     conversation.reply('北京晴，最高二十度。');
     for (var i = 0; i < 30; i++) {
@@ -112,6 +117,120 @@ void main() {
     }
     expect(audio.calls, contains('callStop'));
     expect(find.byType(VoiceCallPage), findsNothing);
+  });
+
+  testWidgets('a long question is shown whole, and 字幕 opens the call in full', (tester) async {
+    const long = '我想问一下这个周末北京的天气怎么样，如果下雨的话有没有什么室内的地方可以带孩子去玩，最好离朝阳区近一点';
+    final (audio, conversation) = await pumpCall(tester, said: long);
+    audio.emit(const SpeechStart(over: false));
+    audio.emit(Utterance(Uint8List(32044), const Duration(seconds: 5)));
+    for (var i = 0; i < 5; i++) {
+      await tester.pump(const Duration(milliseconds: 60));
+    }
+    // Whole, over several lines, not cut to one.
+    expect(find.text(long, findRichText: true), findsOneWidget);
+
+    conversation.reply('北京晴，最高二十度。', done: true);
+    for (var i = 0; i < 10; i++) {
+      await tester.pump(const Duration(milliseconds: 60));
+    }
+    await tester.tap(find.byKey(const ValueKey('call-captions')));
+    for (var i = 0; i < 20; i++) {
+      await tester.pump(const Duration(milliseconds: 60));
+    }
+    final list = find.byKey(const ValueKey('call-transcript-list'));
+    expect(find.descendant(of: list, matching: find.text(long)), findsOneWidget);
+    expect(find.descendant(of: list, matching: find.text('北京晴，最高二十度。')), findsOneWidget);
+  });
+
+  testWidgets('a call that fails with 字幕 open closes the call page, not just the sheet', (tester) async {
+    final (audio, _) = await pumpCall(tester);
+    await tester.tap(find.byKey(const ValueKey('call-transcript')));
+    for (var i = 0; i < 20; i++) {
+      await tester.pump(const Duration(milliseconds: 60));
+    }
+    audio.emit(const CallError('mic'));
+    for (var i = 0; i < 70; i++) {
+      await tester.pump(const Duration(milliseconds: 60));
+    }
+    expect(find.byType(VoiceCallPage), findsNothing);
+  });
+
+  testWidgets('字幕 follows new words at the bottom; scrolled up, the reader stays put', (tester) async {
+    final (audio, conversation) = await pumpCall(tester);
+    const reply = '这周末北京以晴为主，周六最高二十度，周日傍晚可能有小雨。带孩子的话，朝阳区可以去科技馆新馆，室内展区很大。';
+    Future<void> turn() async {
+      audio.emit(const SpeechStart(over: false));
+      audio.emit(Utterance(Uint8List(32044), const Duration(seconds: 2)));
+      for (var i = 0; i < 5; i++) {
+        await tester.pump(const Duration(milliseconds: 60));
+      }
+      conversation.reply(reply, done: true);
+      for (var i = 0; i < 10; i++) {
+        await tester.pump(const Duration(milliseconds: 60));
+      }
+    }
+
+    for (var i = 0; i < 5; i++) {
+      await turn();
+    }
+    await tester.tap(find.byKey(const ValueKey('call-transcript')));
+    for (var i = 0; i < 20; i++) {
+      await tester.pump(const Duration(milliseconds: 60));
+    }
+    final list = find.byKey(const ValueKey('call-transcript-list'));
+    ScrollPosition position() =>
+        tester.state<ScrollableState>(find.descendant(of: list, matching: find.byType(Scrollable))).position;
+    expect(position().maxScrollExtent, greaterThan(0));
+    expect(position().pixels, position().maxScrollExtent, reason: 'opens at the newest');
+
+    // At the bottom: new words are followed.
+    await turn();
+    for (var i = 0; i < 10; i++) {
+      await tester.pump(const Duration(milliseconds: 60));
+    }
+    expect(position().pixels, closeTo(position().maxScrollExtent, 1));
+
+    // Scrolled up by the reader: more words do not pull them back.
+    await tester.drag(list, const Offset(0, 300));
+    for (var i = 0; i < 10; i++) {
+      await tester.pump(const Duration(milliseconds: 60));
+    }
+    final kept = position().pixels;
+    expect(kept, lessThan(position().maxScrollExtent - 100));
+    await turn();
+    for (var i = 0; i < 10; i++) {
+      await tester.pump(const Duration(milliseconds: 60));
+    }
+    expect(position().pixels, closeTo(kept, 1));
+
+    // Back at the bottom; her words arrive (the follow is scheduled for the
+    // frame's end) and the reader scrolls up before that frame: they stay up.
+    await tester.drag(list, const Offset(0, -3000));
+    for (var i = 0; i < 10; i++) {
+      await tester.pump(const Duration(milliseconds: 60));
+    }
+    expect(position().pixels, closeTo(position().maxScrollExtent, 1));
+    audio.emit(const SpeechStart(over: false));
+    audio.emit(Utterance(Uint8List(32044), const Duration(seconds: 2)));
+    for (var i = 0; i < 5; i++) {
+      await tester.pump(const Duration(milliseconds: 60));
+    }
+    conversation.reply(reply, done: true);
+    await tester.drag(list, const Offset(0, 300));
+    for (var i = 0; i < 10; i++) {
+      await tester.pump(const Duration(milliseconds: 60));
+    }
+    expect(position().pixels, lessThan(position().maxScrollExtent - 100));
+  });
+
+  testWidgets('字幕 before anything is said: the page says so', (tester) async {
+    await pumpCall(tester);
+    await tester.tap(find.byKey(const ValueKey('call-transcript')));
+    for (var i = 0; i < 20; i++) {
+      await tester.pump(const Duration(milliseconds: 60));
+    }
+    expect(find.text('还没开口。你们说的话会一句句记在这里。'), findsOneWidget);
   });
 
   testWidgets('mute and loudspeaker keys switch and say so', (tester) async {

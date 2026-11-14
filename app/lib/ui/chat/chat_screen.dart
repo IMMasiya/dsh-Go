@@ -19,6 +19,7 @@ import '../../runtime/runtime_bridge.dart' show RuntimePhase;
 import '../../runtime/runtime_state.dart' show localRuntimeProvider;
 import '../../speech/read_aloud.dart';
 import '../../speech/voice_cloud.dart';
+import '../../state/account_state.dart';
 import '../speech/voice_call_page.dart';
 import '../../state/streaming_asr_model_state.dart';
 import '../../state/streaming_asr_state.dart';
@@ -366,13 +367,15 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
       mode: () => ref.read(voiceSettingsProvider.notifier).ready(),
       cloud: (mode) => ref.read(voiceCloudProvider)(mode),
       cloudLikely: () => ref.read(voiceCloudLikelyProvider)(),
+      signedIn: () => ref.read(accountProvider).signedIn,
       liveWords: (onWords) async {
         final pcm = ref.read(streamingPcmCaptureProvider);
         final asr = ref.read(streamingAsrProvider);
         try {
-          final model = await (await ref.read(streamingAsrModelStoreProvider.future)).installed();
+          final models = await ref.read(streamingAsrModelStoreProvider.future);
+          final model = await models.installed();
           if (model == null || !mounted) return null;
-          final live = LiveWords(pcm, asr, model, StreamingPcmSource.dictation, onWords);
+          final live = LiveWords(pcm, asr, model, StreamingPcmSource.dictation, onWords, trial: models.trial);
           await live.start();
           return live;
         } on Object {

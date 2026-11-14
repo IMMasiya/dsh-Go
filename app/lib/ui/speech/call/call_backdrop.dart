@@ -281,9 +281,9 @@ class _BackdropChooserState extends ConsumerState<_BackdropChooser> {
           SegmentedPill<CallVisual>(
             key: const ValueKey('call-visual'),
             segments: [
+              PillSegment(CallVisual.glass, l10n.speechCallVisualGlass),
               PillSegment(CallVisual.ring, l10n.speechCallVisualRing),
               PillSegment(CallVisual.mono, l10n.speechCallVisualMono),
-              PillSegment(CallVisual.glass, l10n.speechCallVisualGlass),
             ],
             selected: settings.visual,
             onChanged: (visual) => unawaited(_set(settings.copyWith(visual: visual))),
