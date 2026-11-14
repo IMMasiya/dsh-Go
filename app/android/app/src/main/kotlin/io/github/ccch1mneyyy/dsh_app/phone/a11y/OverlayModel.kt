@@ -314,6 +314,15 @@ internal object CapsulePlacement {
         return maxOf(floor, minOf(base, limit))
     }
 
+    /**
+     * The card's room, header included, above a capsule centred at [centreY]: up to [gap] under
+     * the status bar. A short screen with the keyboard up has little; the card's body scrolls in it.
+     */
+    fun cardRoom(area: SafeArea, centreY: Int, headerH: Int, gap: Int): Int = centreY + headerH / 2 - (area.top + gap)
+
+    /** The body's height in a card at most [maxCard] tall, of which the header takes [headerPart]. */
+    fun bodyHeight(natural: Int, maxCard: Int, headerPart: Int): Int = minOf(natural, (maxCard - headerPart).coerceAtLeast(0))
+
     /** The window's Gravity.BOTTOM offset for a capsule centred at [centreY], its root padding the surface by [padBottom] below. */
     fun windowY(screenH: Int, centreY: Int, headerH: Int, padBottom: Int) = screenH - (centreY + headerH / 2) - padBottom
 

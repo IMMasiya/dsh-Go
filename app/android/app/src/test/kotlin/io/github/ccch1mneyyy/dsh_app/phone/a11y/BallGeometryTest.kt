@@ -85,6 +85,28 @@ class BallGeometryTest {
         assertEquals(778, CapsulePlacement.centreY(land, headerH, gap)) // 0.72 × 1080
     }
 
+    @Test fun aShortScreenWithTheKeyboardUpCapsTheCardUnderTheStatusBar() {
+        // Landscape, a 200 dp keyboard: the header sits above it, the card's body scrolls in what is left.
+        val land = SafeArea(2400, 1080, left = 96, top = 0, right = 63, bottom = 0)
+        val keyboardTop = 1080 - dp(200)
+        val c = CapsulePlacement.centreY(land, headerH, gap, obstacleTop = keyboardTop)
+        assertEquals(keyboardTop - gap - headerH / 2, c)
+        val room = CapsulePlacement.cardRoom(land, c, headerH, gap)
+        val headerPart = headerH - dp(6) // the body tucks 6 dp into the header
+        val body = CapsulePlacement.bodyHeight(natural = dp(320), maxCard = room, headerPart = headerPart)
+        val cardTop = c + headerH / 2 - (headerPart + body)
+        assertEquals(land.top + gap, cardTop)
+        assertTrue(body < dp(320))
+    }
+
+    @Test fun aCardThatFitsKeepsItsHeight() {
+        val room = CapsulePlacement.cardRoom(area, centre, headerH, gap)
+        assertEquals(dp(300), CapsulePlacement.bodyHeight(natural = dp(300), maxCard = room, headerPart = headerH))
+        // No room at all: no body, never a negative one.
+        assertEquals(0, CapsulePlacement.bodyHeight(natural = dp(300), maxCard = headerH / 2, headerPart = headerH))
+        assertEquals(dp(300), CapsulePlacement.bodyHeight(natural = dp(300), maxCard = Int.MAX_VALUE, headerPart = headerH))
+    }
+
     // ---- 小球 ------------------------------------------------------------------------------------
 
     @Test fun aBallNeverMovedRestsOnTheRightLevelWithTheCapsule() {
