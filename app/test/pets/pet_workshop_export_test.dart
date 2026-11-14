@@ -54,12 +54,12 @@ void main() {
   test('reactions export as numbered keys: an array becomes tickle, tickle2, tickle3', () async {
     final json = workshopPet();
     final animations = json['animations'] as Map;
-    animations['idle-look'] = {
-      ...animations['idle'] as Map<String, Object?>,
+    animations['idle-look'] = <String, Object>{
+      ...animations['idle'] as Map<String, Object>,
       'frames': [{'i': 1, 'ms': 200}],
     };
-    animations['idle-spout'] = {
-      ...animations['idle'] as Map<String, Object?>,
+    animations['idle-spout'] = <String, Object>{
+      ...animations['idle'] as Map<String, Object>,
       'frames': [{'i': 0, 'ms': 200}],
     };
     json['reactions'] = {
