@@ -32228,6 +32228,18 @@ abstract class L10n {
   /// **'已占用 {mb}，通话时自动使用'**
   String speechLiveReadyNote(String mb);
 
+  /// No description provided for @speechLiveBlocked.
+  ///
+  /// In zh, this message translates to:
+  /// **'已停用'**
+  String get speechLiveBlocked;
+
+  /// No description provided for @speechLiveBlockedNote.
+  ///
+  /// In zh, this message translates to:
+  /// **'在这台手机上运行时出过问题，实时字幕已停用，通话照常。删除后重新下载可以再试。'**
+  String get speechLiveBlockedNote;
+
   /// No description provided for @speechLiveFooter.
   ///
   /// In zh, this message translates to:

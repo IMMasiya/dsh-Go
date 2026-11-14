@@ -68,6 +68,8 @@
       }
     }
   },
+  "speechLiveBlocked": "Off",
+  "speechLiveBlockedNote": "It crashed on this phone, so live captions are off; calls work as before. Delete it and download again to try once more.",
   "speechLiveFooter": "Captions and cut-ins run on the phone; the text sent to the AI still comes from the recognition chosen above, and cloud recognition uploads the recording.",
   "speechLiveDeleteTitle": "Delete the streaming recognizer?",
   "speechLiveDeleteBody": "Calls will stop showing live captions. You can download it again any time.",

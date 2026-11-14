@@ -68,6 +68,8 @@
       }
     }
   },
+  "speechLiveBlocked": "已停用",
+  "speechLiveBlockedNote": "在这台手机上运行时出过问题，实时字幕已停用，通话照常。删除后重新下载可以再试。",
   "speechLiveFooter": "字幕和插话判断在手机上完成；发给 AI 的文字仍由上面选的识别方式给出，选了云端识别录音就会上传。",
   "speechLiveDeleteTitle": "删除流式识别模型？",
   "speechLiveDeleteBody": "删除后通话不再显示实时字幕，随时可以重新下载。",

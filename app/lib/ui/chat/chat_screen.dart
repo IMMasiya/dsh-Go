@@ -368,9 +368,10 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
         final pcm = ref.read(streamingPcmCaptureProvider);
         final asr = ref.read(streamingAsrProvider);
         try {
-          final model = await (await ref.read(streamingAsrModelStoreProvider.future)).installed();
+          final models = await ref.read(streamingAsrModelStoreProvider.future);
+          final model = await models.installed();
           if (model == null || !mounted) return null;
-          final live = LiveWords(pcm, asr, model, StreamingPcmSource.dictation, onWords);
+          final live = LiveWords(pcm, asr, model, StreamingPcmSource.dictation, onWords, trial: models.trial);
           await live.start();
           return live;
         } on Object {

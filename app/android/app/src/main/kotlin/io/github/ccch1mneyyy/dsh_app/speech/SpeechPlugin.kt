@@ -17,6 +17,7 @@ import io.flutter.embedding.engine.plugins.activity.ActivityPluginBinding
 import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
 import io.github.ccch1mneyyy.dsh_app.nativemedia.MicArbiter
+import io.github.ccch1mneyyy.dsh_app.nativemedia.NativeTrial
 import io.github.ccch1mneyyy.dsh_app.nativemedia.SpeechGates
 
 /**
@@ -218,7 +219,8 @@ class SpeechPlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandl
         }
         endCall()
         mic = MicArbiter.beginDictation()
-        val c = CallCapture(main, captureListener) { SpeechGates.create(context.assets, it) }
+        val marks = NativeTrial.marks(context.getSharedPreferences("speech_native", Context.MODE_PRIVATE))
+        val c = CallCapture(main, captureListener) { SpeechGates.create(context.assets, it, marks) }
         c.bargeIn = bargeIn
         val am = audio
         if (am != null) {

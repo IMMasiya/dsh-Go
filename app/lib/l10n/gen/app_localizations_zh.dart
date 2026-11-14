@@ -17609,6 +17609,12 @@ class L10nZh extends L10n {
   }
 
   @override
+  String get speechLiveBlocked => '已停用';
+
+  @override
+  String get speechLiveBlockedNote => '在这台手机上运行时出过问题，实时字幕已停用，通话照常。删除后重新下载可以再试。';
+
+  @override
   String get speechLiveFooter => '字幕和插话判断在手机上完成；发给 AI 的文字仍由上面选的识别方式给出，选了云端识别录音就会上传。';
 
   @override

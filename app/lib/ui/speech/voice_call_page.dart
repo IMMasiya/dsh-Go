@@ -167,9 +167,10 @@ class _VoiceCallPageState extends ConsumerState<VoiceCallPage> with WidgetsBindi
     final store = ref.read(streamingAsrModelStoreProvider.future);
     await _call.start();
     try {
-      final model = await (await store).installed();
+      final models = await store;
+      final model = await models.installed();
       if (model == null || !mounted || _call.phase == CallPhase.ended) return;
-      final live = _live = LiveWords(pcm, asr, model, StreamingPcmSource.call, _call.live);
+      final live = _live = LiveWords(pcm, asr, model, StreamingPcmSource.call, _call.live, trial: models.trial);
       await live.start();
     } on Object {
       // Without live captions the call goes on as before.
