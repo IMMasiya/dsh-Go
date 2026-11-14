@@ -127,6 +127,18 @@ class DeferredTavern implements Tavern {
   Future<List<TavernPathUsage>> pathUsage(String chatId) async => (await _ready).pathUsage(chatId);
 
   @override
+  Future<TavernPackScopeSnapshot> readGameplayBindings(TavernPackScopeTarget scope) async =>
+      (await _ready).readGameplayBindings(scope);
+
+  @override
+  Future<TavernPackBindingReceipt> updateGameplayBindings(
+    TavernPackScopeTarget scope, {
+    required TavernGameplayRevision expected,
+    required String operationId,
+    required List<TavernPackBindingEdit> edits,
+  }) async => (await _ready).updateGameplayBindings(scope, expected: expected, operationId: operationId, edits: edits);
+
+  @override
   Future<TavernGameplayResolution> resolveGameplayConfig(
     TavernGameplayContext context, {
     List<TavernPackScopePreview> proposedScopes = const [],

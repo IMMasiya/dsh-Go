@@ -269,6 +269,17 @@ class PreviewTavern implements Tavern, TavernPreview {
   static Future<T> _noPack<T>() => Future<T>.error(UnsupportedError('The preview keeps no gameplay packs.'));
 
   @override
+  Future<TavernPackScopeSnapshot> readGameplayBindings(TavernPackScopeTarget scope) => _noPack();
+
+  @override
+  Future<TavernPackBindingReceipt> updateGameplayBindings(
+    TavernPackScopeTarget scope, {
+    required TavernGameplayRevision expected,
+    required String operationId,
+    required List<TavernPackBindingEdit> edits,
+  }) => _noPack();
+
+  @override
   Future<TavernGameplayResolution> resolveGameplayConfig(
     TavernGameplayContext context, {
     List<TavernPackScopePreview> proposedScopes = const [],
