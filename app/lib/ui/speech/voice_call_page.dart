@@ -10,6 +10,7 @@
 import 'dart:async';
 import 'dart:io';
 import 'dart:math' as math;
+import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -478,6 +479,7 @@ class _VoiceCallPageState extends ConsumerState<VoiceCallPage> with WidgetsBindi
                           title: widget.title,
                           since: _since,
                           live: !ended && _since != null,
+                          blur: blur,
                           onTranscript: _openTranscript,
                           onBackdrop: ended ? null : () => unawaited(showCallBackdropSheet(context)),
                         ),
@@ -612,12 +614,14 @@ class _VoiceCallPageState extends ConsumerState<VoiceCallPage> with WidgetsBindi
   }
 }
 
-/// The conversation's name and the clock between two round keys: 字幕 and 背景.
+/// The top bar: the clock and the conversation's name in one frosted capsule,
+/// between two frosted round keys, 字幕 and 背景, all three the same height.
 class _TopBar extends StatelessWidget {
   const _TopBar({
     required this.title,
     required this.since,
     required this.live,
+    required this.blur,
     required this.onTranscript,
     required this.onBackdrop,
   });
@@ -625,6 +629,7 @@ class _TopBar extends StatelessWidget {
   final String title;
   final DateTime? since;
   final bool live;
+  final bool blur;
   final VoidCallback onTranscript;
   final VoidCallback? onBackdrop;
 
@@ -632,40 +637,61 @@ class _TopBar extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final l10n = context.l10n;
+    final ink = CallInk.of(context);
     return Padding(
-      padding: const EdgeInsets.fromLTRB(14, 14, 14, 0),
+      padding: const EdgeInsets.fromLTRB(14, 12, 14, 0),
       child: Row(
         children: [
           _RoundKey(
             key: const ValueKey('call-transcript'),
             icon: AppIcons.callTranscript,
             label: l10n.speechCallTranscriptHint,
+            blur: blur,
             onTap: onTranscript,
           ),
+          const SizedBox(width: 10),
           Expanded(
-            child: Column(
-              children: [
-                Text(
-                  title,
-                  key: const ValueKey('call-title'),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  textAlign: TextAlign.center,
-                  style: theme.textTheme.titleMedium?.copyWith(
-                    color: CallInk.of(context).fg,
-                    fontWeight: FontWeight.w600,
-                    letterSpacing: 0.2,
+            child: Center(
+              child: _Frosted(
+                blur: blur,
+                shape: const StadiumBorder(),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 14),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      CallTimer(since: since, live: live),
+                      Container(
+                        width: 1,
+                        height: 14,
+                        margin: const EdgeInsets.symmetric(horizontal: 10),
+                        color: ink.glassBorder,
+                      ),
+                      Flexible(
+                        child: Text(
+                          title,
+                          key: const ValueKey('call-title'),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: theme.textTheme.titleSmall?.copyWith(
+                            color: ink.fg,
+                            fontWeight: FontWeight.w600,
+                            letterSpacing: 0.2,
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
-                const SizedBox(height: 6),
-                CallTimer(since: since, live: live),
-              ],
+              ),
             ),
           ),
+          const SizedBox(width: 10),
           _RoundKey(
             key: const ValueKey('call-backdrop'),
             icon: AppIcons.theme,
             label: l10n.speechBackdropTitle,
+            blur: blur,
             onTap: onBackdrop,
           ),
         ],
@@ -674,12 +700,43 @@ class _TopBar extends StatelessWidget {
   }
 }
 
+/// Frosted glass 40 high in [shape]: the call's glass tint and hairline over a
+/// blur of what is behind ([blur], as the performance setting allows).
+class _Frosted extends StatelessWidget {
+  const _Frosted({required this.shape, required this.blur, required this.child, this.width});
+
+  final OutlinedBorder shape;
+  final bool blur;
+  final double? width;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final ink = CallInk.of(context);
+    final glass = Container(
+      width: width,
+      height: 40,
+      decoration: ShapeDecoration(
+        color: ink.glass,
+        shape: shape.copyWith(side: BorderSide(color: ink.glassBorder)),
+      ),
+      child: child,
+    );
+    if (!blur) return glass;
+    return ClipPath(
+      clipper: ShapeBorderClipper(shape: shape),
+      child: BackdropFilter(filter: ui.ImageFilter.blur(sigmaX: 18, sigmaY: 18), child: glass),
+    );
+  }
+}
+
 /// A small round glass key in the top bar; gives a little under the finger.
 class _RoundKey extends StatefulWidget {
-  const _RoundKey({super.key, required this.icon, required this.label, required this.onTap});
+  const _RoundKey({super.key, required this.icon, required this.label, required this.blur, required this.onTap});
 
   final IconData icon;
   final String label;
+  final bool blur;
   final VoidCallback? onTap;
 
   @override
@@ -712,14 +769,10 @@ class _RoundKeyState extends State<_RoundKey> {
           scale: _down ? 0.9 : 1,
           duration: AppMotion.of(context, _down ? AppMotion.press : AppMotion.standard),
           curve: _down ? Curves.easeOut : Curves.easeOutBack,
-          child: Container(
+          child: _Frosted(
             width: 40,
-            height: 40,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: ink.glass,
-              border: Border.all(color: ink.glassBorder),
-            ),
+            shape: const CircleBorder(),
+            blur: widget.blur,
             child: Icon(widget.icon, size: 18, color: ink.fg.withValues(alpha: onTap == null ? 0.35 : 0.8)),
           ),
         ),
