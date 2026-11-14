@@ -32,6 +32,7 @@ import '../pets/pet_perch.dart';
 import '../theme/app_icons.dart';
 import '../theme/theme.dart';
 import '../update/update_sheet.dart' show checkForUpdates;
+import 'app_notes.dart';
 import 'chat_rows.dart';
 import 'chat_rows_cache.dart';
 import 'media/media_paths.dart';
@@ -1115,7 +1116,7 @@ class _ChatListState extends ConsumerState<ChatList> with SingleTickerProviderSt
     };
     final canAct = prompt.inboxId != null;
     return UserBubble(
-      text: prompt.text,
+      text: withoutAppNotes(prompt.text),
       attachments: prompt.attachments.isEmpty ? null : SentAttachments.pending(prompt.attachments),
       pendingLabel: prompt.failed ? appL10n.chatFailedSubmission : label,
       pendingIcon: prompt.failed ? AppIcons.error : icon,
@@ -1139,7 +1140,7 @@ class _ChatListState extends ConsumerState<ChatList> with SingleTickerProviderSt
     final connection = ref.listenManual(activeConnectionProvider.select((c) => c.value?.client), (_, next) {
       if (!identical(next, client)) retired = true;
     });
-    var text = prompt.text;
+    var text = withoutAppNotes(prompt.text);
     try {
       final edited = await showAppDialog<String>(
         context: context,
@@ -1151,7 +1152,7 @@ class _ChatListState extends ConsumerState<ChatList> with SingleTickerProviderSt
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 TextFormField(
-                  initialValue: prompt.text,
+                  initialValue: text,
                   onChanged: (value) => text = value,
                   autofocus: true,
                   minLines: 2,
@@ -1176,7 +1177,7 @@ class _ChatListState extends ConsumerState<ChatList> with SingleTickerProviderSt
           client?.mux.lastReadyGenerationNumber != readyNumber) {
         return;
       }
-      await ref.read(chatProvider(sessionId).notifier).retryFailed(prompt, edited);
+      await ref.read(chatProvider(sessionId).notifier).retryFailed(prompt, withAppNotesOf(prompt.text, edited));
     } finally {
       connection.close();
     }
@@ -1303,7 +1304,7 @@ class _ChatListState extends ConsumerState<ChatList> with SingleTickerProviderSt
     if (outcome == null || !mounted) return;
     final attached = item.images.isNotEmpty || item.files.isNotEmpty;
     _openFork(outcome, messenger, attached ? appL10n.chatOpenedInNewChatReattach : appL10n.chatOpenedInNewChat);
-    compose?.call(item.text);
+    compose?.call(withoutAppNotes(item.text));
   }
 
   /// Switches to the fork; the toast offers the way back.
@@ -1399,7 +1400,7 @@ class _ChatListState extends ConsumerState<ChatList> with SingleTickerProviderSt
     return switch (row) {
       UserRow(:final item) when dshUiReplyChip(item.text) != null => DshUiReplyChip(label: dshUiReplyChip(item.text)!),
       UserRow(:final item) => UserBubble(
-        text: item.text,
+        text: withoutAppNotes(item.text),
         attachments: item.images.isEmpty && item.files.isEmpty
             ? null
             : SentAttachments.echoed(sessionId: widget.sessionId, images: item.images, files: item.files),

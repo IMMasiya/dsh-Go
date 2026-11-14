@@ -1,5 +1,6 @@
 import 'dart:typed_data';
 
+import 'package:dsh_app/ui/chat/app_notes.dart';
 import 'package:dsh_app/speech/deepseek_speech.dart';
 import 'package:dsh_app/speech/speech_audio.dart';
 import 'package:dsh_app/speech/speech_settings.dart';
@@ -90,6 +91,8 @@ void main() {
     }
     expect(find.text('这周末北京天气怎么样'), findsOneWidget);
     expect(conversation.sent.single, endsWith('这周末北京天气怎么样'));
+    // "This is a call" goes to the model as a note the chat does not show.
+    expect(withoutAppNotes(conversation.sent.single), '这周末北京天气怎么样');
 
     conversation.reply('北京晴，最高二十度。');
     for (var i = 0; i < 30; i++) {

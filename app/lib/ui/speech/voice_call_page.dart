@@ -29,6 +29,7 @@ import '../../speech/speech_out.dart';
 import '../../speech/speech_settings.dart';
 import '../../speech/voice_cloud.dart';
 import '../../state/voice_state.dart';
+import '../chat/app_notes.dart';
 import '../chat/voice/voice_bridge.dart';
 import '../companion/companion_ask.dart';
 import '../companion/companion_stage.dart';
@@ -133,11 +134,11 @@ class _VoiceCallPageState extends ConsumerState<VoiceCallPage> with WidgetsBindi
         return (
           bargeIn: saved.bargeIn,
           speaker: saved.speaker,
-          spokenHint: saved.spoken ? appL10n.speechCallHint : null,
+          spokenHint: saved.spoken ? appNote(appL10n.speechCallHint) : null,
         );
       },
       permission: () async => await bridge.requestPermission() == VoicePermission.granted,
-      cutNote: (heard) => heard.isEmpty ? appL10n.speechCallCutEarly : appL10n.speechCallCutNote(heard),
+      cutNote: (heard) => appNote(heard.isEmpty ? appL10n.speechCallCutEarly : appL10n.speechCallCutNote(heard)),
       thinkingCue: () async {
         // Asked again after the settings: her voice may have begun meanwhile.
         if ((await callSettings.ready()).cue && _call.cueStill) await playThinkingCue(audio);

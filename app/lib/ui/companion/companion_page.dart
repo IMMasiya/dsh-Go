@@ -51,6 +51,7 @@ import '../../state/settings_state.dart';
 import '../../state/voice_model_state.dart';
 import '../../state/voice_settings.dart';
 import '../../state/voice_state.dart';
+import '../chat/app_notes.dart';
 import '../chat/voice/voice_controller.dart';
 import '../common/app_dialog.dart';
 import '../common/app_sheet.dart';
@@ -1763,7 +1764,7 @@ class _CompanionPageState extends ConsumerState<CompanionPage> implements Compan
       if (capability == null && !firstInline) _contextUnsupported();
       final profile = _contextProfile();
       final sent = await chat.send(
-        firstInline ? '（从现在起请扮演下面的角色，直接开始，不要复述这段设定。）\n${_persona()}\n$raw' : raw,
+        firstInline ? '${appNote('（从现在起请扮演下面的角色，直接开始，不要复述这段设定。）\n${_persona()}')}\n$raw' : raw,
         verbatim: true,
         beforeDeliver: capability == null || client == null
             ? null
