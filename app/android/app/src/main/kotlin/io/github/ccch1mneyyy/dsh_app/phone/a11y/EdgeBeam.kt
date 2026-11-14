@@ -156,7 +156,7 @@ internal class EdgeBeam(private val context: Context, private val wm: WindowMana
         if (!attached) return
         val now = SystemClock.uptimeMillis()
         if (removeWhenGone && clock.gone(now)) { remove(); return }
-        val animating = clock.animating(now)
+        val animating = clock.animating(now, view.drifts)
         // The colour drifts a few dp a second: 30 fps is plenty, also on a 120 Hz screen.
         if (!animating || now - drawnAt >= EdgeBeamSpec.FRAME_MS) {
             clock.frame(now)
@@ -195,7 +195,11 @@ internal class EdgeBeam(private val context: Context, private val wm: WindowMana
         private val linePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE }
         private val lumps = FloatArray(EdgeRim.COUNT * EdgeRim.STRIDE)
         private var perimeter = 0f
-        private var rim: Shader? = null
+        // Made once, here: whether this view's picture drifts is known before its first frame.
+        private val rim: Shader? = if (Build.VERSION.SDK_INT >= 33) RimShader.create() else null
+
+        /** Only the shader's rim moves; the bands drawn without it stand still and need no frames. */
+        val drifts: Boolean get() = rim != null
 
         init {
             importantForAccessibility = IMPORTANT_FOR_ACCESSIBILITY_NO
@@ -232,7 +236,7 @@ internal class EdgeBeam(private val context: Context, private val wm: WindowMana
             val screen = RectF(0f, 0f, w.toFloat(), h.toFloat())
             perimeter = EdgeRim.perimeter(w.toFloat(), h.toFloat(), r)
             if (Build.VERSION.SDK_INT >= 33) {
-                val shader = rim ?: RimShader.create()?.also { rim = it }
+                val shader = rim
                 if (shader != null) {
                     // Only the band the colour can reach is drawn; the rest of the screen costs nothing.
                     val reach = EdgeBeamSpec.REACH * widthPx

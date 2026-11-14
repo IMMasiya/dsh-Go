@@ -275,9 +275,12 @@ internal class EdgeBeamClock(private val motion: Boolean) {
     /** A frame break (hidden, no frames asked for): the next frame doesn't count the gap. */
     fun rest() { last = -1L }
 
-    /** Frames are needed: something ramps, or the rim is on and drifting. */
-    fun animating(now: Long): Boolean =
-        !fade.done(now) || !still.done(now) || (motion && fade.to > 0f && still.to < 1f)
+    /**
+     * Frames are needed: something ramps, or the rim is on and drifting. [drifts] is false for a
+     * renderer whose picture stands still (the band below Android 13): it only needs the ramps.
+     */
+    fun animating(now: Long, drifts: Boolean = true): Boolean =
+        !fade.done(now) || !still.done(now) || (drifts && motion && fade.to > 0f && still.to < 1f)
 
     /** Faded out completely. */
     fun gone(now: Long): Boolean = fade.to == 0f && fade.done(now)

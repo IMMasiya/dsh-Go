@@ -268,6 +268,8 @@ internal class OverlayBall(
                 onTouched()
                 downX = e.rawX
                 downY = e.rawY
+                startX = params.x
+                startY = params.y
                 dragging = false
                 tracker?.recycle()
                 tracker = VelocityTracker.obtain().also { track(it, e) }
@@ -281,8 +283,12 @@ internal class OverlayBall(
                 if (!dragging && hold.state != HoldToStop.State.FIRED && (abs(dx) > slop || abs(dy) > slop)) {
                     dragging = true
                     cancelGlide()
-                    startX = params.x - dx.roundToInt()
-                    startY = params.y - dy.roundToInt()
+                    // The ball follows the finger from where it was touched. Only a ball that glided
+                    // since then (untucking) is taken over where it has got to, so it doesn't jump back.
+                    if (params.x != startX || params.y != startY) {
+                        startX = params.x - dx.roundToInt()
+                        startY = params.y - dy.roundToInt()
+                    }
                     hold.moved()
                     endHold()
                     press(false)
@@ -295,27 +301,29 @@ internal class OverlayBall(
                 }
             }
             MotionEvent.ACTION_UP -> {
-                touching = false
-                onTouched()
                 tracker?.let { track(it, e) }
                 press(false)
                 val release = hold.up(SystemClock.uptimeMillis())
                 endHold()
+                // The drop is kept before the owner hears the touch ended: it may untuck the ball
+                // at once (no animations), and that must go to the new dock, not the old one.
+                if (release == HoldToStop.Release.DRAG) settle(velocityX())
+                touching = false
+                onTouched()
                 when (release) {
                     HoldToStop.Release.TAP -> ball.performClick()
-                    HoldToStop.Release.DRAG -> settle(velocityX())
                     HoldToStop.Release.STOP -> fire()
                     else -> Unit
                 }
                 endDrag()
             }
             MotionEvent.ACTION_CANCEL -> {
-                touching = false
-                onTouched()
                 press(false)
                 hold.cancel()
                 endHold()
                 if (dragging) settle(0f)
+                touching = false
+                onTouched()
                 endDrag()
             }
         }

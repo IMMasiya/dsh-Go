@@ -589,6 +589,7 @@ internal class OverlayCapsule(
     fun naturalCardHeight(): Int = surface.naturalCardHeight()
 
     /** A new screen size (first placement, rotation): widths again, at once. */
+    /** [screenW] is the width there is room for ([CapsulePlacement.roomW]), not the whole display's. */
     fun place(screenW: Int, screenH: Int) {
         this.screenW = screenW
         screenHdp = screenH / ctx.resources.displayMetrics.density

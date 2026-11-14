@@ -168,6 +168,17 @@ class EdgeBeamModelTest {
         assertTrue(c.animating(3_000))
     }
 
+    @Test fun aRendererThatStandsStillAsksForFramesOnlyWhileItRamps() {
+        val c = EdgeBeamClock(motion = true)
+        c.show(true, 0)
+        assertTrue(c.animating(100, drifts = false)) // fading in
+        c.frame(EdgeBeamSpec.FADE_IN_MS)
+        assertFalse(c.animating(EdgeBeamSpec.FADE_IN_MS, drifts = false)) // on, and nothing moves
+        assertTrue(c.animating(EdgeBeamSpec.FADE_IN_MS)) // the shader's rim keeps drifting
+        c.pause(true, 5_000)
+        assertTrue(c.animating(5_100, drifts = false)) // settling into the line
+    }
+
     @Test fun withoutAnimationsTheRimStandsStillAndPausingSwapsAtOnce() {
         val c = EdgeBeamClock(motion = false)
         c.show(true, 0)

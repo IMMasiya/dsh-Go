@@ -261,6 +261,17 @@ class BallGeometryTest {
         }
     }
 
+    @Test fun aCutoutOnOneSideNarrowsTheCardSoItStillEndsOnScreen() {
+        // A narrow screen with a bar down its left: the left anchor starts inside the bar.
+        val narrow = SafeArea(1080, 2400, left = 96, top = 96, right = 0, bottom = 63)
+        val cardW = CapsuleMetrics.maxPx(CapsulePlacement.roomW(narrow), density)
+        for (anchor in CapsuleAnchor.entries) {
+            val capLeft = CapsulePlacement.capsuleLeft(anchor, narrow, capsuleW, edge)
+            val cardLeft = capLeft - CapsulePlacement.leftIn(anchor, cardW, capsuleW)
+            assertTrue("$anchor card at $cardLeft", cardLeft >= 0 && cardLeft + cardW <= narrow.screenW)
+        }
+    }
+
     @Test fun theCardSitsOnTheCapsulesSideAndStaysOnScreen() {
         val cardW = CapsuleMetrics.maxPx(area.screenW, density)
         for (anchor in CapsuleAnchor.entries) {

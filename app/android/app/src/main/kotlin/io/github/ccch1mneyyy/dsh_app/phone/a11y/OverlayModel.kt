@@ -344,6 +344,12 @@ internal object CapsulePlacement {
         return (clampCentre(area, centreY, headerH, gap) - area.top).toFloat() / h
     }
 
+    /**
+     * The width the capsule and the card are sized for: the screen less a cutout or bar on either
+     * side. A left or right anchor starts inside that inset, so the widest card still ends on screen.
+     */
+    fun roomW(area: SafeArea): Int = area.screenW - area.left - area.right
+
     /** The capsule's left on screen at [anchor], [capW] wide, [edge] from the side. Centred means on the whole screen. */
     fun capsuleLeft(anchor: CapsuleAnchor, area: SafeArea, capW: Int, edge: Int): Int = when (anchor) {
         CapsuleAnchor.LEFT -> area.left + edge

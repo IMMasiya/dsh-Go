@@ -692,6 +692,9 @@ internal class ControlOverlay(private val service: AccessibilityService) : UserG
         }
         val b = ball
         pill = null
+        // A capsule taken away under the finger: endDrag finds no capsule, so the drag ends here.
+        dragFrom = null
+        dragAt = null
         ball = null
         ballShown = false
         unfolding = false
@@ -763,7 +766,7 @@ internal class ControlOverlay(private val service: AccessibilityService) : UserG
         lift?.cancel()
         lift = null
         p.params.y = capsuleY(p, a)
-        p.place(a.screenW, a.screenH)
+        p.place(CapsulePlacement.roomW(a), a.screenH)
         p.params.x = capsuleX(p)
         update(p.root, p.params)
     }
