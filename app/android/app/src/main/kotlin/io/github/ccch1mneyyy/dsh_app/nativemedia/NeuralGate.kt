@@ -12,6 +12,7 @@ class NeuralGate(
     private val worker: ExecutorService = Executors.newSingleThreadExecutor { task ->
         Thread(task, "dsh-turn-model").apply { isDaemon = true }
     },
+    private val onVadFailed: (Exception) -> Unit = {},
     /** The turn model failed on a pause (said once per gate): that pause ends the energy gate's way. */
     private val onTurnFailed: (Exception) -> Unit = {},
 ) : TurnGate {
@@ -46,15 +47,33 @@ class NeuralGate(
     /** This pause's check failed: it ends after the energy gate's hangover instead. */
     private var turnFailed = false
     private var reported = false
+    private val energy = SpeechGate(echoCancelled)
+    // A failed VAD stays off for this call; a new call creates a fresh gate.
+    private var vadFailed = false
 
     override fun setPlaying(on: Boolean, nowMs: Long) {
+        energy.setPlaying(on, nowMs)
         playingSince = if (on) (if (playingSince >= 0) playingSince else nowMs) else -1L
         if (!on) loudSamples = 0
     }
 
     override fun consume(frame: ShortArray, levelDb: Double, nowMs: Long): SpeechGate.Edge {
+        // Track the same audio and playback state so recovery can keep the current utterance.
+        val energyEdge = energy.consume(frame, levelDb, nowMs)
+        if (vadFailed) return energyEdge
         append(frame)
-        val probability = vad.probability(frame)
+        val probability = try {
+            vad.probability(frame)
+        } catch (e: Exception) {
+            vadFailed = true
+            onVadFailed(e)
+            // Reconcile the two detectors once: never emit a duplicate START or lose an END.
+            return when {
+                speaking && !energy.isSpeaking -> SpeechGate.Edge.END
+                !speaking && energy.isSpeaking -> SpeechGate.Edge.START
+                else -> SpeechGate.Edge.NONE
+            }
+        }
         val prediction = completed.getAndSet(null)
         if (prediction != null) pending = false
         val playing = playingSince >= 0
@@ -142,6 +161,7 @@ class NeuralGate(
     }
 
     override fun reset() {
+        energy.reset()
         if (size == 0) return
         speaking = false
         turnFailed = false
@@ -153,7 +173,7 @@ class NeuralGate(
         written = 0
         size = 0
         audio.fill(0)
-        vad.reset()
+        if (!vadFailed) vad.reset()
     }
 
     override fun close() {
