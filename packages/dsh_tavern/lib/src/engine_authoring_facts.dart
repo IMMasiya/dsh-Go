@@ -1,18 +1,17 @@
 part of 'engine.dart';
 
-/// Capture-owned facts, detached once before sealing. The audit map contains
-/// only rows read from the origin chat; neither a sample nor a host can supply
-/// an audit. A missing row is absent evidence, never an inferred local bind.
+/// Capture-owned facts. The proof reader separates captured real audits from
+/// the one locally adopted frame; a sample ledger supplies neither proof.
 final class _AuthoringSecretFacts {
   const _AuthoringSecretFacts({
     required this.settings,
     required this.persona,
     required this.cardRevision,
-    required this.bindAudits,
+    required this.proofs,
   });
   final Map<String, Object?> settings, persona;
   final int cardRevision;
-  final Map<String, StoredAgentRun> bindAudits;
+  final _AuthoringSecretProofs proofs;
 }
 
 _DirectorPrepared? _prepareDirectorFromFacts(
@@ -24,7 +23,7 @@ _DirectorPrepared? _prepareDirectorFromFacts(
   required Map<String, Object?> currentSettings,
   required Map<String, Object?> authorizationSource,
   required Map<String, Object?> storyState,
-  required Map<String, StoredAgentRun> bindAudits,
+  required _AuthoringSecretProofs proofs,
 }) {
   final stored = turn.directorCaptured;
   if (stored == null || turn.kind == _TurnKind.impersonate) {
@@ -46,7 +45,7 @@ _DirectorPrepared? _prepareDirectorFromFacts(
             currentSettings: currentSettings,
             authorizationSource: authorizationSource,
             storyState: storyState,
-            bindAudits: bindAudits,
+            proofs: proofs,
           );
     return _directorPreparation(stored, run, reason);
   } catch (_) {
@@ -68,7 +67,7 @@ String? _directorEligibilityFromFacts(
   required Map<String, Object?> currentSettings,
   required Map<String, Object?> authorizationSource,
   required Map<String, Object?> storyState,
-  required Map<String, StoredAgentRun> bindAudits,
+  required _AuthoringSecretProofs proofs,
 }) {
   try {
     final pathReason = _directorPathReason(run, parent, contextPath);
@@ -87,7 +86,7 @@ String? _directorEligibilityFromFacts(
       data,
       currentSettings,
       authorizationSource,
-      bindAudits,
+      proofs,
     ).policy;
     final prior = stored.result['secretPolicy'];
     final secretReason = current == null && prior == null
@@ -122,7 +121,7 @@ List<state_core.SecretRelease> _secretReleasesFromFacts(
   Map<String, Object?> settings,
   Map<String, Object?> saved,
   _SecretProtection protection,
-  Map<String, StoredAgentRun> bindAudits,
+  _AuthoringSecretProofs proofs,
 ) {
   final input = _secretReleaseInput(data, settings, saved, protection);
   if (input == null) {
@@ -134,7 +133,7 @@ List<state_core.SecretRelease> _secretReleasesFromFacts(
     if (release == null) {
       continue;
     }
-    if (_secretProofMatches(bindAudits[binding['bindReceiptId']], binding)) {
+    if (proofs.matches(binding)) {
       result.add(release);
     }
   }
@@ -146,7 +145,7 @@ _SecretInput _ordinarySecretInputFromFacts(
   Map<String, Object?> data,
   Map<String, Object?> settings,
   Map<String, Object?> source,
-  Map<String, StoredAgentRun> bindAudits, {
+  _AuthoringSecretProofs proofs, {
   Map<String, Object?>? authorizationSource,
 }) {
   final prepared = _prepareSecretInput(data, source, authorizationSource: authorizationSource);
@@ -161,12 +160,12 @@ _SecretInput _ordinarySecretInputFromFacts(
           settings,
           prepared.authorizationSaved,
           prepared.currentProtection,
-          bindAudits,
+          proofs,
         );
   final currentKnowledge = {for (final release in currentReleases) _directorHash(_secretKnowledge(release))};
   final releases = prepared.unavailable
       ? <state_core.SecretRelease>[]
-      : _secretReleasesFromFacts(characterId, data, settings, prepared.saved, prepared.protection, bindAudits);
+      : _secretReleasesFromFacts(characterId, data, settings, prepared.saved, prepared.protection, proofs);
   return _finishSecretInput(prepared, currentKnowledge, releases);
 }
 
@@ -195,7 +194,7 @@ String? _secretDirectorTurnReasonFromFacts(_Turn turn, Map<String, Object?> save
     data,
     facts.settings,
     _secretStateSource(saved),
-    facts.bindAudits,
+    facts.proofs,
   ).policy;
   return _secretKnowledgeReason(current, prior);
 }
@@ -222,7 +221,7 @@ List<PromptInjection> _secretTurnInjectionsFromFacts(
     facts.settings,
     saved,
     _SecretProtection(data, saved),
-    facts.bindAudits,
+    facts.proofs,
   );
   return _secretReleaseInjections(turn, releases);
 }
@@ -261,7 +260,7 @@ TavernTurnInspection? _prepareSecretRequestFromFacts(
     facts.settings,
     replyState,
     _SecretProtection(data, replyState),
-    facts.bindAudits,
+    facts.proofs,
   );
   _checkSecretIncluded(turn, current);
   return turn.inspection.copyWith(
@@ -314,10 +313,9 @@ String? _secretBindingReasonFromFacts(
       : 'secret_source_changed';
 }
 
-/// true means the native prepare accepted an actual new binding. C2 stops
-/// here with secret_bind_required. A rejected prepare keeps its original
-/// session, budget, receipts and trace; it is not a fresh ordinary session.
-bool _prepareSecretBindingFromFacts(
+/// null means prepare was not entered. A rejected result still retains the
+/// original session, budget, receipts and trace, without an adopted frame.
+_AuthoringSecretPreparation? _prepareSecretBindingFromFacts(
   _Turn turn,
   Map<String, Object?> data,
   String? parent, {
@@ -331,7 +329,7 @@ bool _prepareSecretBindingFromFacts(
 }) {
   final proposal = turn.secretCaptured;
   if (proposal == null) {
-    return false;
+    return null;
   }
   final reason = _secretBindingReasonFromFacts(
     turn,
@@ -346,7 +344,7 @@ bool _prepareSecretBindingFromFacts(
   );
   if (reason != null) {
     turn.secretIssues.add(_directorIssue(reason, id: proposal.id));
-    return false;
+    return null;
   }
   turn.cancellation.check();
   if (saved == null) {
@@ -354,17 +352,29 @@ bool _prepareSecretBindingFromFacts(
   }
   final state = _secretBindingState(turn, data, proposal, saved);
   if (state == null) {
-    return false;
+    return null;
   }
   if (rawExtra == null) {
     throw const TavernAuthoringException('unsupported_preview', 'The secret source extra was not captured.');
   }
   final capability = _secretBindingCapability(turn, proposal, state.input, state.protection, rawExtra);
   if (capability == null) {
-    return false;
+    return null;
   }
   // The detached turn constructor supplies this capture-scoped identity.
   // Never fall back to the live invocation RNG in a preview.
   final preparation = _prepareSecretBindingPlan(turn, data, proposal, state.input, capability, turn.stateInvocationId!);
-  return preparation?.prepared.accepted == true;
+  if (preparation == null) {
+    return null;
+  }
+  return _AuthoringSecretPreparation(
+    proposal: proposal,
+    anchor: parent!,
+    plan: preparation.plan,
+    prepared: preparation.prepared,
+    capability: capability,
+    protection: state.protection,
+    saved: saved,
+    rawExtra: rawExtra,
+  );
 }

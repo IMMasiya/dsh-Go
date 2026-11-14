@@ -29,6 +29,7 @@ final class _AuthoringPromptTask implements TavernAuthoringTask<TavernAuthoringP
     PromptAssembly? assembly,
     Map<String, Object?> worldInfo = const {},
     List<Map<String, Object?>> regexTrace = const [],
+    Map<String, Object?> secretTrace = const {},
     List<TavernAuthoringIssue> issues = const [],
   }) => TavernAuthoringPromptPreview(
     requestId: requestId,
@@ -48,6 +49,7 @@ final class _AuthoringPromptTask implements TavernAuthoringTask<TavernAuthoringP
     assembly: assembly,
     worldInfo: worldInfo,
     regexTrace: regexTrace,
+    secretTrace: secretTrace,
     issues: issues,
   );
 }
@@ -82,6 +84,7 @@ extension _AuthoringPromptPreviews on TavernEngine {
     Object? failure;
     StackTrace? failureStack;
     var origin = <String, Object?>{};
+    _AuthoringPromptContextCapture? capture;
     try {
       // Type checking the built-in final implementation executes no callback
       // counter getter or count function, even on the unsupported path.
@@ -92,16 +95,14 @@ extension _AuthoringPromptPreviews on TavernEngine {
         );
       }
       task.cancellation.check();
-      final capture = await _captureAuthoringPromptContext(task.request, task.captureId, task.cancellation);
-      origin = {...capture.origin, 'sealed': true};
+      final captured = await _captureAuthoringPromptContext(task.request, task.captureId, task.cancellation);
+      capture = captured;
+      origin = {...captured.origin, 'sealed': true};
       task.cancellation.check();
-      if (capture.prepareBeforeUser()) {
-        throw const TavernAuthoringException(
-          'secret_bind_required',
-          'This preparation needs a new secret binding; an isolated binding adapter is not yet available.',
-        );
-      }
-      result = await _assembleAuthoringPrompt(task, capture, origin);
+      final regexTrace = <Map<String, Object?>>[];
+      captured.prepareGroupUser(task.request.text, task.captureId, regexTrace);
+      captured.prepareBeforeUser();
+      result = await _assembleAuthoringPrompt(task, captured, origin, regexTrace);
     } on TavernAuthoringException catch (error) {
       final status = switch (error.code) {
         'unsupported_preview' ||
@@ -114,6 +115,7 @@ extension _AuthoringPromptPreviews on TavernEngine {
       result = task.value(
         status,
         origin: origin,
+        secretTrace: capture?.secretTrace ?? const {},
         issues: [TavernAuthoringIssue(type: error.code, message: error.message)],
       );
     } on TavernModelException catch (error, stack) {
@@ -121,6 +123,7 @@ extension _AuthoringPromptPreviews on TavernEngine {
         result = task.value(
           TavernAuthoringPreviewStatus.cancelled,
           origin: origin,
+          secretTrace: capture?.secretTrace ?? const {},
           issues: [const TavernAuthoringIssue(type: 'cancelled', message: 'The authoring preview was cancelled.')],
         );
       } else {
@@ -131,12 +134,14 @@ extension _AuthoringPromptPreviews on TavernEngine {
       result = task.value(
         TavernAuthoringPreviewStatus.failed,
         origin: origin,
+        secretTrace: capture?.secretTrace ?? const {},
         issues: [TavernAuthoringIssue(type: 'prompt_budget_exceeded', message: error.toString())],
       );
     } on TavernScriptException catch (error) {
       result = task.value(
         TavernAuthoringPreviewStatus.failed,
         origin: origin,
+        secretTrace: capture?.secretTrace ?? const {},
         issues: [TavernAuthoringIssue(type: error.code.name, message: error.message)],
       );
     } catch (error, stack) {
@@ -160,6 +165,7 @@ extension _AuthoringPromptPreviews on TavernEngine {
     _AuthoringPromptTask task,
     _AuthoringPromptContextCapture capture,
     Map<String, Object?> origin,
+    List<Map<String, Object?>> regexTrace,
   ) async {
     final turn = capture.turn;
     final history = capture.history;
@@ -175,7 +181,6 @@ extension _AuthoringPromptPreviews on TavernEngine {
     final assistantMessageCount = history
         .where((node) => node.message.role == TavernRole.character && !node.message.hidden && !_systemMessage(node))
         .length;
-    final localRandom = Random(task.request.seed);
     final environment = _MacroEnvironment(
       capture.actorData,
       turn.settings,
@@ -184,7 +189,7 @@ extension _AuthoringPromptPreviews on TavernEngine {
       history,
       turn.config,
       task.request.at,
-      localRandom.nextDouble,
+      capture.random.nextDouble,
       capture.macroChatIdentity,
       turn.input,
       turn.generationType,
@@ -196,7 +201,6 @@ extension _AuthoringPromptPreviews on TavernEngine {
       preset: preset,
     );
     turn.environment = environment;
-    final regexTrace = <Map<String, Object?>>[];
     if (turn.kind == _TurnKind.send && turn.input.isNotEmpty) {
       branch.appendUser(
         turn,
@@ -314,6 +318,7 @@ extension _AuthoringPromptPreviews on TavernEngine {
       assembly: assembly,
       worldInfo: worldTrace,
       regexTrace: regexTrace,
+      secretTrace: capture.secretTrace,
       issues: _authoringPreparationIssues(turn),
     );
   }

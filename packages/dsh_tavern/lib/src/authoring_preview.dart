@@ -179,6 +179,7 @@ final class TavernAuthoringPromptPreview {
     this.assembly,
     this.worldInfo = const {},
     this.regexTrace = const [],
+    this.secretTrace = const {},
     this.issues = const [],
   });
   final String requestId, draftId, captureId;
@@ -190,6 +191,11 @@ final class TavernAuthoringPromptPreview {
 
   /// Actual transform observations from this preparation; no regex is rerun.
   final List<Map<String, Object?>> regexTrace;
+
+  /// Preview-scoped adoption and release observations, including after a
+  /// later budget failure or cancellation. This contains no reusable proof
+  /// or committed audit; attempted is always false because no HTTP is sent.
+  final Map<String, Object?> secretTrace;
   final List<TavernAuthoringIssue> issues;
 
   Map<String, Object?> toJson() => {
@@ -203,6 +209,7 @@ final class TavernAuthoringPromptPreview {
     'assembly': assembly?.toJson(),
     'worldInfo': worldInfo,
     'regexTrace': regexTrace,
+    'secretTrace': secretTrace,
     'issues': [
       for (final issue in issues) {'type': issue.type, 'message': issue.message},
     ],

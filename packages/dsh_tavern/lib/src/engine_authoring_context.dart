@@ -5,13 +5,14 @@ part of 'engine.dart';
 final class _AuthoringPromptContextCapture {
   _AuthoringPromptContextCapture({
     required this.turn,
-    required this.history,
+    required List<StoredNode> history,
     required this.parent,
     required this.userSiblingIndex,
     required this.actorData,
     required this.hostData,
     required this.global,
     required this.macroChatIdentity,
+    required this.random,
     required this.books,
     required this.missingBooks,
     required this.origin,
@@ -19,19 +20,22 @@ final class _AuthoringPromptContextCapture {
     required _AuthoringSecretFacts secretFacts,
     required List<String> contextPath,
     required Map<String, Object?>? directorSource,
+    required Map<String, Object?>? capturedDirectorSource,
     required Map<String, Object?> authorizationSource,
     required Map<String, Object?> storyState,
     required Map<String, StoredAgentRun> audits,
-    required List<({String id, Map<String, Object?> entry, bool valid})> legacy,
+    required _AuthoringCapturedLegacy legacy,
     required List<StoredRememberMemory> remembered,
     required Set<String> physicalParents,
     required StoredAgentRun? persistedProposal,
     required Map<String, Object?>? bindingSource,
     required Map<String, Object?>? bindingState,
     required Map<String, Object?>? bindingExtra,
-  }) : _secretFacts = secretFacts,
+  }) : _history = history,
+       _secretFacts = secretFacts,
        _contextPath = contextPath,
        _directorSource = directorSource,
+       _capturedDirectorSource = capturedDirectorSource,
        _authorizationSource = authorizationSource,
        _storyState = storyState,
        _audits = audits,
@@ -44,26 +48,117 @@ final class _AuthoringPromptContextCapture {
        _bindingExtra = bindingExtra;
 
   final _Turn turn;
-  final List<StoredNode> history;
-  final String? parent;
+  final List<StoredNode> _history;
+  List<StoredNode> get history => _secretFacts.proofs.frame?.history ?? _history;
+  String? parent;
   final int userSiblingIndex;
   final Map<String, Object?> actorData, hostData, global, origin;
-  final String macroChatIdentity;
+  String macroChatIdentity;
+  final Random random;
   final List<WorldInfoBook> books;
   final List<Map<String, Object?>> missingBooks;
   final _AuthoringScriptCapture scripts;
   final _AuthoringSecretFacts _secretFacts;
   final List<String> _contextPath;
-  final Map<String, Object?>? _directorSource, _bindingSource, _bindingState, _bindingExtra;
-  final Map<String, Object?> _authorizationSource, _storyState;
+  Map<String, Object?>? _directorSource;
+  final Map<String, Object?>? _capturedDirectorSource, _bindingSource, _bindingState, _bindingExtra;
+  Map<String, Object?> _authorizationSource, _storyState;
   final Map<String, StoredAgentRun> _audits;
-  final List<({String id, Map<String, Object?> entry, bool valid})> _legacy;
+  final _AuthoringCapturedLegacy _legacy;
   final List<StoredRememberMemory> _remembered;
   final Set<String> _physicalParents;
   final StoredAgentRun? _persistedProposal;
 
-  bool prepareBeforeUser() {
-    if (_prepareSecretBindingFromFacts(
+  // A native group round appends its user before constructing the actor's
+  // empty-input turn. This local branch follows that same preparation order.
+  void prepareGroupUser(String input, String captureId, List<Map<String, Object?>> regexTrace) {
+    final view = turn.groupView;
+    if (view == null || turn.kind != _TurnKind.send || input.isEmpty) {
+      return;
+    }
+    final presetRaw = _map(turn.settings['preset']);
+    final preset = ChatPreset({
+      ...(presetRaw.isEmpty ? ChatPreset.stDefault().raw : presetRaw),
+      'show_thoughts': turn.config.thinking,
+    });
+    final environment = _MacroEnvironment(
+      actorData,
+      turn.settings,
+      turn.variables,
+      global,
+      history,
+      turn.config,
+      turn.at,
+      random.nextDouble,
+      macroChatIdentity,
+      input,
+      'normal',
+      chatIdHash: _finiteNumber(turn.metadata['chat_id_hash']),
+      pickRerollSeed: turn.metadata['pick_reroll_seed'],
+      characterId: turn.actorId,
+      groupNames: view.names,
+      groupNotMuted: view.enabledNames,
+      preset: preset,
+    );
+    final text = _preparePromptUser(environment, input, regexTrace: regexTrace);
+    final state = _prepareAppendedMessageState(
+      turn.state,
+      environment,
+      stateCardData: view.host.card.data,
+      stateEnabled: turn.settings['stateEnabled'] != false,
+    );
+    turn.cancellation.check();
+    final at = DateTime.fromMillisecondsSinceEpoch(turn.at.millisecondsSinceEpoch, isUtc: true);
+    final message = TavernMessage(
+      nodeId: '$captureId:user',
+      parentId: parent,
+      role: TavernRole.user,
+      speaker: environment.userName,
+      text: text,
+      at: at,
+      siblingIndex: userSiblingIndex,
+      siblingCount: userSiblingIndex + 1,
+    );
+    final saved = _copy(state);
+    final node = StoredNode(
+      message: message,
+      depth: history.isEmpty ? 1 : history.last.depth + 1,
+      extra: {
+        'dshgo': {'tavernState': saved},
+      },
+      original: const {},
+    );
+    history.add(node);
+    parent = message.nodeId;
+    _contextPath.add(message.nodeId);
+    final before = turn.chat;
+    turn.chat = StoredChat(
+      id: before.id,
+      characterId: before.characterId,
+      title: before.title,
+      createdAt: before.createdAt,
+      updatedAt: at,
+      metadata: _runtimeMetadata(before.metadata, state),
+      variables: _copy(turn.variables),
+      settings: before.settings,
+      personaId: before.personaId,
+      presetId: before.presetId,
+      currentLeafId: parent,
+      selectedRootId: history.first.message.nodeId,
+    );
+    // This existing projection uses only the owned chat/state, including the
+    // original JSONL source carrier; it performs no store or clock read.
+    turn.metadata = ChatJsonlCodec().metadataForState(turn.chat, saved);
+    turn.state = state;
+    turn.inspection = turn.inspection.copyWith(contextNodeId: parent);
+    macroChatIdentity = _macroChatIdentity(turn.chat, saved, turn.metadata, turn.sourceFile, node: node);
+    _directorSource = _capturedDirectorSource;
+    _authorizationSource = _secretStateSource(saved);
+    _storyState = saved;
+  }
+
+  void prepareBeforeUser() {
+    final preparation = _prepareSecretBindingFromFacts(
       turn,
       hostData,
       parent,
@@ -74,8 +169,27 @@ final class _AuthoringPromptContextCapture {
       saved: _bindingState,
       rawExtra: _bindingExtra,
       facts: _secretFacts,
-    )) {
-      return true;
+    );
+    var source = _directorSource;
+    var authorization = _authorizationSource;
+    var story = _storyState;
+    if (preparation != null && preparation.prepared.accepted) {
+      _secretFacts.proofs.adopt(turn, preparation, _history);
+      final persistent = _secretFacts.proofs.frame!.candidate.persistent;
+      // An A-only proof error may have closed eligibility while the source
+      // itself was read successfully. B re-evaluates that knowledge gate.
+      source = _capturedDirectorSource;
+      // B changes the current authorization, even when the director's source
+      // is an unchanged earlier ancestor. If that source is B's anchor,
+      // recompute its fingerprint input from the updated local history too.
+      final director = turn.directorCaptured;
+      if (director != null &&
+          director.result['sourceKind'] == 'node' &&
+          director.result['sourceNodeId'] == preparation.anchor) {
+        source = _directorSourceFromFacts(preparation.anchor, history, turn.groupView?.group, persistent);
+      }
+      authorization = _secretStateSource(persistent);
+      story = persistent;
     }
     _prepareStateTurn(turn, hostData);
     turn.directorPrepared = _prepareDirectorFromFacts(
@@ -83,18 +197,24 @@ final class _AuthoringPromptContextCapture {
       hostData,
       parent,
       contextPath: _contextPath,
-      source: _directorSource,
+      source: source,
       currentSettings: _secretFacts.settings,
-      authorizationSource: _authorizationSource,
-      storyState: _storyState,
-      bindAudits: _audits,
+      authorizationSource: authorization,
+      storyState: story,
+      proofs: _secretFacts.proofs,
     );
     _prepareCardEventTurnFromFacts(turn, hostData, _audits);
-    return false;
   }
 
+  Map<String, Object?> get secretTrace => _secretFacts.proofs.trace(turn, parent);
+
   List<WorldInfoBook> directorBooks() {
-    final prepared = _directorBooksFromFacts(turn, books, legacy: _legacy, remembered: _remembered);
+    final prepared = _directorBooksFromFacts(
+      turn,
+      books,
+      legacy: turn.directorPrepared?.eligible == true ? _legacy.read() : const [],
+      remembered: _remembered,
+    );
     if (prepared.inspection case final inspection?) {
       turn.inspection = inspection;
     }
@@ -120,6 +240,21 @@ final class _AuthoringPromptContextCapture {
     if (inspection != null) {
       turn.inspection = inspection;
     }
+  }
+}
+
+/// B or a prepared group user can change current director eligibility. Capture that
+/// possible dependency without moving a failed read ahead of its real gate.
+final class _AuthoringCapturedLegacy {
+  const _AuthoringCapturedLegacy(this.rows, {this.error, this.stack});
+  final List<({String id, Map<String, Object?> entry, bool valid})> rows;
+  final Object? error;
+  final StackTrace? stack;
+  List<({String id, Map<String, Object?> entry, bool valid})> read() {
+    if (error case final failure?) {
+      Error.throwWithStackTrace(failure, stack!);
+    }
+    return rows;
   }
 }
 
@@ -232,12 +367,6 @@ extension _AuthoringPromptContexts on TavernEngine {
         final member = group.members.where((value) => value.characterId == context.actorId).firstOrNull;
         if (member == null || target != null && target.message.speakerCharacterId != member.characterId) {
           _authoringInvalid('Select the actual roster actor for this group context.');
-        }
-        if (kind == _TurnKind.send && request.text.isNotEmpty) {
-          throw const TavernAuthoringException(
-            'unsupported_preview',
-            'Group user preparation before the actor turn needs an isolated adapter.',
-          );
         }
         actorId = member.characterId;
         selectedConfig = _groupModelConfig(_config, member.modelRole);
@@ -381,6 +510,13 @@ extension _AuthoringPromptContexts on TavernEngine {
     final resources = <String, _AuthoringCapturedResource>{};
     final auditReads = <String, _AuthoringAuditRead>{};
     final audits = _AuthoringCapturedAudits(auditReads);
+    final reservedProofIds = <String>{if (director != null) director.id, if (secret != null) secret.id};
+    final proofs = _AuthoringSecretProofs(
+      captureId: captureId,
+      chatId: real ? chat.id : null,
+      captured: audits,
+      reservedIds: reservedProofIds,
+    );
 
     void checkAdmission() {
       cancellation.check();
@@ -427,8 +563,23 @@ extension _AuthoringPromptContexts on TavernEngine {
       if (!real || auditReads.containsKey(id)) {
         return;
       }
+      reservedProofIds.add(id);
       try {
-        auditReads[id] = (row: _store.agentRunById(chat.id, id), error: null, stack: null);
+        final row = _store.agentRunById(chat.id, id);
+        auditReads[id] = (row: row, error: null, stack: null);
+        final bindings = row?.result['bindings'];
+        if (bindings is List<Object?>) {
+          for (final binding in bindings) {
+            if (binding is Map<String, Object?>) {
+              if (binding['bindingId'] case final String value) {
+                reservedProofIds.add(value);
+              }
+              if (binding['bindReceiptId'] case final String value) {
+                reservedProofIds.add(value);
+              }
+            }
+          }
+        }
       } catch (error, stack) {
         auditReads[id] = (row: null, error: error, stack: stack);
       }
@@ -440,6 +591,7 @@ extension _AuthoringPromptContexts on TavernEngine {
       }
       final ledger = _SecretLedger(saved);
       for (final binding in ledger.bindings) {
+        reservedProofIds.add(binding['bindingId']! as String);
         captureAudit(binding['bindReceiptId']! as String);
       }
     }
@@ -492,7 +644,7 @@ extension _AuthoringPromptContexts on TavernEngine {
     final turn = _Turn(
       chat,
       kind,
-      request.text,
+      group != null && kind == _TurnKind.send ? '' : request.text,
       target?.message.nodeId,
       null,
       config,
@@ -559,16 +711,19 @@ extension _AuthoringPromptContexts on TavernEngine {
       readCurrentSettings();
     }
     final contextPath = history.map((node) => node.message.nodeId).toList();
-    Map<String, Object?>? directorSource;
+    Map<String, Object?>? directorSource, capturedDirectorSource;
     var authorizationSource = <String, Object?>{};
     var storyState = <String, Object?>{};
     var directorEligible = false;
+    TavernDirectorRun? directorOnPath;
     if (director != null && kind != _TurnKind.impersonate) {
       try {
         final run = _directorRun(director);
         if (!(run.sourceKind == 'empty' && kind == _TurnKind.regenerate) &&
             _directorPathReason(run, parent, contextPath) == null) {
+          directorOnPath = run;
           directorSource = _directorSource(this, chat.id, run.sourceNodeId);
+          capturedDirectorSource = directorSource;
           if (_directorSourceReason(run, hostData, _directorPersona(persona, settings), directorSource) == null) {
             final current = readCurrentSettings();
             final authorizationState = parent == null && group == null
@@ -581,7 +736,7 @@ extension _AuthoringPromptContexts on TavernEngine {
               hostData,
               current,
               authorizationSource,
-              audits,
+              proofs,
             ).policy;
             final prior = director.result['secretPolicy'];
             final reason = policy == null && prior == null
@@ -605,23 +760,20 @@ extension _AuthoringPromptContexts on TavernEngine {
         directorSource = null;
       }
     }
-    if (directorEligible) {
-      final savedDirector = director!;
-      final events = _directorRun(savedDirector).events;
-      for (var index = 0; index < events.length; index++) {
-        captureAudit('${savedDirector.id}:event:$index');
-      }
-    }
     final current = currentSettings ?? settings;
     final secretFacts = _AuthoringSecretFacts(
       settings: current,
       persona: _directorPersona(persona, _personaSettings(current, persona)),
       cardRevision: cardRevision,
-      bindAudits: audits,
+      proofs: proofs,
     );
+    final groupUser = group != null && kind == _TurnKind.send && request.text.isNotEmpty;
     StoredAgentRun? persistedProposal;
     Map<String, Object?>? bindingSource, bindingState, bindingExtra;
-    if (secret != null &&
+    // The frozen proposal predates the new group user. Native child binding
+    // rejects that old anchor before reading its persisted proposal/extra.
+    if (!groupUser &&
+        secret != null &&
         _secretBindingDisabled(turn, hostData, current) == null &&
         _secretContextReasonFromFacts(turn, secretFacts) == null &&
         _secretBindingAnchorReason(turn, parent, secret, chat.currentLeafId) == null &&
@@ -645,6 +797,19 @@ extension _AuthoringPromptContexts on TavernEngine {
     }
     if (kind != _TurnKind.impersonate && _secretsEnabled(settings)) {
       captureLedger(initialState);
+    }
+    // The added user preserves every old ancestor but ends an empty source.
+    // Default state initialization can change current knowledge; defer these
+    // possible reads until the recomputed director's actual consumption gate.
+    final captureDirectorDependencies = groupUser
+        ? directorOnPath != null && directorOnPath.sourceKind == 'node'
+        : directorEligible || bindingExtra != null && directorOnPath != null;
+    if (captureDirectorDependencies) {
+      final savedDirector = director!;
+      final events = directorOnPath!.events;
+      for (var index = 0; index < events.length; index++) {
+        captureAudit('${savedDirector.id}:event:$index');
+      }
     }
 
     final loaded = <WorldInfoBook>[];
@@ -696,11 +861,18 @@ extension _AuthoringPromptContexts on TavernEngine {
       }
     }
     checkAdmission();
-    final legacy = real && directorEligible
-        ? _store.directorMemories(chat.id)
-        : <({String id, Map<String, Object?> entry, bool valid})>[];
+    var legacy = const _AuthoringCapturedLegacy([]);
+    if (real && captureDirectorDependencies) {
+      try {
+        legacy = _AuthoringCapturedLegacy(_store.directorMemories(chat.id));
+      } catch (error, stack) {
+        legacy = _AuthoringCapturedLegacy(const [], error: error, stack: stack);
+      }
+    }
+    // Appending a local group user changes no existing source body/epoch or
+    // ancestor membership, so the captured remember qualification is stable.
     final remembered = real ? _store.rememberMemories(chat.id, requestedLeafId: parent) : <StoredRememberMemory>[];
-    final legacyText = _authoringLegacyText(legacy), rememberedText = _authoringRememberedText(remembered);
+    final legacyText = _authoringLegacyText(legacy.rows), rememberedText = _authoringRememberedText(remembered);
     await _recheckCapturedAuthoringResources(
       resources.values,
       check: () {
@@ -733,7 +905,9 @@ extension _AuthoringPromptContexts on TavernEngine {
               _authoringContextConflict();
             }
           }
-          if (directorEligible && _authoringLegacyText(_store.directorMemories(chat.id)) != legacyText ||
+          if (captureDirectorDependencies &&
+                  legacy.error == null &&
+                  _authoringLegacyText(_store.directorMemories(chat.id)) != legacyText ||
               _authoringRememberedText(_store.rememberMemories(chat.id, requestedLeafId: parent)) != rememberedText) {
             _authoringContextConflict();
           }
@@ -749,6 +923,7 @@ extension _AuthoringPromptContexts on TavernEngine {
       actorData: data,
       hostData: hostData,
       global: global,
+      random: Random(request.seed),
       macroChatIdentity: _macroChatIdentity(
         chat,
         identityState,
@@ -762,6 +937,7 @@ extension _AuthoringPromptContexts on TavernEngine {
       secretFacts: secretFacts,
       contextPath: contextPath,
       directorSource: directorSource,
+      capturedDirectorSource: capturedDirectorSource,
       authorizationSource: authorizationSource,
       storyState: storyState,
       audits: audits,

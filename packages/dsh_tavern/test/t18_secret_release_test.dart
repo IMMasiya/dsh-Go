@@ -250,6 +250,10 @@ void main() {
         )
         .result;
     expect(preview.status, TavernAuthoringPreviewStatus.complete);
+    expect(preview.secretTrace['scope'], 'preview');
+    expect(preview.secretTrace['adoptedLocally'], isFalse);
+    expect(preview.secretTrace['attempted'], isFalse);
+    expect(preview.secretTrace['included'], isNotEmpty);
     final text = _maps(preview.assembly!.body['messages']).map((row) => row['content']).whereType<String>().join('\n');
     expect(text, contains(_template.replaceAll('{{fact}}', _fact)));
     expect(text, isNot(contains('GLOBAL-MUST-NOT-EXPAND')));
@@ -272,6 +276,9 @@ void main() {
         )
         .result;
     expect(sample.status, TavernAuthoringPreviewStatus.complete);
+    expect(sample.secretTrace['adoptedLocally'], isFalse);
+    expect(sample.secretTrace['offered'], isEmpty);
+    expect(sample.secretTrace['attempted'], isFalse);
     expect(jsonEncode(sample.assembly!.body), isNot(contains(_fact)));
     expect(
       _db(

@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math';
 import 'dart:typed_data';
 
 import 'package:dsh_tavern/dsh_tavern.dart';
@@ -188,6 +189,109 @@ void main() {
     expect((await h.engine.path(chat)).first.text, 'ROOT=2');
     expect((await h.engine.readVariables(chat))['step'], 2);
   });
+
+  test(
+    'group input prepares the selected actor user before its empty-input child without adopting the branch',
+    () async {
+      final h = await generationFixture();
+      final host = await h.card('Host');
+      final actor = await h.card(
+        'Actor',
+        description: 'FIELD={{getvar::step}} INPUT=[{{input}}] RANDOM={{random::red::green::blue}}',
+      );
+      final other = await h.card('Other');
+      final chat = await h.engine.createGroupChat([actor, other], hostCharacterId: host, addGreetings: false);
+      // Native explicit selection can choose a muted actor. Preview must use
+      // that actor for USER_INPUT, rather than the host or automatic selection.
+      await h.engine.updateGroupMember(chat, actor, muted: true);
+      await h.engine.setPreset(scriptPreset(main: 'MAIN {{char}} {{group}} {{groupNotMuted}}'));
+      await h.engine.importRegexScripts(
+        jsonEncode(
+          _regex(
+            'group-user',
+            r'/^ENTER$/',
+            '{{setvar::step::1}}{{setglobalvar::scratch::local}}GROUP_{{char}}_{{random::one::two::three}}',
+            1,
+          ),
+        ),
+      );
+      final base = await h.engine.createAuthoringDraft([_characterTarget(host)]);
+      final draft = await h.engine.editAuthoringDraft(
+        base.id,
+        draftRevision: base.draftRevision,
+        changes: [
+          TavernAuthoringChange(
+            id: 'host-state',
+            physicalResourceId: 'character:$host',
+            path: '/data/extensions/dshgo',
+            operation: TavernAuthoringChangeKind.set,
+            value: {
+              'v': 1,
+              'state': {
+                'schema': {
+                  'type': 'object',
+                  'properties': {
+                    'n': {'type': 'integer', 'default': 7},
+                  },
+                },
+                'init': {'n': 7},
+              },
+            },
+          ),
+        ],
+      );
+      final database = _databaseState(h);
+      final files = await _persistentFiles(h.root);
+      final globals = h.engine.globalVariables;
+      var liveRandomCalls = 0;
+      h.onRandom = () {
+        liveRandomCalls++;
+      };
+      final context = TavernAuthoringChatContext(chatId: chat, actorId: actor);
+      final preview = await _preview(h, draft, 'group-first-child', context, text: 'ENTER', changes: ['host-state']);
+      expect(preview.status, TavernAuthoringPreviewStatus.complete);
+      final body = preview.assembly!.body;
+      final text = _promptText(body);
+      expect(text, contains('FIELD=1 INPUT=[]'));
+      expect(text, contains('GROUP_Actor_'));
+      expect(preview.regexTrace.where((row) => row['source'] == 'userInput'), hasLength(1));
+      expect(_databaseState(h), database);
+      expect(await _persistentFiles(h.root), files);
+      expect(await h.engine.path(chat), isEmpty);
+      expect(h.engine.globalVariables, globals);
+      expect(liveRandomCalls, 0);
+      h.expectNoGeneration();
+
+      final adopted = await h.engine.applyAuthoringChanges(
+        draft.id,
+        draftRevision: draft.draftRevision,
+        physicalResourceId: 'character:$host',
+        changeIds: ['host-state'],
+        expectedAuthorityRevision: base.sources.single.authorityRevision!,
+        operationId: 'group-host-adopt',
+      );
+      expect(adopted.committed, isTrue);
+      await h.close();
+      final random = Random(17);
+      final native = await TavernEngine.openDirectory(
+        h.root,
+        config: h.config,
+        modelClient: h.model,
+        clock: () => _at,
+        random: random.nextDouble,
+      );
+      addTearDown(native.close);
+      h.reply('A native group reply.');
+      final events = await native.sendGroup(chat, 'ENTER', speakerCharacterId: actor).toList();
+      expect(events.whereType<TavernGroupFinished>().single.reason, TavernGroupEndReason.completed);
+      expect(h.requests.single.body, body);
+      final path = await native.path(chat);
+      expect(path.map((message) => message.role), [TavernRole.user, TavernRole.character]);
+      expect(path.last.speakerCharacterId, actor);
+      expect((await native.readVariables(chat))['step'], '1');
+      expect(native.globalVariables['scratch'], 'local');
+    },
+  );
 
   test('unchanged regex candidates preserve reopened compatibility until the raw rule is edited', () async {
     final h = await generationFixture();

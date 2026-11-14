@@ -886,6 +886,85 @@ state_core.SecretCapability? _secretBindingCapability(
   return (plan: plan, prepared: prepared);
 }
 
+/// The three descendants are constructed before either writer adopts them.
+/// This helper has no clock, store, receipt publication or session restart.
+final class _SecretBindingCandidate {
+  const _SecretBindingCandidate({
+    required this.persistent,
+    required this.extra,
+    required this.generation,
+    required this.restored,
+    required this.bindings,
+  });
+  final Map<String, Object?> persistent, extra, generation;
+  final StoredNode? restored;
+  final List<Map<String, Object?>> bindings;
+}
+
+_SecretBindingCandidate _buildSecretBindingCandidate(
+  _Turn turn, {
+  required StoredAgentRun proposal,
+  required String anchor,
+  required String invocation,
+  required String receiptId,
+  required state_core.StateSecretPlan plan,
+  required state_core.StateSecretPrepared prepared,
+  required state_core.SecretCapability capability,
+  required _SecretProtection protection,
+  required Map<String, Object?> saved,
+  required Map<String, Object?> rawExtra,
+  required StoredNode? target,
+}) {
+  final facts = plan.facts;
+  final bindings = <Map<String, Object?>>[
+    for (var index = 0; index < facts.length; index++)
+      {
+        'bindingId': '$receiptId:$index',
+        'bindingKey': state_core.secretBindingKey(facts[index].slotId, facts[index].entityId),
+        'slotId': facts[index].slotId, 'entityId': facts[index].entityId, 'path': facts[index].path,
+        'definitionFingerprint': capability.definitionFingerprint,
+        // A string has identical canonicalization in the two hash domains.
+        'valueHash': _directorHash(facts[index].value), 'valueType': 'string',
+        'sourceNodeId': anchor, 'inputSourceFingerprint': proposal.result['sourceFingerprint'],
+        'boundNodeId': anchor, 'beforeStateFingerprint': plan.baselineFingerprint,
+        'afterStateFingerprint': prepared.valueFingerprint, 'generationInvocationId': invocation,
+        'bindReceiptId': receiptId, 'proposalRunId': proposal.id, 'proposalIndex': index,
+        'characterId': turn.chat.characterId, 'policyVersion': 1,
+      },
+  ];
+  final persistent = _copy(saved);
+  persistent['messageVariables'] = {..._map(persistent['messageVariables']), 'dshgo': prepared.value};
+  if (prepared.runtimeExists) {
+    persistent['dshgoStateRuntime'] = prepared.runtime;
+  }
+  persistent[_secretRuntimeKey] = protection.ledger.adding(bindings);
+  final extra = _stateNodeExtra(rawExtra, persistent, {
+    'secretBinding': {'version': 1, 'runId': receiptId, 'proposalRunId': proposal.id},
+  });
+  final generation = _copy(turn.state);
+  generation['messageVariables'] = _copy(_map(persistent['messageVariables']));
+  if (persistent.containsKey('dshgoStateRuntime')) {
+    generation['dshgoStateRuntime'] = _secretCopy(persistent['dshgoStateRuntime']);
+  }
+  generation[_secretRuntimeKey] = _secretCopy(persistent[_secretRuntimeKey]);
+  final restored = target == null
+      ? null
+      : StoredNode(
+          message: target.message,
+          depth: target.depth,
+          extra: _copy(extra),
+          original: _copy(target.original),
+          selectedChildId: target.selectedChildId,
+        );
+  return _SecretBindingCandidate(
+    persistent: persistent,
+    extra: extra,
+    generation: generation,
+    restored: restored,
+    bindings: bindings,
+  );
+}
+
 /// Only the proposal frozen by onListen is considered. Called synchronously
 /// before history, macros, user-node creation or provider preparation.
 void _bindSecretTurn(
@@ -929,44 +1008,22 @@ void _bindSecretTurn(
   // continuation restoration B, and mutable generation G. A later error ends
   // this main turn and never opens a second session with a reset budget.
   final receiptId = '$invocation:secret_bind';
-  final bindings = <Map<String, Object?>>[
-    for (var index = 0; index < plan.facts.length; index++)
-      {
-        'bindingId': '$receiptId:$index',
-        'bindingKey': state_core.secretBindingKey(plan.facts[index].slotId, plan.facts[index].entityId),
-        'slotId': plan.facts[index].slotId, 'entityId': plan.facts[index].entityId, 'path': plan.facts[index].path,
-        'definitionFingerprint': capability.definitionFingerprint,
-        // A string has identical canonicalization in the two hash domains.
-        'valueHash': _directorHash(plan.facts[index].value), 'valueType': 'string',
-        'sourceNodeId': anchor, 'inputSourceFingerprint': proposal.result['sourceFingerprint'],
-        'boundNodeId': anchor, 'beforeStateFingerprint': plan.baselineFingerprint,
-        'afterStateFingerprint': prepared.valueFingerprint, 'generationInvocationId': invocation,
-        'bindReceiptId': receiptId, 'proposalRunId': proposal.id, 'proposalIndex': index,
-        'characterId': turn.chat.characterId, 'policyVersion': 1,
-      },
-  ];
-  final persistent = _copy(saved);
-  persistent['messageVariables'] = {..._map(persistent['messageVariables']), 'dshgo': prepared.value};
-  if (prepared.runtimeExists) persistent['dshgoStateRuntime'] = prepared.runtime;
-  persistent[_secretRuntimeKey] = state.protection.ledger.adding(bindings);
-  final extra = _stateNodeExtra(rawExtra, persistent, {
-    'secretBinding': {'version': 1, 'runId': receiptId, 'proposalRunId': proposal.id},
-  });
-  final generation = _copy(turn.state);
-  generation['messageVariables'] = _copy(_map(persistent['messageVariables']));
-  if (persistent.containsKey('dshgoStateRuntime')) {
-    generation['dshgoStateRuntime'] = _secretCopy(persistent['dshgoStateRuntime']);
-  }
-  generation[_secretRuntimeKey] = _secretCopy(persistent[_secretRuntimeKey]);
-  final restored = target == null
-      ? null
-      : StoredNode(
-          message: target.message,
-          depth: target.depth,
-          extra: _copy(extra),
-          original: _copy(target.original),
-          selectedChildId: target.selectedChildId,
-        );
+  final candidate = _buildSecretBindingCandidate(
+    turn,
+    proposal: proposal,
+    anchor: anchor,
+    invocation: invocation,
+    receiptId: receiptId,
+    plan: plan,
+    prepared: prepared,
+    capability: capability,
+    protection: state.protection,
+    saved: saved,
+    rawExtra: rawExtra,
+    target: target,
+  );
+  final bindings = candidate.bindings, extra = candidate.extra, generation = candidate.generation;
+  final restored = candidate.restored;
   final audit = StoredAgentRun(
     id: receiptId,
     chatId: turn.chat.id,

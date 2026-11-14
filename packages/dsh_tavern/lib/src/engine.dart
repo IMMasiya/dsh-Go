@@ -71,6 +71,7 @@ part 'engine_authoring_apply.dart';
 part 'engine_authoring_run.dart';
 part 'engine_authoring_seed.dart';
 part 'engine_authoring_capture.dart';
+part 'engine_authoring_binding.dart';
 part 'engine_authoring_facts.dart';
 part 'engine_authoring_preview.dart';
 part 'engine_authoring_render.dart';
@@ -3433,10 +3434,9 @@ class TavernEngine implements Tavern {
       // public/scripts/slash-commands.js::sendNarratorMessage.
       // sendMessageAsUser applies USER_INPUT before substitution.
       // sendNarratorMessage instead substitutes text.trim(), without regex 3.
-      final prepared = narrator
-          ? trimJsWhitespace(text)
-          : environment.regex.apply(text, placement: RegexPlacement.userInput, expand: environment.regexExpand);
-      expanded = environment.expand(prepared, const {});
+      expanded = narrator
+          ? environment.expand(trimJsWhitespace(text), const {})
+          : _preparePromptUser(environment, text);
     } catch (prepareError, prepareStackTrace) {
       // Local state is detached, but preparation uses ST/T11's real globals.
       // Preserve both failures when those effects cannot be saved either.
@@ -3464,16 +3464,11 @@ class TavernEngine implements Tavern {
     if (_globalVariables.changedSince(beforeGlobals)) {
       await _saveDocument();
     }
-    final nextState = <String, Object?>{
-      ...state,
-      'variables': _copy(local),
-      'stChatId': environment.chatId,
-      'stChatIdHash': environment.chatIdHash,
-    };
-    _initializeDshState(
-      _stateDefinition(host?.card.data ?? record.card.data),
-      nextState,
-      settings['stateEnabled'] != false,
+    final nextState = _prepareAppendedMessageState(
+      state,
+      environment,
+      stateCardData: host?.card.data ?? record.card.data,
+      stateEnabled: settings['stateEnabled'] != false,
     );
     final narratorName = metadata['narrator_name'];
     final name = narrator

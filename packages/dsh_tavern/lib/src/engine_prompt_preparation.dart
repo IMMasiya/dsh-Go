@@ -53,6 +53,25 @@ String _preparePromptUser(_MacroEnvironment environment, String input, {List<Map
       const {},
     );
 
+// Native manual/group messages persist global macro effects before this
+// state initialization. Keep it separate from text preparation so that await
+// and its failure semantics stay at the native call site.
+Map<String, Object?> _prepareAppendedMessageState(
+  Map<String, Object?> state,
+  _MacroEnvironment environment, {
+  required Map<String, Object?> stateCardData,
+  required bool stateEnabled,
+}) {
+  final next = <String, Object?>{
+    ...state,
+    'variables': _copy(environment.local),
+    'stChatId': environment.chatId,
+    'stChatIdHash': environment.chatIdHash,
+  };
+  _initializeDshState(_stateDefinition(stateCardData), next, stateEnabled);
+  return next;
+}
+
 String? _expandPromptFirst(List<StoredNode> history, StoredNode? first, _MacroEnvironment environment) {
   if (first == null) {
     return null;
