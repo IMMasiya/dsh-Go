@@ -95,7 +95,7 @@ void main() {
       foreground: false,
     ),
   ]) {
-    testWidgets('real automatic provider initializes zero connections when ' + scenario.name, (tester) async {
+    testWidgets('real automatic provider initializes zero connections when ${scenario.name}', (tester) async {
       tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
       var activeBuilds = 0;
       var localBuilds = 0;
