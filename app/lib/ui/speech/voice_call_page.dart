@@ -189,7 +189,12 @@ class _VoiceCallPageState extends ConsumerState<VoiceCallPage> with WidgetsBindi
       _leave = Timer(
         _call.ended == CallEnd.hungUp ? const Duration(milliseconds: 380) : const Duration(milliseconds: 2600),
         () {
-          if (mounted) Navigator.of(context).maybePop();
+          if (!mounted) return;
+          // The call page itself, not a sheet open over it (字幕, 背景).
+          final route = ModalRoute.of(context);
+          final navigator = Navigator.of(context);
+          if (route != null && !route.isCurrent) navigator.popUntil((r) => r == route);
+          unawaited(navigator.maybePop());
         },
       );
     }

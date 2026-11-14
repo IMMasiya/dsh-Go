@@ -142,6 +142,19 @@ void main() {
     expect(find.descendant(of: list, matching: find.text('北京晴，最高二十度。')), findsOneWidget);
   });
 
+  testWidgets('a call that fails with 字幕 open closes the call page, not just the sheet', (tester) async {
+    final (audio, _) = await pumpCall(tester);
+    await tester.tap(find.byKey(const ValueKey('call-transcript')));
+    for (var i = 0; i < 20; i++) {
+      await tester.pump(const Duration(milliseconds: 60));
+    }
+    audio.emit(const CallError('mic'));
+    for (var i = 0; i < 70; i++) {
+      await tester.pump(const Duration(milliseconds: 60));
+    }
+    expect(find.byType(VoiceCallPage), findsNothing);
+  });
+
   testWidgets('字幕 before anything is said: the page says so', (tester) async {
     await pumpCall(tester);
     await tester.tap(find.byKey(const ValueKey('call-transcript')));

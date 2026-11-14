@@ -5,6 +5,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart' show ScrollDirection;
 
 import '../../../l10n/l10n.dart';
 import '../../../speech/call/voice_call.dart';
@@ -27,6 +28,15 @@ class CallTranscript extends StatefulWidget {
 class _CallTranscriptState extends State<CallTranscript> {
   final _scroll = ScrollController();
 
+  /// The reader is at the bottom, following the words: only their own
+  /// scrolling changes it, not the words growing under an animation.
+  bool _following = true;
+
+  bool _onScroll(UserScrollNotification n) {
+    _following = n.direction == ScrollDirection.idle && n.metrics.extentAfter < 48;
+    return false;
+  }
+
   @override
   void initState() {
     super.initState();
@@ -38,10 +48,8 @@ class _CallTranscriptState extends State<CallTranscript> {
 
   void _changed() {
     if (!mounted) return;
-    // Following along at the bottom: stay there as the words come.
-    final following = !_scroll.hasClients || _scroll.position.extentAfter < 48;
     setState(() {});
-    if (!following) return;
+    if (!_following) return;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted || !_scroll.hasClients) return;
       unawaited(
@@ -81,12 +89,15 @@ class _CallTranscriptState extends State<CallTranscript> {
                     ),
                   ),
                 )
-              : ListView.builder(
-                  key: const ValueKey('call-transcript-list'),
-                  controller: _scroll,
-                  padding: const EdgeInsets.fromLTRB(kSheetGutter, 4, kSheetGutter, 28),
-                  itemCount: turns.length,
-                  itemBuilder: (context, i) => _Turn(turns[i]),
+              : NotificationListener<UserScrollNotification>(
+                  onNotification: _onScroll,
+                  child: ListView.builder(
+                    key: const ValueKey('call-transcript-list'),
+                    controller: _scroll,
+                    padding: const EdgeInsets.fromLTRB(kSheetGutter, 4, kSheetGutter, 28),
+                    itemCount: turns.length,
+                    itemBuilder: (context, i) => _Turn(turns[i]),
+                  ),
                 ),
         ),
       ],

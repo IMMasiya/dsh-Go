@@ -22,6 +22,7 @@ class ChatCallConversation implements CallConversation {
   final _replies = StreamController<CallReply>.broadcast();
   ProviderSubscription<ChatState>? _sub;
   String? _id;
+  bool _disposed = false;
 
   /// The assistant steps already there before the last send.
   Set<String> _before = const {};
@@ -56,7 +57,8 @@ class ChatCallConversation implements CallConversation {
   @override
   Future<bool> send(String text) async {
     final id = await _session();
-    if (id == null) return false;
+    // The call ended while its conversation was made: nothing to follow.
+    if (id == null || _disposed) return false;
     _follow(id);
     final chat = _container.read(chatProvider(id).notifier);
     var state = _container.read(chatProvider(id));
@@ -120,6 +122,7 @@ class ChatCallConversation implements CallConversation {
 
   @override
   void dispose() {
+    _disposed = true;
     _idle?.cancel();
     _sub?.close();
     _sub = null;
