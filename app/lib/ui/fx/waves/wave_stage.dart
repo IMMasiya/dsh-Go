@@ -402,7 +402,9 @@ class RenderWaveStage extends RenderBox with SlottedContainerRenderObjectMixin<W
     final live = p > 0 && p < 1;
     final acting = live && front.energy > 0;
     final revealedLens = front.launched && acting;
-    final contentLens = !front.hasCleared && (acting || (live && front.gravity > 0));
+    // Once launched, the content keeps its coverage mask until the front has
+    // crossed, even where the swell has died first (a slow easing).
+    final contentLens = live && !front.hasCleared && (front.launched || front.gravity > 0);
 
     ui.Image? revealedImage;
     ui.Image? contentImage;
