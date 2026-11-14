@@ -66,7 +66,7 @@ used with the author's permission.
 - `chat/`：`chat_header.dart`、`chat_list.dart`、`chat_screen.dart`、`composer.dart`、`model_sheet.dart`
 - `chat/render/`：`ansi_text.dart`、`code_block.dart`、`diff_view.dart`、`markdown_body.dart`
 - `chat/widgets/`：`approval_card.dart`、`assistant_message.dart`、`question_card.dart`、`thinking_pill.dart`、`tool_row.dart`、`user_bubble.dart`
-- `common/`：`app_sheet.dart`、`glass_pill.dart`、`overscroll_forwarder.dart`、`sheet_navigator.dart`、`status_dot.dart`、`streaming_cursor.dart`、`tool_glyph.dart`、`typing_indicator.dart`
+- `common/`：`app_sheet.dart`、`glass_pill.dart`、`overscroll_forwarder.dart`、`sheet_navigator.dart`、`status_dot.dart`、`streaming_cursor.dart`、`tool_glyph.dart`
 - `settings/`：`diagnostics_page.dart`、`settings_widgets.dart`
 - `shell/`：`drawer_drag.dart`、`home_shell.dart`、`sessions_drawer.dart`
 - `theme/`：`accent.dart`、`app_theme.dart`、`backdrop.dart`、`highlight_theme.dart`、`motion.dart`、`palette.dart`、`semantic_colors.dart`、`shapes.dart`、`squircle.dart`、`typography.dart`
@@ -153,6 +153,32 @@ DS Bot 的 NOTICE 原文附在文末。
 | `test/fixtures/noise-ik.json` | `fixtures/crypto/v1/noise-ik.json`（原样复制） |
 | `test/fixtures/protocol-v1/` | `fixtures/protocol/v1`（原样复制） |
 | `tool/e2e/patch-webrtc.mjs` | 不复制代码：在 E2E 时改写上游 `apps/server/src/gateway.ts`，按托管 Server 的行为打开 WebRTC 协商与 signaling 转发 |
+
+### Libraries.dev（MIT）
+
+| 项 | 内容 |
+|---|---|
+| 项目 | Libraries.dev，https://github.com/Jakubantalik/Libraries.dev （基于提交 `387b049`） |
+| 版权人 | Copyright (c) 2026 Jakub Antalik |
+| 许可 | MIT（只用代码；`LICENSE-MODEL.md` 管的模型文件 `Magnet.mfxl`、`VoicePosition.mfxl` 和 Pro 内容都没有用） |
+| 用途 | 界面特效：思考光球、边框流光、语音辉光、语音光环、机器人头像等，从作者的 TypeScript / Swift / Metal 源码翻译成 Dart、Flutter 着色器和 Kotlin |
+
+本仓库位置：`app/lib/ui/fx/`（每个文件第一行注明出处）及其 `app/shaders/fx/` 下的着色器。
+
+金属质感的着色器 `app/shaders/fx/metal_liquid.frag` 是 metal-fx 用的 Paper Shaders `liquidMetal`（Apache-2.0，Paper Design, Inc.，`@paper-design/shaders` 0.0.80）的 GLSL 翻译，按 metal-fx 的 NOTICE 原文保留：
+
+```text
+This product includes software developed by Paper Design, Inc.
+
+  Paper Shaders (https://github.com/paper-design/shaders)
+  Copyright (c) Paper Design, Inc.
+  Licensed under the Apache License, Version 2.0
+  http://www.apache.org/licenses/LICENSE-2.0
+
+The liquid-metal material in app/shaders/fx/metal_liquid.frag is the
+`liquidMetal` fragment stage of @paper-design/shaders 0.0.80, as used by
+Libraries.dev metal-fx, translated to Flutter GLSL.
+```改动：换成 Flutter 的 CustomPainter / FragmentShader 绘制，默认颜色从 App 主题色取，跟随「减弱动态」，声音电平改用 App 自己的采集数据；桌面专用的鼠标效果没有移植。
 
 ### DSHA（MIT）
 
@@ -411,6 +437,7 @@ Copyright (c) 2026 DSH Remote contributors                     (ds-harness-remot
 Copyright (c) 2026 qiannianhuanxiang                           (DSHA)
 Copyright (c) Microsoft Corporation                            (ONNX Runtime)
 Copyright (c) 2020-present Silero Team                         (Silero VAD)
+Copyright (c) 2026 Jakub Antalik                               (Libraries.dev)
 Copyright (c) 2018 Civilized Discourse Construction Kit, Inc.  (discourse_docker)
 Copyright (c) 2023 Phosphor Icons                              (Phosphor Icons)
 Copyright (c) 2021 RikkaW                                      (Shizuku-API)

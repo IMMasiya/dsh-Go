@@ -122,6 +122,10 @@ final cloudAsrProvider = NotifierProvider<CloudAsrController, CloudAsrSettings>(
 /// or her (伙伴小屋's character, speaking with the call's voice).
 enum CallBackdrop { sea, image, companion }
 
+/// The light in the middle of a call: Libraries.dev's voice ring (a glassy
+/// ribbon in the theme's colours), its single grey line, or the glass orb.
+enum CallVisual { ring, mono, glass }
+
 class CallSettings {
   const CallSettings({
     this.bargeIn = true,
@@ -130,6 +134,7 @@ class CallSettings {
     this.backdrop = CallBackdrop.sea,
     this.image = '',
     this.cue = true,
+    this.visual = CallVisual.ring,
   });
 
   /// Speaking over her stops her (else what is said while she talks is ignored).
@@ -147,6 +152,8 @@ class CallSettings {
 
   /// A soft chime when an answer is slow to start.
   final bool cue;
+  /// The light in the middle.
+  final CallVisual visual;
 
   CallSettings copyWith({
     bool? bargeIn,
@@ -155,6 +162,7 @@ class CallSettings {
     CallBackdrop? backdrop,
     String? image,
     bool? cue,
+    CallVisual? visual,
   }) => CallSettings(
     bargeIn: bargeIn ?? this.bargeIn,
     spoken: spoken ?? this.spoken,
@@ -162,6 +170,7 @@ class CallSettings {
     backdrop: backdrop ?? this.backdrop,
     image: image ?? this.image,
     cue: cue ?? this.cue,
+    visual: visual ?? this.visual,
   );
 }
 
@@ -188,6 +197,7 @@ class CallSettingsController extends Notifier<CallSettings> {
         backdrop: CallBackdrop.values.asNameMap()[json['backdrop']] ?? CallBackdrop.sea,
         image: json['image'] is String ? json['image'] as String : '',
         cue: json['cue'] != false,
+        visual: CallVisual.values.asNameMap()[json['visual']] ?? CallVisual.ring,
       );
     } on Object {
       // Defaults for this run.
@@ -215,6 +225,7 @@ class CallSettingsController extends Notifier<CallSettings> {
         'backdrop': next.backdrop.name,
         'image': next.image,
         'cue': next.cue,
+        'visual': next.visual.name,
       }),
     );
   }

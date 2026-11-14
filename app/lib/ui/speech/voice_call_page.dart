@@ -32,6 +32,7 @@ import '../../state/voice_state.dart';
 import '../chat/voice/voice_bridge.dart';
 import '../companion/companion_ask.dart';
 import '../companion/companion_stage.dart';
+import '../fx/voice_ring/voice_ring.dart';
 import '../theme/app_icons.dart';
 import '../theme/theme.dart';
 import '../../state/streaming_asr_model_state.dart';
@@ -284,6 +285,33 @@ class _VoiceCallPageState extends ConsumerState<VoiceCallPage> with WidgetsBindi
     };
   }
 
+  /// The light in the middle: Libraries.dev's voice ring (its ribbon or its single line),
+  /// listening to the person, speaking with her voice, turning while it thinks; or the glass orb.
+  Widget _light(CallVisual visual, CallPalette palette, bool dark, double size) {
+    if (visual == CallVisual.glass) {
+      return CallLight(key: const ValueKey('glass'), scene: _scene, palette: palette, size: size);
+    }
+    final phase = _call.phase;
+    return VoiceRing(
+      key: ValueKey(visual),
+      type: visual == CallVisual.mono ? VoiceRingType.mono : VoiceRingType.ring,
+      state: switch (phase) {
+        CallPhase.starting || CallPhase.thinking => VoiceRingState.processing,
+        CallPhase.listening || CallPhase.hearing => VoiceRingState.listening,
+        CallPhase.speaking => VoiceRingState.speaking,
+        CallPhase.ended => VoiceRingState.idle,
+      },
+      size: size * 0.82,
+      theme: dark ? VoiceRingTheme.dark : VoiceRingTheme.light,
+      paused: phase == CallPhase.ended,
+      level: () => switch (_call.phase) {
+        CallPhase.hearing when !_call.muted => VoiceRingLevel.mic(_call.micLevel),
+        CallPhase.speaking => VoiceRingLevel.playback(_call.voiceLevel),
+        _ => 0,
+      },
+    );
+  }
+
   /// [child] coming in with the page: a fade and a short rise, starting at [from] (0–1).
   Widget _rise(double from, Widget child, {double distance = 18}) {
     if (_still) return child;
@@ -365,7 +393,8 @@ class _VoiceCallPageState extends ConsumerState<VoiceCallPage> with WidgetsBindi
                     _ => const SizedBox.expand(key: ValueKey('sea')),
                   },
                 ),
-                CallEdgeGlow(scene: _scene, palette: palette),
+                // The screen's edge glows only with the glass orb; the ring is light enough on its own.
+                if (settings.visual == CallVisual.glass) CallEdgeGlow(scene: _scene, palette: palette),
                 if (her)
                   // Her feet fade into the water so the words below stay readable.
                   const IgnorePointer(
@@ -419,10 +448,9 @@ class _VoiceCallPageState extends ConsumerState<VoiceCallPage> with WidgetsBindi
                                         _pressed ? AppMotion.press : const Duration(milliseconds: 420),
                                       ),
                                       curve: _pressed ? Curves.easeOut : Curves.elasticOut,
-                                      child: CallLight(
-                                        scene: _scene,
-                                        palette: palette,
-                                        size: math.min(340, width * 0.86),
+                                      child: AnimatedSwitcher(
+                                        duration: AppMotion.of(context, AppMotion.slow),
+                                        child: _light(settings.visual, palette, dark, math.min(340, width * 0.86)),
                                       ),
                                     ),
                                   ),
