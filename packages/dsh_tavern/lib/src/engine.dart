@@ -15,6 +15,7 @@ import 'package:sqlite3/sqlite3.dart' show SqliteException;
 import 'api.dart';
 import 'authoring.dart';
 import 'authoring_authority.dart';
+import 'authoring_preview.dart';
 import 'authoring_run.dart';
 import 'authoring_seed.dart';
 import 'backup.dart';
@@ -67,6 +68,12 @@ part 'engine_authoring.dart';
 part 'engine_authoring_apply.dart';
 part 'engine_authoring_run.dart';
 part 'engine_authoring_seed.dart';
+part 'engine_authoring_capture.dart';
+part 'engine_authoring_facts.dart';
+part 'engine_authoring_preview.dart';
+part 'engine_prompt_preparation.dart';
+part 'engine_authoring_context.dart';
+part 'engine_authoring_scripts.dart';
 part 'engine_tools.dart';
 part 'engine_director.dart';
 part 'engine_director_watch.dart';
@@ -313,6 +320,7 @@ class TavernEngine implements Tavern {
   final PersonaStore _personas;
   final Map<String, Object?> _document;
   TavernModelConfig _config;
+  Object _authoringConfigVersion = Object();
   final TavernModelClient _modelClient;
   final PromptTokenCounter _counter;
   final DateTime Function() _clock;
@@ -349,6 +357,7 @@ class TavernEngine implements Tavern {
   final _deletingPresets = <String>{};
   final _operations = <Future<void>>{};
   final _authoringRuns = <String, _AuthoringRunRecord>{};
+  final _authoringPreviewCancellations = <ModelCancellation>{};
   final _inspections = <String, TavernInspection>{};
   // A null entry is a tombstone: never fall back to an older disk snapshot
   // after deleting the context of a more recent in-memory attempt.
@@ -514,6 +523,10 @@ class TavernEngine implements Tavern {
     media: media,
     domainId: domainId,
   );
+
+  @override
+  TavernAuthoringTask<TavernAuthoringPromptPreview> previewAuthoringPrompt(TavernAuthoringPromptRequest request) =>
+      _previewAuthoringPrompt(request);
 
   // Acquire this queue before chat barriers for bind/delete. Taking them in
   // the reverse order could leave a binder waiting behind a deletion that is
@@ -1749,6 +1762,7 @@ class TavernEngine implements Tavern {
   void configure(TavernModelConfig config) {
     _ensureOpen();
     _config = config;
+    _authoringConfigVersion = Object();
   }
 
   /// Settings are JSON data. Per-chat documents overlay global settings.
@@ -3844,12 +3858,7 @@ class TavernEngine implements Tavern {
       );
       turn.environment = environment;
       if (turn.kind == _TurnKind.send && turn.input.isNotEmpty) {
-        final regexed = environment.regex.apply(
-          turn.input,
-          placement: RegexPlacement.userInput,
-          expand: environment.regexExpand,
-        );
-        final text = environment.expand(regexed, const {});
+        final text = _preparePromptUser(environment, turn.input);
         final appended = _appendOrdinaryToolUser(
           this,
           turn,
@@ -3868,17 +3877,11 @@ class TavernEngine implements Tavern {
       // filtering hidden/system messages. Keep the same per-turn history for
       // later macros; commit text changes with the ready reply below.
       final first = historyWindow?.first ?? history.firstOrNull;
-      if (first != null) {
-        final expanded = environment.expand(first.message.text, const {});
-        if (expanded != first.message.text) {
-          final index = history.indexWhere((node) => node.message.nodeId == first.message.nodeId);
-          if (index >= 0) history[index] = _nodeWithText(first, expanded);
-          if (turn.kind != _TurnKind.impersonate) {
-            turn.originalFirstMessage = first;
-            turn.expandedFirstMessage = expanded;
-            turn.firstMessageSource = _store.sourceToken(chatId, first.message.nodeId);
-          }
-        }
+      final expandedFirst = _expandPromptFirst(history, first, environment);
+      if (expandedFirst != null && turn.kind != _TurnKind.impersonate) {
+        turn.originalFirstMessage = first;
+        turn.expandedFirstMessage = expandedFirst;
+        turn.firstMessageSource = _store.sourceToken(chatId, first!.message.nodeId);
       }
       final promptHistory = _preparePromptHistory(
         history,
@@ -3967,46 +3970,19 @@ class TavernEngine implements Tavern {
         }
       }
       scanInjections.addAll(scriptInjections?.scanTexts ?? const []);
-      var world = await _worldInfoEngine.evaluate(
-        WorldInfoInput(
-          books: directorBooks,
-          externalActivations: turn.directorPrepared?.external ?? const {},
-          messages: [
-            for (final node in eligibleHistory) WorldInfoMessage(node.message.text, speaker: node.message.speaker),
-          ],
-          messageCount: eligibleMessageCount,
-          // ST script.js passes getMaxPromptTokens(), excluding the response.
-          maxContext: environment.maxContext - environment.maxResponse,
-          tokenCount: counter.countText,
-          random: _random,
-          checkCancelled: turn.cancellation.check,
-          expand: (text) => environment.expand(text, const {}),
-          settings: worldSettings,
-          scanInjections: scanInjections,
-          personaDescription: prepared.persona,
-          characterDescription: prepared['description'],
-          characterPersonality: prepared['personality'],
-          characterDepthPrompt: prepared['charDepthPrompt'],
-          scenario: prepared['scenario'],
-          creatorNotes: prepared['creator_notes'],
-          trigger: turn.generationType,
-          characterName: _characterFilename(turn.settings, turn.actorId),
-          characterTags: _characterTags(turn.settings, turn.actorId),
-          timedWorldInfo: _map(state['timedWorldInfo']),
-          decoratorState: _map(state['decoratorState']),
-          assistantMessageCount: assistantMessageCount,
-          greetingIndex: state['greetingIndex'] is int ? state['greetingIndex'] as int : null,
-          userIconName: turn.settings['userIconName'] as String?,
-          contextAtCapacity: false,
-          availablePromptSections: _availableWorldSections(preset, turn.generationType),
-          postProcessContent: (entry, content, depth) => environment.regex.apply(
-            content,
-            placement: RegexPlacement.worldInfo,
-            phase: RegexPhase.prompt,
-            depth: depth,
-            expand: environment.regexExpand,
-          ),
-        ),
+      var world = await _evaluatePreparedWorld(
+        worldEngine: _worldInfoEngine,
+        turn: turn,
+        environment: environment,
+        prepared: prepared,
+        books: directorBooks,
+        eligibleHistory: eligibleHistory,
+        messageCount: eligibleMessageCount,
+        assistantMessageCount: assistantMessageCount,
+        preset: preset,
+        worldSettings: worldSettings,
+        counter: counter,
+        scanInjections: scanInjections,
       );
       final preparedUiHits = world.activated.where((hit) => hit.disabledUiPrompt != null).toList();
       _setInspection(
@@ -4027,56 +4003,16 @@ class TavernEngine implements Tavern {
         ..._secretTurnInjections(this, turn, hostData),
         ..._directorInjections(turn),
       ];
-      final examples = [for (var index = 0; index < world.activated.length; index++) (index, world.activated[index])];
-      examples.sort((a, b) {
-        final aOrder = a.$2.order;
-        final bOrder = b.$2.order;
-        final byOrder = aOrder == bOrder ? 0 : bOrder.compareTo(aOrder);
-        return byOrder != 0 ? byOrder : a.$1.compareTo(b.$1);
-      });
-      final assembly = assemblePromptWindow(
-        PromptAssembler(counter: counter),
-        PromptInput(
-          preset: preset,
-          card: data,
-          history: [for (final node in promptHistory) _promptHistory(node)],
-          model: turn.config.model,
-          userName: environment.userName,
-          characterId: turn.actorId,
-          groupNames: turn.groupView?.names ?? const [],
-          generationType: turn.generationType,
-          deepseek: turn.config.deepseek,
-          persona: environment.persona,
-          personaInPrompt: turn.settings['personaInPrompt'] != false,
-          worldBefore: world.before.map(_worldFragment).toList(),
-          worldAfter: world.after.map(_worldFragment).toList(),
-          worldSections: {
-            for (final entry in world.sections.entries) entry.key: entry.value.map(_worldFragment).toList(),
-          },
-          disabledUiPrompts: world.disabledUiPrompts,
-          assistantPrefill: [
-            if (turn.config.deepseek)
-              for (final depth in world.depths)
-                for (final hit in depth.entries)
-                  if (_worldPrefill(hit)) _worldFragment(hit),
-          ],
-          injections: injections,
-          tools: _ordinaryTurnTools(turn),
-          worldExamples: [
-            for (final item in examples.reversed)
-              if (item.$2.content.isNotEmpty &&
-                  item.$2.section == null &&
-                  (item.$2.position == 5 || item.$2.position == 6))
-                PromptExample(fragment: _worldFragment(item.$2), before: item.$2.position == 5),
-          ],
-          pinExamples: turn.settings['pinExamples'] == true,
-          stripExamples: turn.settings['stripExamples'] == true,
-          bias: _string(turn.settings['bias']),
-          stops: _strings(turn.settings['stops']),
-          expansion: environment.expand,
-          cardExpansion: environment.baseExpand,
-          preparedFields: prepared,
-        ),
+      final assembly = _assemblePreparedPrompt(
+        turn: turn,
+        data: data,
+        environment: environment,
+        preset: preset,
+        world: world,
+        promptHistory: promptHistory,
+        prepared: prepared,
+        injections: injections,
+        counter: counter,
         prefix: historyWindow?.prefix ?? const [],
       );
       turn.profile?.mark('assembly');
@@ -4974,6 +4910,9 @@ class TavernEngine implements Tavern {
   Future<void> _close() async {
     _closing = true;
     _cancelAuthoringRuns();
+    for (final cancellation in _authoringPreviewCancellations) {
+      cancellation.cancel();
+    }
     _scripts.close();
     for (final group in _groups.rounds.values) {
       group.cancel();
@@ -5247,9 +5186,16 @@ class _Turn {
     this.groupView,
     this.groupRound,
     _TurnProfile? profile,
+    String? previewId,
+    ModelCancellation? previewCancellation,
   }) : actorId = actorId ?? chat.characterId,
-       profile = profile ?? _TurnProfile.start() {
+       profile = previewId == null ? profile ?? _TurnProfile.start() : null,
+       cancellation = previewCancellation ?? ModelCancellation(),
+       generationId = previewId ?? 'generation-${_newStateId()}' {
     if (controller != null) observers.add(controller);
+    if (previewId != null) {
+      stateInvocationId = '$previewId:state';
+    }
     inspection = TavernTurnInspection(
       chatId: chat.id,
       contextNodeId: chat.currentLeafId,
@@ -5275,8 +5221,8 @@ class _Turn {
   _GroupView? groupView;
   final _GroupRound? groupRound;
   void Function(TavernEvent)? onEvent;
-  final cancellation = ModelCancellation();
-  final generationId = 'generation-${_newStateId()}';
+  final ModelCancellation cancellation;
+  final String generationId;
   String get toolLogicalId => generationId;
   StoredToolTurnOwner? toolOwner;
   StoredToolPhase? toolPhase;
@@ -5825,18 +5771,21 @@ List<StoredNode> _preparePromptHistory(
   _MacroEnvironment environment, {
   required bool continuing,
   int depthOffset = 0,
+  List<Map<String, Object?>>? regexTrace,
 }) {
   final visible = history.where((node) => !node.message.hidden && !_systemMessage(node)).toList();
   final transformed = <StoredNode>[];
   for (var index = 0; index < visible.length; index++) {
     final node = visible[index];
     final depth = visible.length - index - (continuing ? 2 : 1) + depthOffset;
-    final text = environment.regex.apply(
+    final text = _preparePromptRegex(
+      environment,
       node.message.text,
       placement: node.message.role == TavernRole.user ? RegexPlacement.userInput : RegexPlacement.aiOutput,
       phase: RegexPhase.prompt,
       depth: depth,
-      expand: environment.regexExpand,
+      source: 'history:${node.message.nodeId}',
+      trace: regexTrace,
     );
     transformed.add(_nodeWithText(node, text));
   }
@@ -5855,12 +5804,14 @@ List<StoredNode> _preparePromptHistory(
       }
     }
     final depth = transformed.length - index - (continuing ? 2 : 1) + depthOffset;
-    final reasoning = environment.regex.apply(
+    final reasoning = _preparePromptRegex(
+      environment,
       node.message.reasoning ?? '',
       placement: RegexPlacement.reasoning,
       phase: RegexPhase.prompt,
       depth: depth,
-      expand: environment.regexExpand,
+      source: 'reasoning:${node.message.nodeId}',
+      trace: regexTrace,
     );
     final prefixMessage = continuing && index == transformed.length - 1;
     if ((prefixMessage || (add && additions < maximum)) && reasoning.isNotEmpty && reasoning != '\u200B') {

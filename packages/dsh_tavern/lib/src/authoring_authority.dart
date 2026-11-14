@@ -64,6 +64,23 @@ final class AuthoringRootState {
   final Set<String> protectedArtifacts;
 }
 
+/// Existing ledger evidence, independent of any fresh file read. A null
+/// revision means this resource has not been observed by the authority.
+final class AuthoringResourceVersion {
+  const AuthoringResourceVersion({required this.domainId, this.revision, this.snapshot, this.pendingOperationId});
+
+  final String domainId;
+  final int? revision;
+  final AuthoringResourceSnapshot? snapshot;
+  final String? pendingOperationId;
+
+  bool sameAs(AuthoringResourceVersion other) =>
+      domainId == other.domainId &&
+      revision == other.revision &&
+      pendingOperationId == other.pendingOperationId &&
+      (snapshot == null ? other.snapshot == null : other.snapshot != null && snapshot!.sameAs(other.snapshot!));
+}
+
 /// Owns durable facts on the engine's existing SQLite connection. The actual
 /// character/book queues own ordering; this class has no asynchronous queue.
 final class AuthoringAuthority {
@@ -95,6 +112,18 @@ final class AuthoringAuthority {
   /// Check before a writer reads a target that an unresolved delete may have
   /// moved away. This preserves the blocking operation's identity on all exits.
   void checkWritable(String resourceId) => _checkPending(resourceId, _store.readAuthoringResource(resourceId));
+
+  /// Reads only. In particular this does not observe current files, reconcile
+  /// a live ticket, or create a version for an unobserved resource.
+  AuthoringResourceVersion peek(String resourceId) {
+    final current = _store.readAuthoringResource(resourceId);
+    return AuthoringResourceVersion(
+      domainId: domainId,
+      revision: current?.revision,
+      snapshot: current == null ? null : AuthoringResourceSnapshot.fromJson(current.snapshot),
+      pendingOperationId: current?.pendingOperationId,
+    );
+  }
 
   /// Reads a reserved target for SaveAs replay without reconciling that
   /// operation before the caller's complete parameters have been checked.

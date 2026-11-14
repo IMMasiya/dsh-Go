@@ -89,13 +89,8 @@ final class RegexLibrary {
   /// by runtime script records. An absent library has an explicit empty base.
   Future<({Map<String, Object?> document, String? rawText, bool present})> readAuthoringSnapshot() =>
       _exclusive(() async {
-        final ({String text, String rawText}) source;
-        try {
-          source = await readAuthoringText(_file);
-        } on PathNotFoundException catch (error) {
-          final code = error.osError?.errorCode;
-          if (code != 2 && (!Platform.isWindows || code != 3)) rethrow;
-          if (await FileSystemEntity.type(_file.path) != FileSystemEntityType.notFound) rethrow;
+        final source = await _readAuthoringText();
+        if (source == null) {
           return (document: <String, Object?>{'version': 1, 'scripts': <Object?>[]}, rawText: null, present: false);
         }
         final document = jsonDecode(source.text);
@@ -104,6 +99,28 @@ final class RegexLibrary {
         }
         return (document: document, rawText: source.rawText, present: true);
       });
+
+  /// Preview seal compares the original text without parsing a changed file
+  /// or updating the runtime collection.
+  Future<bool> recheckAuthoringSnapshot({required bool present, required String? rawText}) => _exclusive(() async {
+    final source = await _readAuthoringText();
+    return present == (source != null) && rawText == source?.rawText;
+  });
+
+  Future<({String text, String rawText})?> _readAuthoringText() async {
+    try {
+      return await readAuthoringText(_file);
+    } on PathNotFoundException catch (error) {
+      final code = error.osError?.errorCode;
+      if (code != 2 && (!Platform.isWindows || code != 3)) {
+        rethrow;
+      }
+      if (await FileSystemEntity.type(_file.path) != FileSystemEntityType.notFound) {
+        rethrow;
+      }
+      return null;
+    }
+  }
 
   Future<TavernRegexImportResult> importScripts(String text) async {
     final Object? value;

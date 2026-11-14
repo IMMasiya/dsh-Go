@@ -60,6 +60,17 @@ Map<String, Object?> _directorSource(TavernEngine engine, String chatId, String?
   final saved = nodeId == null && group == null
       ? _emptyChatState(engine._chatCodec.metadataForNode(engine._store, chatId))
       : engine._stateAt(chatId, nodeId);
+  return _directorSourceFromFacts(nodeId, history, group, saved, visible: visible);
+}
+
+Map<String, Object?> _directorSourceFromFacts(
+  String? nodeId,
+  List<StoredNode> history,
+  TavernGroupChat? group,
+  Map<String, Object?> saved, {
+  List<StoredNode>? visible,
+}) {
+  visible ??= history.where((node) => !node.message.hidden && !_systemMessage(node)).toList();
   final input = _StateInput(saved);
   return _copy({
     'kind': nodeId == null ? 'empty' : 'node', 'nodeId': nodeId,
@@ -111,6 +122,24 @@ String _directorSourceFingerprint(
   Map<String, Object?> card,
   Map<String, Object?> persona,
 ) => _directorHash({'source': source, 'card': card, 'persona': persona});
+
+String? _directorPathReason(TavernDirectorRun run, String? contextNodeId, List<String> path) =>
+    run.sourceKind == 'empty'
+    ? contextNodeId == null
+          ? null
+          : 'director_source_not_on_path'
+    : path.contains(run.sourceNodeId)
+    ? null
+    : 'director_source_not_on_path';
+
+String? _directorSourceReason(
+  TavernDirectorRun run,
+  Map<String, Object?> data,
+  Map<String, Object?> persona,
+  Map<String, Object?> source,
+) => _directorSourceFingerprint(source, _directorCard(data), persona) == run.sourceFingerprint
+    ? null
+    : 'director_source_changed';
 
 TavernUsage? _directorUsage(Map<String, Object?>? value) {
   if (value == null) {
@@ -1074,22 +1103,18 @@ class _DirectorCoordinator {
     String? contextNodeId,
   ) {
     try {
-      if (run.sourceKind == 'empty') {
-        if (contextNodeId != null) {
-          return 'director_source_not_on_path';
-        }
-      } else {
-        // Membership needs only a validated identity chain. Unrelated later
-        // bodies/extra JSON are not part of the original source fingerprint;
-        // the source itself is still read in full and authenticated below.
-        final path = engine._store.ancestorIds(run.chatId, contextNodeId);
-        if (!path.contains(run.sourceNodeId)) {
-          return 'director_source_not_on_path';
-        }
+      // Do not fetch a source, settings, secret proof or story state before
+      // the preceding gate: an unavailable later carrier is not an earlier
+      // path failure. Preview uses the same predicates on captured facts.
+      final path = run.sourceKind == 'empty' ? const <String>[] : engine._store.ancestorIds(run.chatId, contextNodeId);
+      final pathReason = _directorPathReason(run, contextNodeId, path);
+      if (pathReason != null) {
+        return pathReason;
       }
       final source = _directorSource(engine, run.chatId, run.sourceNodeId);
-      if (_directorSourceFingerprint(source, _directorCard(data), persona) != run.sourceFingerprint) {
-        return 'director_source_changed';
+      final sourceReason = _directorSourceReason(run, data, persona, source);
+      if (sourceReason != null) {
+        return sourceReason;
       }
       final secretReason = _secretDirectorEligibility(
         engine,
@@ -1117,10 +1142,7 @@ class _DirectorCoordinator {
       final reason = run.sourceKind == 'empty' && turn.kind == _TurnKind.regenerate
           ? 'director_source_not_on_path'
           : _eligibility(run, stored, data, _directorPersona(turn.personaSelection, turn.settings), parent);
-      final output = director_core.DirectOutput.parse(run.output!);
-      return _DirectorPrepared(stored, output, reason == null, [
-        if (reason != null) _directorIssue(reason, id: stored.id),
-      ], _directorAllowedReferences(stored));
+      return _directorPreparation(stored, run, reason);
     } catch (_) {
       return _DirectorPrepared(stored, null, false, [
         _directorIssue('saved_director_run_unavailable', id: stored.id),
@@ -1138,48 +1160,57 @@ class _DirectorCoordinator {
       _event(stored),
   ];
 
-  TavernDirectorEvent _event(StoredAgentRun stored) {
-    try {
-      final raw = stored.result;
-      if (raw['version'] != 1 ||
-          raw['source'] != 'director' ||
-          raw['status'] != 'pending' ||
-          raw['runId'] is! String ||
-          raw['name'] is! String ||
-          raw['data'] is! String ||
-          raw['createdAt'] is! String ||
-          raw['sourceFingerprint'] is! String ||
-          (raw['sourceKind'] != 'node' && raw['sourceKind'] != 'empty') ||
-          (raw['sourceKind'] == 'node' ? raw['sourceNodeId'] is! String : raw['sourceNodeId'] != null)) {
-        throw const FormatException('Invalid saved director event.');
-      }
-      final name = raw['name']! as String;
-      final data = raw['data']! as String;
-      if (name.isEmpty ||
-          name.length > 1024 ||
-          utf8.encode(name).length > 1024 ||
-          data.length > 16 * 1024 ||
-          utf8.encode(data).length > 16 * 1024) {
-        throw const FormatException('Invalid saved director event text.');
-      }
-      return TavernDirectorEvent(
-        id: stored.id,
-        runId: raw['runId']! as String,
-        chatId: stored.chatId,
-        name: name,
-        data: data,
-        createdAt: DateTime.parse(raw['createdAt']! as String),
-        sourceKind: raw['sourceKind']! as String,
-        sourceNodeId: raw['sourceNodeId'] as String?,
-        sourceFingerprint: raw['sourceFingerprint']! as String,
-      );
-    } catch (_) {
-      return TavernDirectorEvent.unavailable(
-        id: stored.id,
-        chatId: stored.chatId,
-        reason: 'invalid_or_unsupported_saved_director_event',
-      );
+  TavernDirectorEvent _event(StoredAgentRun stored) => _directorEvent(stored);
+}
+
+_DirectorPrepared _directorPreparation(StoredAgentRun stored, TavernDirectorRun run, String? reason) {
+  final output = director_core.DirectOutput.parse(run.output!);
+  return _DirectorPrepared(stored, output, reason == null, [
+    if (reason != null) _directorIssue(reason, id: stored.id),
+  ], _directorAllowedReferences(stored));
+}
+
+TavernDirectorEvent _directorEvent(StoredAgentRun stored) {
+  try {
+    final raw = stored.result;
+    if (raw['version'] != 1 ||
+        raw['source'] != 'director' ||
+        raw['status'] != 'pending' ||
+        raw['runId'] is! String ||
+        raw['name'] is! String ||
+        raw['data'] is! String ||
+        raw['createdAt'] is! String ||
+        raw['sourceFingerprint'] is! String ||
+        (raw['sourceKind'] != 'node' && raw['sourceKind'] != 'empty') ||
+        (raw['sourceKind'] == 'node' ? raw['sourceNodeId'] is! String : raw['sourceNodeId'] != null)) {
+      throw const FormatException('Invalid saved director event.');
     }
+    final name = raw['name']! as String;
+    final data = raw['data']! as String;
+    if (name.isEmpty ||
+        name.length > 1024 ||
+        utf8.encode(name).length > 1024 ||
+        data.length > 16 * 1024 ||
+        utf8.encode(data).length > 16 * 1024) {
+      throw const FormatException('Invalid saved director event text.');
+    }
+    return TavernDirectorEvent(
+      id: stored.id,
+      runId: raw['runId']! as String,
+      chatId: stored.chatId,
+      name: name,
+      data: data,
+      createdAt: DateTime.parse(raw['createdAt']! as String),
+      sourceKind: raw['sourceKind']! as String,
+      sourceNodeId: raw['sourceNodeId'] as String?,
+      sourceFingerprint: raw['sourceFingerprint']! as String,
+    );
+  } catch (_) {
+    return TavernDirectorEvent.unavailable(
+      id: stored.id,
+      chatId: stored.chatId,
+      reason: 'invalid_or_unsupported_saved_director_event',
+    );
   }
 }
 
@@ -1189,11 +1220,17 @@ String _directorMemoryId(String chatId) => 'dshgo:memory:$chatId';
   TavernEngine engine,
   String chatId,
   DateTime at,
+) => _directorMemoryBookFromRows(chatId, at, engine._store.directorMemories(chatId));
+
+({WorldInfoBook? book, List<Map<String, Object?>> issues}) _directorMemoryBookFromRows(
+  String chatId,
+  DateTime at,
+  List<({String id, Map<String, Object?> entry, bool valid})> rows,
 ) {
   final entries = <String, Object?>{};
   final issues = <Map<String, Object?>>[];
   final id = _directorMemoryId(chatId);
-  for (final row in engine._store.directorMemories(chatId)) {
+  for (final row in rows) {
     if (!row.valid) {
       issues.add(_directorIssue('memory_json_unavailable', id: row.id));
       continue;
@@ -1237,6 +1274,11 @@ String _directorMemoryId(String chatId) => 'dshgo:memory:$chatId';
   String? requestedLeafId,
   List<WorldInfoBook> loaded,
 ) {
+  final id = _rememberMemoryBookId(chatId, loaded);
+  return _rememberMemoryBookFromRows(id, engine._store.rememberMemories(chatId, requestedLeafId: requestedLeafId));
+}
+
+String _rememberMemoryBookId(String chatId, List<WorldInfoBook> loaded) {
   final occupied = {for (final book in loaded) book.id};
   final base = 'dshgo:remember:$chatId';
   var id = base;
@@ -1244,9 +1286,14 @@ String _directorMemoryId(String chatId) => 'dshgo:memory:$chatId';
   while (occupied.contains(id)) {
     id = '$base:${suffix++}';
   }
+  return id;
+}
+
+({WorldInfoBook? book, Map<String, WorldInfoBook> owners, List<Map<String, Object?>> issues})
+_rememberMemoryBookFromRows(String id, List<StoredRememberMemory> rows) {
   final entries = <String, Object?>{};
   final issues = <Map<String, Object?>>[];
-  for (final row in engine._store.rememberMemories(chatId, requestedLeafId: requestedLeafId)) {
+  for (final row in rows) {
     if (!row.available) {
       issues.add({..._directorIssue('remember_unavailable', id: row.id), 'reason': row.unavailableReason});
       continue;
@@ -1351,21 +1398,36 @@ List<WorldInfoBook> _directorBooks(
       : (book: null, issues: <Map<String, Object?>>[]);
   final withLegacy = [...loaded, if (legacy.book != null) legacy.book!];
   final remembered = _rememberMemoryBook(engine, turn.chat.id, requestedLeafId, withLegacy);
+  final result = _directorBooksPrepared(turn, loaded, legacy, remembered);
+  if (result.inspection case final inspection?) {
+    engine._setInspection(turn, inspection);
+  }
+  return result.books;
+}
+
+({List<WorldInfoBook> books, TavernTurnInspection? inspection}) _directorBooksPrepared(
+  _Turn turn,
+  List<WorldInfoBook> loaded,
+  ({WorldInfoBook? book, List<Map<String, Object?>> issues}) legacy,
+  ({WorldInfoBook? book, Map<String, WorldInfoBook> owners, List<Map<String, Object?>> issues}) remembered,
+) {
+  final prepared = turn.directorPrepared;
+  final withLegacy = [...loaded, if (legacy.book != null) legacy.book!];
   final books = [...withLegacy, if (remembered.book != null) remembered.book!];
+  TavernTurnInspection? inspection;
   if (prepared != null) {
     prepared.issues.addAll([...legacy.issues, ...remembered.issues]);
   } else if (remembered.issues.isNotEmpty) {
-    engine._setInspection(
-      turn,
-      turn.inspection.copyWith(
-        director: {
-          ...turn.inspection.director,
-          'remember': {'issues': remembered.issues},
-        },
-      ),
+    inspection = turn.inspection.copyWith(
+      director: {
+        ...turn.inspection.director,
+        'remember': {'issues': remembered.issues},
+      },
     );
   }
-  if (prepared == null || !prepared.eligible) return books;
+  if (prepared == null || !prepared.eligible) {
+    return (books: books, inspection: inspection);
+  }
   final memoryOwners = <String, WorldInfoBook>{
     if (legacy.book case final book?)
       for (final entry in book.entries) entry.uid: book,
@@ -1427,7 +1489,7 @@ List<WorldInfoBook> _directorBooks(
   if (loaded.any((book) => book.id == _directorMemoryId(turn.chat.id))) {
     prepared.issues.add(_directorIssue('memory_book_identity_collision'));
   }
-  return books;
+  return (books: books, inspection: inspection);
 }
 
 List<PromptInjection> _directorInjections(_Turn turn) {
@@ -1449,9 +1511,16 @@ List<PromptInjection> _directorInjections(_Turn turn) {
 }
 
 void _captureDirectorAssembly(TavernEngine engine, _Turn turn, PromptAssembly assembly, WorldInfoResult world) {
+  final inspection = _directorAssemblyInspection(turn, assembly, world);
+  if (inspection != null) {
+    engine._setInspection(turn, inspection);
+  }
+}
+
+TavernTurnInspection? _directorAssemblyInspection(_Turn turn, PromptAssembly assembly, WorldInfoResult world) {
   final prepared = turn.directorPrepared;
   if (prepared == null) {
-    return;
+    return null;
   }
   final observed = <WorldInfoEntryRef>{};
   var beatObserved = false;
@@ -1501,17 +1570,14 @@ void _captureDirectorAssembly(TavernEngine engine, _Turn turn, PromptAssembly as
       if (!retained) 'finalReason': 'source_not_observed_in_final_messages',
     });
   }
-  engine._setInspection(
-    turn,
-    turn.inspection.copyWith(
-      director: {
-        'version': 1,
-        'runId': prepared.stored.id,
-        'eligible': prepared.eligible,
-        'issues': prepared.issues,
-        'beat': {'offered': prepared.eligible && prepared.output!.beat.isNotEmpty, 'finalSourceObserved': beatObserved},
-        'prefetch': references,
-      },
-    ),
+  return turn.inspection.copyWith(
+    director: {
+      'version': 1,
+      'runId': prepared.stored.id,
+      'eligible': prepared.eligible,
+      'issues': prepared.issues,
+      'beat': {'offered': prepared.eligible && prepared.output!.beat.isNotEmpty, 'finalSourceObserved': beatObserved},
+      'prefetch': references,
+    },
   );
 }

@@ -9,6 +9,7 @@
 import 'dart:typed_data';
 
 import 'authoring.dart';
+import 'authoring_preview.dart';
 import 'authoring_run.dart';
 import 'authoring_seed.dart';
 import 'backup.dart';
@@ -569,6 +570,10 @@ abstract interface class Tavern {
     required TavernAuthoringMediaSelection media,
     String? domainId,
   });
+
+  /// Prepares the complete selected prompt in an isolated captured context.
+  /// Unsupported dependencies return no assembly and never fall back to live execution.
+  TavernAuthoringTask<TavernAuthoringPromptPreview> previewAuthoringPrompt(TavernAuthoringPromptRequest request);
 
   // Library ------------------------------------------------------------------
 

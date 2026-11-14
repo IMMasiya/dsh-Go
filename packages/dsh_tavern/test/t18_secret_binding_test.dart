@@ -439,6 +439,57 @@ Future<TavernAgentRun> _expectBound(_Fixture f) async {
 }
 
 void main() {
+  test('authoring preview reports a required new bind without adopting B or a reply', () async {
+    final f = await _ready();
+    final draft = await f.h.engine.createAuthoringDraft([
+      TavernAuthoringTarget(kind: TavernAuthoringTargetKind.character, id: f.characterId),
+    ]);
+    final before = _db(
+      f,
+      (db) => {
+        for (final table in [
+          'chats',
+          'nodes',
+          'node_states',
+          'agent_runs',
+          'authoring_drafts',
+          'authoring_resources',
+          'authoring_operations',
+        ])
+          table: [for (final row in db.select('SELECT * FROM $table ORDER BY rowid')) Map<String, Object?>.from(row)],
+      },
+    );
+    final generated = f.h.model.generated;
+    final preview = await f.h.engine
+        .previewAuthoringPrompt(
+          TavernAuthoringPromptRequest(
+            requestId: 'requires-local-bind',
+            draftId: draft.id,
+            draftRevision: draft.draftRevision,
+            changeIds: const [],
+            at: T24Harness.at,
+            seed: 7,
+            context: TavernAuthoringChatContext(chatId: f.chatId, nodeId: f.sourceId, generationType: 'continue'),
+          ),
+        )
+        .result;
+    expect(preview.status, TavernAuthoringPreviewStatus.unsupported);
+    expect(preview.assembly, isNull);
+    expect(preview.issues.map((issue) => issue.type), contains('secret_bind_required'));
+    expect(
+      _db(
+        f,
+        (db) => {
+          for (final table in before.keys)
+            table: [for (final row in db.select('SELECT * FROM $table ORDER BY rowid')) Map<String, Object?>.from(row)],
+        },
+      ),
+      before,
+    );
+    expect(f.h.model.generated, generated);
+    expect(await _bindRuns(f), isEmpty);
+  });
+
   test('a published proposal commits portable B and its independent bind run before the main provider entry', () async {
     final f = await _ready();
     final physical = _physical(f);

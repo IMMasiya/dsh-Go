@@ -34,6 +34,26 @@ final class AuthoringCardMedia {
   final String? fileName;
 }
 
+/// A queued, read-only preview dependency. [snapshot] is what the files said;
+/// [ledger] is the separately recorded authority evidence, if an owner exists.
+final class AuthoringCharacterCapture {
+  const AuthoringCharacterCapture({
+    required this.snapshot,
+    this.document,
+    this.character,
+    this.mediaRefs = const [],
+    this.media = const {},
+    this.ledger,
+  });
+
+  final AuthoringResourceSnapshot snapshot;
+  final Map<String, Object?>? document;
+  final StoredCharacter? character;
+  final List<String> mediaRefs;
+  final Map<String, Uint8List> media;
+  final AuthoringResourceVersion? ledger;
+}
+
 class StoredCharacter {
   const StoredCharacter({
     required this.id,
@@ -606,6 +626,88 @@ class CharacterLibrary {
       mediaRefs: paths.cast<String>().toList(),
       authorityRevision: revision,
     );
+  });
+
+  /// Reads the complete source and the manifest's actual media once under the
+  /// character queue. Unlike a persistent authoring base this neither tidies
+  /// artifacts nor observes a new authority revision.
+  Future<AuthoringCharacterCapture> readAuthoringCapture(String id) => _exclusive(() async {
+    _requireId(id);
+    authority?.checkWritable('character:$id');
+    final snapshot = await _readAuthoringResource(id);
+    if (!snapshot.present) {
+      return AuthoringCharacterCapture(snapshot: snapshot, ledger: authority?.peek('character:$id'));
+    }
+    final bytes = Uint8List.fromList(utf8.encode(snapshot.rawText!));
+    final document = const CardCodec().decodeAuthority(bytes);
+    final metadata = jsonDecode(decodeAuthoringText(utf8.encode(snapshot.identityText!)).text);
+    if (metadata is! Map<String, Object?> ||
+        metadata['version'] != 1 ||
+        !const ['png', 'json', 'charx'].contains(metadata['sourceFormat']) ||
+        metadata['resources'] is! List<Object?>) {
+      throw const TavernImportError('资料库元数据无效。');
+    }
+    final directory = '${_characters.path}/$id';
+    final paths = metadata['resources']! as List<Object?>;
+    final assets = <String, Uint8List>{};
+    final media = <String, Uint8List>{};
+    for (final path in paths) {
+      if (path is! String || !isSafeCardAssetPath(path)) {
+        throw const TavernImportError('资料库资源路径无效。');
+      }
+      final value = await File('$directory/resources/$path').readAsBytes();
+      assets[path] = value;
+      media['resources/$path'] = value;
+    }
+    final parsed = await _decodeStored(bytes);
+    final importedAtValue = metadata['importedAt'];
+    final importedAt = importedAtValue is String ? DateTime.tryParse(importedAtValue) : null;
+    if (importedAt == null) {
+      throw const TavernImportError('资料库导入时间无效。');
+    }
+    final format = TavernCardFormat.values.byName(metadata['sourceFormat']! as String);
+    final png = metadata['hasPng'] == true ? await File('$directory/source.png').readAsBytes() : null;
+    if (png != null) {
+      media['source.png'] = png;
+    }
+    final original = await File('$directory/original.${format.name}').readAsBytes();
+    media['original.${format.name}'] = original;
+    return AuthoringCharacterCapture(
+      snapshot: snapshot,
+      document: document,
+      character: StoredCharacter(
+        id: id,
+        importedAt: importedAt,
+        card: TavernCard(json: parsed.json, assets: assets, png: png, originalBytes: original, sourceFormat: format),
+      ),
+      mediaRefs: paths.cast<String>().toList(),
+      media: media,
+      ledger: authority?.peek('character:$id'),
+    );
+  });
+
+  /// Only the files read by this dependency are compared. The engine performs
+  /// its final synchronous ledger check after all resource I/O has drained.
+  Future<bool> recheckAuthoringCapture(String id, AuthoringCharacterCapture captured) => _exclusive(() async {
+    _requireId(id);
+    try {
+      if (!(await _readAuthoringResource(id)).sameAs(captured.snapshot)) {
+        return false;
+      }
+      for (final entry in captured.media.entries) {
+        final fresh = await File('${_characters.path}/$id/${entry.key}').readAsBytes();
+        if (!_sameAuthoringCaptureBytes(entry.value, fresh)) {
+          return false;
+        }
+      }
+      return true;
+    } on PathNotFoundException catch (error) {
+      final code = error.osError?.errorCode;
+      if (code == 2 || (Platform.isWindows && code == 3)) {
+        return false;
+      }
+      rethrow;
+    }
   });
 
   /// Internal full-data/embedded-book writer. [prepare] is synchronous and is
@@ -1219,6 +1321,18 @@ class CharacterLibrary {
       }
     }
   }
+}
+
+bool _sameAuthoringCaptureBytes(List<int> left, List<int> right) {
+  if (left.length != right.length) {
+    return false;
+  }
+  for (var index = 0; index < left.length; index++) {
+    if (left[index] != right[index]) {
+      return false;
+    }
+  }
+  return true;
 }
 
 StoredCharacterSummary _summarize(StoredCharacter record) {
