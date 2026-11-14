@@ -618,7 +618,8 @@ class PhoneControl private constructor(private val app: Context) : PhoneEnv, Con
 
     private fun selectExecution(task: PhoneTasks, owner: PhoneTasks.Owner): (((() -> Unit) -> Boolean)?) {
         val ticket = displaySelection.select(task, owner) ?: return null
-        // Even an apps-only execution must retire the preceding pill. Both platform sinks
+        // Selecting another owner retires the old pill, even for an apps-only execution.
+        // Consecutive calls by the same owner keep its displayed control. Platform sinks
         // run after the short Tasks -> selection commit, never while either lock is held.
         PhoneRegistry.overlayGate?.clearStatus { /* Check displayed status's own guard only. */ }
         DshService.updateNotification(app)
