@@ -365,6 +365,29 @@ void main() {
     });
   });
 
+  testWidgets('a picture dropped mid-handoff lives while the hide still draws it', (tester) async {
+    final mode = ImageGenerationPreset.pixelsOrganic.mode(Brightness.light);
+    var now = 0.0;
+    final reveal = FxReveal(now: () => now, random: math.Random(1));
+    final a = await _image(tester), b = await _image(tester);
+    reveal.startReveal(a, () {});
+    reveal.startBoil();
+    reveal.startReveal(b, () {});
+    now = 400;
+    reveal.frame(_frame(mode), now);
+    expect((reveal.overlay! as FxOverlayBoil).to, b);
+    reveal.dropPending();
+    reveal.startHide(300);
+    now = 500;
+    reveal.frame(_frame(mode), now);
+    expect(b.image.debugDisposed, isFalse);
+    now = 800;
+    reveal.frame(_frame(mode), now);
+    expect(reveal.phase, RevealPhase.idle);
+    expect(b.image.debugDisposed, isTrue);
+    expect(a.image.debugDisposed, isTrue);
+  });
+
   testWidgets('cover cells and the tint read-back come from the cover-fit image', (tester) async {
     final recorder = ui.PictureRecorder();
     Canvas(recorder)

@@ -104,6 +104,9 @@ enum RevealPhase { idle, reveal, hold, hide, boil }
 /// What the overlay shows this frame.
 sealed class FxOverlay {
   const FxOverlay();
+
+  /// Painting it draws [img].
+  bool uses(RevealImage img);
 }
 
 /// The whole picture (hold, the reveal's last frame).
@@ -111,6 +114,9 @@ class FxOverlayImage extends FxOverlay {
   const FxOverlayImage(this.image);
 
   final RevealImage image;
+
+  @override
+  bool uses(RevealImage img) => identical(image, img);
 }
 
 /// `paintPixelMasked`: the smooth picture, its chunky cells on top with
@@ -122,6 +128,9 @@ class FxOverlayPixels extends FxOverlay {
   final RevealImage image;
   final int gx, gy;
   final Uint8List drop, mask;
+
+  @override
+  bool uses(RevealImage img) => identical(image, img);
 }
 
 /// `paintBoilFrame`: chunky cells of [from] cross-fading to [to] by [blendT],
@@ -142,6 +151,9 @@ class FxOverlayBoil extends FxOverlay {
   final double blendT, baseAlpha;
   final int gx, gy;
   final Uint8List drop;
+
+  @override
+  bool uses(RevealImage img) => identical(from, img) || identical(to, img) || identical(base, img);
 }
 
 /// The renderer.ts `Instance` fields one reveal frame reads.
@@ -212,7 +224,10 @@ class FxReveal {
   Float64List? _boilPattern;
   Float64List? _boilField;
   RevealImage? _pending;
-  RevealImage? _retired;
+
+  /// Pictures let go while the overlay may still draw them (a hide keeps the
+  /// last one); disposed once it no longer does.
+  final _retired = <RevealImage>[];
   VoidCallback? _onRevealComplete;
 
   /// The image being revealed, held or churned.
@@ -240,8 +255,12 @@ class FxReveal {
 
   /// `afterShaderFrame`: advance one frame.
   void frame(FxFrame f, double nowMs) {
-    _retired?.dispose();
-    _retired = null;
+    final shown = overlay;
+    _retired.removeWhere((img) {
+      if (shown != null && shown.uses(img)) return false;
+      img.dispose();
+      return true;
+    });
     if (!_active) return;
     switch (phase) {
       case RevealPhase.reveal:
@@ -605,10 +624,9 @@ class FxReveal {
   }
 
   /// Drop the picture handed to the churn; the churn keeps going. It is
-  /// disposed on the next frame, as this frame's overlay may still draw it.
+  /// disposed once no overlay draws it.
   void dropPending() {
-    _retired?.dispose();
-    _retired = _pending;
+    if (_pending case final pending?) _retired.add(pending);
     _pending = null;
     _boilHandoffStartMs = null;
     _onRevealComplete = null;
@@ -631,8 +649,10 @@ class FxReveal {
     image = null;
     _pending?.dispose();
     _pending = null;
-    _retired?.dispose();
-    _retired = null;
+    for (final img in _retired) {
+      img.dispose();
+    }
+    _retired.clear();
     _boilHandoffStartMs = null;
     overlay = null;
   }
