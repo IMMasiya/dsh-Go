@@ -17660,6 +17660,18 @@ class L10nZh extends L10n {
   String get speechCallSkipHint => '跳过这段回答';
 
   @override
+  String get speechCallTranscript => '字幕';
+
+  @override
+  String get speechCallTranscriptHint => '这次通话的全部字幕';
+
+  @override
+  String get speechCallTranscriptEmpty => '还没开口。你们说的话会一句句记在这里。';
+
+  @override
+  String get speechCallTranscriptCut => '你在这里插话';
+
+  @override
   String get speechCallMute => '静音';
 
   @override

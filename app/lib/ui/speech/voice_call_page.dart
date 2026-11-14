@@ -44,6 +44,7 @@ import '../../voice/live_words.dart';
 import '../../voice/streaming_pcm.dart';
 import 'call/call_backdrop.dart';
 import 'call/call_parts.dart';
+import 'call/call_transcript.dart';
 import 'call/call_visuals.dart';
 import 'speech_ui.dart';
 
@@ -337,6 +338,51 @@ class _VoiceCallPageState extends ConsumerState<VoiceCallPage> with WidgetsBindi
     );
   }
 
+  /// The light, which gives a little under the finger; tapped while she speaks, she skips ahead.
+  Widget _lightKey(L10n l10n, String status, CallVisual visual, CallPalette palette, bool dark, double size) {
+    return Semantics(
+      button: _call.phase == CallPhase.speaking,
+      label: status,
+      hint: _call.phase == CallPhase.speaking ? l10n.speechCallSkipHint : null,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTapDown: (_) => setState(() => _pressed = true),
+        onTapUp: (_) => setState(() => _pressed = false),
+        onTapCancel: () => setState(() => _pressed = false),
+        onTap: _call.phase == CallPhase.speaking
+            ? () {
+                HapticFeedback.lightImpact();
+                _call.skip();
+              }
+            : null,
+        child: AnimatedScale(
+          scale: _pressed ? 0.93 : 1,
+          duration: AppMotion.of(context, _pressed ? AppMotion.press : const Duration(milliseconds: 420)),
+          curve: _pressed ? Curves.easeOut : Curves.elasticOut,
+          child: AnimatedSwitcher(
+            duration: AppMotion.of(context, AppMotion.slow),
+            child: _light(visual, palette, dark, size),
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// [child] growing and shrinking smoothly as its words come and go (at once with less motion).
+  Widget _grow(Widget child) => _still
+      ? child
+      : AnimatedSize(
+          duration: AppMotion.of(context, AppMotion.emphasized),
+          curve: AppMotion.std,
+          alignment: Alignment.bottomCenter,
+          child: child,
+        );
+
+  void _openTranscript() {
+    HapticFeedback.selectionClick();
+    unawaited(showCallTranscript(context, _call));
+  }
+
   @override
   Widget build(BuildContext context) {
     final l10n = context.l10n;
@@ -357,6 +403,12 @@ class _VoiceCallPageState extends ConsumerState<VoiceCallPage> with WidgetsBindi
       _ => null,
     };
     final width = MediaQuery.sizeOf(context).width;
+    final lightSize = math.min(340.0, width * 0.86);
+    final hearing = _call.phase == CallPhase.hearing;
+    final heard = ended ? '' : _call.heard;
+    // While the person speaks, her last words step aside for theirs.
+    final reply = hearing ? '' : speakable(_call.caption).replaceAll('\n', ' ');
+    final failing = ended ? null : error;
     // Light or dark as the theme is; a picture or her behind always reads as dark.
     final dark = theme.brightness == Brightness.dark || image != null || her;
     final palette = CallPalette.of(theme.colorScheme, light: !dark);
@@ -426,6 +478,7 @@ class _VoiceCallPageState extends ConsumerState<VoiceCallPage> with WidgetsBindi
                           title: widget.title,
                           since: _since,
                           live: !ended && _since != null,
+                          onTranscript: _openTranscript,
                           onBackdrop: ended ? null : () => unawaited(showCallBackdropSheet(context)),
                         ),
                         distance: -14,
@@ -433,33 +486,15 @@ class _VoiceCallPageState extends ConsumerState<VoiceCallPage> with WidgetsBindi
                       Expanded(
                         child: her
                             ? const SizedBox.expand()
-                            : Center(
-                                child: Semantics(
-                                  button: _call.phase == CallPhase.speaking,
-                                  label: status,
-                                  hint: _call.phase == CallPhase.speaking ? l10n.speechCallSkipHint : null,
-                                  child: GestureDetector(
-                                    behavior: HitTestBehavior.opaque,
-                                    onTapDown: (_) => setState(() => _pressed = true),
-                                    onTapUp: (_) => setState(() => _pressed = false),
-                                    onTapCancel: () => setState(() => _pressed = false),
-                                    onTap: _call.phase == CallPhase.speaking
-                                        ? () {
-                                            HapticFeedback.lightImpact();
-                                            _call.skip();
-                                          }
-                                        : null,
-                                    child: AnimatedScale(
-                                      scale: _pressed ? 0.93 : 1,
-                                      duration: AppMotion.of(
-                                        context,
-                                        _pressed ? AppMotion.press : const Duration(milliseconds: 420),
-                                      ),
-                                      curve: _pressed ? Curves.easeOut : Curves.elasticOut,
-                                      child: AnimatedSwitcher(
-                                        duration: AppMotion.of(context, AppMotion.slow),
-                                        child: _light(settings.visual, palette, dark, math.min(340, width * 0.86)),
-                                      ),
+                            : LayoutBuilder(
+                                // The words below take the room they need; the light gives way (to 56 % at least).
+                                builder: (context, box) => Center(
+                                  child: Transform.scale(
+                                    scale: (box.maxHeight / (lightSize * 1.04)).clamp(0.56, 1.0),
+                                    child: OverflowBox(
+                                      maxWidth: lightSize,
+                                      maxHeight: lightSize,
+                                      child: _lightKey(l10n, status, settings.visual, palette, dark, lightSize),
                                     ),
                                   ),
                                 ),
@@ -474,38 +509,56 @@ class _VoiceCallPageState extends ConsumerState<VoiceCallPage> with WidgetsBindi
                         ),
                       ),
                       const SizedBox(height: 14),
-                      HeardLine(text: ended ? '' : _call.heard),
-                      const SizedBox(height: 10),
-                      Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 32),
-                        child: error != null && !ended
-                            ? SizedBox(
-                                height: 80,
-                                child: Center(
-                                  child: Text(
-                                    speechErrorText(l10n, error, listening: true),
-                                    key: const ValueKey('call-error'),
-                                    textAlign: TextAlign.center,
-                                    style: theme.textTheme.bodyMedium?.copyWith(color: ink.warn),
-                                  ),
-                                ),
-                              )
-                            : RevealText(
-                                key: const ValueKey('call-reply'),
-                                text: speakable(_call.caption).replaceAll('\n', ' '),
-                                style: theme.textTheme.bodyLarge?.copyWith(
-                                  color: ink.fg.withValues(alpha: 0.92),
-                                  height: 1.55,
-                                  fontSize: 17,
+                      // What is being said, as much of it as fits; a tap opens all of it.
+                      Semantics(
+                        button: _call.turns.isNotEmpty,
+                        hint: _call.turns.isNotEmpty ? l10n.speechCallTranscriptHint : null,
+                        child: GestureDetector(
+                          key: const ValueKey('call-captions'),
+                          behavior: HitTestBehavior.opaque,
+                          onTap: _call.turns.isEmpty ? null : _openTranscript,
+                          child: _grow(
+                            Padding(
+                              padding: const EdgeInsets.symmetric(horizontal: 28),
+                              child: ConstrainedBox(
+                                constraints: const BoxConstraints(maxWidth: 560),
+                                child: Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    HeardLine(text: heard, speaking: hearing),
+                                    if (heard.isNotEmpty && (reply.isNotEmpty || failing != null))
+                                      const SizedBox(height: 12),
+                                    if (failing != null)
+                                      Text(
+                                        speechErrorText(l10n, failing, listening: true),
+                                        key: const ValueKey('call-error'),
+                                        textAlign: TextAlign.center,
+                                        style: theme.textTheme.bodyMedium?.copyWith(color: ink.warn),
+                                      )
+                                    else
+                                      RevealText(
+                                        key: const ValueKey('call-reply'),
+                                        text: reply,
+                                        done: _call.phase != CallPhase.speaking,
+                                        style: theme.textTheme.bodyLarge?.copyWith(
+                                          color: ink.fg.withValues(alpha: 0.94),
+                                          height: 1.6,
+                                          fontSize: 18,
+                                        ),
+                                      ),
+                                  ],
                                 ),
                               ),
+                            ),
+                          ),
+                        ),
                       ),
                       if (sessionId != null)
                         Padding(
                           padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
                           child: CompanionAsk(sessionId: sessionId),
                         ),
-                      const SizedBox(height: 22),
+                      const SizedBox(height: 26),
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                         crossAxisAlignment: CrossAxisAlignment.end,
@@ -559,23 +612,36 @@ class _VoiceCallPageState extends ConsumerState<VoiceCallPage> with WidgetsBindi
   }
 }
 
-/// The conversation's name, the clock, and the 背景 key.
+/// The conversation's name and the clock between two round keys: 字幕 and 背景.
 class _TopBar extends StatelessWidget {
-  const _TopBar({required this.title, required this.since, required this.live, required this.onBackdrop});
+  const _TopBar({
+    required this.title,
+    required this.since,
+    required this.live,
+    required this.onTranscript,
+    required this.onBackdrop,
+  });
 
   final String title;
   final DateTime? since;
   final bool live;
+  final VoidCallback onTranscript;
   final VoidCallback? onBackdrop;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final l10n = context.l10n;
     return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 14, 14, 0),
+      padding: const EdgeInsets.fromLTRB(14, 14, 14, 0),
       child: Row(
         children: [
-          const SizedBox(width: 40),
+          _RoundKey(
+            key: const ValueKey('call-transcript'),
+            icon: AppIcons.callTranscript,
+            label: l10n.speechCallTranscriptHint,
+            onTap: onTranscript,
+          ),
           Expanded(
             child: Column(
               children: [
@@ -596,34 +662,67 @@ class _TopBar extends StatelessWidget {
               ],
             ),
           ),
-          Semantics(
-            button: true,
-            label: context.l10n.speechBackdropTitle,
-            child: GestureDetector(
-              key: const ValueKey('call-backdrop'),
-              onTap: onBackdrop == null
-                  ? null
-                  : () {
-                      HapticFeedback.selectionClick();
-                      onBackdrop!();
-                    },
-              child: Container(
-                width: 40,
-                height: 40,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: CallInk.of(context).glass,
-                  border: Border.all(color: CallInk.of(context).glassBorder),
-                ),
-                child: Icon(
-                  AppIcons.theme,
-                  size: 18,
-                  color: CallInk.of(context).fg.withValues(alpha: onBackdrop == null ? 0.35 : 0.8),
-                ),
-              ),
-            ),
+          _RoundKey(
+            key: const ValueKey('call-backdrop'),
+            icon: AppIcons.theme,
+            label: l10n.speechBackdropTitle,
+            onTap: onBackdrop,
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// A small round glass key in the top bar; gives a little under the finger.
+class _RoundKey extends StatefulWidget {
+  const _RoundKey({super.key, required this.icon, required this.label, required this.onTap});
+
+  final IconData icon;
+  final String label;
+  final VoidCallback? onTap;
+
+  @override
+  State<_RoundKey> createState() => _RoundKeyState();
+}
+
+class _RoundKeyState extends State<_RoundKey> {
+  bool _down = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final ink = CallInk.of(context);
+    final onTap = widget.onTap;
+    return Semantics(
+      button: true,
+      enabled: onTap != null,
+      label: widget.label,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTapDown: onTap == null ? null : (_) => setState(() => _down = true),
+        onTapCancel: () => setState(() => _down = false),
+        onTapUp: (_) => setState(() => _down = false),
+        onTap: onTap == null
+            ? null
+            : () {
+                HapticFeedback.selectionClick();
+                onTap();
+              },
+        child: AnimatedScale(
+          scale: _down ? 0.9 : 1,
+          duration: AppMotion.of(context, _down ? AppMotion.press : AppMotion.standard),
+          curve: _down ? Curves.easeOut : Curves.easeOutBack,
+          child: Container(
+            width: 40,
+            height: 40,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: ink.glass,
+              border: Border.all(color: ink.glassBorder),
+            ),
+            child: Icon(widget.icon, size: 18, color: ink.fg.withValues(alpha: onTap == null ? 0.35 : 0.8)),
+          ),
+        ),
       ),
     );
   }

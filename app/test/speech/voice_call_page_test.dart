@@ -30,6 +30,7 @@ void main() {
     List<Override> extra = const [],
     bool still = false,
     void Function()? opened,
+    String said = '这周末北京天气怎么样',
   }) async {
     tester.view.physicalSize = const Size(1170, 2532);
     tester.view.devicePixelRatio = 3;
@@ -59,7 +60,7 @@ void main() {
         ),
         overrides: [
           speechAudioProvider.overrideWithValue(audio),
-          callRecognizerProvider.overrideWithValue(() async => FakeCloud('这周末北京天气怎么样')),
+          callRecognizerProvider.overrideWithValue(() async => FakeCloud(said)),
           voiceBridgeProvider.overrideWithValue(FakeVoiceBridge()),
           deepSeekSpeechProvider.overrideWithValue(() async => FakeDeepSeek()),
           ...extra,
@@ -115,6 +116,39 @@ void main() {
     }
     expect(audio.calls, contains('callStop'));
     expect(find.byType(VoiceCallPage), findsNothing);
+  });
+
+  testWidgets('a long question is shown whole, and 字幕 opens the call in full', (tester) async {
+    const long = '我想问一下这个周末北京的天气怎么样，如果下雨的话有没有什么室内的地方可以带孩子去玩，最好离朝阳区近一点';
+    final (audio, conversation) = await pumpCall(tester, said: long);
+    audio.emit(const SpeechStart(over: false));
+    audio.emit(Utterance(Uint8List(32044), const Duration(seconds: 5)));
+    for (var i = 0; i < 5; i++) {
+      await tester.pump(const Duration(milliseconds: 60));
+    }
+    // Whole, over several lines, not cut to one.
+    expect(find.text(long, findRichText: true), findsOneWidget);
+
+    conversation.reply('北京晴，最高二十度。', done: true);
+    for (var i = 0; i < 10; i++) {
+      await tester.pump(const Duration(milliseconds: 60));
+    }
+    await tester.tap(find.byKey(const ValueKey('call-captions')));
+    for (var i = 0; i < 20; i++) {
+      await tester.pump(const Duration(milliseconds: 60));
+    }
+    final list = find.byKey(const ValueKey('call-transcript-list'));
+    expect(find.descendant(of: list, matching: find.text(long)), findsOneWidget);
+    expect(find.descendant(of: list, matching: find.text('北京晴，最高二十度。')), findsOneWidget);
+  });
+
+  testWidgets('字幕 before anything is said: the page says so', (tester) async {
+    await pumpCall(tester);
+    await tester.tap(find.byKey(const ValueKey('call-transcript')));
+    for (var i = 0; i < 20; i++) {
+      await tester.pump(const Duration(milliseconds: 60));
+    }
+    expect(find.text('还没开口。你们说的话会一句句记在这里。'), findsOneWidget);
   });
 
   testWidgets('mute and loudspeaker keys switch and say so', (tester) async {

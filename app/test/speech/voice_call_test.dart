@@ -169,6 +169,18 @@ void main() {
     expect(rig.conversation.sent.last, '（被打断在：好的，）\n换个话题吧');
   });
 
+  test('the turns: what was said and her reply, cut where she stopped', () async {
+    final rig = await speaking();
+    expect(rig.call.turns.single.you, '今天天气怎么样');
+    expect(rig.call.turns.single.her, '好的，我来详细说一说。');
+    await over(rig, '我想问别的');
+    expect(rig.call.turns.first.her, '好的，');
+    expect(rig.call.turns.first.cut, isTrue);
+    expect(rig.call.turns.last.you, '我想问别的');
+    expect(rig.call.turns.last.her, isEmpty);
+    rig.call.hangUp();
+  });
+
   test('停 over her: she stops and nothing is sent; the next message still says where', () async {
     final rig = await speaking();
     await over(rig, '等一下！');

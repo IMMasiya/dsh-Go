@@ -32330,6 +32330,30 @@ abstract class L10n {
   /// **'跳过这段回答'**
   String get speechCallSkipHint;
 
+  /// No description provided for @speechCallTranscript.
+  ///
+  /// In zh, this message translates to:
+  /// **'字幕'**
+  String get speechCallTranscript;
+
+  /// No description provided for @speechCallTranscriptHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'这次通话的全部字幕'**
+  String get speechCallTranscriptHint;
+
+  /// No description provided for @speechCallTranscriptEmpty.
+  ///
+  /// In zh, this message translates to:
+  /// **'还没开口。你们说的话会一句句记在这里。'**
+  String get speechCallTranscriptEmpty;
+
+  /// No description provided for @speechCallTranscriptCut.
+  ///
+  /// In zh, this message translates to:
+  /// **'你在这里插话'**
+  String get speechCallTranscriptCut;
+
   /// No description provided for @speechCallMute.
   ///
   /// In zh, this message translates to:

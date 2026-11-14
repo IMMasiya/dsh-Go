@@ -18639,6 +18639,18 @@ class L10nEn extends L10n {
   String get speechCallSkipHint => 'Skip this answer';
 
   @override
+  String get speechCallTranscript => 'Captions';
+
+  @override
+  String get speechCallTranscriptHint => 'Everything said on this call';
+
+  @override
+  String get speechCallTranscriptEmpty => 'Nothing said yet. What you both say is written down here, line by line.';
+
+  @override
+  String get speechCallTranscriptCut => 'You cut in here';
+
+  @override
   String get speechCallMute => 'Mute';
 
   @override
