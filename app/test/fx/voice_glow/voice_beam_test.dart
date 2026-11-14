@@ -19,9 +19,10 @@ Widget _composer(VoiceBeam Function(Widget card) wrap) => wrap(
 );
 
 void main() {
-  testWidgets('listens, processes, pauses and fades out without errors', (tester) async {
+  testWidgets('listens, gathers, pauses and fades out without errors', (tester) async {
     final level = ValueNotifier<double>(0);
-    var processing = false, active = true, paused = false;
+    final motion = ValueNotifier(VoiceBeamMotion.rest);
+    var active = true, paused = false;
     late StateSetter set;
     await tester.pumpWidget(
       _host(
@@ -31,7 +32,7 @@ void main() {
             return _composer(
               (card) => VoiceBeam(
                 level: level,
-                processing: processing,
+                motion: motion,
                 active: active,
                 paused: paused,
                 borderRadius: 20,
@@ -48,8 +49,10 @@ void main() {
       level.value = (i % 6) / 5;
       await tester.pump(const Duration(milliseconds: 40));
     }
-    set(() => processing = true);
-    await tester.pump(const Duration(seconds: 2));
+    for (var i = 0; i < 30; i++) {
+      motion.value = VoiceBeamMotion(gather: i / 29, offset: i / 29, cornerFollow: 0.5, heldLevel: 0.5);
+      await tester.pump(const Duration(milliseconds: 16));
+    }
     expect(tester.binding.hasScheduledFrame, isTrue);
 
     set(() => paused = true);
@@ -98,9 +101,7 @@ void main() {
     await tester.pumpWidget(
       _host(
         reduced: true,
-        _composer(
-          (card) => VoiceBeam(level: level, processing: true, levelScale: VoiceLevelScale.callCapture, child: card),
-        ),
+        _composer((card) => VoiceBeam(level: level, levelScale: VoiceLevelScale.callCapture, child: card)),
       ),
     );
     await tester.pump();

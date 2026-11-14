@@ -74,7 +74,7 @@ void main() {
 
     test('rests on the bottom with tails up at the corners, then loses them while gathered', () {
       final c = _config();
-      final e = VoiceGlowEngine()..still(c, input: 0.8, processing: false, active: true);
+      final e = VoiceGlowEngine()..still(c, input: 0.8, active: true);
       final xs = Float64List(voiceBandSamples + 1), ys = Float64List(voiceBandSamples + 1);
       voiceBandPoints(c, e, 371, 104, xs, ys);
       final over = c.geometry.bandTailOverflow;
@@ -85,7 +85,7 @@ void main() {
       expect(mid, lessThan(104 - c.geometry.bandOffset));
       expect(ys.first, lessThan(104 - c.geometry.bandOffset));
 
-      e.still(c, input: 0, processing: true, active: true);
+      e.still(c, input: 0, motion: const VoiceBeamMotion(gather: 1), active: true);
       voiceBandPoints(c, e, 371, 104, xs, ys);
       final half = voiceCeilingHalfWidth * c.geometry.rangeWidth * e.w * e.maskWidth;
       expect(xs.first, closeTo(371 / 2 - half, 1e-9));
@@ -131,6 +131,13 @@ void main() {
       expect(voiceShape(VoiceLevelScale.callCapture.raw(0.6, 3.1), 0.015), inExclusiveRange(0.7, 0.9));
       expect(voiceShape(VoiceLevelScale.callCapture.raw(0.1, 3.1), 0.015), lessThan(0.06));
     });
+
+    test('a silent frame (meter at 0) closes the gate', () {
+      for (final scale in [VoiceLevelScale.playback, VoiceLevelScale.callCapture]) {
+        expect(scale.raw(0, 3.1), 0);
+        expect(voiceShape(scale.raw(0, 3.1), 0.015), 0);
+      }
+    });
   });
 
   group('presets', () {
@@ -166,45 +173,12 @@ void main() {
     });
   });
 
-  group('processing', () {
-    test('starts at the centre heading right and sweeps both ways', () {
-      final p = VoiceProcessing();
-      final tuning = VoiceProcessingTuning.of(VoiceBeamType.standard);
-      p.step(0, active: true, tuning: tuning, reducedMotion: false);
-      expect(p.offset, 0);
-      var maxOffset = 0.0, minOffset = 0.0;
-      for (var i = 0; i < 300; i++) {
-        p.step(1 / 60, active: true, tuning: tuning, reducedMotion: false);
-        if (i == 10) expect(p.offset, greaterThan(0));
-        maxOffset = math.max(maxOffset, p.offset);
-        minOffset = math.min(minOffset, p.offset);
-      }
-      expect(p.gather, closeTo(1, 1e-3));
-      expect(maxOffset, closeTo(tuning.travel, 0.02));
-      expect(minOffset, closeTo(-tuning.travel, 0.02));
-      for (var i = 0; i < 300; i++) {
-        p.step(1 / 60, active: false, tuning: tuning, reducedMotion: false);
-      }
-      expect(p.gather, lessThan(0.001));
-    });
-
-    test('reduced motion keeps the beam centred', () {
-      final p = VoiceProcessing();
-      final tuning = VoiceProcessingTuning.of(VoiceBeamType.mobile);
-      for (var i = 0; i < 100; i++) {
-        p.step(1 / 60, active: true, tuning: tuning, reducedMotion: true);
-      }
-      expect(p.offset, 0);
-      expect(p.stretch, 1);
-    });
-  });
-
   group('engine', () {
     test('a voice raises, widens and lights the glow; silence lets it settle', () {
       final c = _config();
       final e = VoiceGlowEngine();
       for (var i = 0; i < 120; i++) {
-        e.step(c, dt: 1 / 60, input: 0.9, processing: false, active: true);
+        e.step(c, dt: 1 / 60, input: 0.9, active: true);
       }
       expect(e.presence, 1);
       expect(e.level, greaterThan(0.9));
@@ -212,7 +186,7 @@ void main() {
       expect(e.w, greaterThan(0.85 + 1.05 * 0.9));
       expect(e.bendA, greaterThan(0.9));
       for (var i = 0; i < 300; i++) {
-        e.step(c, dt: 1 / 60, input: 0, processing: false, active: true);
+        e.step(c, dt: 1 / 60, input: 0, active: true);
       }
       expect(e.level, lessThan(0.01));
       // The idle breath keeps it present but low.
@@ -224,37 +198,40 @@ void main() {
       final a = VoiceGlowEngine(), b = VoiceGlowEngine();
       for (var i = 0; i < 200; i++) {
         final input = 0.5 + 0.5 * math.sin(i / 7);
-        a.step(c, dt: 1 / 60, input: input, processing: i > 100, active: true);
-        b.step(c, dt: 1 / 60, input: input, processing: i > 100, active: true);
+        final motion = VoiceBeamMotion(gather: i > 100 ? 1 : 0, offset: math.sin(i / 20));
+        a.step(c, dt: 1 / 60, input: input, motion: motion, active: true);
+        b.step(c, dt: 1 / 60, input: input, motion: motion, active: true);
       }
       expect(a.lobeX, b.lobeX);
       expect(a.lobeL, b.lobeL);
       expect((a.cx, a.h, a.w, a.hue), (b.cx, b.h, b.w, b.hue));
     });
 
-    test('processing holds the glow lit and gathers the lobes', () {
+    test('a gathered motion narrows the range, places the beam and holds it lit', () {
       final c = _config();
       final e = VoiceGlowEngine();
-      for (var i = 0; i < 240; i++) {
-        e.step(c, dt: 1 / 60, input: 0, processing: true, active: true);
+      const motion = VoiceBeamMotion(gather: 1, offset: 0.5, heldLevel: 0.55);
+      for (var i = 0; i < 60; i++) {
+        e.step(c, dt: 1 / 60, input: 0, motion: motion, active: true);
       }
-      expect(e.morph, closeTo(1, 1e-3));
-      expect(e.maskWidth, closeTo(0.55, 1e-3));
-      expect(e.glow, greaterThanOrEqualTo(0.15 + 0.85 * 0.55 - 1e-3));
+      expect(e.morph, 1);
+      expect(e.maskWidth, closeTo(0.55, 1e-12));
+      expect(e.cx, closeTo(0.5 * voiceLobeSpan * c.geometry.lobeSpacing / 2, 1e-9));
+      expect(e.glow, greaterThanOrEqualTo(0.15 + 0.85 * 0.55 - 1e-9));
     });
 
     test('fades in over 0.6 s and out over 0.5 s; paused holds all but the fade', () {
       final c = _config();
       final e = VoiceGlowEngine();
       for (var i = 0; i < 36; i++) {
-        e.step(c, dt: 1 / 60, input: 0, processing: false, active: true);
+        e.step(c, dt: 1 / 60, input: 0, active: true);
       }
       expect(e.presence, closeTo(1, 1e-9));
       final level = e.level, hue = e.hue;
-      e.step(c, dt: 0.05, input: 1, processing: false, active: true, frozen: true);
+      e.step(c, dt: 0.05, input: 1, active: true, frozen: true);
       expect((e.level, e.hue), (level, hue));
       for (var i = 0; i < 30; i++) {
-        e.step(c, dt: 1 / 60, input: 0, processing: false, active: false, frozen: true);
+        e.step(c, dt: 1 / 60, input: 0, active: false, frozen: true);
       }
       expect(e.visible, isFalse);
     });
@@ -263,11 +240,11 @@ void main() {
       final c = _config(reducedMotion: true);
       final e = VoiceGlowEngine();
       for (var i = 0; i < 200; i++) {
-        e.step(c, dt: 1 / 60, input: 0.5, processing: i > 50, active: true);
+        e.step(c, dt: 1 / 60, input: 0.5, motion: const VoiceBeamMotion(gather: 1, offset: 0.8), active: true);
       }
       expect(e.hue, 0);
       expect(e.cx, 0);
-      e.still(c, input: 0, processing: false, active: true);
+      e.still(c, input: 0, active: true);
       expect(e.glow, closeTo(0.15 + 0.85 * 0.18 * 0.5, 1e-9));
     });
   });
