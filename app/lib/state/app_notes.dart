@@ -8,8 +8,9 @@ const _open = '<dsh-note>';
 final _notes = RegExp(r'<dsh-note>[\s\S]*?</dsh-note>\n?');
 final _leading = RegExp(r'^(?:<dsh-note>[\s\S]*?</dsh-note>\n?)+');
 
-/// [note], for the model only.
-String appNote(String note) => '$_open$note</dsh-note>';
+/// [note], for the model only. A closing tag inside it (a persona can say
+/// anything) is written `<\/dsh-note>`, so the note ends where it should.
+String appNote(String note) => '$_open${note.replaceAll('</dsh-note>', r'<\/dsh-note>')}</dsh-note>';
 
 /// [text] as the person said it: the app's notes left out.
 String withoutAppNotes(String text) => text.contains(_open) ? text.replaceAll(_notes, '') : text;

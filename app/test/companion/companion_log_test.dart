@@ -1,7 +1,7 @@
 import 'package:dsh_app/companion/companion_light.dart';
 import 'package:dsh_app/companion/companion_reply.dart';
 import 'package:dsh_app/l10n/gen/app_localizations.dart';
-import 'package:dsh_app/ui/chat/app_notes.dart';
+import 'package:dsh_app/state/app_notes.dart';
 import 'package:dsh_app/ui/companion/companion_chrome.dart';
 import 'package:dsh_app/ui/companion/companion_log.dart';
 import 'package:dsh_app/ui/theme/app_theme.dart';

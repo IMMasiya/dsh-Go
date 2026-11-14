@@ -8,7 +8,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../l10n/l10n.dart';
-import '../chat/app_notes.dart';
+import '../../state/app_notes.dart';
 import '../chat/dsh_ui/dsh_ui.dart';
 import '../chat/secret_mask.dart';
 import '../common/app_sheet.dart';

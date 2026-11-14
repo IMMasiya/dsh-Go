@@ -10,8 +10,8 @@ import 'package:dsh_client/dsh_client.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../state/app_notes.dart';
 import '../../state/settings_state.dart';
-import '../chat/app_notes.dart';
 import '../chat/chat_rows.dart';
 import '../chat/dsh_ui/dsh_ui.dart';
 import '../chat/widgets/assistant_message.dart';

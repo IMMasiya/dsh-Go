@@ -16,6 +16,7 @@ import '../../l10n/l10n.dart';
 import '../../pets/pet_signals.dart' show petHeadroomProvider;
 import '../../plugins/native/native_surface.dart' show nativeTurnNoteProvider;
 import '../../state/agents_state.dart' show hostSessionsProvider, selectConversation;
+import '../../state/app_notes.dart';
 import '../../state/artifacts.dart';
 import '../../state/attachments.dart' show DraftAttachment;
 import '../../state/chat_reveal.dart';
@@ -32,7 +33,6 @@ import '../pets/pet_perch.dart';
 import '../theme/app_icons.dart';
 import '../theme/theme.dart';
 import '../update/update_sheet.dart' show checkForUpdates;
-import 'app_notes.dart';
 import 'chat_rows.dart';
 import 'chat_rows_cache.dart';
 import 'media/media_paths.dart';
@@ -1177,7 +1177,9 @@ class _ChatListState extends ConsumerState<ChatList> with SingleTickerProviderSt
           client?.mux.lastReadyGenerationNumber != readyNumber) {
         return;
       }
-      await ref.read(chatProvider(sessionId).notifier).retryFailed(prompt, withAppNotesOf(prompt.text, edited));
+      // Emptied: as before, nothing to send (the notes alone are not a message).
+      final retry = edited.trim().isEmpty ? edited : withAppNotesOf(prompt.text, edited);
+      await ref.read(chatProvider(sessionId).notifier).retryFailed(prompt, retry);
     } finally {
       connection.close();
     }

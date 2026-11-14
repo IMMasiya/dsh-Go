@@ -8,8 +8,8 @@ import 'dart:typed_data';
 import 'package:dsh_client/dsh_client.dart';
 
 import '../l10n/l10n.dart';
+import '../state/app_notes.dart';
 import '../state/chat_state.dart' show CommandNotice;
-import '../ui/chat/app_notes.dart';
 import '../ui/chat/dsh_ui/dsh_ui_model.dart' show dshUiPlainText;
 import '../ui/chat/tool_view.dart';
 import 'conversation_redact.dart';

@@ -1,11 +1,11 @@
 import 'dart:typed_data';
 
-import 'package:dsh_app/ui/chat/app_notes.dart';
 import 'package:dsh_app/speech/deepseek_speech.dart';
 import 'package:dsh_app/speech/speech_audio.dart';
 import 'package:dsh_app/speech/speech_settings.dart';
 import 'package:dsh_app/speech/call/voice_call.dart';
 import 'package:dsh_app/speech/voice_cloud.dart';
+import 'package:dsh_app/state/app_notes.dart';
 import 'package:dsh_app/state/voice_state.dart';
 import 'package:dsh_app/ui/speech/call/call_backdrop.dart';
 import 'package:dsh_app/ui/speech/call/call_parts.dart';

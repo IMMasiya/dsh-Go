@@ -13,7 +13,7 @@ import 'package:flutter/material.dart';
 import '../../companion/companion_light.dart';
 import '../../companion/companion_reply.dart';
 import '../../l10n/l10n.dart';
-import '../chat/app_notes.dart';
+import '../../state/app_notes.dart';
 import '../chat/tool_view.dart';
 import '../theme/app_icons.dart';
 import '../theme/motion.dart';

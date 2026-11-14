@@ -1,8 +1,8 @@
 // The app's notes to the model (a call's instructions, a persona sent inline)
 // go out with the message and are never shown as what the person said.
 
+import 'package:dsh_app/state/app_notes.dart';
 import 'package:dsh_app/state/chat_state.dart';
-import 'package:dsh_app/ui/chat/app_notes.dart';
 import 'package:dsh_app/ui/chat/chat_screen.dart';
 import 'package:dsh_app/ui/chat/composer.dart';
 import 'package:dsh_app/ui/settings/settings_widgets.dart' show SettingsTile;
@@ -22,6 +22,13 @@ void main() {
     expect(withoutAppNotes(_sent), '周末去哪儿玩');
     expect(withoutAppNotes('${appNote('设定第一行\n第二行')}\n你好'), '你好');
     expect(withoutAppNotes('没有提示的话'), '没有提示的话');
+  });
+
+  test('a closing tag inside a note does not end it early', () {
+    const persona = '她说话时爱写 </dsh-note> 这种怪东西';
+    final sent = '${appNote(persona)}\n你好';
+    expect(withoutAppNotes(sent), '你好');
+    expect(sent, contains(r'<\/dsh-note>'));
   });
 
   test('an edited resend keeps the notes it began with', () {

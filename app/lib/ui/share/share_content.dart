@@ -11,9 +11,9 @@ import 'package:flutter/widgets.dart';
 
 import '../../l10n/l10n.dart';
 import '../../share_code/conversation_redact.dart' show redactText;
+import '../../state/app_notes.dart';
 import '../../state/chat_state.dart';
 import '../../update/update_config.dart' show updateRepo;
-import '../chat/app_notes.dart';
 import '../chat/dsh_ui/dsh_ui.dart';
 import '../chat/run_info.dart' show formatSpan;
 
