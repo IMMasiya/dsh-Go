@@ -43,6 +43,7 @@ import '../theme/theme.dart';
 import '../../state/streaming_asr_model_state.dart';
 import '../../state/streaming_asr_state.dart';
 import '../../state/streaming_pcm_state.dart';
+import '../../usage/usage_stats.dart';
 import '../../voice/live_words.dart';
 import '../../voice/streaming_pcm.dart';
 import 'call/call_backdrop.dart';
@@ -254,6 +255,8 @@ class _VoiceCallPageState extends ConsumerState<VoiceCallPage> with WidgetsBindi
       case CallPhase.listening when _since == null:
         _since = DateTime.now();
         HapticFeedback.lightImpact();
+        // Anonymous usage statistics: a call got through (the microphone is on).
+        ref.read(usageStatsProvider.notifier).count(UsageCount.call);
       case CallPhase.hearing:
         HapticFeedback.selectionClick();
       case CallPhase.speaking:
