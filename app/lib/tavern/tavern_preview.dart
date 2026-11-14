@@ -269,6 +269,13 @@ class PreviewTavern implements Tavern, TavernPreview {
   static Future<T> _noPack<T>() => Future<T>.error(UnsupportedError('The preview keeps no gameplay packs.'));
 
   @override
+  Future<TavernGameplayResolution> resolveGameplayConfig(
+    TavernGameplayContext context, {
+    List<TavernPackScopePreview> proposedScopes = const [],
+    bool validateCurrentState = false,
+  }) => _noPack();
+
+  @override
   Future<TavernPackImportResult> importGameplayPack(Uint8List bytes) => _noPack();
 
   @override
