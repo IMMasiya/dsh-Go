@@ -88,10 +88,7 @@ print('不读');
       const channel = MethodChannel('dsh/diagnostics');
       final writes = Completer<void>();
       final messenger = TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
-      messenger.setMockMethodCallHandler(channel, (call) async {
-        if ((call.arguments as Map)['stage'] == 'synthesis_requested') return writes.future;
-        return null;
-      });
+      messenger.setMockMethodCallHandler(channel, (call) async => writes.future);
       addTearDown(() {
         if (!writes.isCompleted) writes.complete();
         messenger.setMockMethodCallHandler(channel, null);
@@ -104,6 +101,7 @@ print('不读');
       await pumpEventQueue();
       expect(speech.asked, ['今天北京是晴天。', '最高气温二十度，适合出门散步。']);
       expect(writes.isCompleted, false);
+      expect(audio.calls, ['open:${out.id}:call=true', 'end:${out.id}']);
       out.stop();
     });
     test('streams every piece, in order, into one native stream, then ends it', () async {

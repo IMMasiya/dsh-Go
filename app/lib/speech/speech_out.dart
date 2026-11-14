@@ -347,8 +347,7 @@ class DeepSeekOut implements SpeechOut {
             span.end = _written;
             if (!_opened) {
               _opened = true;
-              await const DiagnosticsChannel().recordVoiceStage('playback_opening', backend: 'deepseek');
-              if (_stopped) return;
+              unawaited(const DiagnosticsChannel().recordVoiceStage('playback_opening', backend: 'deepseek'));
               if (!await _audio.open(id, call: call, levels: levels)) {
                 _fail(const DeepSeekSpeechError(DeepSeekSpeechFailure.protocol, 'no audio output'));
                 return;
