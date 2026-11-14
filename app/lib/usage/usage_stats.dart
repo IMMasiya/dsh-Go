@@ -275,6 +275,8 @@ class UsageStatsController extends Notifier<UsageStatsState> {
         while (status == 400 && (payload['v']! as int) > 1 && ref.mounted && state.collecting) {
           _contract = (payload['v']! as int) - 1;
           payload = body();
+          // No answer to the lower one is a failed send, not the earlier 400.
+          status = null;
           status = await http.post(endpoint, jsonEncode(payload), timeout: timeout);
         }
       } catch (_) {

@@ -69,6 +69,15 @@ extension on ProviderContainer {
   }
 }
 
+/// Answers the first request, then the network is gone.
+class _RefusedThenOffline extends FakeUsageHttp {
+  @override
+  Future<int> post(Uri url, String json, {Duration timeout = const Duration(seconds: 10)}) {
+    offline = requests.isNotEmpty;
+    return super.post(url, json, timeout: timeout);
+  }
+}
+
 Future<Map<String, Object?>> stored() async {
   final prefs = await SharedPreferences.getInstance();
   return {for (final k in prefs.getKeys()) k: prefs.get(k)};
@@ -353,6 +362,15 @@ void main() {
       [for (final r in http.requests) '${r['day']} v${r['v']}'],
       ['2026-10-26 v3', '2026-10-26 v2', '2026-10-27 v2'],
     );
+  });
+
+  test('no answer to the lower contract is a failed send, not a refusal', () async {
+    http = _RefusedThenOffline()..replies.add(400);
+    final ledger = UsageLedger()..touch(DateTime(2026, 10, 26, 9));
+    await start(prefs: {...noticed, UsageStatsController.daysKey: ledger.encode()}, phoneFacts: phone);
+    expect([for (final r in http.requests) '${r['day']} v${r['v']}'], ['2026-10-26 v3', '2026-10-26 v2']);
+    final left = UsageLedger.decode((await stored())[UsageStatsController.daysKey] as String?);
+    expect(left.days['2026-10-26']?.tries, 1, reason: 'kept for another try');
   });
 
   test('the tavern, the room, calls and tokens go out in v3', () async {
