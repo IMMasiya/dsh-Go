@@ -29,7 +29,11 @@ class _Authoring extends PreviewTavern {
   _Run? started;
 
   @override
-  TavernAuthoringRun startAuthoringRun(TavernAuthoringRunRequest request) => started = _Run(request.runId);
+  TavernAuthoringRun startAuthoringRun(
+    TavernAuthoringRunRequest request, {
+    TavernAuthoringPromptHost? promptHost,
+    TavernAuthoringPreviewHost? renderHost,
+  }) => started = _Run(request.runId);
 }
 
 void main() {

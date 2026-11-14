@@ -148,7 +148,11 @@ class _Drafts extends PreviewTavern {
   }
 
   @override
-  TavernAuthoringRun startAuthoringRun(TavernAuthoringRunRequest request) {
+  TavernAuthoringRun startAuthoringRun(
+    TavernAuthoringRunRequest request, {
+    TavernAuthoringPromptHost? promptHost,
+    TavernAuthoringPreviewHost? renderHost,
+  }) {
     asked = request;
     return run;
   }

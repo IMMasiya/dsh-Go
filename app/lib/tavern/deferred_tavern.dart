@@ -149,8 +149,14 @@ class DeferredTavern implements Tavern {
 
   /// Returned at once with its id; the run itself starts once the engine is open.
   @override
-  TavernAuthoringRun startAuthoringRun(TavernAuthoringRunRequest request) =>
-      _DeferredAuthoringRun(request.runId, _ready.then((t) => t.startAuthoringRun(request)));
+  TavernAuthoringRun startAuthoringRun(
+    TavernAuthoringRunRequest request, {
+    TavernAuthoringPromptHost? promptHost,
+    TavernAuthoringPreviewHost? renderHost,
+  }) => _DeferredAuthoringRun(
+    request.runId,
+    _ready.then((t) => t.startAuthoringRun(request, promptHost: promptHost, renderHost: renderHost)),
+  );
 
   @override
   Future<TavernAuthoringRunSnapshot?> readAuthoringRun(String runId) async => (await _ready).readAuthoringRun(runId);
