@@ -1,9 +1,10 @@
-import 'dart:typed_data';
+import 'dart:async';
 
 import 'package:dsh_app/speech/call/voice_call.dart';
 import 'package:dsh_app/speech/deepseek_speech.dart';
 import 'package:dsh_app/speech/speech_audio.dart';
 import 'package:dsh_app/speech/speech_out.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'speech_fakes.dart';
@@ -53,6 +54,49 @@ class _Rig {
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+
+  test('persistent call stages contain no transcript, reply or audio content', () async {
+    const channel = MethodChannel('dsh/diagnostics');
+    final messenger = TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+    final records = <Map<Object?, Object?>>[];
+    final writes = Completer<void>();
+    messenger.setMockMethodCallHandler(channel, (call) async {
+      expect(call.method, 'recordVoiceStage');
+      records.add(call.arguments as Map<Object?, Object?>);
+      return writes.future;
+    });
+    addTearDown(() {
+      if (!writes.isCompleted) writes.complete();
+      messenger.setMockMethodCallHandler(channel, null);
+    });
+    final rig = _Rig();
+    rig.cloud.text = 'PRIVATE_TRANSCRIPT';
+    await rig.call.start();
+    await rig.say();
+    rig.conversation.reply('PRIVATE_REPLY');
+    rig.call.hangUp();
+    await pumpEventQueue();
+    final stages = records.map((row) => row['stage']).toList();
+    expect(
+      stages,
+      containsAllInOrder([
+        'call_started',
+        'preparing',
+        'capture_started',
+        'listening',
+        'utterance_ready',
+        'recognizing',
+        'recognized',
+        'reply_received',
+        'call_ended',
+      ]),
+    );
+    for (final record in records) {
+      expect(record.keys.every((key) => const ['stage', 'backend', 'code'].contains(key)), true);
+      expect(record.toString(), isNot(contains('PRIVATE_')));
+    }
+    rig.call.dispose();
+  });
 
   test('a turn: heard, sent with the hint once, the reply read as it grows', () async {
     final rig = _Rig();
