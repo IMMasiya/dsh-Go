@@ -193,6 +193,12 @@ class PreviewTavern implements Tavern, TavernPreview {
       throw UnsupportedError('The preview runs no authoring.');
 
   @override
+  TavernAuthoringTask<TavernAuthoringRenderResult> renderAuthoringDraft(
+    TavernAuthoringRenderRequest request, {
+    required TavernAuthoringPreviewHost host,
+  }) => throw UnsupportedError('The preview runs no authoring.');
+
+  @override
   Future<TavernAuthoringRunSnapshot?> readAuthoringRun(String runId) async => null;
 
   @override

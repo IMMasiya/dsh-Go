@@ -133,6 +133,13 @@ class DeferredTavern implements Tavern {
   @override
   Future<TavernAuthoringDraft?> readAuthoringDraft(String draftId) async => (await _ready).readAuthoringDraft(draftId);
 
+  /// Returned at once with its id; the render itself runs once the engine is open.
+  @override
+  TavernAuthoringTask<TavernAuthoringRenderResult> renderAuthoringDraft(
+    TavernAuthoringRenderRequest request, {
+    required TavernAuthoringPreviewHost host,
+  }) => _DeferredTask(request.requestId, _ready.then((t) => t.renderAuthoringDraft(request, host: host)));
+
   /// Returned at once with its id; the preview itself runs once the engine is open.
   @override
   TavernAuthoringTask<TavernAuthoringPromptPreview> previewAuthoringPrompt(TavernAuthoringPromptRequest request) =>
