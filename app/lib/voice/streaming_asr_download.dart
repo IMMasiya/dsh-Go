@@ -195,9 +195,6 @@ class StreamingAsrModelStore {
     } catch (error) {
       if (_cancelled) throw StreamingAsrDownloadCancelled();
       rethrow;
-    } finally {
-      _client?.close(force: true);
-      _client = null;
     }
   }
 
@@ -231,34 +228,49 @@ class StreamingAsrModelStore {
     if (offset > file.bytes) offset = 0;
     if (offset == file.bytes) return;
     final client = _client = HttpClient()..connectionTimeout = const Duration(seconds: 30);
-    final request = await client.getUrl(url);
-    if (offset > 0) request.headers.set(HttpHeaders.rangeHeader, 'bytes=$offset-');
-    final response = await request.close().timeout(const Duration(seconds: 30));
-    _checkCancelled();
-    if (response.statusCode == HttpStatus.ok) {
-      offset = 0; // The server ignored the range: start over.
-    } else if (response.statusCode != HttpStatus.partialContent) {
-      throw HttpException('HTTP ${response.statusCode}', uri: url);
-    }
-    final output = await part.open(mode: offset == 0 ? FileMode.write : FileMode.append);
-    var done = offset;
-    var reportedAt = -250;
-    final clock = Stopwatch()..start();
     try {
-      await for (final bytes in response.timeout(const Duration(seconds: 30))) {
-        _checkCancelled();
-        await output.writeFrom(bytes);
-        done += bytes.length;
-        if (clock.elapsedMilliseconds - reportedAt >= 250) {
-          reportedAt = clock.elapsedMilliseconds;
-          progress?.call(
-            StreamingAsrDownloadProgress(StreamingAsrDownloadPhase.downloading, before + done, manifest.bytes),
-          );
-        }
+      final request = await client.getUrl(url);
+      if (offset > 0) request.headers.set(HttpHeaders.rangeHeader, 'bytes=$offset-');
+      final response = await request.close().timeout(const Duration(seconds: 30));
+      _checkCancelled();
+      if (response.statusCode == HttpStatus.ok) {
+        offset = 0; // The server ignored the range: start over.
+      } else if (response.statusCode != HttpStatus.partialContent) {
+        throw HttpException('HTTP ${response.statusCode}', uri: url);
       }
+      final output = await part.open(mode: offset == 0 ? FileMode.write : FileMode.append);
+      var done = offset;
+      var tooLong = false;
+      var reportedAt = -250;
+      final clock = Stopwatch()..start();
+      try {
+        await for (final bytes in response.timeout(const Duration(seconds: 30))) {
+          _checkCancelled();
+          if (done + bytes.length > file.bytes) {
+            tooLong = true;
+            break;
+          }
+          await output.writeFrom(bytes);
+          done += bytes.length;
+          if (clock.elapsedMilliseconds - reportedAt >= 250) {
+            reportedAt = clock.elapsedMilliseconds;
+            progress?.call(
+              StreamingAsrDownloadProgress(StreamingAsrDownloadPhase.downloading, before + done, manifest.bytes),
+            );
+          }
+        }
+      } finally {
+        await output.close();
+      }
+      if (tooLong) {
+        // Not the file it should be: nothing of it is kept.
+        await part.delete();
+        throw HttpException('Larger than expected: ${file.name}', uri: url);
+      }
+      if (done != file.bytes) throw HttpException('Incomplete ${file.name}', uri: url);
     } finally {
-      await output.close();
+      client.close(force: true);
+      if (identical(_client, client)) _client = null;
     }
-    if (done != file.bytes) throw HttpException('Incomplete ${file.name}', uri: url);
   }
 }

@@ -18509,7 +18509,7 @@ class L10nEn extends L10n {
 
   @override
   String speechLiveAbsentNote(String mb) {
-    return 'Download it and calls show your words as you speak, and stop sooner when you cut in. About $mb; it runs on the phone and your voice stays there';
+    return 'Download it and calls show your words as you speak, and stop sooner when you cut in. About $mb; it runs on the phone';
   }
 
   @override
@@ -18519,7 +18519,7 @@ class L10nEn extends L10n {
 
   @override
   String get speechLiveFooter =>
-      'Captions and cut-ins use the model on the phone; the text sent to the AI still comes from the recognition chosen above.';
+      'Captions and cut-ins run on the phone; the text sent to the AI still comes from the recognition chosen above, and cloud recognition uploads the recording.';
 
   @override
   String get speechLiveDeleteTitle => 'Delete the streaming recognizer?';

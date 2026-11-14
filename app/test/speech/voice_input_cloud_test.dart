@@ -79,6 +79,17 @@ void main() {
     expect(rig.input.text, '前面 你好世界');
   });
 
+  testWidgets('live words the recording does not confirm go: the draft is as it was', (tester) async {
+    final rig = _Rig(mode: VoiceMode.auto, cloud: FakeCloud()..fail = StateError('offline'), live: true);
+    final before = rig.input.text;
+    await rig.voice.start();
+    await tester.pump();
+    rig.words!('你好');
+    expect(rig.input.text, isNot(before));
+    await rig.voice.stop();
+    expect(rig.input.text, before);
+  });
+
   testWidgets('automatic sends audio to DeepSeek unasked: said once, with 更换', (tester) async {
     final rig = _Rig(mode: VoiceMode.auto, cloud: FakeCloud());
     await rig.voice.start();

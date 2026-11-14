@@ -17,19 +17,38 @@ class LiveWords {
   final void Function(String words) _onWords;
   StreamSubscription<StreamingAsrEvent>? _events;
   StreamSubscription<Object>? _frames;
+  bool _stopped = false;
 
+  /// Throws when the recognizer or the capture will not start; nothing is left
+  /// running then. A [stop] while it starts has the last word.
   Future<void> start() async {
-    _events = _asr.events.listen((event) => _onWords(event.text));
-    await _asr.start(_model);
-    // A frame that lands while it stops is simply not heard.
-    _frames = _pcm.frames.listen((frame) => unawaited(_asr.feed(frame).catchError((Object _) {})));
-    await _pcm.start(_source);
+    try {
+      _events = _asr.events.listen((event) => _onWords(event.text));
+      await _asr.start(_model);
+      if (_stopped) return await _release();
+      // A frame that lands while it stops is simply not heard.
+      _frames = _pcm.frames.listen((frame) => unawaited(_asr.feed(frame).catchError((Object _) {})));
+      await _pcm.start(_source);
+      if (_stopped) return await _release();
+    } catch (_) {
+      await _release();
+      rethrow;
+    }
   }
 
-  Future<void> stop() async {
+  Future<void> stop() {
+    _stopped = true;
+    return _release();
+  }
+
+  Future<void> _release() async {
+    final frames = _frames;
+    final events = _events;
+    _frames = null;
+    _events = null;
     await _pcm.stop();
-    await _frames?.cancel();
+    await frames?.cancel();
     await _asr.stop(finalize: false);
-    await _events?.cancel();
+    await events?.cancel();
   }
 }

@@ -189,8 +189,12 @@ class VoiceCallController extends ChangeNotifier {
   /// The reply being read (so far).
   String get reply => _reply;
 
-  /// The reply as far as she has said it; all of it when there is no voice.
-  String get caption => _voiced ? _said : _reply;
+  /// The reply as far as she has said it (nothing yet while her voice gets
+  /// ready); all of it when there is no voice.
+  String get caption => _voiced || _out != null ? _said : _reply;
+
+  /// The thinking cue may still play: nothing of the reply has a voice yet.
+  bool get cueStill => _phase == CallPhase.thinking && _out == null;
 
   /// The last thing that went wrong without ending the call (recognition,
   /// sending, the voice); cleared when the next turn starts.
@@ -249,9 +253,14 @@ class VoiceCallController extends ChangeNotifier {
         _live = '';
         final out = _out;
         if ((over || _phase == CallPhase.speaking) && out != null) {
+          _over = true;
+          // The system voice cannot be turned down: she stops at once.
+          if (!out.canDuck) {
+            _cutIn();
+            return;
+          }
           // Over her voice: quieter (the native side already turned her down)
           // until what was said is known, or the person keeps talking.
-          _over = true;
           out.duck(true);
           _overTimer?.cancel();
           _overTimer = Timer(confirmAfter, _cutIn);
@@ -395,7 +404,7 @@ class VoiceCallController extends ChangeNotifier {
 
   void _cue() {
     // Only before any reply text: the cue's stream would take the place of her voice's.
-    if (_cued || _phase != CallPhase.thinking || _out != null) return;
+    if (_cued || !cueStill) return;
     _cued = true;
     unawaited(thinkingCue?.call());
   }

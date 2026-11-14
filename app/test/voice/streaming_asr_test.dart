@@ -8,7 +8,15 @@ import 'package:dsh_app/voice/streaming_asr.dart';
 
 StreamingAsrDecoder _fakeDecoder(StreamingAsrModel model) {
   File(model.tokens).writeAsStringSync('${model.joiner}:loading\n', mode: FileMode.append);
-  if (model.encoder == 'slow') sleep(const Duration(milliseconds: 120));
+  if (model.encoder == 'slow') {
+    // Held until the test lets it go ([StreamingAsrModel.decoder] names the
+    // file it writes), at most five seconds.
+    final release = File(model.decoder);
+    final until = DateTime.now().add(const Duration(seconds: 5));
+    while (!release.existsSync() && DateTime.now().isBefore(until)) {
+      sleep(const Duration(milliseconds: 2));
+    }
+  }
   if (model.encoder == 'fail') throw StateError('load failed');
   return _Decoder(model);
 }
@@ -58,22 +66,25 @@ Uint8List _pcm(int value) {
 void main() {
   late Directory directory;
   late File log;
+  late File release;
   late StreamingAsr asr;
   late List<StreamingAsrEvent> events;
   late StreamSubscription<StreamingAsrEvent> subscription;
 
   StreamingAsrModel model([String kind = 'normal', String name = 'one']) =>
-      StreamingAsrModel(encoder: kind, decoder: '', joiner: name, tokens: log.path);
+      StreamingAsrModel(encoder: kind, decoder: release.path, joiner: name, tokens: log.path);
 
   setUp(() async {
     directory = await Directory.systemTemp.createTemp('streaming-asr-test-');
     log = File('${directory.path}/decoder.log');
+    release = File('${directory.path}/release');
     asr = StreamingAsr(createDecoder: _fakeDecoder);
     events = [];
     subscription = asr.events.listen(events.add);
   });
 
   tearDown(() async {
+    if (!release.existsSync()) release.writeAsStringSync('');
     await asr.dispose();
     await subscription.cancel();
     await directory.delete(recursive: true);
@@ -106,13 +117,12 @@ void main() {
     while (!await log.exists()) {
       await Future<void>.delayed(const Duration(milliseconds: 2));
     }
-    var ticks = 0;
-    final timer = Timer.periodic(const Duration(milliseconds: 5), (_) => ticks++);
     final frame = asr.feed(_pcm(1));
     final stopped = asr.stop(finalize: false);
+    // The load holds the recognition isolate, not this one: a timer still fires.
+    await Future<void>.delayed(const Duration(milliseconds: 5));
+    release.writeAsStringSync('');
     await Future.wait([started, frame, stopped]);
-    timer.cancel();
-    expect(ticks, greaterThan(0));
     expect(events, isEmpty);
     expect(log.readAsLinesSync(), ['one:loading', 'one:close']);
     expect(asr.active, isFalse);
@@ -126,6 +136,7 @@ void main() {
     final oldFrame = asr.feed(_pcm(1));
     final second = asr.start(model('normal', 'new'));
     final newFrame = asr.feed(_pcm(2));
+    release.writeAsStringSync('');
     await Future.wait([first, oldFrame, second, newFrame]);
     await asr.stop(finalize: false);
     expect(events.map((e) => e.text), ['2']);
@@ -149,7 +160,9 @@ void main() {
     while (!await log.exists()) {
       await Future<void>.delayed(const Duration(milliseconds: 2));
     }
-    await Future.wait([started, asr.dispose(), asr.dispose()]);
+    final disposed = [asr.dispose(), asr.dispose()];
+    release.writeAsStringSync('');
+    await Future.wait([started, ...disposed]);
     expect(log.readAsLinesSync(), ['one:loading', 'one:close']);
     await expectLater(asr.start(model()), throwsStateError);
     expect(events, isEmpty);

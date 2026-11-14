@@ -62,6 +62,9 @@ abstract class SpeechOut {
 
   /// Quieter while the person may be speaking over it ([on]), or back to full.
   void duck(bool on);
+
+  /// [duck] turns it down (else it cannot, and stops instead).
+  bool get canDuck;
 }
 
 /// [pieces] joined as they were said: a space only between two Latin ends.
@@ -170,6 +173,28 @@ class _Span {
   final String text;
   final int start;
   int end;
+
+  /// All its audio is written: [end] is final.
+  bool closed = false;
+
+  /// Characters heard once [played] bytes have played. Until its audio is all
+  /// there it is measured against a slow reading of the text, so playback that
+  /// has caught up with the synthesis does not count it all heard.
+  int heardBy(int played) {
+    final last = closed ? end : max(end, start + _slowBytes(text));
+    if (played <= start || last <= start) return 0;
+    if (closed && played >= last) return text.length;
+    return min(text.length, text.length * (played - start) ~/ (last - start));
+  }
+
+  /// About 0.3 s a CJK character and 0.09 s any other, at the voice's rate.
+  static int _slowBytes(String text) {
+    var seconds = 0.0;
+    for (final rune in text.runes) {
+      seconds += rune >= 0x2E80 ? 0.3 : 0.09;
+    }
+    return (seconds * deepSeekTtsRate * 2).round();
+  }
 }
 
 class _Piece {
@@ -332,6 +357,7 @@ class DeepSeekOut implements SpeechOut {
           if (piece.done) break;
           await piece.more;
         }
+        span.closed = piece.done && piece.chunks.isEmpty;
         if (_stopped) return;
         if (piece.error case final error?) {
           _fail(error);
@@ -377,13 +403,12 @@ class DeepSeekOut implements SpeechOut {
   String get heard {
     final out = <String>[];
     for (final span in _spans) {
-      if (_played >= span.end) {
+      final n = span.heardBy(_played);
+      if (n == span.text.length) {
         out.add(span.text);
         continue;
       }
-      if (_played > span.start) {
-        out.add(span.text.substring(0, span.text.length * (_played - span.start) ~/ (span.end - span.start)));
-      }
+      if (n > 0) out.add(span.text.substring(0, n));
       break;
     }
     return _joined(out);
@@ -393,6 +418,9 @@ class DeepSeekOut implements SpeechOut {
   void duck(bool on) {
     if (_opened && !_stopped) unawaited(_audio.duck(id, on));
   }
+
+  @override
+  bool get canDuck => true;
 
   void _cancelFetches() {
     for (final piece in _pieces) {
@@ -561,6 +589,9 @@ class SpeakerOut implements SpeechOut {
   /// The phone's voice keeps its volume; the call's echo canceller copes.
   @override
   void duck(bool on) {}
+
+  @override
+  bool get canDuck => false;
 
   @override
   void stop() {

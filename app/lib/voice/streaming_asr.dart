@@ -47,6 +47,11 @@ class StreamingAsr {
   var _loadedRun = 0;
   var _active = false;
   var _disposed = false;
+  var _feeding = 0;
+
+  /// Frames queued for the decoder at most (a second of 20 ms frames); past
+  /// that a decoder slower than speech drops new audio rather than lag further.
+  static const maxQueued = 50;
 
   Stream<StreamingAsrEvent> get events => _events.stream;
   bool get active => _active && _loadedRun == _run;
@@ -73,16 +78,22 @@ class StreamingAsr {
   Future<void> feed(Uint8List pcm16le) {
     if (_disposed) return Future.error(StateError('StreamingAsr is disposed'));
     if (pcm16le.length.isOdd) return Future.error(const FormatException('PCM16 must contain whole samples'));
+    if (_feeding >= maxQueued) return Future.value();
     final run = _run;
     final pcm = TransferableTypedData.fromList([pcm16le]);
+    _feeding++;
     return _enqueue(() async {
-      if (run != _run) return;
-      if (!active) throw StateError('StreamingAsr is not started');
       try {
-        await _worker!.request(_Feed(pcm));
-      } catch (_) {
-        _active = false;
-        rethrow;
+        if (run != _run) return;
+        if (!active) throw StateError('StreamingAsr is not started');
+        try {
+          await _worker!.request(_Feed(pcm));
+        } catch (_) {
+          _active = false;
+          rethrow;
+        }
+      } finally {
+        _feeding--;
       }
     });
   }

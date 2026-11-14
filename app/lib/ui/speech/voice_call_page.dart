@@ -138,7 +138,8 @@ class _VoiceCallPageState extends ConsumerState<VoiceCallPage> with WidgetsBindi
       permission: () async => await bridge.requestPermission() == VoicePermission.granted,
       cutNote: (heard) => heard.isEmpty ? appL10n.speechCallCutEarly : appL10n.speechCallCutNote(heard),
       thinkingCue: () async {
-        if ((await callSettings.ready()).cue) await playThinkingCue(audio);
+        // Asked again after the settings: her voice may have begun meanwhile.
+        if ((await callSettings.ready()).cue && _call.cueStill) await playThinkingCue(audio);
       },
     )..addListener(_changed);
     HapticFeedback.mediumImpact();

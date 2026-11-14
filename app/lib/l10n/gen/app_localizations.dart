@@ -32093,7 +32093,7 @@ abstract class L10n {
   /// No description provided for @speechLiveAbsentNote.
   ///
   /// In zh, this message translates to:
-  /// **'下载后，通话时一边说一边出字，插话也停得更快。约 {mb}，只在手机上运行，录音不出手机'**
+  /// **'下载后，通话时一边说一边出字，插话也停得更快。约 {mb}，在手机上运行'**
   String speechLiveAbsentNote(String mb);
 
   /// No description provided for @speechLiveReadyNote.
@@ -32105,7 +32105,7 @@ abstract class L10n {
   /// No description provided for @speechLiveFooter.
   ///
   /// In zh, this message translates to:
-  /// **'字幕和插话判断用手机上的模型；发给 AI 的文字仍由上面选的识别方式给出。'**
+  /// **'字幕和插话判断在手机上完成；发给 AI 的文字仍由上面选的识别方式给出，选了云端识别录音就会上传。'**
   String get speechLiveFooter;
 
   /// No description provided for @speechLiveDeleteTitle.

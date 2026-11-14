@@ -12,6 +12,8 @@ class NeuralGate(
     private val worker: ExecutorService = Executors.newSingleThreadExecutor { task ->
         Thread(task, "dsh-turn-model").apply { isDaemon = true }
     },
+    /** The turn model failed on a pause (said once per gate): that pause ends the energy gate's way. */
+    private val onTurnFailed: (Exception) -> Unit = {},
 ) : TurnGate {
     interface VadModel : AutoCloseable {
         fun probability(frame: ShortArray): Float
@@ -25,7 +27,7 @@ class NeuralGate(
         override fun close()
     }
 
-    private data class Prediction(val generation: Long, val probability: Float)
+    private data class Prediction(val generation: Long, val probability: Float, val failure: Exception? = null)
 
     private val audio = ShortArray(WINDOW_SAMPLES)
     private val snapshot = FloatArray(WINDOW_SAMPLES)
@@ -40,6 +42,10 @@ class NeuralGate(
     private var requestedQuietSamples = 0
     private var utteranceSamples = 0
     private var playingSince = -1L
+
+    /** This pause's check failed: it ends after the energy gate's hangover instead. */
+    private var turnFailed = false
+    private var reported = false
 
     override fun setPlaying(on: Boolean, nowMs: Long) {
         playingSince = if (on) (if (playingSince >= 0) playingSince else nowMs) else -1L
@@ -76,13 +82,24 @@ class NeuralGate(
             if (quietSamples > 0) generation++
             quietSamples = 0
             requestedQuietSamples = 0
+            turnFailed = false
         } else {
             quietSamples += frame.size
         }
         if (utteranceSamples >= MAX_SAMPLES || quietSamples >= FORCE_END_SAMPLES) return end()
         if (prediction != null && prediction.generation == generation && quietSamples >= CHECK_SAMPLES) {
-            if (prediction.probability >= END_THRESHOLD) return end()
+            val failure = prediction.failure
+            if (failure != null) {
+                turnFailed = true
+                if (!reported) {
+                    reported = true
+                    onTurnFailed(failure)
+                }
+            } else if (prediction.probability >= END_THRESHOLD) {
+                return end()
+            }
         }
+        if (turnFailed && quietSamples >= HANGOVER_SAMPLES) return end()
         if (!pending && quietSamples - requestedQuietSamples >= CHECK_SAMPLES) {
             snapshot.fill(0f, 0, WINDOW_SAMPLES - size)
             var source = (written - size + WINDOW_SAMPLES) % WINDOW_SAMPLES
@@ -94,13 +111,12 @@ class NeuralGate(
             pending = true
             requestedQuietSamples = quietSamples
             worker.execute {
-                // A model that fails reads as "finished": the pause ends the turn, as before.
-                val probability = try {
-                    turn.probability(snapshot)
-                } catch (_: Exception) {
-                    1f
+                val prediction = try {
+                    Prediction(mine, turn.probability(snapshot))
+                } catch (e: Exception) {
+                    Prediction(mine, 0f, e)
                 }
-                completed.set(Prediction(mine, probability))
+                completed.set(prediction)
             }
         }
         return SpeechGate.Edge.NONE
@@ -116,6 +132,7 @@ class NeuralGate(
 
     private fun end(): SpeechGate.Edge {
         speaking = false
+        turnFailed = false
         generation++
         loudSamples = 0
         quietSamples = 0
@@ -127,6 +144,7 @@ class NeuralGate(
     override fun reset() {
         if (size == 0) return
         speaking = false
+        turnFailed = false
         generation++
         loudSamples = 0
         quietSamples = 0
@@ -156,6 +174,7 @@ class NeuralGate(
         private const val PLAY_START_SAMPLES = RATE * 200 / 1000
         private const val CHECK_SAMPLES = RATE * 200 / 1000
         private const val FORCE_END_SAMPLES = RATE * 3
+        private const val HANGOVER_SAMPLES = (RATE * SpeechGate.HANGOVER_MS / 1000).toInt()
         private const val PREROLL_SAMPLES = RATE * 300 / 1000
         private const val MAX_SAMPLES = RATE * 110
     }

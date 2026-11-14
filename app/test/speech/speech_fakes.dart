@@ -104,6 +104,9 @@ class FakeDeepSeek implements DeepSeekSpeech {
 }
 
 class FakeOut implements SpeechOut {
+  @override
+  bool canDuck = true;
+
   final added = <String>[];
   bool finished = false;
   bool stopped = false;

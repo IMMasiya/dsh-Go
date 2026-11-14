@@ -9,9 +9,15 @@ import 'package:flutter_test/flutter_test.dart';
 import 'speech_fakes.dart';
 
 class _Rig {
-  _Rig({FakeCloud? cloud, bool noRecognizer = false, CallStart start = CallStart.ok, bool bargeIn = true})
-    : audio = FakeAudio(start: start),
-      cloud = cloud ?? FakeCloud() {
+  _Rig({
+    FakeCloud? cloud,
+    bool noRecognizer = false,
+    CallStart start = CallStart.ok,
+    bool bargeIn = true,
+    Duration confirmAfter = const Duration(milliseconds: 60),
+    Duration cueAfter = const Duration(milliseconds: 40),
+  }) : audio = FakeAudio(start: start),
+       cloud = cloud ?? FakeCloud() {
     call = VoiceCallController(
       audio: audio,
       conversation: conversation,
@@ -24,8 +30,8 @@ class _Rig {
       choices: () async => (bargeIn: bargeIn, speaker: true, spokenHint: '（语音通话）'),
       cutNote: (heard) => '（被打断在：$heard）',
       thinkingCue: () async => cues++,
-      confirmAfter: const Duration(milliseconds: 60),
-      cueAfter: const Duration(milliseconds: 40),
+      confirmAfter: confirmAfter,
+      cueAfter: cueAfter,
     );
   }
 
@@ -79,8 +85,8 @@ void main() {
     expect(rig.conversation.sent.last, '那上海呢');
   });
 
-  Future<_Rig> speaking() async {
-    final rig = _Rig();
+  Future<_Rig> speaking({Duration confirmAfter = const Duration(milliseconds: 60)}) async {
+    final rig = _Rig(confirmAfter: confirmAfter);
     await rig.call.start();
     await rig.say();
     rig.conversation.reply('好的，我来详细说一说。');
@@ -136,11 +142,12 @@ void main() {
   });
 
   test('talking on over her takes the turn before the words are known', () async {
-    final rig = await speaking();
+    // Long enough that a busy machine cannot reach it before the first check.
+    final rig = await speaking(confirmAfter: const Duration(milliseconds: 500));
     rig.audio.emit(const SpeechStart(over: true));
     await Future<void>.delayed(const Duration(milliseconds: 20));
     expect(rig.outs.single.stopped, isFalse);
-    await Future<void>.delayed(const Duration(milliseconds: 80));
+    await Future<void>.delayed(const Duration(milliseconds: 600));
     expect(rig.outs.single.stopped, isTrue);
     expect(rig.conversation.interrupts, 1);
     expect(rig.call.phase, CallPhase.hearing);
@@ -148,12 +155,12 @@ void main() {
   });
 
   test('a slow answer gets the thinking cue once; a quick one none', () async {
-    final rig = _Rig();
+    final rig = _Rig(cueAfter: const Duration(milliseconds: 400));
     await rig.call.start();
     await rig.say();
-    await Future<void>.delayed(const Duration(milliseconds: 80));
+    await Future<void>.delayed(const Duration(milliseconds: 500));
     expect(rig.cues, 1);
-    await Future<void>.delayed(const Duration(milliseconds: 80));
+    await Future<void>.delayed(const Duration(milliseconds: 100));
     expect(rig.cues, 1);
 
     rig.conversation.reply('好。', done: true);
@@ -163,7 +170,7 @@ void main() {
     rig.cloud.text = '再说一个';
     await rig.say();
     rig.conversation.reply('行，');
-    await Future<void>.delayed(const Duration(milliseconds: 80));
+    await Future<void>.delayed(const Duration(milliseconds: 500));
     expect(rig.cues, 1);
     rig.call.hangUp();
   });

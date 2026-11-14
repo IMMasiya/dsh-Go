@@ -17536,7 +17536,7 @@ class L10nZh extends L10n {
 
   @override
   String speechLiveAbsentNote(String mb) {
-    return '下载后，通话时一边说一边出字，插话也停得更快。约 $mb，只在手机上运行，录音不出手机';
+    return '下载后，通话时一边说一边出字，插话也停得更快。约 $mb，在手机上运行';
   }
 
   @override
@@ -17545,7 +17545,7 @@ class L10nZh extends L10n {
   }
 
   @override
-  String get speechLiveFooter => '字幕和插话判断用手机上的模型；发给 AI 的文字仍由上面选的识别方式给出。';
+  String get speechLiveFooter => '字幕和插话判断在手机上完成；发给 AI 的文字仍由上面选的识别方式给出，选了云端识别录音就会上传。';
 
   @override
   String get speechLiveDeleteTitle => '删除流式识别模型？';

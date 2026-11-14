@@ -24,8 +24,10 @@ class NeuralGateTest {
         var calls = 0
         var input = FloatArray(0)
         var closed = false
+        var fails = false
         override fun probability(audio: FloatArray): Float {
             calls++
+            if (fails) throw IllegalStateException("broken")
             input = audio.copyOf()
             return value
         }
@@ -51,7 +53,8 @@ class NeuralGateTest {
         val vad = Vad()
         val turn = Turn()
         val worker = Worker()
-        val gate = NeuralGate(vad, turn, echoCancelled, worker)
+        val failures = mutableListOf<Exception>()
+        val gate = NeuralGate(vad, turn, echoCancelled, worker) { failures += it }
         var now = 0L
         private val frame = ShortArray(320)
         fun feed(probability: Float, frames: Int, sample: Short = 1000): List<Edge> {
@@ -68,6 +71,24 @@ class NeuralGateTest {
         override fun close() {
             gate.close()
             while (worker.tasks.isNotEmpty()) worker.runNext()
+        }
+    }
+
+    @Test fun aFailedTurnModelEndsThePauseAfterTheHangoverAndIsReportedOnce() {
+        Capture().use { c ->
+            c.turn.fails = true
+            assertEquals(listOf(Edge.START), c.feed(0.9f, 6))
+            assertEquals(emptyList<Edge>(), c.feed(0.1f, 10))
+            c.worker.runNext()
+            // Not ended by the failure: 680 ms of quiet is still the turn.
+            assertEquals(emptyList<Edge>(), c.feed(0.1f, 24))
+            assertEquals(listOf(Edge.END), c.feed(0.1f, 1))
+            c.worker.runNext()
+            assertEquals(listOf(Edge.START), c.feed(0.9f, 6))
+            assertEquals(emptyList<Edge>(), c.feed(0.1f, 10))
+            c.worker.runNext()
+            assertEquals(emptyList<Edge>(), c.feed(0.1f, 1))
+            assertEquals(1, c.failures.size)
         }
     }
 
@@ -204,16 +225,21 @@ class NeuralGateTest {
             override fun close() { closed.countDown() }
         }
         val gate = NeuralGate(vad, turn, worker = worker)
-        val frame = ShortArray(320)
-        repeat(6) { gate.consume(frame, -20.0, it * 20L) }
-        vad.value = 0f
-        repeat(10) { gate.consume(frame, -100.0, 120 + it * 20L) }
-        assertTrue(entered.await(2, TimeUnit.SECONDS))
-        gate.close()
-        assertTrue(vad.closed)
-        assertFalse(closed.await(20, TimeUnit.MILLISECONDS))
-        release.countDown()
-        assertTrue(closed.await(2, TimeUnit.SECONDS))
-        assertTrue(worker.awaitTermination(2, TimeUnit.SECONDS))
+        try {
+            val frame = ShortArray(320)
+            repeat(6) { gate.consume(frame, -20.0, it * 20L) }
+            vad.value = 0f
+            repeat(10) { gate.consume(frame, -100.0, 120 + it * 20L) }
+            assertTrue(entered.await(2, TimeUnit.SECONDS))
+            gate.close()
+            assertTrue(vad.closed)
+            assertFalse(closed.await(20, TimeUnit.MILLISECONDS))
+            release.countDown()
+            assertTrue(closed.await(2, TimeUnit.SECONDS))
+            assertTrue(worker.awaitTermination(2, TimeUnit.SECONDS))
+        } finally {
+            release.countDown()
+            worker.shutdownNow()
+        }
     }
 }

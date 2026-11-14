@@ -105,6 +105,29 @@ void main() {
     expect(await store.installed(), isNull);
   });
 
+  test('a file longer than it should be is cut off and thrown away', () async {
+    final short = StreamingAsrFile(
+      'e.onnx',
+      files['e.onnx']!.length - 100,
+      sha256.convert(files['e.onnx']!).toString(),
+    );
+    final store = StreamingAsrModelStore(
+      dir,
+      manifest: StreamingAsrModelManifest(
+        hosts: [host.origin],
+        repository: 'k2/zipformer',
+        revision: 'abc',
+        encoder: short,
+        decoder: file('d.onnx'),
+        joiner: file('j.onnx'),
+        tokens: file('tokens.txt'),
+      ),
+    );
+    await expectLater(store.download(), throwsA(isA<HttpException>()));
+    final left = dir.listSync(recursive: true).whereType<File>().map((f) => f.path).where((p) => p.contains('e.onnx'));
+    expect(left, isEmpty);
+  });
+
   test('delete removes everything', () async {
     final store = StreamingAsrModelStore(dir, manifest: manifest([host.origin]));
     await store.download();

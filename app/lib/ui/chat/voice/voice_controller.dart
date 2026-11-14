@@ -122,6 +122,9 @@ class VoiceInputController extends ChangeNotifier with WidgetsBindingObserver {
   /// recording runs; the recording's own text replaces them when it is done.
   final Future<LiveWords?> Function(void Function(String words) onWords)? _liveWords;
   LiveWords? _live;
+
+  /// Live words are in the draft, not yet replaced by the recording's text.
+  bool _liveShown = false;
   VoiceCloud? _cloudRun;
   final bool _observing;
   void Function(VoiceMessage message)? onMessage;
@@ -453,6 +456,7 @@ class VoiceInputController extends ChangeNotifier with WidgetsBindingObserver {
     final live = await _liveWords?.call((words) {
       if (_current(operation) && _phase == VoicePhase.listening && words.isNotEmpty) {
         _apply(words, provisional: true);
+        _liveShown = true;
       }
     });
     if (live == null) return;
@@ -702,6 +706,7 @@ class VoiceInputController extends ChangeNotifier with WidgetsBindingObserver {
   void _apply(String heard, {required bool provisional}) {
     final base = _base;
     if (base == null) return;
+    if (!provisional) _liveShown = false;
     final text = base.text;
     final spoken = heard.trim();
     final before = text.substring(0, _anchorStart);
@@ -739,6 +744,9 @@ class VoiceInputController extends ChangeNotifier with WidgetsBindingObserver {
 
   void _finish() {
     _stopLive();
+    // Not heard after all (failed, empty, too short): the draft goes back.
+    if (_liveShown) _restoreDraft();
+    _liveShown = false;
     _operation++;
     _requestingPermission = false;
     _switching = false;
@@ -790,6 +798,7 @@ class VoiceInputController extends ChangeNotifier with WidgetsBindingObserver {
     }
     _operation++;
     _disposed = true;
+    _stopLive();
     _finalTimeout?.cancel();
     unawaited(_events?.cancel());
     if (_observing) WidgetsBinding.instance.removeObserver(this);
