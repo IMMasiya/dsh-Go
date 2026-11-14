@@ -63,6 +63,8 @@ class ChatCallConversation implements CallConversation {
     final chat = _container.read(chatProvider(id).notifier);
     var state = _container.read(chatProvider(id));
     if (!state.controlReady && !await chat.waitForSync()) return false;
+    // Hung up while the conversation caught up: it is not sent.
+    if (_disposed) return false;
     state = _container.read(chatProvider(id));
     _before = {
       for (final item in state.items)
@@ -81,6 +83,7 @@ class ChatCallConversation implements CallConversation {
       _tracking = false;
       return false;
     }
+    if (_disposed) return true;
     // A turn that never starts (sent while another one wraps up): give up waiting after a while.
     _idle?.cancel();
     _idle = Timer(const Duration(seconds: 90), () {

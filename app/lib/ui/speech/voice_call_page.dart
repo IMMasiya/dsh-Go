@@ -211,8 +211,10 @@ class _VoiceCallPageState extends ConsumerState<VoiceCallPage> with WidgetsBindi
           if (!mounted) return;
           // The call page itself, not a sheet open over it (字幕, 背景).
           final route = ModalRoute.of(context);
+          // Already left (Back just before this): nothing of anyone else's is closed.
+          if (route == null || !route.isActive) return;
           final navigator = Navigator.of(context);
-          if (route != null && !route.isCurrent) navigator.popUntil((r) => r == route);
+          if (!route.isCurrent) navigator.popUntil((r) => r == route);
           unawaited(navigator.maybePop());
         },
       );

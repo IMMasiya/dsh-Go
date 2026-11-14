@@ -51,7 +51,8 @@ class _CallTranscriptState extends State<CallTranscript> {
     setState(() {});
     if (!_following) return;
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted || !_scroll.hasClients) return;
+      // The reader may have scrolled away since.
+      if (!mounted || !_following || !_scroll.hasClients) return;
       unawaited(
         _scroll.animateTo(
           _scroll.position.maxScrollExtent,
