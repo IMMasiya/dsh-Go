@@ -176,6 +176,8 @@ void main() {
     await tester.pump();
     expect(activeBuilds, 2);
     expect(localBuilds, 2);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.hidden);
     tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
     container.invalidate(activeConnectionProvider);
     container.invalidate(localConnectionProvider);
@@ -183,6 +185,8 @@ void main() {
     expect(activeBuilds, 2);
     expect(localBuilds, 2);
     expect(container.read(automaticDiagnosticsProvider), same(automatic));
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.hidden);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
     tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
     await tester.pump();
     expect(activeBuilds, 3);
