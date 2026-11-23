@@ -148,6 +148,7 @@ jobs:
           # build-apk.sh 按构建分钟自动生成，并通过 --write-version-code 回传，
           # 供下面的草稿标题使用。
           DSH_BETA_TOKEN_FILE= bash tooling/build-apk.sh -f arm64 --keep-daemon \
+            --no-companion \
             --build-name "${{ steps.version.outputs.version }}" \
             --write-version-code app/build/app/outputs/flutter-apk/VERSION_CODE
 
