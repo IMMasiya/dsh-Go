@@ -1467,7 +1467,7 @@ class PrivilegedDisplayCore internal constructor(
         TreeTrace.log("windows all=${all.size()} target=$displayId")
         for (i in 0 until all.size()) {
             val k = all.keyAt(i)
-            TreeTrace.log("  display=$k windows=${all.get(k)?.size()} types=${all.get(k)?.joinToString { it.type.toString() }}")
+            TreeTrace.log("  display=$k windows=${all.get(k)?.size} types=${all.get(k)?.joinToString { it.type.toString() }}")
         }
         val displayWindows = all.get(displayId).orEmpty()
         TreeTrace.log("displayWindows=$displayId count=${displayWindows.size}")
