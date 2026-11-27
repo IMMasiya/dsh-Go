@@ -1459,17 +1459,23 @@ class PrivilegedDisplayCore internal constructor(
                 throw Fault("treeUnavailable")
         } else runCatching { invoke(automation, "clearCache") }
         @Suppress("UNCHECKED_CAST")
-        val all = invoke(automation, "getWindowsOnAllDisplays") as? SparseArray<List<AccessibilityWindowInfo>>
-            ?: run {
-                TreeTrace.log("windows NULL display=$displayId")
-                throw Fault("treeUnavailable")
+        var all: SparseArray<List<AccessibilityWindowInfo>>? = null
+        var attempts = 0
+        // The window manager may not have published the virtual-display window to the
+        // accessibility window manager yet when a read lands right after an app opens.
+        // Retry briefly so the first read sees the window instead of an empty list.
+        while (attempts < 8) {
+            all = invoke(automation, "getWindowsOnAllDisplays") as? SparseArray<List<AccessibilityWindowInfo>>
+            attempts++
+            if (all != null && !all.get(displayId).isNullOrEmpty()) break
+            if (attempts < 8) {
+                runCatching { invoke(automation, "clearCache") }
+                sleepChecked(300)
             }
-        TreeTrace.log("windows all=${all.size()} target=$displayId")
-        for (i in 0 until all.size()) {
-            val k = all.keyAt(i)
-            TreeTrace.log("  display=$k windows=${all.get(k)?.size} types=${all.get(k)?.joinToString { it.type.toString() }}")
         }
-        val displayWindows = all.get(displayId).orEmpty()
+        val resolved = all ?: throw Fault("treeUnavailable")
+        TreeTrace.log("windows all=${resolved.size()} target=$displayId attempts=$attempts")
+        val displayWindows = resolved.get(displayId).orEmpty()
         TreeTrace.log("displayWindows=$displayId count=${displayWindows.size}")
         val windows = displayWindows.filter {
             it.type == AccessibilityWindowInfo.TYPE_APPLICATION
