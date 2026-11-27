@@ -53,9 +53,21 @@ internal class PrivilegedTreeAccess(private val context: Context) {
             val connection = Proxy.newProxyInstance(connectionType.classLoader, arrayOf(connectionType)) { proxy, method, args ->
                 when (method.name) {
                     "asBinder" -> token
-                    // Let UiAutomation reach its normal init/timeout state even if register's
-                    // reply fails. The registration retains the client independently of this wait.
-                    "connect" -> { runCatching { register(args!![0]!!) }; null }
+                    // Register must confirm; a swallowed failure leaves a never-registered
+                    // phantom (empty tree) that also cannot be unregistered (close deadlock).
+                    // Capture the real error for diagnosis instead of hiding it.
+                    "connect" -> {
+                        try { register(args!![0]!!) }
+                        catch (e: Throwable) {
+                            android.util.Log.e("DshTree", "registerUiTestAutomationService failed", e)
+                            runCatching {
+                                java.io.File("/sdcard/Download/DSH-Go/tree-register-error.txt").writeText(
+                                    "${java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS").format(java.util.Date())} " +
+                                        "${e::class.java.name}: ${e.message}\n${e.stackTraceToString()}")
+                            }
+                        }
+                        null
+                    }
                     "disconnect" -> { registration.unregister(); null }
                     "toString" -> "DshTreeConnection"
                     "hashCode" -> System.identityHashCode(proxy)
