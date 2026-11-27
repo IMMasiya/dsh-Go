@@ -1421,13 +1421,10 @@ class PrivilegedDisplayCore internal constructor(
     }
 
     private fun closeTreeConnection() {
-        if (!trees.closeOwned(this)) {
-            coordinateObservation = null
-            visualObservation = null
-            stopPreview()
-            preview.invalidate()
-            throw Fault("treeCleanupPending")
-        }
+        // closeOwned returns false only when the platform could not confirm the unregister.
+        // abandonOwned then gives that identity up, so releasing a task is the recovery path
+        // instead of a pending state that nothing inside the process can clear.
+        trees.closeOwned(this) || trees.abandonOwned(this)
     }
 
     private fun <T> withTreeConnection(targetDisplay: Display, pkg: String, unavailable: String, read: (UiAutomation) -> T): T =

@@ -44,4 +44,23 @@ class TreeTransactionsTest {
         assertEquals(listOf(client, client), attempted)
     }
 
+    @Test fun teardownGivesUpAnUnconfirmedIdentitySoReadCanStartAgain() {
+        val owner = Any(); val other = Any(); val client = Any()
+        val attempted = mutableListOf<Any>()
+        val stuck = TreeRegistration<Any> { attempted += it; check(false) }
+        val gate = TreeTransactions<TreeRegistration<Any>>(
+            close = { it.close { it.unregister() } },
+            abandon = { it.close { it.unregister() } },
+        )
+        try { gate.read(owner, { stuck }) { it.register(client) {}; "read" }; fail() }
+        catch (_: TreeTransactions.CleanupPending) { }
+        assertFalse(gate.ready())
+        // Only the owner of the pending identity can clear it.
+        assertTrue(gate.abandonOwned(other)); assertFalse(gate.ready())
+        assertTrue(gate.abandonOwned(owner)); assertTrue(gate.ready())
+        // Both close attempts stay recorded: the read's own close, then the teardown's.
+        assertEquals(listOf<Any>(client, client), attempted)
+        assertEquals("read again", gate.read(owner, { TreeRegistration<Any> { } }) { "read again" })
+    }
+
 }
