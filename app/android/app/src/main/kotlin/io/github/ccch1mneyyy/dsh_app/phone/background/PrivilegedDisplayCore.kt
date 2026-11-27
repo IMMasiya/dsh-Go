@@ -1474,18 +1474,14 @@ class PrivilegedDisplayCore internal constructor(
             }
         }
         val resolved = all ?: throw Fault("treeUnavailable")
-        TreeTrace.log("windows all=${resolved.size()} target=$displayId attempts=$attempts")
         val displayWindows = resolved.get(displayId).orEmpty()
-        TreeTrace.log("displayWindows=$displayId count=${displayWindows.size}")
         val windows = displayWindows.filter {
             it.type == AccessibilityWindowInfo.TYPE_APPLICATION
         }
-        TreeTrace.log("applicationWindows=${windows.size}")
         if ((targetEvidence != null || navigation != null) && (displayWindows.size != 1 || windows.size != 1)) throw Fault("targetUnavailable")
         val roots = ArrayList<AccessibilityNodeInfo?>()
         try {
             for (window in windows) roots.add(window.root)
-            TreeTrace.log("roots=${roots.size} packages=${roots.map { it?.packageName?.toString() }}")
             val selected = BackgroundTree.selectApplicationWindow(roots.map { it?.packageName?.toString() }, pkg)
                 ?: throw Fault(if (roots.firstOrNull() != null) "displayTargetChanged" else "treeUnavailable")
             val tree = TreeRead(targetId, inspectVisual, targetEvidence, coordinates)
@@ -1500,7 +1496,6 @@ class PrivilegedDisplayCore internal constructor(
             if (!scanOtherWindows && roots.size > 1) tree.complete = false
             try {
                 walk(roots[selected.index]!!, tree, 0, 600, navigation = navigation)
-                TreeTrace.log("walk visited=${tree.visited} elements=${tree.elements.size} complete=${tree.complete} selected=${selected.index}")
                 assignRegions(tree.elements)
                 if (scanOtherWindows) for (index in selected.scanOrder.drop(1)) {
                     try {

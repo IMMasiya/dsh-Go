@@ -22,14 +22,10 @@ internal class PrivilegedTreeAccess(private val context: Context) {
     fun ready(): Boolean = transactions.ready()
     fun closeOwned(scope: Any): Boolean = transactions.closeOwned(scope)
     fun <T> read(scope: Any, display: Display, pkg: String, unavailable: String, body: (UiAutomation) -> T): T = try {
-        TreeTrace.log("read begin scope=${System.identityHashCode(scope)} pkg=$pkg")
         transactions.read(scope, { TreeConnection(context, pkg) }) { connection ->
-            TreeTrace.log("body c=${connection.traceId()}")
             val automation = try { tracePhase("dsh.bg.treeConnect") { connection.open(display) } }
                 catch (_: Throwable) { throw Failure(unavailable) }
-            TreeTrace.log("body connected c=${connection.traceId()}")
-            try { body(automation) }
-            finally { TreeTrace.log("body done c=${connection.traceId()}") }
+            body(automation)
         }
     } catch (_: TreeTransactions.CleanupPending) { throw Failure("treeCleanupPending") }
 
@@ -51,10 +47,7 @@ internal class PrivilegedTreeAccess(private val context: Context) {
         }
         private var automation: UiAutomation? = null
 
-        fun traceId(): Int = System.identityHashCode(this)
-
         fun open(display: Display): UiAutomation {
-            TreeTrace.log("open begin c=${traceId()} pkg=$target")
             if (Build.VERSION.SDK_INT < 34) throw Failure("textConnectionUnavailable")
             val connectionType = Class.forName("android.app.IUiAutomationConnection")
             val connection = Proxy.newProxyInstance(connectionType.classLoader, arrayOf(connectionType)) { proxy, method, args ->
@@ -64,15 +57,18 @@ internal class PrivilegedTreeAccess(private val context: Context) {
                     // phantom (empty tree) that also cannot be unregistered (close deadlock).
                     // Capture the real error for diagnosis instead of hiding it.
                     "connect" -> {
-                        TreeTrace.log("proxy connect c=${traceId()}")
                         try { register(args!![0]!!) }
                         catch (e: Throwable) {
-                            TreeTrace.log("proxy connect c=${traceId()} register FAILED ${e::class.java.simpleName}: ${e.cause?.message ?: e.message}")
                             android.util.Log.e("DshTree", "registerUiTestAutomationService failed", e)
+                            runCatching {
+                                java.io.File("/sdcard/Download/DSH-Go/tree-register-error.txt").writeText(
+                                    "${java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS").format(java.util.Date())} " +
+                                        "${e::class.java.name}: ${e.message}\n${e.stackTraceToString()}")
+                            }
                         }
                         null
                     }
-                    "disconnect" -> { TreeTrace.log("proxy disconnect c=${traceId()}"); registration.unregister(); null }
+                    "disconnect" -> { registration.unregister(); null }
                     "toString" -> "DshTreeConnection"
                     "hashCode" -> System.identityHashCode(proxy)
                     "equals" -> proxy === args?.get(0)
@@ -82,14 +78,8 @@ internal class PrivilegedTreeAccess(private val context: Context) {
             val value = UiAutomation::class.java.getConstructor(Context::class.java, connectionType)
                 .newInstance(context.createDisplayContext(display), connection) as UiAutomation
             automation = value
-            try {
-                UiAutomation::class.java.getMethod("connectWithTimeout", Int::class.javaPrimitiveType, Long::class.javaPrimitiveType)
-                    .invoke(value, UiAutomation.FLAG_DONT_SUPPRESS_ACCESSIBILITY_SERVICES, 3000L)
-                TreeTrace.log("open connected c=${traceId()}")
-            } catch (e: Throwable) {
-                TreeTrace.log("open FAILED c=${traceId()} ${e::class.java.simpleName}: ${e.cause?.message ?: e.message}")
-                throw e
-            }
+            UiAutomation::class.java.getMethod("connectWithTimeout", Int::class.javaPrimitiveType, Long::class.javaPrimitiveType)
+                .invoke(value, UiAutomation.FLAG_DONT_SUPPRESS_ACCESSIBILITY_SERVICES, 3000L)
             return value
         }
 
@@ -113,11 +103,9 @@ internal class PrivilegedTreeAccess(private val context: Context) {
         }
 
         fun close(): Boolean {
-            TreeTrace.log("close begin c=${traceId()} automation=${automation != null}")
             val complete = registration.close {
                 automation?.let { UiAutomation::class.java.getMethod("disconnect").invoke(it) }
             }
-            TreeTrace.log("close end c=${traceId()} complete=$complete")
             if (complete) automation = null
             return complete
         }

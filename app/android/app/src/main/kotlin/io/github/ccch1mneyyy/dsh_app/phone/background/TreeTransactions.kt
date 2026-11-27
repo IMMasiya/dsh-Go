@@ -22,10 +22,9 @@ internal class TreeTransactions<C : Any>(private val abandon: (C) -> Unit = { },
         true
     }
     fun <T> read(scope: Any, create: () -> C, body: (C) -> T): T = lock.withLock {
-        if (pending != null) { TreeTrace.log("tx blocked scope=${System.identityHashCode(scope)}"); throw CleanupPending() }
+        if (pending != null) throw CleanupPending()
         val connection = create()
         pending = scope to connection
-        TreeTrace.log("tx begin scope=${System.identityHashCode(scope)} id=${System.identityHashCode(connection)}")
         try { body(connection) }
         finally {
             // The platform may not confirm the unregister (UiAutomation marks itself
@@ -34,11 +33,8 @@ internal class TreeTransactions<C : Any>(private val abandon: (C) -> Unit = { },
             // is unique to it, so a later read cannot be mistaken for this one, and the
             // platform reclaims whatever it still holds when this process exits. Drop the
             // identity and free the read gate instead of deadlocking every later read.
-            val closed = close(connection)
-            TreeTrace.log("tx close id=${System.identityHashCode(connection)} result=$closed")
-            if (!closed) { TreeTrace.log("tx abandon id=${System.identityHashCode(connection)}"); abandon(connection) }
+            if (!close(connection)) abandon(connection)
             pending = null
-            TreeTrace.log("tx end id=${System.identityHashCode(connection)}")
         }
     }
 }
