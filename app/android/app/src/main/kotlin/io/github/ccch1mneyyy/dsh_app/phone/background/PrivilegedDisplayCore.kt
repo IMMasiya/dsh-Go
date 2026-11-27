@@ -1460,15 +1460,26 @@ class PrivilegedDisplayCore internal constructor(
         } else runCatching { invoke(automation, "clearCache") }
         @Suppress("UNCHECKED_CAST")
         val all = invoke(automation, "getWindowsOnAllDisplays") as? SparseArray<List<AccessibilityWindowInfo>>
-            ?: throw Fault("treeUnavailable")
+            ?: run {
+                TreeTrace.log("windows NULL display=$displayId")
+                throw Fault("treeUnavailable")
+            }
+        TreeTrace.log("windows all=${all.size()} target=$displayId")
+        for (i in 0 until all.size()) {
+            val k = all.keyAt(i)
+            TreeTrace.log("  display=$k windows=${all.get(k)?.size()} types=${all.get(k)?.joinToString { it.type.toString() }}")
+        }
         val displayWindows = all.get(displayId).orEmpty()
+        TreeTrace.log("displayWindows=$displayId count=${displayWindows.size}")
         val windows = displayWindows.filter {
             it.type == AccessibilityWindowInfo.TYPE_APPLICATION
         }
+        TreeTrace.log("applicationWindows=${windows.size}")
         if ((targetEvidence != null || navigation != null) && (displayWindows.size != 1 || windows.size != 1)) throw Fault("targetUnavailable")
         val roots = ArrayList<AccessibilityNodeInfo?>()
         try {
             for (window in windows) roots.add(window.root)
+            TreeTrace.log("roots=${roots.size} packages=${roots.map { it?.packageName?.toString() }}")
             val selected = BackgroundTree.selectApplicationWindow(roots.map { it?.packageName?.toString() }, pkg)
                 ?: throw Fault(if (roots.firstOrNull() != null) "displayTargetChanged" else "treeUnavailable")
             val tree = TreeRead(targetId, inspectVisual, targetEvidence, coordinates)
@@ -1483,6 +1494,7 @@ class PrivilegedDisplayCore internal constructor(
             if (!scanOtherWindows && roots.size > 1) tree.complete = false
             try {
                 walk(roots[selected.index]!!, tree, 0, 600, navigation = navigation)
+                TreeTrace.log("walk visited=${tree.visited} elements=${tree.elements.size} complete=${tree.complete} selected=${selected.index}")
                 assignRegions(tree.elements)
                 if (scanOtherWindows) for (index in selected.scanOrder.drop(1)) {
                     try {
