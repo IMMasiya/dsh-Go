@@ -1421,10 +1421,9 @@ class PrivilegedDisplayCore internal constructor(
     }
 
     private fun closeTreeConnection() {
-        // closeOwned returns false only when the platform could not confirm the unregister.
-        // abandonOwned then gives that identity up, so releasing a task is the recovery path
-        // instead of a pending state that nothing inside the process can clear.
-        trees.closeOwned(this) || trees.abandonOwned(this)
+        // read() already frees the gate itself when the platform cannot confirm the
+        // unregister; this teardown only needs to release whatever identity remains.
+        trees.closeOwned(this)
     }
 
     private fun <T> withTreeConnection(targetDisplay: Display, pkg: String, unavailable: String, read: (UiAutomation) -> T): T =

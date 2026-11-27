@@ -16,12 +16,11 @@ internal class PrivilegedTreeAccess(private val context: Context) {
     class Failure(val code: String) : Exception()
     private val transactions = TreeTransactions<TreeConnection>(
         close = { connection -> tracePhase("dsh.bg.treeClose") { connection.close() } },
-        // Teardown gets one more chance at the same close, then gives the identity up.
+        // The first close could not be confirmed; try once more before dropping the identity.
         abandon = { connection -> tracePhase("dsh.bg.treeAbandon") { connection.close() } },
     )
     fun ready(): Boolean = transactions.ready()
     fun closeOwned(scope: Any): Boolean = transactions.closeOwned(scope)
-    fun abandonOwned(scope: Any): Boolean = transactions.abandonOwned(scope)
     fun <T> read(scope: Any, display: Display, pkg: String, unavailable: String, body: (UiAutomation) -> T): T = try {
         transactions.read(scope, { TreeConnection(context, pkg) }) { connection ->
             val automation = try { tracePhase("dsh.bg.treeConnect") { connection.open(display) } }

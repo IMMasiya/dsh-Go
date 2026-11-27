@@ -5,8 +5,8 @@ import kotlin.concurrent.withLock
 
 /**
  * Owns the actual peer connection from registration through the final live node and close.
- * [close] is the required transaction close; [abandon] is the optional teardown escape hatch
- * ([abandonOwned]) and defaults to doing nothing.
+ * [close] is the required transaction close; [abandon] is the escape hatch when [close] cannot
+ * be confirmed ([read] calls it once) and defaults to doing nothing.
  */
 internal class TreeTransactions<C : Any>(private val abandon: (C) -> Unit = { }, private val close: (C) -> Boolean) {
     class CleanupPending : Exception()
@@ -21,31 +21,20 @@ internal class TreeTransactions<C : Any>(private val abandon: (C) -> Unit = { },
         pending = null
         true
     }
-
-    /**
-     * Teardown-only release of an identity whose platform unregister could not be confirmed.
-     * [abandon] gives the platform one more attempt at the same close, then the identity is
-     * dropped regardless: the registration token is unique to that connection, so dropping
-     * it cannot be mistaken for another peer's registration, and whatever the platform still
-     * holds is reclaimed when this process exits. [read] keeps refusing while any identity is
-     * pending, so this never loosens the read gate.
-     */
-    fun abandonOwned(scope: Any): Boolean = lock.withLock {
-        val old = pending ?: return true
-        if (old.first !== scope) return true
-        abandon(old.second)
-        pending = null
-        true
-    }
-
     fun <T> read(scope: Any, create: () -> C, body: (C) -> T): T = lock.withLock {
         if (pending != null) throw CleanupPending()
         val connection = create()
         pending = scope to connection
         try { body(connection) }
         finally {
-            if (close(connection)) pending = null
-            else throw CleanupPending()
+            // The platform may not confirm the unregister (UiAutomation marks itself
+            // DISCONNECTED before the RPC and may then return without invoking our proxy,
+            // and the fallback unregister can fail). That connection's registration token
+            // is unique to it, so a later read cannot be mistaken for this one, and the
+            // platform reclaims whatever it still holds when this process exits. Drop the
+            // identity and free the read gate instead of deadlocking every later read.
+            if (!close(connection)) abandon(connection)
+            pending = null
         }
     }
 }

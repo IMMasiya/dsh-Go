@@ -27,39 +27,22 @@ class TreeTransactionsTest {
         } finally { finish.countDown(); pool.shutdownNow() }
     }
 
-    @Test fun unregisterUnknownKeepsOriginalClientAndOnlyItsOwnerCanCloseIt() {
-        val owner = Any(); val other = Any(); val client = Any()
-        var canClose = false; val attempted = mutableListOf<Any>()
-        val registration = TreeRegistration<Any> { attempted += it; check(canClose) }
-        val gate = TreeTransactions<TreeRegistration<Any>> { it.close { it.unregister() } }
-        try { gate.read(owner, { registration }) { it.register(client) {}; "accepted input" }; fail() }
-        catch (_: TreeTransactions.CleanupPending) { }
-        assertFalse(gate.ready()); assertEquals(listOf(client), attempted)
-        assertTrue(gate.closeOwned(other)); assertEquals(1, attempted.size)
-        var newClient = false
-        try { gate.read(other, { newClient = true; registration }) {}; fail() }
-        catch (_: TreeTransactions.CleanupPending) { }
-        assertFalse(newClient)
-        canClose = true; assertTrue(gate.closeOwned(owner)); assertTrue(gate.ready())
-        assertEquals(listOf(client, client), attempted)
-    }
-
-    @Test fun teardownGivesUpAnUnconfirmedIdentitySoReadCanStartAgain() {
-        val owner = Any(); val other = Any(); val client = Any()
+    @Test fun unconfirmedCloseDropsTheIdentityAndFreesTheGate() {
+        val owner = Any(); val client = Any()
         val attempted = mutableListOf<Any>()
         val stuck = TreeRegistration<Any> { attempted += it; check(false) }
         val gate = TreeTransactions<TreeRegistration<Any>>(
             close = { it.close { it.unregister() } },
             abandon = { it.close { it.unregister() } },
         )
-        try { gate.read(owner, { stuck }) { it.register(client) {}; "read" }; fail() }
-        catch (_: TreeTransactions.CleanupPending) { }
-        assertFalse(gate.ready())
-        // Only the owner of the pending identity can clear it.
-        assertTrue(gate.abandonOwned(other)); assertFalse(gate.ready())
-        assertTrue(gate.abandonOwned(owner)); assertTrue(gate.ready())
-        // Both close attempts stay recorded: the read's own close, then the teardown's.
-        assertEquals(listOf<Any>(client, client), attempted)
+        // The read body succeeds, but the platform cannot confirm the close. The
+        // transaction retries once via abandon, drops the identity, and frees the gate
+        // instead of deadlocking every later read.
+        assertEquals("accepted input", gate.read(owner, { stuck }) { it.register(client) {}; "accepted input" })
+        assertTrue(gate.ready())
+        // Both close attempts stay recorded: the read's own close, then the abandon retry.
+        assertEquals(listOf(client, client), attempted)
+        // A fresh connection can now be opened by the same owner.
         assertEquals("read again", gate.read(owner, { TreeRegistration<Any> { } }) { "read again" })
     }
 
